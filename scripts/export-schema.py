@@ -1,29 +1,54 @@
 # -*- coding: utf-8 -*-
-"""从 Python 版导出权威建库 DDL，生成 Electron 侧的 src/main/db/schema.ts。
+"""从 zhixing_python 仓库导出权威建库 DDL，生成本仓库的 src/main/db/schema.ts。
 
-用法（仓库根目录）：
-    .venv/bin/python electron/scripts/export-schema.py
+用法（在本仓库根目录执行）：
+    # PowerShell
+    $env:ZHIXING_PY_ROOT = "D:/Development/zhixing_python"
+    python scripts/export-schema.py
+    # bash / zsh
+    ZHIXING_PY_ROOT=../zhixing_python python scripts/export-schema.py
 
 为什么需要它：Electron 版没有 ORM，库文件不存在时必须自己建库，而两版共用
 同一个 SQLite 文件，schema 必须与 Python 的 Base.metadata.create_all 逐字一致
 ——手抄必然漂移，所以导出一次固化下来。Python 侧 SCHEMA_VERSION 变化后必须
 重新运行本脚本，否则新库会缺表。
+
+跨仓库说明：本脚本需要一份可 import 的 zhixing_python 检出（及其依赖
+SQLAlchemy）以及一个可用的 Python 解释器。两个项目拆成独立仓库后不再共享
+工作区，因此 Python 仓库位置改为由环境变量 ZHIXING_PY_ROOT 显式提供；未提供
+或指向的目录不像该仓库时，脚本以非零码退出，绝不静默产出错误的 schema.ts。
 """
 import os
 import sqlite3
 import sys
+import tempfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
+# 本仓库根（脚本位于 <repo>/scripts/export-schema.py）
+ROOT = Path(__file__).resolve().parents[1]
+
+_py_repo = os.environ.get("ZHIXING_PY_ROOT", "").strip()
+if not _py_repo:
+    print("错误：未设置环境变量 ZHIXING_PY_ROOT。", file=sys.stderr)
+    print("它必须指向 zhixing_python 仓库根（其中应存在 zhixing/ 包）。", file=sys.stderr)
+    print("例如 PowerShell：$env:ZHIXING_PY_ROOT = 指向 D:/Development/zhixing_python", file=sys.stderr)
+    raise SystemExit(2)
+PY_REPO = Path(_py_repo).expanduser().resolve()
+if not (PY_REPO / "zhixing" / "model" / "infrastructure" / "models.py").is_file():
+    print(f"错误：{PY_REPO} 看着不像 zhixing_python 仓库根。", file=sys.stderr)
+    print("期望存在 zhixing/model/infrastructure/models.py。", file=sys.stderr)
+    raise SystemExit(2)
+
+sys.path.insert(0, str(PY_REPO))
 
 from sqlalchemy import create_engine  # noqa: E402
 
 from zhixing.model.infrastructure.models import Base, SCHEMA_VERSION  # noqa: E402
 from zhixing.model.infrastructure.db import _FTS_DDL  # noqa: E402
 
-TARGET = ROOT / "electron" / "src" / "main" / "db" / "schema.ts"
-PROBE = "/tmp/zhixing-schema-probe.db"
+TARGET = ROOT / "src" / "main" / "db" / "schema.ts"
+# 探针库放系统临时目录：原实现写死 "/tmp/..."，在 Windows 上不可用。
+PROBE = str(Path(tempfile.gettempdir()) / "zhixing-schema-probe.db")
 
 for suffix in ("", "-wal", "-shm"):
     if os.path.exists(PROBE + suffix):
@@ -73,8 +98,8 @@ text = (
     " * 建库 DDL：库文件不存在时由 connection.open() 执行，效果等价于 Python 版的\n"
     " * Base.metadata.create_all + _FTS_DDL + 写入 settings.schema_version。\n"
     " *\n"
-    " * 本文件是生成物，请勿手改：\n"
-    " *     .venv/bin/python electron/scripts/export-schema.py\n"
+    " * 本文件是生成物，请勿手改。重新生成（在本仓库根目录）：\n"
+    " *     ZHIXING_PY_ROOT=<zhixing_python 仓库根> python scripts/export-schema.py\n"
     " * Python 侧 SCHEMA_VERSION 变化后必须重新生成，否则新库会缺表。\n"
     f" * 当前对应 Python 侧 SCHEMA_VERSION = {SCHEMA_VERSION}，共 {tables} 张表。\n"
     " */\n"

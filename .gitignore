@@ -1,64 +1,31 @@
-# 凭据 —— 绝不入库
-GeminiJaysonGiteeKey.txt
-*.token
-*.key
-credentials*.txt
-
-# 技能包与本地杂项
-*.zip
-.zcode/
-
-# Python
-__pycache__/
-*.py[cod]
-.venv/
-venv/
-*.egg-info/
-.pytest_cache/
-.mypy_cache/
-
-# Qt / 打包产物
-build/
+# ---- 依赖与构建产物 ----
+node_modules/
+out/
 dist/
-*.spec
-!zhixing.spec
-*.app
+build/
+*.tsbuildinfo
 
-# 运行时数据
+# ---- 本地检查与截图产物 ----
+.screenshots/
+.screenshots/profile*/
+
+# ---- 运行时数据（与 Python 版共用同一个 SQLite 文件，绝不入库）----
 *.db
 *.db-wal
 *.db-shm
 backups/
 
-# IDE / 系统
+# ---- 凭据 ----
+*.token
+*.key
+credentials*.txt
+
+# ---- IDE / 系统 ----
 .DS_Store
 .idea/
 .vscode/
 
-# 本机工具状态（不入远端）
-reasonix.toml
-*.visual-check.json
-.reasonix/
-.agent-teams/
-node_modules/
-
-# Agent workspace 配置与日记（个人内容，不入远端）
+# ---- Agent workspace 配置与个人内容（不入远端）----
 AGENTS.md
-IDENTITY.md
-SOUL.md
-USER.md
-memory/
-
-# 临时诊断产物
-reasonix-frontend-diagnostics-*.json
-
-# Electron 重构版（electron/）构建产物与本地检查产物
-electron/out/
-electron/dist/
-electron/node_modules/
-electron/.screenshots/profile*/
-# AOCI init 生成的临时备份
 AGENTS.md.backup.*
-
-# Electron 本地检查产物（截图与临时 profile）
-electron/.screenshots/
+memory/
