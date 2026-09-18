@@ -31,6 +31,15 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 标题栏签名（版本 / 构建信息）：弱化展示，窄窗口时先被截断，不挤压标题与按钮 */
+.titlebar__signature {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
 .titlebar__actions {
   display: flex;
   align-items: center;
@@ -106,6 +115,13 @@
 }
 .nav-item:hover {
   background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+/* 折叠按钮：第三级文字色，弱于主导航项，避免和页面入口抢注意力 */
+.nav-item--ghost {
+  color: var(--fg-tertiary);
+}
+.nav-item--ghost:hover {
   color: var(--fg-primary);
 }
 .nav-item--active {
@@ -418,6 +434,22 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* 数据库只读 / 打不开时的危险横幅（D2）：铺在标题栏与主区之间的全宽提示条 */
+.dbwarn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0 var(--space-2) var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: color-mix(in srgb, var(--danger) 16%, var(--bg-layer-solid));
+  border: var(--border-w) solid color-mix(in srgb, var(--danger) 45%, transparent);
+  border-radius: var(--radius-lg);
+  color: var(--fg-primary);
+}
+.dbwarn > span {
+  flex: 1;
+  min-width: 0;
 }
 /* 底部 InfoBar：可撤销提示 */
 .infobar {

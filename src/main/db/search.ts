@@ -5,10 +5,11 @@
  *   - 前缀 task: / note: / flash: / tag:
  *   - 过滤 due:today|tomorrow|overdue|none、status:<状态>、priority:p1..p8|none、folder:名称
  *   - 出现任一过滤词时强制只搜任务（与 Python 一致）
- *   - 空查询且无过滤：只回命令 —— 命令由渲染层合并，这里返回空的数据分组
+ *   - 空查询且无过滤：只回命令（命令在服务侧注入，对齐 SearchService.commands）
  *
  * FTS 命中后统一按 rank 排序（task 20 / note 8 / flash 6，与 Python 分档一致），
  * 并一律排除 deleted_at 非空的行。
+ * 最后按 MRU（最近访问优先）重排 task/note/flash 三组（对齐 _apply_mru）。
  */
 import { conn, today } from './connection'
 import { searchIndex } from './fts'
@@ -20,11 +21,58 @@ export interface SearchHit {
   subtitle: string
 }
 
+/** 命令面板可执行命令（对齐 search_service.SearchHit(kind='command')，动作由渲染层注入）。 */
+export interface CommandHit {
+  /** 稳定命令 id：渲染层据此映射到具体动作 */
+  id: string
+  title: string
+  subtitle: string
+}
+
 export interface SearchResult {
+  command: CommandHit[]
   task: SearchHit[]
   note: SearchHit[]
   flash: SearchHit[]
   tag: SearchHit[]
+}
+
+/**
+ * 命令注册表（对齐 app_controller 的 context.search_service.commands 七条）。
+ * Python 把可调用动作挂在 SearchHit.action 上；Electron 侧动作在渲染层，
+ * 这里只交付稳定 id + 标题，由 CommandPalette 映射。
+ */
+export const COMMANDS: CommandHit[] = [
+  { id: 'theme-dark', title: '切换深色主题', subtitle: '命令 · 外观' },
+  { id: 'theme-light', title: '切换浅色主题', subtitle: '命令 · 外观' },
+  { id: 'toggle-widget', title: '显隐桌面浮窗', subtitle: '命令 · 窗口' },
+  { id: 'new-note', title: '新建笔记', subtitle: '命令 · 笔记' },
+  { id: 'open-graph', title: '打开图谱', subtitle: '命令 · 导航' },
+  { id: 'backup-now', title: '立即备份', subtitle: '命令 · 数据' },
+  { id: 'start-pomodoro', title: '开始番茄钟（25 分钟）', subtitle: '命令 · 专注' },
+]
+
+/**
+ * MRU：kind:id → 最近命中时间戳（对齐 SearchService._mru）。
+ * 存在主进程内存里——与 Python 同寿命（重启即清），不进数据库。
+ */
+const mru = new Map<string, number>()
+
+/** 记一次命中（命令面板选中某条时才调），供后续搜索按最近访问优先。 */
+export function searchTouch(kind: string, id: number): void {
+  mru.set(kind + ':' + id, Date.now())
+}
+
+/** 按 MRU 时间倒序重排 task / note / flash 三组（对齐 _apply_mru）。 */
+function applyMru(result: SearchResult): void {
+  if (!mru.size) return
+  const sort = (hits: SearchHit[]): void => {
+    hits.sort((a, b) => (mru.get(a.kind + ':' + a.id) ?? 0) - (mru.get(b.kind + ':' + b.id) ?? 0))
+    hits.reverse()
+  }
+  sort(result.task)
+  sort(result.note)
+  sort(result.flash)
 }
 
 const DUE_PATTERNS: [RegExp, string][] = [
@@ -63,7 +111,7 @@ interface TaskRow {
 
 export function globalSearch(input: string): SearchResult {
   let q = (input ?? '').trim()
-  const result: SearchResult = { task: [], note: [], flash: [], tag: [] }
+  const result: SearchResult = { command: [], task: [], note: [], flash: [], tag: [] }
   const day = today()
   const next = tomorrow()
 
@@ -129,7 +177,19 @@ export function globalSearch(input: string): SearchResult {
     }
   }
 
-  // 空查询且没有过滤：只回命令（渲染层负责命令分组）
+  // 命令注入：空查询返回全部命令，有查询按标题/副标题包含匹配，最多 6 条
+  // （对齐 global_search 的命令块与 `len(result.command) >= 6` 中止条件）
+  if (!prefix || prefix === 'command') {
+    const needle = q.toLowerCase()
+    for (const cmd of COMMANDS) {
+      if (!q || cmd.title.toLowerCase().includes(needle) || cmd.subtitle.toLowerCase().includes(needle)) {
+        result.command.push(cmd)
+      }
+      if (result.command.length >= 6) break
+    }
+  }
+
+  // 空查询且没有过滤：只回命令（对齐 `if not q and not ...: return result`）
   if (!q && !hasFilter) return result
 
   const c = conn()
@@ -224,5 +284,6 @@ export function globalSearch(input: string): SearchResult {
     }
   }
 
+  applyMru(result)
   return result
 }

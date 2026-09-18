@@ -695,6 +695,49 @@
   grid-template-columns: 1fr 1fr;
   gap: var(--space-3);
 }
+/* 复选框 + 说明：说明较长，允许换行且不撑破表单列 */
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+  line-height: 1.6;
+}
+.check-row input {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+/* 关联笔记段落（T3）：一行 = 笔记按钮 + block_key/摘要 + 解除按钮 */
+.ctx-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ctx-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 2px var(--space-2);
+  background: var(--bg-hover);
+  border-radius: var(--radius-ctl);
+}
+.ctx-row .u-aux {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ctx-add {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.ctx-add .field {
+  flex: 1;
+  min-width: 0;
+}
 .field--area {
   padding: var(--space-2) var(--space-3);
   min-height: 96px;

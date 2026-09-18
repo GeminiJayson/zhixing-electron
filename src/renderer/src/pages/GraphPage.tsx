@@ -4,7 +4,7 @@ import { Link2 } from 'lucide-react'
 import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation } from 'd3-force'
 import type { Simulation, SimulationLinkDatum, SimulationNodeDatum } from 'd3-force'
 import { Maximize2, RefreshCw } from 'lucide-react'
-import type { GraphNodePayload, GraphPayload } from '@shared/types'
+import type { GraphDelta, GraphNodePayload, GraphPayload, NoteFolder } from '@shared/types'
 import { t } from '../i18n'
 import { usePanZoom } from '../lib/usePanZoom'
 import { edgeMidpoint, edgePath, trimEnd } from '../lib/edge-path'
@@ -28,6 +28,17 @@ const KIND_COLOR: Record<string, string> = {
   task: '#16A34A',
   flash: '#EA580C',
   dangling: '#94A3B8',
+  anchor: '#0891B2',
+}
+
+/** 六类节点的中文名（对齐 graph_page.select_node 的 kind_label）。 */
+const KIND_CN: Record<string, string> = {
+  note: '笔记',
+  flash: '闪念',
+  dangling: '待建链接',
+  task: '任务',
+  folder: '文件夹',
+  anchor: '段落引用',
 }
 
 interface SimNode extends SimulationNodeDatum, GraphNodePayload {}
@@ -72,6 +83,12 @@ function boltPoints(r: number): string {
   ].join(' ')
 }
 
+/** 段落锚：小菱形（与笔记/闪念/任务/文件夹四类形状都区分得开）。 */
+function anchorPoints(r: number): string {
+  const rad = r * 0.72
+  return `0,${-rad} ${rad},0 0,${rad} ${-rad},0`
+}
+
 /** 图谱页：力导向布局 + 按 kind 区分的节点形状 + 归属实线/引用虚线。 */
 /**
  * 节点坐标缓存（O5）：按节点 id 记住上次位置。
@@ -83,8 +100,19 @@ const POS_CACHE = new Map<number, { x: number; y: number }>()
 export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Props) {
   const [data, setData] = useState<GraphPayload | null>(null)
   const [scope, setScope] = useState<Scope>('all')
-  const [includeTasks, setIncludeTasks] = useState(false)
+  /** 默认纳入任务节点（对齐 graph_page._reload_impl 的 include_tasks=True） */
+  const [includeTasks, setIncludeTasks] = useState(true)
+  /** 文件夹 / 标签过滤（G7，对齐 folder_combo / tag_combo） */
+  const [folderId, setFolderId] = useState<number | null>(null)
+  const [tagId, setTagId] = useState<number | null>(null)
+  const [folders, setFolders] = useState<NoteFolder[]>([])
+  const [tags, setTags] = useState<{ id: number; name: string; color: string }[]>([])
+  /** 图内搜索（G7，对齐 search_input + Ctrl+F） */
+  const [search, setSearch] = useState('')
+  /** 邻域子图（G8）：scope≠all 且选中节点时由主进程按 note_link 算 */
+  const [neighbor, setNeighbor] = useState<GraphPayload | null>(null)
   const [selected, setSelected] = useState<number | null>(null)
+  const [preview, setPreview] = useState('')
   /** 连线起点：点「从此节点连线」后进入连线模式，再点另一个节点建立关系 */
   const [linkFrom, setLinkFrom] = useState<number | null>(null)
   /** 任务↔笔记两种关系皆可：归属（实线）或引用（虚线） */
@@ -105,51 +133,193 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
   const height = 560
   const simRef = useRef<Simulation<SimNode, SimLink> | null>(null)
   const dragRef = useRef<number | null>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
+  /** 上一次提示过的循环归属边集合（同一组只提示一次，对齐 _last_cycle_warn） */
+  const lastCycleWarn = useRef('')
+  /** 当前动效档位（'' = full）：模拟重建时据此决定是否立即冻结（S10） */
+  const motionRef = useRef('')
+  const scopeRef = useRef<Scope>(scope)
+  scopeRef.current = scope
   // 坐标缓存见模块级 POS_CACHE（离开页面再回来也要能复用）
 
   const load = useCallback(async () => {
-    setData(await window.zhixing.db.graph(includeTasks))
-  }, [includeTasks])
+    setData(await window.zhixing.db.graph({ includeTasks, folderId, tagId }))
+  }, [includeTasks, folderId, tagId])
 
   useEffect(() => {
     void load()
   }, [load])
 
-  // 任务/笔记写作后图谱数据会变，按域订阅比整页重查省事（O3）
-  useEffect(() => subscribeDomain(['note', 'task'], () => void load()), [load])
+  // 文件夹 / 标签过滤下拉（对齐 _populate_filters）
+  useEffect(() => {
+    void window.zhixing.db.noteFolders().then(setFolders)
+    void window.zhixing.db.tags().then(setTags)
+  }, [data])
 
-  /** 邻域过滤：以选中节点为起点做 BFS，保留 1/2 度子图（对齐 scope_combo 语义）。 */
-  const view = useMemo(() => {
+  // 邻域子图：只在 scope≠all 且有选中节点时按 note_link BFS 现算（G8）
+  useEffect(() => {
+    if (scope === 'all' || selected == null) {
+      setNeighbor(null)
+      return
+    }
+    let alive = true
+    void window.zhixing.db
+      .graphNeighborhood(selected, scope === 'n1' ? 1 : 2)
+      .then((g) => {
+        if (alive) setNeighbor(g)
+      })
+    return () => {
+      alive = false
+    }
+  }, [scope, selected, data])
+
+  /** 最近一次收到增量的时刻：域订阅兜底据此避免与增量重复重查。 */
+  const lastDeltaAt = useRef(0)
+
+  /**
+   * G5：消费主进程推来的图谱增量——按节点/边定点增删，保留布局（POS_CACHE 持有坐标）。
+   * full 或邻域视图下退回整体重查（邻域缓存参数不同，局部合并没有意义）。
+   */
+  const applyDelta = useCallback(
+    (delta: GraphDelta): void => {
+      lastDeltaAt.current = Date.now()
+      if (delta.full || scopeRef.current !== 'all') {
+        void load()
+        return
+      }
+      setData((prev) => {
+        if (!prev) return prev
+        const goneNodes = new Set(delta.removedNodeIds)
+        const goneEdges = new Set(delta.removedEdges.map(([a, b]) => a + ',' + b))
+        const fresh = new Map((delta.updatedNodes ?? []).map((n) => [n.id, n]))
+        const present = new Set<number>()
+        const nodes: GraphNodePayload[] = []
+        for (const n of prev.nodes) {
+          if (goneNodes.has(n.id)) continue
+          nodes.push(fresh.get(n.id) ?? n)
+          present.add(n.id)
+        }
+        for (const n of delta.addedNodes) {
+          if (present.has(n.id)) continue
+          nodes.push(n)
+          present.add(n.id)
+        }
+        const edges: [number, number][] = prev.edges.filter(
+          ([a, b]) => !goneEdges.has(a + ',' + b) && present.has(a) && present.has(b)
+        )
+        const edgeKeys = new Set(edges.map(([a, b]) => a + ',' + b))
+        const edgeKinds = { ...prev.edgeKinds }
+        for (const [a, b] of delta.addedEdges) {
+          const key = a + ',' + b
+          if (!present.has(a) || !present.has(b) || edgeKeys.has(key)) continue
+          edges.push([a, b])
+          edgeKeys.add(key)
+          edgeKinds[key] = delta.edgeKinds[key] ?? 'reference'
+        }
+        for (const key of goneEdges) delete edgeKinds[key]
+        return { nodes, edges, edgeKinds, cycleEdges: prev.cycleEdges }
+      })
+    },
+    [load]
+  )
+  const applyDeltaRef = useRef(applyDelta)
+  applyDeltaRef.current = applyDelta
+
+  // G5/G6：打开图谱页时登记增量推送；笔记/任务/闪念写一次就推一帧 diff。
+  useEffect(() => {
+    void window.zhixing.db.graphWatch(true)
+    // 登记时先打一次时间戳，避免首次写入时域订阅兜底与增量各查一遍
+    lastDeltaAt.current = Date.now()
+    window.zhixing.db.onGraphDelta((d) => applyDeltaRef.current(d))
+    return () => {
+      void window.zhixing.db.graphWatch(false)
+    }
+  }, [])
+
+  // 域订阅作兜底（例如没走 graph:delta 的写入路径）：紧邻的增量已覆盖时不再整表重查
+  useEffect(
+    () =>
+      subscribeDomain(['note', 'task', 'flash'], () => {
+        if (Date.now() - lastDeltaAt.current < 800) return
+        void load()
+      }),
+    [load]
+  )
+
+  // G2：循环归属断开提示（同一组循环边只提示一次，对齐 _warn_cycle_edges）
+  useEffect(() => {
+    const cycles = data?.cycleEdges ?? []
+    if (!cycles.length) return
+    const key = cycles
+      .map(([a, b]) => a + ',' + b)
+      .sort()
+      .join('|')
+    if (key === lastCycleWarn.current) return
+    lastCycleWarn.current = key
+    onNotice(`检测到循环归属，已断开 ${cycles.length} 条边`)
+  }, [data, onNotice])
+
+  /**
+   * 邻域视图：scope=all 用全图；否则用主进程算出的 1/2 度邻域子图。
+   * 与旧实现不同——不再在已加载 payload 上做全类型边 BFS，邻域只沿 note_link。
+   */
+  const base = useMemo((): GraphPayload | null => {
     if (!data) return null
     if (scope === 'all' || selected == null) return data
-    const adj = new Map<number, Set<number>>()
-    for (const [a, b] of data.edges) {
-      if (!adj.has(a)) adj.set(a, new Set())
-      if (!adj.has(b)) adj.set(b, new Set())
-      adj.get(a)!.add(b)
-      adj.get(b)!.add(a)
+    return neighbor ?? data
+  }, [data, neighbor, scope, selected])
+
+  /** 图内搜索命中集合（空搜索返回 null = 不做淡化） */
+  const searchHits = useMemo(() => {
+    const needle = search.trim().toLowerCase()
+    if (!needle || !base) return null
+    const hits = base.nodes.filter((n) => (n.label || '').toLowerCase().includes(needle))
+    return hits.length ? new Set(hits.map((n) => n.id)) : null
+  }, [search, base])
+
+  // 文本变化 → 选中第一个命中（对齐 _focus_node_search）；空文本则只清高亮
+  const firstHit = useMemo(() => {
+    const needle = search.trim().toLowerCase()
+    if (!needle || !base) return null
+    return base.nodes.find((n) => (n.label || '').toLowerCase().includes(needle)) ?? null
+  }, [search, base])
+  useEffect(() => {
+    if (firstHit) setSelected(firstHit.id)
+  }, [firstHit])
+
+  // G9：选中节点按类型取预览文本（对齐 GraphService.preview_text）
+  useEffect(() => {
+    if (!base || selected == null) {
+      setPreview('')
+      return
     }
-    const depth = scope === 'n1' ? 1 : 2
-    const keep = new Set<number>([selected])
-    let frontier = [selected]
-    for (let d = 0; d < depth; d++) {
-      const next: number[] = []
-      for (const id of frontier) {
-        for (const nb of adj.get(id) ?? []) {
-          if (!keep.has(nb)) {
-            keep.add(nb)
-            next.push(nb)
-          }
-        }
-      }
-      frontier = next
+    const node = base.nodes.find((n) => n.id === selected)
+    if (!node) {
+      setPreview('')
+      return
     }
-    return {
-      nodes: data.nodes.filter((n) => keep.has(n.id)),
-      edges: data.edges.filter(([a, b]) => keep.has(a) && keep.has(b)),
-      edgeKinds: data.edgeKinds,
+    let alive = true
+    void window.zhixing.db.graphPreview(node).then((text) => {
+      if (alive) setPreview(text)
+    })
+    return () => {
+      alive = false
     }
-  }, [data, scope, selected])
+  }, [selected, base])
+
+  // Ctrl+F 聚焦图内搜索框（对齐 graph_page.focus_node_search）
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'f') return
+      e.preventDefault()
+      searchRef.current?.focus()
+      searchRef.current?.select()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  const view = base
 
   // 布局：节点集合变化时重建模拟
   useEffect(() => {
@@ -221,12 +391,39 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
         setTick((t) => t + 1)
       })
 
+    // S10：处于减动效档位时，模拟一经建立就冻结（对齐 _degrade_graph_physics 的 _physics.stop()）。
+    // stop() 之后不会再触发 tick，所以手动推一帧让静态节点渲染出来。
+    if (motionRef.current === 'reduced' || motionRef.current === 'none') {
+      sim.stop()
+      setTick((t) => t + 1)
+    }
     simRef.current = sim
     return () => {
       sim.stop()
       simRef.current = null
     }
   }, [view])
+
+  // S10：动效降级 —— reduced/none 时冻结力导向物理，回到 full 且当前有节点时恢复
+  // （对齐 app_controller._degrade_graph_physics：reduced → stop()，否则有节点才 start()）
+  useEffect(() => {
+    const apply = (level: string): void => {
+      motionRef.current = level
+      const sim = simRef.current
+      if (!sim) return
+      if (level === 'reduced' || level === 'none') sim.stop()
+      // 重新升温再跑：力导向收敛后 alpha 已接近 0，单纯 restart() 不会真的动起来
+      else if ((sim.nodes() as SimNode[]).length) sim.alpha(0.3).restart()
+    }
+    const onMotion = (e: Event): void => {
+      const level = (e as CustomEvent<{ level?: string }>).detail?.level
+      apply(level ?? document.documentElement.dataset.motion ?? '')
+    }
+    // 挂载时先按当前档位对齐一次：applyMotion 通常在页面挂载前就广播过了，收不到那次事件
+    apply(document.documentElement.dataset.motion || 'full')
+    window.addEventListener('zhixing:motion', onMotion)
+    return () => window.removeEventListener('zhixing:motion', onMotion)
+  }, [])
 
   const nodes = (simRef.current?.nodes() ?? []) as SimNode[]
   const links = (simRef.current?.force('link') as ReturnType<typeof forceLink<SimNode, SimLink>> | undefined)?.links() as SimLink[] | undefined
@@ -278,8 +475,8 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
           await window.zhixing.db.saveNote(dst.refId, { folder_id: src.refId })
           onNotice('已把笔记移入该文件夹')
         } else if (src.kind === 'task' && dst.kind === 'task') {
-          await window.zhixing.db.reparentTask(dst.refId, src.refId)
-          onNotice('已改挂任务层级')
+          const t = await window.zhixing.db.reparentTask(dst.refId, src.refId)
+          onNotice(t ? '已改挂任务层级' : '不能挂到自己的子孙下（会形成环）')
         } else {
           onNotice('该组合暂不支持')
         }
@@ -301,12 +498,14 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
   )
 
   /**
-   * 这条边能否编辑。排除两类：
+   * 这条边能否编辑。排除三类：
    * - 文件夹↔文件夹（主进程也不支持建立这种连线）；
-   * - 悬空引用（负 id 的虚拟节点）：真要删掉得改正文里的 [[标题]]，不在本次范围。
+   * - 悬空引用（负 id 的虚拟节点）：真要删掉得改正文里的 [[标题]]，不在本次范围；
+   * - 段落锚（只读生成边，删边应改任务的段落引用）。
    */
   const canEditEdge = useCallback((a: SimNode | undefined, b: SimNode | undefined): boolean => {
     if (!a || !b) return false
+    if (a.kind === 'anchor' || b.kind === 'anchor') return false
     if (a.kind === 'folder' && b.kind === 'folder') return false
     return a.refId > 0 && b.refId > 0
   }, [])
@@ -328,6 +527,9 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
     }
     return set
   }, [hoverNode, links, edgeEnds, linkFrom, edgeDrag])
+
+  /** 搜索淡化集合优先于悬浮淡化：搜索是显式动作，悬浮是临时态。 */
+  const dimSet = searchHits
 
   /** 删除一条连线。分派交给主进程 —— 图谱连线的唯一入口，和改挂共用同一套裁决。 */
   const removeEdge = useCallback(
@@ -440,13 +642,48 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
   // 节点拖拽继续走原来的 onSvgPointerMove / endDrag，由 hook 在非平移时转发。
   const pan = usePanZoom({ baseW: width, baseH: height, onMove: onSvgPointerMove, onEnd: endDrag })
 
-  const handleDouble = async (n: GraphNodePayload): Promise<void> => {
-    if (n.kind === 'note') onOpenNote(n.refId)
-    else if (n.kind === 'dangling') {
-      await onCreateNoteFromDangling(n.label)
-      await load()
-    } else onNotice(`${n.kind} 节点：${n.label}`)
-  }
+  // G7：图内搜索命中首个节点时镜头飞入（对齐 Python _focus_node_search 的 view.centerOn）。
+  // 坐标在力导向模拟里，所以从 sim 取当前落位；centerOn 是稳定引用，避免每次渲染都重跑。
+  const firstHitId = firstHit?.id ?? null
+  const centerOn = pan.centerOn
+  useEffect(() => {
+    if (firstHitId == null) return
+    const timer = window.setTimeout(() => {
+      const node = (simRef.current?.nodes() as SimNode[] | undefined)?.find(
+        (n) => n.id === firstHitId
+      )
+      if (node && node.x != null && node.y != null) centerOn(node.x, node.y)
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [firstHitId, centerOn])
+
+  /**
+   * 六类节点的打开动作（对齐 graph_page._open_selected / mouseDoubleClickEvent）：
+   * - note → 打开笔记；
+   * - dangling → 按标题新建笔记并绑定悬空引用；
+   * - anchor → 打开所属笔记（段落定位键随行，深链消费端补齐前只到笔记粒度）；
+   * - task / folder / flash → 经 db:graphOpenNode 走主窗口既有的深链路由切页。
+   */
+  const openNode = useCallback(
+    async (n: GraphNodePayload): Promise<void> => {
+      if (n.kind === 'note') onOpenNote(n.refId || n.id)
+      else if (n.kind === 'anchor') {
+        onNotice(`已打开「${n.label}」所在的笔记（定位键 ${n.blockKey || '—'}）`)
+        onOpenNote(n.refId)
+      } else if (n.kind === 'dangling') {
+        await onCreateNoteFromDangling(n.label)
+        await load()
+      } else if (n.kind === 'task' || n.kind === 'folder' || n.kind === 'flash') {
+        await window.zhixing.db.graphOpenNode(n.kind, n.refId)
+      }
+    },
+    [onOpenNote, onCreateNoteFromDangling, onNotice, load]
+  )
+
+  const sidebarAction = (n: GraphNodePayload): string =>
+    ({ note: '打开笔记', flash: '跳转闪念', dangling: '新建笔记', task: '打开任务', folder: '定位文件夹', anchor: '定位段落' })[
+      n.kind
+    ] ?? '打开'
 
   return (
     <div className="page page--graph">
@@ -463,6 +700,43 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
             </button>
           ))}
         </div>
+        {/* G7：文件夹 / 标签过滤（对齐 folder_combo / tag_combo） */}
+        <select
+          className="field field--compact"
+          aria-label="按文件夹过滤"
+          value={folderId ?? ''}
+          onChange={(e) => setFolderId(e.target.value === '' ? null : Number(e.target.value))}
+        >
+          <option value="">全部文件夹</option>
+          {folders.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.name}
+            </option>
+          ))}
+        </select>
+        <select
+          className="field field--compact"
+          aria-label="按标签过滤"
+          value={tagId ?? ''}
+          onChange={(e) => setTagId(e.target.value === '' ? null : Number(e.target.value))}
+        >
+          <option value="">全部标签</option>
+          {tags.map((tg) => (
+            <option key={tg.id} value={tg.id}>
+              {tg.name}
+            </option>
+          ))}
+        </select>
+        {/* G7：图内搜索（Ctrl+F 聚焦） */}
+        <input
+          ref={searchRef}
+          className="field field--compact"
+          type="search"
+          value={search}
+          placeholder="搜索节点（Ctrl+F）…"
+          aria-label="搜索节点"
+          onChange={(e) => setSearch(e.target.value)}
+        />
         <span className="u-aux">{nodes.length} 节点 · {(links ?? []).length} 边</span>
         <div className="tasks-toolbar__right">
           <button className="text-btn" aria-pressed={includeTasks} onClick={() => setIncludeTasks((v) => !v)}>
@@ -564,6 +838,7 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
               const r = radiusOf()
               const color = colorOf(n)
               const isSel = selected === n.id
+              const isHit = searchHits != null && searchHits.has(n.id)
               return (
                 <g
                   key={n.id}
@@ -572,6 +847,7 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
                   className={
                     'gnode' +
                     (n.id === hoverNode ? ' gnode--on' : '') +
+                    (dimSet != null && !dimSet.has(n.id) ? ' is-dimmed' : '') +
                     (focusSet && !focusSet.has(n.id) ? ' is-dimmed' : '')
                   }
                   onPointerEnter={() => {
@@ -580,18 +856,20 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
                   }}
                   onPointerLeave={() => setHoverNode((h) => (h === n.id ? null : h))}
                   onPointerDown={onNodePointerDown(n)}
-                  onDoubleClick={() => void handleDouble(n)}
+                  onDoubleClick={() => void openNode(n)}
                   onClick={() => {
                     if (linkFrom != null) void tryLink(n)
                   }}
                   tabIndex={0}
                   role="button"
-                  aria-label={`${n.kind} ${n.label}`}
+                  aria-label={`${KIND_CN[n.kind] ?? n.kind} ${n.label}`}
                 >
                   {n.kind === 'task' ? (
                     <polygon points={starPoints(r)} fill={color} />
                   ) : n.kind === 'flash' ? (
                     <polygon points={boltPoints(r)} fill={color} />
+                  ) : n.kind === 'anchor' ? (
+                    <polygon points={anchorPoints(r)} fill={color} />
                   ) : n.kind === 'dangling' ? (
                     <circle r={r} fill="none" stroke={color} strokeWidth={1.4} strokeDasharray="3 3" />
                   ) : n.kind === 'folder' ? (
@@ -603,6 +881,7 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
                     <path d={notePath(r)} fill={color} />
                   )}
                   {isSel && <circle r={r + 4} fill="none" stroke="var(--accent)" strokeWidth={2} />}
+                  {isHit && <circle r={r + 7} fill="none" stroke="var(--accent)" strokeWidth={1} strokeDasharray="2 2" />}
                   <text y={r + 12} textAnchor="middle" className="gnode__label">
                     {n.label.length > 12 ? n.label.slice(0, 12) + '…' : n.label}
                   </text>
@@ -695,7 +974,7 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
               <h2 className="graph-side__title">{selectedNode.label}</h2>
               <dl className="kv">
                 <dt>类型</dt>
-                <dd>{selectedNode.kind}</dd>
+                <dd>{KIND_CN[selectedNode.kind] ?? selectedNode.kind}</dd>
                 <dt>连接数</dt>
                 <dd>{selectedNode.degree}</dd>
                 {selectedNode.format && (
@@ -705,6 +984,12 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
                   </>
                 )}
               </dl>
+              {/* G9：按类型输出的预览文本（摘要/状态/优先级/截止/父任务/关联笔记/来源） */}
+              {preview && (
+                <p className="u-aux graph-side__preview" style={{ whiteSpace: 'pre-line' }}>
+                  {preview}
+                </p>
+              )}
               <div className="graph-side__link">
                 {linkFrom == null ? (
                   <button className="text-btn text-btn--accent" onClick={() => setLinkFrom(selectedNode.id)}>
@@ -734,19 +1019,10 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
                   </label>
                 )}
               </div>
-              {selectedNode.kind === 'note' && (
-                <button className="text-btn text-btn--accent" onClick={() => onOpenNote(selectedNode.refId)}>
-                  打开笔记
-                </button>
-              )}
-              {selectedNode.kind === 'dangling' && (
-                <button
-                  className="text-btn text-btn--accent"
-                  onClick={() => void handleDouble(selectedNode)}
-                >
-                  创建这篇笔记
-                </button>
-              )}
+              {/* 六类节点都有主操作按钮（对齐 _open_selected 的 open_btn 文案表） */}
+              <button className="text-btn text-btn--accent" onClick={() => void openNode(selectedNode)}>
+                {sidebarAction(selectedNode)}
+              </button>
             </>
           ) : (
             <p className="u-aux">点击节点查看信息；双击笔记打开，双击待建链接创建。</p>

@@ -1,9 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { DeepLink } from '../shared/deep-link'
 import type {
   AppInfo,
   Backlink,
   Flash,
+  GraphDelta,
+  GraphNodePayload,
   GraphPayload,
+  GraphQuery,
   Note,
   NoteFolder,
   NoteLink,
@@ -11,6 +15,7 @@ import type {
   Overview,
   ReviewStats,
   Task,
+  TaskNoteContext,
   TodayTasks,
   TaskStatus,
   WorkflowInstancePayload,
@@ -23,7 +28,9 @@ const api = {
   /** 渲染进程判断 macOS 红绿灯让位等平台差异用，避免靠 UA 嗅探。 */
   platform: process.platform as 'darwin' | 'win32' | 'linux',
   db: {
-    info: (): Promise<{ path: string; ready: boolean }> => ipcRenderer.invoke('db:info'),
+    /** ready=库已打开；readonly 非空=迁移失败进入只读模式（显示横幅）；error=完全打不开的原因 */
+    info: (): Promise<{ path: string; ready: boolean; readonly: string; error: string }> =>
+      ipcRenderer.invoke('db:info'),
     overview: (): Promise<Overview> => ipcRenderer.invoke('db:overview'),
     tasks: (limit?: number): Promise<Task[]> => ipcRenderer.invoke('db:tasks', limit),
     todayTasks: (): Promise<TodayTasks> => ipcRenderer.invoke('db:todayTasks'),
@@ -95,8 +102,11 @@ const api = {
     detachTaskNote: (taskId: number, noteId: number): Promise<number> =>
       ipcRenderer.invoke('db:detachTaskNote', taskId, noteId),
     linkedNotes: (taskId: number): Promise<unknown[]> => ipcRenderer.invoke('db:linkedNotes', taskId),
-    /** 命令面板统一搜索（前缀 + 过滤语法，与 Python 的 global_search 对齐） */
+    /** 命令面板统一搜索（前缀 + 过滤语法 + 命令注入 + MRU，与 Python 的 global_search 对齐） */
     globalSearch: (q: string): Promise<unknown> => ipcRenderer.invoke('db:globalSearch', q),
+    /** 记一次命中（MRU）：命令面板选中 task/note/flash 条目时调用 */
+    searchTouch: (kind: string, id: number): Promise<boolean> =>
+      ipcRenderer.invoke('db:searchTouch', kind, id),
     /** 拖拽连线是否允许（返回 'ownership' | 'reference' | 'either' | null） */
     graphConnectionAllowed: (srcKind: string, dstKind: string): Promise<string | null> =>
       ipcRenderer.invoke('db:graphConnectionAllowed', srcKind, dstKind),
@@ -144,7 +154,25 @@ const api = {
     restoreBackup: (file: string): Promise<{ ok: boolean; message: string }> =>
       ipcRenderer.invoke('db:restoreBackup', file),
     reviewStats: (): Promise<ReviewStats> => ipcRenderer.invoke('db:reviewStats'),
-    graph: (includeTasks?: boolean): Promise<GraphPayload> => ipcRenderer.invoke('db:graph', includeTasks ?? false),
+    /** 图谱构建：includeTasks / 文件夹 / 标签（G7，默认纳入任务节点） */
+    graph: (query?: GraphQuery): Promise<GraphPayload> =>
+      ipcRenderer.invoke('db:graph', query ?? {}),
+    /** 笔记邻域子图：仅沿 note_link 做 1~2 度 BFS（G8） */
+    graphNeighborhood: (noteId: number, degree = 1): Promise<GraphPayload> =>
+      ipcRenderer.invoke('db:graphNeighborhood', noteId, degree),
+    /** 选中节点预览文本（G9） */
+    graphPreview: (node: GraphNodePayload): Promise<string> =>
+      ipcRenderer.invoke('db:graphPreview', node),
+    /** 图页开关图谱增量推送（G5）；返回后主进程才会在图谱相关写入时推 graph:delta */
+    graphWatch: (active: boolean): Promise<boolean> =>
+      ipcRenderer.invoke('db:graphWatch', active),
+    /** 图页双击跨页跳转（G10）：经深链通道交给 App 的路由分支 */
+    graphOpenNode: (kind: string, id: number): Promise<boolean> =>
+      ipcRenderer.invoke('db:graphOpenNode', kind, id),
+    /** 图谱增量（G5/G6）：消费端按节点/边定点增删、保留坐标与 pinned */
+    onGraphDelta: (cb: (delta: GraphDelta) => void): void => {
+      ipcRenderer.on('graph:delta', (_e, delta) => cb(delta))
+    },
     workflowTemplates: (): Promise<WorkflowTemplateSummary[]> =>
       ipcRenderer.invoke('db:workflowTemplates'),
     workflowTemplate: (id: number): Promise<WorkflowTemplatePayload | null> =>
@@ -171,6 +199,15 @@ const api = {
       ipcRenderer.invoke('db:saveWorkflowTemplate', tpl),
     deleteWorkflowTemplate: (id: number): Promise<number> =>
       ipcRenderer.invoke('db:deleteWorkflowTemplate', id),
+    /** 复制模板（名称加「 副本」，节点与分支整体复制，不含坐标） */
+    duplicateWorkflowTemplate: (id: number): Promise<WorkflowTemplatePayload | null> =>
+      ipcRenderer.invoke('db:duplicateWorkflowTemplate', id),
+    /** 一键对齐：按执行顺序重置为纵向网格并保存坐标 */
+    autoLayoutWorkflow: (templateId: number, yGap: number): Promise<number> =>
+      ipcRenderer.invoke('db:autoLayoutWorkflow', templateId, yGap),
+    /** 某任务启动/关联的流程实例（对齐 instances_of_task） */
+    workflowInstancesOfTask: (taskId: number): Promise<WorkflowInstancePayload[]> =>
+      ipcRenderer.invoke('db:workflowInstancesOfTask', taskId),
     updateWorkflowNodePos: (id: number, x: number, y: number): Promise<number> =>
       ipcRenderer.invoke('db:updateWorkflowNodePos', id, x, y),
     /** 设置 / 清除某步骤的条件分支目标（分支连线编辑用） */
@@ -199,7 +236,14 @@ const api = {
     backlinks: (id: number): Promise<Backlink[]> => ipcRenderer.invoke('db:backlinks', id),
     saveNote: (
       id: number,
-      fields: { title?: string; content_md?: string; folder_id?: number | null; pinned?: boolean }
+      fields: {
+        title?: string
+        content_md?: string
+        folder_id?: number | null
+        pinned?: boolean
+        /** N3：改笔记格式（markdown/richtext/word/excel/link） */
+        format?: string
+      }
     ): Promise<Note | null> => ipcRenderer.invoke('db:saveNote', id, fields),
     createNote: (
       title: string,
@@ -209,6 +253,14 @@ const api = {
     ): Promise<Note | null> =>
       ipcRenderer.invoke('db:createNote', title, folderId, content ?? '', format ?? 'markdown'),
     deleteNote: (id: number): Promise<number> => ipcRenderer.invoke('db:deleteNote', id),
+    /**
+     * 关窗/刷新前的同步落盘（N1）：beforeunload 里没有 await 的机会，
+     * 只有 sendSync 能保证写入真正发生（对齐 Python 关窗前 commit 编辑器）。
+     */
+    flushNoteSync: (
+      id: number,
+      fields: { title?: string; content_md?: string }
+    ): boolean => ipcRenderer.sendSync('db:flushNote', id, fields),
     materializeDangling: (srcId: number, title: string): Promise<number | null> =>
       ipcRenderer.invoke('db:materializeDangling', srcId, title),
     runWorkflowAction: (
@@ -218,8 +270,14 @@ const api = {
       ipcRenderer.invoke('db:runWorkflowAction', kind, value),
     describeWorkflowAction: (kind: string, value: string): Promise<string> =>
       ipcRenderer.invoke('db:describeWorkflowAction', kind, value),
-    recordPomodoro: (taskId: number | null, minutes: number, completed: boolean): Promise<number> =>
-      ipcRenderer.invoke('db:recordPomodoro', taskId, minutes, completed),
+    /** reason：手动中断专注时记录的中断原因（D18，对齐 PomodoroRepository.add 的第 5 参） */
+    recordPomodoro: (
+      taskId: number | null,
+      minutes: number,
+      completed: boolean,
+      reason?: string
+    ): Promise<number> =>
+      ipcRenderer.invoke('db:recordPomodoro', taskId, minutes, completed, reason ?? null),
     pomodoroToday: (): Promise<{ minutes: number; sessions: number }> =>
       ipcRenderer.invoke('db:pomodoroToday'),
     dueReminders: (): Promise<Task[]> => ipcRenderer.invoke('db:dueReminders'),
@@ -228,16 +286,52 @@ const api = {
       ipcRenderer.invoke('db:snoozeReminder', id, minutes),
     exportPreview: (kind: 'json' | 'csv' | 'markdown'): Promise<Record<string, unknown>> =>
       ipcRenderer.invoke('db:exportPreview', kind),
-    importData: (): Promise<{ ok: boolean; message: string; rows?: number; backup?: string }> =>
-      ipcRenderer.invoke('db:importData'),
-    importFromPath: (path: string): Promise<{ ok: boolean; message: string; rows?: number; backup?: string }> =>
-      ipcRenderer.invoke('db:importFromPath', path),
+    importData: (): Promise<{
+      ok: boolean
+      message: string
+      rows?: number
+      tasks?: number
+      notes?: number
+      backup?: string
+    }> => ipcRenderer.invoke('db:importData'),
+    importFromPath: (path: string): Promise<{
+      ok: boolean
+      message: string
+      rows?: number
+      tasks?: number
+      notes?: number
+      backup?: string
+    }> => ipcRenderer.invoke('db:importFromPath', path),
+    /** 导入 Markdown 文件夹（D25）：选目录，递归 *.md 建笔记 */
+    importMarkdownFolder: (): Promise<{ ok: boolean; count: number; message: string }> =>
+      ipcRenderer.invoke('db:importMarkdownFolder'),
+    /** 按路径导入 Markdown 文件夹（自动化脚本用，等价于在对话框里选同一目录） */
+    importMarkdownFromPath: (path: string): Promise<{ ok: boolean; count: number; message: string }> =>
+      ipcRenderer.invoke('db:importMarkdownFromPath', path),
     openNoteFile: (id: number): Promise<{ ok: boolean; message: string; path: string }> =>
       ipcRenderer.invoke('db:openNoteFile', id),
     previewNote: (id: number): Promise<{ kind: string; html: string; message: string }> =>
       ipcRenderer.invoke('db:previewNote', id),
-    exportData: (kind: 'json' | 'csv' | 'markdown'): Promise<{ path: string; count: number } | null> =>
-      ipcRenderer.invoke('db:exportData', kind),
+    /** N-§1.3#5：Word/Excel 可编辑内容（Word→HTML，Excel→单元格网格） */
+    officeDoc: (
+      id: number
+    ): Promise<{ kind: string; html: string; rows: string[][]; message: string }> =>
+      ipcRenderer.invoke('db:officeDoc', id),
+    /** 把富文本 HTML 写回关联的 .docx */
+    saveWordNote: (id: number, html: string): Promise<{ ok: boolean; message: string }> =>
+      ipcRenderer.invoke('db:saveWordNote', id, html),
+    /** 把单元格网格写回关联的 .xlsx */
+    saveExcelNote: (id: number, rows: string[][]): Promise<{ ok: boolean; message: string }> =>
+      ipcRenderer.invoke('db:saveExcelNote', id, rows),
+    /** N3：Word/Excel 未指定文件时自动新建空白文件 */
+    createBlankOffice: (
+      format: string,
+      title: string
+    ): Promise<{ ok: boolean; path: string; message: string }> =>
+      ipcRenderer.invoke('db:createBlankOffice', format, title),
+    exportData: (
+      kind: 'json' | 'csv' | 'markdown' | 'markdown-zip'
+    ): Promise<{ path: string; count: number } | null> => ipcRenderer.invoke('db:exportData', kind),
     rollRecurringToday: (): Promise<number> => ipcRenderer.invoke('db:rollRecurringToday'),
     resumeDueToday: (): Promise<number> => ipcRenderer.invoke('db:resumeDueToday'),
     trashItems: (kind: 'task' | 'note' | 'flash'): Promise<{ id: number; label: string; deleted_at: string }[]> =>
@@ -278,7 +372,66 @@ const api = {
       ipcRenderer.invoke('db:createNoteFolder', name, parentId),
     renameNoteFolder: (id: number, name: string): Promise<NoteFolder | null> =>
       ipcRenderer.invoke('db:renameNoteFolder', id, name),
-    quickAdd: (text: string): Promise<Task | null> => ipcRenderer.invoke('db:quickAdd', text),
+    deleteNoteFolder: (id: number): Promise<number> => ipcRenderer.invoke('db:deleteNoteFolder', id),
+    moveNoteFolder: (id: number, parentId: number | null): Promise<NoteFolder | null> =>
+      ipcRenderer.invoke('db:moveNoteFolder', id, parentId),
+    /** 笔记文件夹为空时补一个默认文件夹（对齐 ensure_default_folder） */
+    ensureDefaultFolder: (): Promise<NoteFolder | null> =>
+      ipcRenderer.invoke('db:ensureDefaultFolder'),
+    /** 主动建引用链（对齐 add_reference_link），返回状态串 */
+    addReferenceLink: (srcId: number, target: number | string): Promise<string> =>
+      ipcRenderer.invoke('db:addReferenceLink', srcId, target),
+    /** 追加正文（完成任务写「复盘/结论」用，对齐 note_service.append） */
+    appendNote: (id: number, text: string): Promise<Note | null> =>
+      ipcRenderer.invoke('db:appendNote', id, text),
+    /** 选文转任务时落「段落定位锚」（对齐 TaskRepository.link_context） */
+    attachNoteBlock: (
+      taskId: number,
+      noteId: number,
+      blockKey: string,
+      snippet: string
+    ): Promise<number> => ipcRenderer.invoke('db:attachNoteBlock', taskId, noteId, blockKey, snippet),
+    noteBlockContexts: (noteId: number): Promise<unknown[]> =>
+      ipcRenderer.invoke('db:noteBlockContexts', noteId),
+    /** 本笔记归属的任务（笔记页「归属」分组） */
+    noteAttachedTasks: (noteId: number): Promise<{ id: number; title: string }[]> =>
+      ipcRenderer.invoke('db:noteAttachedTasks', noteId),
+    /** 「归属 → 选任务」候选：非删非终态任务（对齐 task_candidates） */
+    noteTaskCandidates: (q: string, limit?: number): Promise<{ id: number; title: string }[]> =>
+      ipcRenderer.invoke('db:noteTaskCandidates', q, limit ?? 30),
+    quickAdd: (text: string, defaultListId?: number | null): Promise<Task | null> =>
+      ipcRenderer.invoke('db:quickAdd', text, defaultListId ?? null),
+    /** 等待中（暂停）：可选恢复日期（对齐 task_service.pause） */
+    pauseTask: (id: number, resumeAt?: string | null): Promise<Task | null> =>
+      ipcRenderer.invoke('db:pauseTask', id, resumeAt ?? null),
+    /** 恢复：默认回待办并清恢复日期（对齐 task_service.resume） */
+    resumeTask: (id: number, status?: TaskStatus): Promise<Task | null> =>
+      ipcRenderer.invoke('db:resumeTask', id, status ?? 'todo'),
+    /** 段落级上下文（T3）：挂载 / 解除 / 查询 */
+    attachBlock: (
+      taskId: number,
+      noteId: number,
+      blockKey: string,
+      snippet?: string
+    ): Promise<Task | null> =>
+      ipcRenderer.invoke('db:attachBlock', taskId, noteId, blockKey, snippet ?? ''),
+    detachBlock: (taskId: number, noteId: number, blockKey?: string): Promise<number> =>
+      ipcRenderer.invoke('db:detachBlock', taskId, noteId, blockKey ?? ''),
+    linkedContexts: (taskId: number): Promise<TaskNoteContext[]> =>
+      ipcRenderer.invoke('db:linkedContexts', taskId),
+    contextsForNote: (noteId: number): Promise<TaskNoteContext[]> =>
+      ipcRenderer.invoke('db:contextsForNote', noteId),
+    noteContextMap: (taskIds: number[]): Promise<Record<number, TaskNoteContext[]>> =>
+      ipcRenderer.invoke('db:noteContextMap', taskIds),
+    /** 完成任务写复盘/结论回写（对齐 app_controller._write_note_after_done） */
+    writeNoteAfterDone: (
+      taskId: number,
+      title: string
+    ): Promise<{ noteId: number; blockKey: string } | null> =>
+      ipcRenderer.invoke('db:writeNoteAfterDone', taskId, title),
+    /** 捕获目标选择器候选（对齐 TaskService.task_candidates，T17） */
+    taskCandidates: (q?: string, limit?: number): Promise<Task[]> =>
+      ipcRenderer.invoke('db:taskCandidates', q ?? '', limit ?? 20),
     reorderTask: (id: number, anchorId: number, below?: boolean): Promise<Task | null> =>
       ipcRenderer.invoke('db:reorderTask', id, anchorId, below ?? true),
     moveTaskRelative: (id: number, delta: number): Promise<boolean> =>
@@ -303,8 +456,24 @@ const api = {
     info: (): Promise<AppInfo> => ipcRenderer.invoke('app:info'),
     setTheme: (theme: 'light' | 'dark' | 'system'): Promise<void> =>
       ipcRenderer.invoke('theme:set', theme),
-    /** 深链跳转（zhixing:// …） */
-    onDeepLink: (cb: (link: { kind: string; id: number; block: string }) => void): void => {
+    /** 云母材质开关（仅 win32 生效，其他平台为空操作） */
+    setMica: (enabled: boolean): Promise<void> => ipcRenderer.invoke('app:setMica', enabled),
+    /** 首屏数据就绪：主进程据此关闭欢迎页并显示主窗（splash 流程） */
+    ready: (): Promise<void> => ipcRenderer.invoke('app:ready'),
+    /** 托盘图标按当前主题重建 */
+    refreshTray: (): Promise<void> => ipcRenderer.invoke('app:refreshTray'),
+    /** 热键注册状态（settings 键 → 中文状态串），对齐 Python 的 hotkey_status */
+    hotkeyStatus: (): Promise<Record<string, string>> => ipcRenderer.invoke('app:hotkeyStatus'),
+    /** 进入改键捕获态：先注销全部热键，避免组合键被系统层拦截 */
+    suspendHotkeys: (): Promise<void> => ipcRenderer.invoke('app:suspendHotkeys'),
+    /** 改键完成/取消后重注册全部热键，返回最新状态 */
+    rebindHotkeys: (): Promise<Record<string, string>> => ipcRenderer.invoke('app:rebindHotkeys'),
+    /**
+     * 深链跳转（zhixing:// …）。
+     * 载荷形状用 shared/deep-link 的 DeepLink：图页双击跨页跳转也复用这条通道，
+     * 因此 kind 只可能是 task / note / flash / folder。
+     */
+    onDeepLink: (cb: (link: DeepLink) => void): void => {
       ipcRenderer.on('app:deeplink', (_e, link) => cb(link))
     },
     /** 托盘/全局热键触发的应用动作 */
@@ -319,6 +488,10 @@ const api = {
     setClickThrough: (enabled: boolean): Promise<void> =>
       ipcRenderer.invoke('widget:setClickThrough', enabled),
     undock: (): Promise<void> => ipcRenderer.invoke('widget:undock'),
+    /** 边缘缩放（S17）：渲染层判定命中的边后交给主进程按屏幕光标重算尺寸 */
+    resizeStart: (edges: string): Promise<void> => ipcRenderer.invoke('widget:resizeStart', edges),
+    resizeTo: (): Promise<void> => ipcRenderer.invoke('widget:resizeTo'),
+    resizeEnd: (): Promise<void> => ipcRenderer.invoke('widget:resizeEnd'),
     contextMenu: (): Promise<void> => ipcRenderer.invoke('widget:contextMenu'),
     openMain: (): Promise<void> => ipcRenderer.invoke('widget:openMain'),
   },

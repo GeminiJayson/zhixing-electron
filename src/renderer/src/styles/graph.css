@@ -101,3 +101,26 @@
   font-size: var(--text-lead);
   word-break: break-word;
 }
+/* 节点摘要（G9）：段落自带换行，去掉 <p> 默认外边距以免与侧栏 gap 叠加 */
+.graph-side__preview {
+  margin: 0;
+  word-break: break-word;
+}
+/* 连线操作区：按钮与「关系类型」选择器纵向排开。
+   不写会退化成同一行的内联流，label 里的中文提示 + select 会撑破 240px 侧栏。 */
+.graph-side__link {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.graph-side__link label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  width: 100%;
+}
+.graph-side__link .field {
+  width: 100%;
+}

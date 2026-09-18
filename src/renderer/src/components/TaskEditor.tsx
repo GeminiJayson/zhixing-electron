@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { PRIORITY_CHOICES } from '@shared/priority'
 import { STATUS_CHOICES } from '@shared/task'
-import type { RepeatPeriod, Task, TaskStatus } from '@shared/types'
+import type { Note, RepeatPeriod, Task, TaskNoteContext, TaskStatus } from '@shared/types'
 
 const REPEAT_CHOICES: { value: RepeatPeriod; label: string }[] = [
   { value: 'none', label: '不循环' },
@@ -28,7 +28,49 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
   const [notes, setNotes] = useState(task.notes_md ?? '')
   const [repeat, setRepeat] = useState<RepeatPeriod>(task.repeat_period)
   const [repeatRule, setRepeatRule] = useState(task.repeat_rule ?? '')
+  // T4：等待中可设「恢复于」（到期由 resume_due_today 自动回待办）
+  const [resume, setResume] = useState(task.resume_at ?? '')
+  // T3：段落级上下文（关联笔记段落）与「写复盘」回写
+  const [contexts, setContexts] = useState<TaskNoteContext[]>([])
+  const [noteList, setNoteList] = useState<Note[]>([])
+  const [pickNote, setPickNote] = useState('')
+  const [blockKey, setBlockKey] = useState('')
+  const [snippet, setSnippet] = useState('')
   const [saving, setSaving] = useState(false)
+
+  const loadContexts = useCallback(async (): Promise<void> => {
+    setContexts(await window.zhixing.db.linkedContexts(task.id))
+  }, [task.id])
+
+  useEffect(() => {
+    void loadContexts()
+    void (async () => setNoteList(await window.zhixing.db.notes()))()
+  }, [loadContexts])
+
+  const noteTitle = (id: number): string =>
+    noteList.find((n) => n.id === id)?.title ?? `#${id}`
+
+  const attachContext = async (): Promise<void> => {
+    const noteId = Number(pickNote)
+    if (!noteId || !blockKey.trim()) return
+    await window.zhixing.db.attachBlock(task.id, noteId, blockKey.trim(), snippet.trim())
+    setBlockKey('')
+    setSnippet('')
+    await loadContexts()
+  }
+
+  const detachContext = async (c: TaskNoteContext): Promise<void> => {
+    await window.zhixing.db.detachBlock(task.id, c.note_id, c.block_key)
+    await loadContexts()
+  }
+
+  /** 完成沉淀（对齐 app_controller._write_note_after_done）：有关联段落则追加「结论」，否则新建复盘笔记。 */
+  const writeback = async (): Promise<void> => {
+    setSaving(true)
+    await window.zhixing.db.writeNoteAfterDone(task.id, task.title)
+    setSaving(false)
+    onClose()
+  }
 
   useEffect(() => {
     const onEsc = (e: KeyboardEvent): void => {
@@ -49,6 +91,8 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
       notes_md: notes,
       repeat_period: repeat,
       repeat_rule: repeat === 'custom' ? repeatRule || null : null,
+      // 与 Python task_editor._commit_status 一致：非 waiting 显式清空恢复日期
+      resume_at: status === 'waiting' ? resume || null : null,
     })
     setSaving(false)
     onClose()
@@ -118,6 +162,84 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
             </label>
           </div>
 
+          {status === 'waiting' && (
+            <label className="form-row">
+              <span>恢复于（到期自动回待办）</span>
+              <input
+                type="date"
+                className="field"
+                value={resume}
+                onChange={(e) => setResume(e.target.value)}
+              />
+            </label>
+          )}
+
+          <section className="form-row">
+            <span>关联笔记段落（{contexts.length}）</span>
+            {contexts.length === 0 ? (
+              <p className="u-aux">暂无段落上下文。</p>
+            ) : (
+              <ul className="ctx-list">
+                {contexts.map((c) => (
+                  <li key={c.id} className="ctx-row">
+                    <button
+                      className="text-btn"
+                      onClick={() =>
+                        window.dispatchEvent(
+                          new CustomEvent('zhixing:open-note', { detail: c.note_id })
+                        )
+                      }
+                    >
+                      {noteTitle(c.note_id)}
+                    </button>
+                    <span className="u-aux" title={c.snippet}>
+                      {c.block_key}
+                      {c.snippet ? ` · ${c.snippet.slice(0, 24)}` : ''}
+                    </span>
+                    <span className="modal__spacer" />
+                    <button className="text-btn" onClick={() => void detachContext(c)}>
+                      解除
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="ctx-add">
+              <select
+                className="field"
+                value={pickNote}
+                onChange={(e) => setPickNote(e.target.value)}
+                aria-label="选择笔记"
+              >
+                <option value="">选择笔记…</option>
+                {noteList.map((n) => (
+                  <option key={n.id} value={String(n.id)}>
+                    {n.title}
+                  </option>
+                ))}
+              </select>
+              <input
+                className="field"
+                placeholder="段落块键"
+                value={blockKey}
+                onChange={(e) => setBlockKey(e.target.value)}
+              />
+              <input
+                className="field"
+                placeholder="引文快照（可选）"
+                value={snippet}
+                onChange={(e) => setSnippet(e.target.value)}
+              />
+              <button
+                className="text-btn"
+                onClick={() => void attachContext()}
+                disabled={!pickNote || !blockKey.trim()}
+              >
+                添加
+              </button>
+            </div>
+          </section>
+
           {repeat === 'custom' && (
             <label className="form-row">
               <span>自定义规则（RRULE 子集，如 FREQ=WEEKLY;INTERVAL=2;COUNT=5）</span>
@@ -145,6 +267,9 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
         <footer className="modal__foot">
           <button className="text-btn text-btn--danger" onClick={() => void onDelete(task.id)}>
             删除
+          </button>
+          <button className="text-btn" onClick={() => void writeback()} disabled={saving}>
+            写复盘笔记
           </button>
           <span className="modal__spacer" />
           <button className="text-btn" onClick={onClose}>

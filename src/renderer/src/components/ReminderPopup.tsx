@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Bell } from 'lucide-react'
 import type { Task } from '@shared/types'
 
@@ -8,7 +8,10 @@ interface Props {
 }
 
 /**
- * 到点提醒：每 30 秒轮询一次到期提醒，弹卡片；
+ * 到点提醒：每 30 秒轮询一次到期提醒。
+ *
+ * Python 侧对**每条**到期任务各弹一窗（app_controller._check_reminders，D17），
+ * 这里同样逐条渲染卡片，而不是只显示 due[0] 再把它余下的降级成一个计数。
  * 「知道了」清空 reminder_at（一次性语义），或稍后 5/15/30 分。
  */
 export function ReminderPopup({ onOpenTask, onChanged }: Props) {
@@ -28,55 +31,79 @@ export function ReminderPopup({ onOpenTask, onChanged }: Props) {
     }
   }, [])
 
+  const drop = useCallback((id: number): void => {
+    setDue((rows) => rows.filter((r) => r.id !== id))
+  }, [])
+
+  const dismiss = async (id: number): Promise<void> => {
+    await window.zhixing.db.dismissReminder(id)
+    drop(id)
+    await onChanged()
+  }
+
+  const snooze = async (id: number, minutes: number): Promise<void> => {
+    await window.zhixing.db.snoozeReminder(id, minutes)
+    drop(id)
+    await onChanged()
+  }
+
   if (due.length === 0) return null
-  const task = due[0]
-
-  const dismiss = async (): Promise<void> => {
-    await window.zhixing.db.dismissReminder(task.id)
-    setDue((rows) => rows.filter((r) => r.id !== task.id))
-    await onChanged()
-  }
-
-  const snooze = async (minutes: number): Promise<void> => {
-    await window.zhixing.db.snoozeReminder(task.id, minutes)
-    setDue((rows) => rows.filter((r) => r.id !== task.id))
-    await onChanged()
-  }
 
   return (
-    <div className="reminder" role="alertdialog" aria-label="到点提醒">
-      <header className="reminder__head">
-        <Bell size={14} aria-hidden /> 到点提醒
-        {due.length > 1 && <span className="u-aux">还有 {due.length - 1} 条</span>}
-      </header>
-      <p className="reminder__title">{task.title}</p>
-      <p className="u-aux">
-        {task.reminder_at ? `提醒时刻 ${task.reminder_at}` : '已到提醒时间'}
-        {task.due_date ? ` · 截止 ${task.due_date}` : ''}
-      </p>
-      <div className="reminder__actions">
-        <button className="text-btn" onClick={() => void snooze(5)}>
-          稍后 5 分
-        </button>
-        <button className="text-btn" onClick={() => void snooze(15)}>
-          15 分
-        </button>
-        <button className="text-btn" onClick={() => void snooze(30)}>
-          30 分
-        </button>
-        <button
-          className="text-btn"
-          onClick={() => {
-            onOpenTask(task.id)
-            void dismiss()
-          }}
+    // 一任务一卡；定位交给容器，卡片自身取消 fixed 以便纵向堆叠
+    <div
+      style={{
+        position: 'fixed',
+        right: 'var(--space-5)',
+        top: 'calc(var(--titlebar-h) + var(--space-3))',
+        width: 300,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 'var(--space-2)',
+        zIndex: 'var(--z-reminder)',
+      }}
+    >
+      {due.map((task) => (
+        <div
+          key={task.id}
+          className="reminder"
+          role="alertdialog"
+          aria-label="到点提醒"
+          style={{ position: 'static', width: '100%' }}
         >
-          查看
-        </button>
-        <button className="text-btn text-btn--accent" onClick={() => void dismiss()}>
-          知道了
-        </button>
-      </div>
+          <header className="reminder__head">
+            <Bell size={14} aria-hidden /> 到点提醒
+          </header>
+          <p className="reminder__title">{task.title}</p>
+          <p className="u-aux">
+            {task.reminder_at ? `提醒时刻 ${task.reminder_at}` : '已到提醒时间'}
+            {task.due_date ? ` · 截止 ${task.due_date}` : ''}
+          </p>
+          <div className="reminder__actions">
+            <button className="text-btn" onClick={() => void snooze(task.id, 5)}>
+              稍后 5 分
+            </button>
+            <button className="text-btn" onClick={() => void snooze(task.id, 15)}>
+              15 分
+            </button>
+            <button className="text-btn" onClick={() => void snooze(task.id, 30)}>
+              30 分
+            </button>
+            <button
+              className="text-btn"
+              onClick={() => {
+                onOpenTask(task.id)
+                void dismiss(task.id)
+              }}
+            >
+              查看
+            </button>
+            <button className="text-btn text-btn--accent" onClick={() => void dismiss(task.id)}>
+              知道了
+            </button>
+          </div>
+        </div>
+      ))}
     </div>
   )
 }

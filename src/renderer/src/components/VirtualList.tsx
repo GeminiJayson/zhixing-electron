@@ -36,7 +36,10 @@ export function VirtualList({ count, rowHeight, overscan = 8, renderRow, classNa
 
   const total = count * rowHeight
   const visible = height > 0 ? Math.ceil(height / rowHeight) : count
-  const start = Math.max(0, Math.floor(scrollTop / rowHeight) - overscan)
+  // 起点上限钳到「能铺满一屏的最后一行」：列表被过滤变短时，残留的旧 scrollTop
+  // 会把窗口整个推到数据之外、渲染出 0 行，要等浏览器夹回 scrollTop 才恢复（中间闪一帧空白）。
+  const maxStart = Math.max(0, count - visible)
+  const start = Math.min(maxStart, Math.max(0, Math.floor(scrollTop / rowHeight) - overscan))
   const end = Math.min(count, start + visible + overscan * 2)
 
   const rows: ReactNode[] = []

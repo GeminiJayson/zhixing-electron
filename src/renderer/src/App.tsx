@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { bindHostEvents, subscribeDomain } from '@shared/events'
 import { t } from './i18n'
 import { parseSettings, type AppSettings } from '@shared/settings'
-import { applyAppearance, resolveThemeMode } from './theme'
+import { applyAppearance, applyMotion, resolveThemeMode } from './theme'
 import { CapturePanel } from './components/CapturePanel'
 import { CommandPalette } from './components/CommandPalette'
 import { DialogProvider } from './components/Dialogs'
+import { FloatingDock } from './components/FloatingDock'
 import { PomodoroBar } from './components/PomodoroBar'
 import { ReminderPopup } from './components/ReminderPopup'
 import { Sidebar } from './components/Sidebar'
@@ -20,7 +21,7 @@ import { SettingsPage } from './pages/SettingsPage'
 import { WorkflowPage } from './pages/WorkflowPage'
 import { TasksPage } from './pages/TasksPage'
 import { TodayPage } from './pages/TodayPage'
-import type { Overview } from '@shared/types'
+import type { Overview, TaskStatus } from '@shared/types'
 import './styles/app.css'
 import './styles/tasks.css'
 import './styles/notes.css'
@@ -45,6 +46,8 @@ export default function App() {
     ids: number[]
     label: string
     action?: 'toggle' | 'restore'
+    /** 撤销「取消完成」时要回写的前一个状态（T13）；无此项则按完成/未完成反向切换 */
+    prevStatus?: TaskStatus
   } | null>(null)
   /** 由今日页概览卡点击带过来的任务页聚焦过滤 */
   const [taskFocus, setTaskFocus] = useState<'today' | 'done' | 'overdue' | null>(null)
@@ -58,9 +61,15 @@ export default function App() {
   })
   /** 最近一次读到的完整设置；null 表示还没从 settings 表读到，先别铺（免得用默认值闪一下） */
   const [appearance, setAppearance] = useState<AppSettings | null>(null)
+  /** 数据库降级原因（D2）：迁移失败（只读）或完全打不开时非空，主区顶部据此弹危险横幅 */
+  const [dbIssue, setDbIssue] = useState('')
   /** 上一个页面，供 Ctrl+Tab 往返（对齐 switch_recent） */
   const prevPage = useRef<PageKey | null>(null)
   const lastPage = useRef<PageKey>('today')
+  /** 待派发的深链精确定位目标（等目标页渲染完成后再广播，S22） */
+  const pendingLink = useRef<{ kind: string; id: number; block: string } | null>(null)
+  /** 深链计数器：目标页与当前页相同时 setPage 不会引发重渲染，靠它触发派发 effect */
+  const [linkTick, setLinkTick] = useState(0)
 
   /** 以 settings 表为准重铺外观：Python 版与 Electron 版共用同一份偏好。 */
   const loadAppearance = useCallback(async (): Promise<AppSettings> => {
@@ -87,6 +96,17 @@ export default function App() {
         break: s.pomodoro_break_min,
         autoBreak: s.pomodoro_auto_break,
       })
+      // D2：读一次数据库状态。迁移失败（只读）或完全打不开时给主区顶部横幅取数；
+      // 这里不能抛 —— 取不到信息也照样要放主窗出来，否则用户只会看到一个空白界面。
+      try {
+        const info = await window.zhixing.app.info()
+        setDbIssue(info.dbReadonly || (info.dbReady ? '' : info.dbError) || '')
+      } catch {
+        // 主进程信息不可用时不显示横幅
+      }
+      // 首屏就绪 → 主进程关闭欢迎页并显示主窗（对齐 __main__.py 的 splash 流程：
+      // 初始化全部完成后再显主窗，打开即可操作）
+      void window.zhixing.app.ready()
     })()
   }, [loadAppearance])
 
@@ -98,6 +118,18 @@ export default function App() {
     applyAppearance({ ...appearance, theme_mode: theme })
   }, [theme, appearance])
 
+  // 系统「减少动态效果」变化时重铺动效档位（对齐 Python 的 _os_reduce_motion 探测；
+  // applyMotion 会广播 zhixing:motion，画布类视图据此冻结物理动画）
+  useEffect(() => {
+    if (!appearance || typeof window.matchMedia !== 'function') return
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const onChange = (): void => {
+      applyMotion(appearance.motion_level)
+    }
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [appearance])
+
   // theme_mode = system 时跟随系统明暗实时切换（对齐 Python 的 styleHints 信号）
   useEffect(() => {
     if (appearance?.theme_mode !== 'system') return
@@ -107,14 +139,18 @@ export default function App() {
     return () => mq.removeEventListener('change', onChange)
   }, [appearance?.theme_mode])
 
-  /** 标题栏的明暗切换：一次把状态、本地缓存、主进程与 settings 表都推到位。 */
+  /** 一次性把明暗状态、本地缓存、主进程与 settings 表都推到位。 */
+  const setThemeMode = useCallback((mode: Theme): void => {
+    localStorage.setItem(THEME_KEY, mode)
+    void window.zhixing.app.setTheme(mode)
+    void window.zhixing.db.setSetting('theme_mode', mode)
+    setTheme(mode)
+  }, [])
+
+  /** 标题栏的明暗切换。 */
   const toggleTheme = useCallback((): void => {
-    const next: Theme = theme === 'dark' ? 'light' : 'dark'
-    localStorage.setItem(THEME_KEY, next)
-    void window.zhixing.app.setTheme(next)
-    void window.zhixing.db.setSetting('theme_mode', next)
-    setTheme(next)
-  }, [theme])
+    setThemeMode(theme === 'dark' ? 'light' : 'dark')
+  }, [theme, setThemeMode])
 
   // 记录页面切换历史（Ctrl+Tab 用）
   useEffect(() => {
@@ -135,8 +171,17 @@ export default function App() {
   // 把主进程的写入通知接进订阅表（O3）：只调一次
   useEffect(() => {
     bindHostEvents(window.zhixing.db)
-    // 设置页换主题包/强调色/字号后，主窗口跟着重铺（浮窗各自订阅同一份广播）
-    return subscribeDomain(['settings'], () => void loadAppearance())
+    // 设置页换主题包/强调色/字号后，主窗口跟着重铺（浮窗各自订阅同一份广播）；
+    // 番茄钟时长与「专注结束自动休息」也随同一份广播刷新，否则改完要重启才生效
+    return subscribeDomain(['settings'], () => {
+      void loadAppearance().then((s) => {
+        setPomo({
+          focus: s.pomodoro_focus_min,
+          break: s.pomodoro_break_min,
+          autoBreak: s.pomodoro_auto_break,
+        })
+      })
+    })
   }, [loadAppearance])
 
   // 启动维护 + 跨天维护（对齐 AppController：打卡重置、等待中到期恢复）
@@ -169,7 +214,9 @@ export default function App() {
       if (now === day) return
       day = now
       void maintain(false)
-    }, 60_000)
+      // 跨天轮询间隔对齐 app_controller.py:1211 的 600000ms（10 分钟）：60s 太密，
+      // 而跨天维护本身只关心「日期变了没有」，10 分钟内必然发生一次足够
+    }, 600_000)
     return () => window.clearInterval(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -187,6 +234,8 @@ export default function App() {
   // 深链与全局动作（托盘 / 全局热键）统一在这里落地
   useEffect(() => {
     window.zhixing.app.onDeepLink((link) => {
+      // 先切页并记下待派发的「精确定位」目标；目标页可能在本次 setPage 后才挂载，
+      // 立刻派发会丢事件，因此在下面的 effect 里等页面渲染后再发（S22）。
       if (link.kind === 'task') {
         setTaskFocus(null)
         setPage('tasks')
@@ -197,6 +246,8 @@ export default function App() {
       } else if (link.kind === 'folder') {
         setPage('notes')
       }
+      pendingLink.current = link
+      setLinkTick((n) => n + 1)
     })
     // 工作流节点动作「打开笔记」由页面派发事件，App 负责跨页跳转
     const onOpenNote = (e: Event): void => {
@@ -212,6 +263,13 @@ export default function App() {
       } else if (action === 'capture') {
         setCaptureMode('capture')
         setCaptureOpen(true)
+      } else if (action === 'new-note') {
+        // 托盘/浮窗「新建笔记」（对齐 _dispatch_action 的 new-note）
+        setPage('notes')
+        window.dispatchEvent(new CustomEvent('zhixing:new-note'))
+      } else if (action === 'flash-inbox') {
+        // 托盘/浮窗「记闪念」：切到收件箱（对齐 flash-inbox）
+        setPage('inbox')
       } else if (action === 'clipboard-notice') {
         showToast('已复制内容 — 可用快速捕获（Ctrl+N）记下来')
       } else if (action === 'select-quick') {
@@ -223,6 +281,43 @@ export default function App() {
 
     return () => window.removeEventListener('zhixing:open-note', onOpenNote)
   }, [openNote])
+
+  /**
+   * 深链的精确定位（S22）：按 kind 把 id / block 交给目标页。
+   *
+   * 页面状态（选中行、滚动位置、编辑器锚点）由各页自己持有，App 只负责在页面
+   * 渲染完成后广播一次「打开这个对象」。对面订阅的事件名：
+   *   task   → zhixing:open-task            detail { id }
+   *   note   → zhixing:locate-note-block   detail { noteId, blockKey }
+   *            （事件名沿用 NotesPage 已实现的段落锚定位契约）
+   *   flash  → zhixing:open-flash           detail { id }
+   *   folder → zhixing:open-note-folder     detail { id }
+   */
+  useEffect(() => {
+    const link = pendingLink.current
+    if (!link) return
+    pendingLink.current = null
+    // 等一帧：setPage 之后目标页才挂载，事件必须落在挂载完成之后
+    const timer = window.setTimeout(() => {
+      if (link.kind === 'task') {
+        window.dispatchEvent(new CustomEvent('zhixing:open-task', { detail: { id: link.id } }))
+      } else if (link.kind === 'flash') {
+        window.dispatchEvent(new CustomEvent('zhixing:open-flash', { detail: { id: link.id } }))
+      } else if (link.kind === 'folder') {
+        window.dispatchEvent(
+          new CustomEvent('zhixing:open-note-folder', { detail: { id: link.id } })
+        )
+      } else if (link.block) {
+        // 事件名与 NotesPage 的段落锚定位契约一致（zhixing:locate-note-block）
+        window.dispatchEvent(
+          new CustomEvent('zhixing:locate-note-block', {
+            detail: { noteId: link.id, blockKey: link.block },
+          })
+        )
+      }
+    }, 60)
+    return () => window.clearTimeout(timer)
+  }, [page, openNoteId, linkTick])
 
   /** 图谱里创建「待建」笔记：新建后按标题把悬空引用一次绑定过去。 */
   const createNoteFromDangling = useCallback(async (linkTitle: string) => {
@@ -236,8 +331,14 @@ export default function App() {
   // 页面完成任务后派发这个事件，由 App 统一承载「可撤销」提示
   useEffect(() => {
     const onUndoable = (e: Event): void => {
-      const detail = (e as CustomEvent<{ ids: number[]; label: string; action?: 'toggle' | 'restore' }>)
-        .detail
+      const detail = (
+        e as CustomEvent<{
+          ids: number[]
+          label: string
+          action?: 'toggle' | 'restore'
+          prevStatus?: TaskStatus
+        }>
+      ).detail
       if (!detail?.ids?.length) return
       setUndoBar(detail)
       window.setTimeout(() => setUndoBar((cur) => (cur === detail ? null : cur)), 6000)
@@ -248,12 +349,15 @@ export default function App() {
 
   const undoLast = useCallback(async () => {
     if (!undoBar) return
-    const { ids, action } = undoBar
+    const { ids, action, prevStatus } = undoBar
     setUndoBar(null)
     // 撤销动作按来源区分：完成/取消完成 → 反向切换；删除 → 从回收站恢复
     // （对齐 app_controller._undo_last 支持撤销删除整棵子树）
     for (const id of ids) {
       if (action === 'restore') await window.zhixing.db.restoreTrash('task', id)
+      // T13：取消完成若带前一个状态（doing/waiting），回写该状态而不是简单翻转，
+      // 否则 toggleTask 只会把 done 翻成 todo，把用户原本的状态丢掉
+      else if (prevStatus) await window.zhixing.db.setStatus(id, prevStatus)
       else await window.zhixing.db.toggleTask(id)
     }
     await refreshOverview()
@@ -357,6 +461,16 @@ export default function App() {
         onToggleTheme={toggleTheme}
         signature={appearance?.signature}
       />
+      {/* D2：数据库只读 / 打不开时的危险横幅，铺在标题栏与主区之间（全宽），
+          「恢复备份」跳设置页的数据页 —— 自动备份列表就在那里 */}
+      {dbIssue && (
+        <div className="dbwarn" role="alert">
+          <span>数据库迁移失败，已进入只读模式：{dbIssue}</span>
+          <button className="text-btn" onClick={() => setPage('settings')}>
+            恢复备份
+          </button>
+        </div>
+      )}
       <div className="app__body">
         <Sidebar
           page={page}
@@ -398,6 +512,20 @@ export default function App() {
               onNotice={showToast}
             />
           ) : null}
+          {/* 右下角快捷新建浮条（S27）：只在今日/任务页显示 */}
+          <FloatingDock
+            page={page}
+            onTask={() => {
+              setCaptureMode('quick')
+              setCaptureOpen(true)
+            }}
+            onNote={() => {
+              setPage('notes')
+              // 页面切换是异步渲染的，等一帧再派发「新建笔记」
+              window.setTimeout(() => window.dispatchEvent(new CustomEvent('zhixing:new-note')), 60)
+            }}
+            onFlash={() => setPage('inbox')}
+          />
         </main>
       </div>
       <CapturePanel
@@ -433,6 +561,7 @@ export default function App() {
           await refreshOverview()
           showToast(`已添加「${text}」`)
         }}
+        onNotice={showToast}
       />
 
       {undoBar && (

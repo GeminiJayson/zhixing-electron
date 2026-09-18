@@ -5,7 +5,10 @@ import { parseSettings } from '../../shared/settings'
 import type {
   Task,
 } from '../../shared/types'
-import { conn, open, nowStamp, today, getTask, TASK_COLUMNS } from './connection'
+import { conn, open, nowStamp, today, getTask, TASK_COLUMNS, dbReadonlyReason } from './connection'
+import { createListFolder } from './lists'
+import { createTask, setPriority } from './tasks'
+import { createNote } from './notes'
 
 // ---------------------------------------------------------------- 跨天维护
 
@@ -66,21 +69,27 @@ export function resumeDueToday(): number {
 
 // ---------------------------------------------------------------- 番茄钟 / 到点提醒
 
-/** 记录一次番茄钟（对齐 PomodoroRepository.add）。 */
+/**
+ * 记录一次番茄钟（对齐 PomodoroRepository.add）。
+ *
+ * reason 允许为 null：Python 从不中断的会话写的是 None（NULL），只有手动中断
+ * 才写入原因字符串（D18）。整列口径要一致，否则导出/统计里同一件事两种形态。
+ */
 export function recordPomodoro(
   taskId: number | null,
   minutes: number,
   completed: boolean,
-  reason = ''
+  reason: string | null = null
 ): number {
   const m = Math.round(minutes)
   // 不足 1 分钟不落库（对齐 pomodoro.py：minutes<1 跳过，避免 0 分钟记录污染统计与导出）
   if (!(m >= 1)) return 0
+  const clean = reason && reason.trim() ? reason.trim() : null
   const info = conn()
     .prepare(
       'INSERT INTO pomodoro_session (task_id, started_at, minutes, completed, reason) VALUES (?, ?, ?, ?, ?)'
     )
-    .run(taskId, nowStamp(), m, completed ? 1 : 0, reason)
+    .run(taskId, nowStamp(), m, completed ? 1 : 0, clean)
   return Number(info.lastInsertRowid)
 }
 
@@ -152,6 +161,53 @@ export function saveWidgetGeometry(x: number, y: number, w: number, h: number): 
   } catch (err) {
     console.warn('[widget] 保存几何失败', err)
   }
+}
+
+
+// ---------------------------------------------------------------- 首次启动种子数据
+
+/** 欢迎笔记正文（逐字对齐 Python core/context.py 的 seed_if_empty）。 */
+const WELCOME_NOTE = [
+  '# 开始使用「知行」',
+  '',
+  '**任务与知识，一体两面。**',
+  '',
+  '- 输入 \`[[\` 可以链接到其他笔记，比如 [[开始使用「知行」]]',
+  '- 按 \`Ctrl+K\` 打开命令面板，搜索一切',
+  '- 按 \`Ctrl+Alt+N\` 快速捕获任务（支持 \`!2 @我的清单 #标签 明天\` 语法糖）',
+  '- 按 \`Ctrl+Shift+S\` 在任何应用里划词捕获闪念',
+  '- 打开「图谱」看你的知识网络生长',
+  '',
+  '> 数据全部保存在本机，随时可在设置中备份导出。',
+  '',
+].join('\n')
+
+/**
+ * 首次启动写入欢迎内容（对齐 Python AppContext.seed_if_empty，D24）：
+ * 任务表为空时建「工作 / 生活」两个分组 + 「我的清单」+ 2 条欢迎任务
+ * （第一条为 P5 中等优先级）；笔记表为空时建一篇欢迎笔记。
+ * 已有任意任务/笔记就不动，重复调用安全。只读模式不写。
+ */
+export function seedIfEmpty(): boolean {
+  // 只读模式下不写盘（对齐 Python：readonly 时启动流程直接 return）
+  if (dbReadonlyReason()) return false
+  const c = conn()
+  const count = (table: string): number =>
+    (c.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n
+  const hasTasks = count('task') > 0
+  const hasNotes = count('note') > 0
+  if (hasTasks && hasNotes) return false
+  if (!hasTasks) {
+    createListFolder('工作', 'group', null)
+    createListFolder('生活', 'group', null)
+    const list = createListFolder('我的清单', 'list', null)
+    const first = createTask('欢迎使用知行：试试 Ctrl+Alt+N 快速添加任务', null, list.id)
+    // Python 侧第一条欢迎任务是 Priority.MID = P5
+    if (first) setPriority(first.id, 5)
+    createTask('在笔记里输入 [[ 会弹出链接补全', null, list.id)
+  }
+  if (!hasNotes) createNote('开始使用「知行」', null, WELCOME_NOTE)
+  return true
 }
 
 /** 供主进程读取配置（不经 IPC）；返回类型化设置，避免各处再各自转字符串。 */

@@ -77,7 +77,7 @@ export function listWorkflowTemplates(): WorkflowTemplateSummary[] {
     .prepare(
       `SELECT t.id, t.name, t.description, t.start_policy, t.updated_at,
               (SELECT COUNT(*) FROM workflow_node n WHERE n.template_id = t.id) AS node_count
-         FROM workflow_template t ORDER BY t.updated_at DESC`
+         FROM workflow_template t ORDER BY t.updated_at DESC, t.id DESC`
     )
     .all() as WorkflowTemplateSummary[]
 }
@@ -123,12 +123,17 @@ export function saveWorkflowTemplate(tpl: {
   if (problems.length) return { ok: false, problems }
 
   const c = conn()
+  // 对齐 Python save_template：更新一个不存在的模板时返回失败而**不是抛异常**
+  // （Python 返回 None，页面按「保存失败：problems」提示；抛异常会让 IPC reject，
+  // 渲染层拿不到 problems，只能看到一个未捕获的 Promise 拒绝）。
+  if (tpl.id) {
+    const exists = c.prepare('SELECT id FROM workflow_template WHERE id = ?').get(tpl.id)
+    if (!exists) return { ok: false, problems: ['模板不存在或已被删除'] }
+  }
   const stamp = nowStamp()
   const run = c.transaction(() => {
     let tid = tpl.id ?? 0
     if (tid) {
-      const exists = c.prepare('SELECT id FROM workflow_template WHERE id = ?').get(tid)
-      if (!exists) throw new Error('模板不存在: ' + tid)
       c.prepare('UPDATE workflow_template SET name = ?, description = ?, start_policy = ?, updated_at = ? WHERE id = ?').run(
         tpl.name, tpl.description ?? '', tpl.start_policy ?? 'first', stamp, tid
       )
@@ -153,7 +158,9 @@ export function saveWorkflowTemplate(tpl: {
         )
         .run(tid, n.title, n.detail, n.order_index, n.note_id, n.action_kind, n.action_value, n.condition, n.pos_x, n.pos_y, stamp)
       const rowId = Number(info.lastInsertRowid)
-      if (n.id > 0) idMap.set(n.id, rowId)
+      // 任意非零 id 都进映射表（对齐 Python 的 `if n.id is not None`）：
+      // 新增步骤用的是**负临时 id**，分支引用必须能重映射到真实 id，否则分支会悬空。
+      if (n.id !== 0) idMap.set(n.id, rowId)
       inserted.push({ rowId, oldId: n.id, raw: n })
     }
     // 分支引用重映射（旧 id → 新 id）
@@ -186,6 +193,68 @@ export function deleteWorkflowTemplate(id: number): number {
     return c.prepare('DELETE FROM workflow_template WHERE id = ?').run(id).changes
   })
   return run()
+}
+
+/**
+ * 复制模板（对齐 duplicate_template）：名称加「 副本」，节点与分支引用整体复制，
+ * **不复制坐标**（Python 的 clone 只带 order/note/action/condition/branch），副本重新排布。
+ */
+export function duplicateWorkflowTemplate(id: number): WorkflowTemplatePayload | null {
+  const src = getWorkflowTemplate(id)
+  if (!src) return null
+  const res = saveWorkflowTemplate({
+    name: `${src.name} 副本`,
+    description: src.description,
+    start_policy: src.start_policy,
+    nodes: orderedNodes(src.nodes).map((n) => ({
+      // 借用原 id 只是让 save 的分支引用重映射能把 branch 指到新行
+      id: n.id,
+      title: n.title,
+      detail: n.detail,
+      order_index: n.order_index,
+      note_id: n.note_id,
+      action_kind: n.action_kind,
+      action_value: n.action_value,
+      condition: n.condition,
+      branch_node_id: n.branch_node_id,
+    })),
+  })
+  if (!res.ok || !res.templateId) return null
+  return getWorkflowTemplate(res.templateId)
+}
+
+/**
+ * 一键对齐（对齐 _auto_layout）：按执行顺序重置为纵向网格，pos_x=0、pos_y=i*行距。
+ * 只写坐标，不动其它字段（Python 是 silent save_template，不广播模板变更）。
+ */
+export function autoLayoutWorkflowNodes(templateId: number, yGap: number): number {
+  const c = conn()
+  const nodes = c
+    .prepare(`SELECT ${NODE_COLUMNS} FROM workflow_node WHERE template_id = ?`)
+    .all(templateId) as WorkflowNodePayload[]
+  const ordered = orderedNodes(nodes)
+  const run = c.transaction(() => {
+    const upd = c.prepare('UPDATE workflow_node SET pos_x = ?, pos_y = ? WHERE id = ?')
+    let n = 0
+    ordered.forEach((node, i) => {
+      n += upd.run(0, i * yGap, node.id).changes
+    })
+    return n
+  })
+  return run()
+}
+
+/**
+ * 某任务启动/关联的所有实例（对齐 instances_of_task，任务速览「工作流」卡片用）。
+ * Python 不带排序，这里同样保持自然顺序。
+ */
+export function listWorkflowInstancesByTask(taskId: number): WorkflowInstancePayload[] {
+  const rows = conn()
+    .prepare('SELECT id FROM workflow_instance WHERE origin_task_id = ?')
+    .all(taskId) as { id: number }[]
+  return rows
+    .map((r) => getWorkflowInstance(r.id))
+    .filter((x): x is WorkflowInstancePayload => x !== null)
 }
 
 /** 仅持久化节点坐标（拖动后静默保存，不触发整体重写）。 */
@@ -269,35 +338,41 @@ export function getWorkflowInstance(id: number): WorkflowInstancePayload | null 
     )
     .get(id) as Omit<WorkflowInstancePayload, 'steps'> | undefined
   if (!inst) return null
+  // 步骤集合 = **已生成的步骤绑定**（对齐 workflow_service.get_instance 遍历 binds）：
+  // 不能 LEFT JOIN 全部模板节点，否则 policy=first 时进度分母是模板节点数、
+  // 且出现 task_id 为空的「空步骤行」。
   const rows = c
     .prepare(
-      `SELECT n.id AS node_id, n.title, st.task_id, t.status AS task_status
-         FROM workflow_node n
-         LEFT JOIN workflow_step_task st ON st.node_id = n.id AND st.instance_id = ?
+      `SELECT st.node_id, n.title, st.task_id, t.status AS task_status
+         FROM workflow_step_task st
+         LEFT JOIN workflow_node n ON n.id = st.node_id
          LEFT JOIN task t ON t.id = st.task_id
-        WHERE n.template_id = ?`
+        WHERE st.instance_id = ?
+        ORDER BY st.id`
     )
-    .all(id, inst.template_id) as {
+    .all(id) as {
     node_id: number
-    title: string
+    title: string | null
     task_id: number | null
     task_status: string | null
   }[]
   const steps: WorkflowStepPayload[] = rows.map((r) => ({
     node_id: r.node_id,
-    title: r.title,
+    title: r.title ?? '',
     task_id: r.task_id,
-    done: r.task_status === 'done' || r.task_status === 'abandoned',
+    // 对齐 _task_done_map：只认 status=='done'（放弃不算完成）
+    done: r.task_status === 'done',
   }))
   return { ...inst, steps }
 }
 
 export function listWorkflowInstances(status?: string | null): WorkflowInstancePayload[] {
   const c = conn()
+  // 对齐 list_instances：按 id desc（创建先后），不是按 created_at 字符串
   const rows = (
     status
-      ? c.prepare('SELECT id FROM workflow_instance WHERE status = ? ORDER BY created_at DESC').all(status)
-      : c.prepare('SELECT id FROM workflow_instance ORDER BY created_at DESC').all()
+      ? c.prepare('SELECT id FROM workflow_instance WHERE status = ? ORDER BY id DESC').all(status)
+      : c.prepare('SELECT id FROM workflow_instance ORDER BY id DESC').all()
   ) as { id: number }[]
   return rows.map((r) => getWorkflowInstance(r.id)).filter((x): x is WorkflowInstancePayload => x !== null)
 }
@@ -345,39 +420,88 @@ export function abortWorkflowInstance(id: number): boolean {
 
 // ---------------------------------------------------------------- 工作流节点动作
 
+type ShlexState = 'plain' | 'single' | 'double' | 'escape' | 'escapeDouble'
+
 /**
- * 简化版 shlex：按空白切分并支持单双引号包裹（对齐 Python shlex.split 的常见用法）。
- * 只做切分，不解析管道/重定向——因为执行时**不经 shell**。
+ * POSIX shlex.split 等价实现（对齐 Python `shlex.split`，供 RUN_COMMAND 拆分 argv）。
+ *
+ * 与原「简化版」的差别正是它与 Python 的差别：
+ * - 引号外 `\x` 是转义（`a\ b` → 一个参数 `a b`），`\` 后跟换行是续行；
+ * - 双引号内只有 `\"` 与 `\\` 被反转义，其余反斜杠原样保留；
+ * - 单引号内一切原样（含反斜杠）；
+ * - 空引号（`''` / `""`）产生一个**空参数**，相邻引号与裸字符拼接；
+ * - 引号未闭合**抛错**（Python 抛 ValueError('No closing quotation')），
+ *   不再静默吞掉，由 runWorkflowAction 转成「执行失败：…」。
+ *
+ * 仍不解析管道/重定向——执行时不经 shell，这些字符只是普通参数。
  */
 export function splitCommand(cmd: string): string[] {
   const out: string[] = []
-  let cur = ''
-  let quote: '"' | "'" | null = null
-  for (const ch of cmd) {
-    if (quote) {
-      if (ch === quote) quote = null
-      else cur += ch
-    } else if (ch === '"' || ch === "'") {
-      quote = ch as '"' | "'"
-    } else if (/\s/.test(ch)) {
-    if (cur) {
-        out.push(cur)
-        cur = ''
-      }
+  let token = ''
+  let quoted = false
+  let state: ShlexState = 'plain'
+  for (const ch of cmd ?? '') {
+    if (state === 'escape') {
+      // 引号外的反斜杠：转义下一个字符；`\` + 换行 = 续行（不产出字符）
+      if (ch !== '\n') token += ch
+      state = 'plain'
+      continue
+    }
+    if (state === 'escapeDouble') {
+      // 双引号内的反斜杠：只对 " 与 \ 生效，其余保留反斜杠本身
+      token += ch === '"' || ch === '\\' ? ch : '\\' + ch
+      state = 'double'
+      continue
+    }
+    if (state === 'single') {
+      if (ch === "'") state = 'plain'
+      else token += ch
+      continue
+    }
+    if (state === 'double') {
+      if (ch === '"') state = 'plain'
+      else if (ch === '\\') state = 'escapeDouble'
+      else token += ch
+      continue
+    }
+    if (/\s/.test(ch)) {
+      if (token || quoted) out.push(token)
+      token = ''
+      quoted = false
+    } else if (ch === '\\') {
+      state = 'escape'
+    } else if (ch === "'") {
+      state = 'single'
+      quoted = true
+    } else if (ch === '"') {
+      state = 'double'
+      quoted = true
     } else {
-      cur += ch
+      token += ch
     }
   }
-  if (cur) out.push(cur)
+  if (state !== 'plain' && state !== 'escape') {
+    throw new Error('No closing quotation')
+  }
+  if (token || quoted) out.push(token)
   return out
 }
 
-/** 人类可读的动作描述（对齐 describe_action，用于执行前确认文案）。 */
+/**
+ * 人类可读的动作描述（逐字对齐 describe_action，用于执行前确认/步骤提示）：
+ * 绑定笔记能查到标题时给「打开笔记「标题」」，否则退回「打开关联笔记」；
+ * 无动作给「无动作」而不是空串。
+ */
 export function describeWorkflowAction(actionKind: string, actionValue: string): string {
-  if (actionKind === 'open_note') return actionValue ? '打开关联笔记' : '打开关联笔记'
-  if (actionKind === 'open_url') return `在浏览器打开 ${actionValue}`
-  if (actionKind === 'run_command') return actionValue
-  return ''
+  const kind = actionKind || 'none'
+  if (kind === 'open_note') {
+    // 对齐 Python 的 `(action_value or "").isdigit()` 判定
+    const title = /^\d+$/.test(actionValue || '') ? getNote(Number(actionValue))?.title ?? '' : ''
+    return title ? `打开笔记「${title}」` : '打开关联笔记'
+  }
+  if (kind === 'open_url') return `在浏览器打开 ${actionValue}`
+  if (kind === 'run_command') return `运行命令：${actionValue}`
+  return '无动作'
 }
 
 /**
@@ -411,12 +535,15 @@ export async function runWorkflowAction(
   if (kind === 'run_command') {
     const cmd = (actionValue || '').trim()
     if (!cmd) return { ok: false, message: '未填写要运行的命令', kind }
-    const argv = splitCommand(cmd)
-    if (!argv.length) return { ok: false, message: '命令为空', kind }
+    let argv: string[] = []
+    // splitCommand 会抛「引号未闭合」；与 Python 一样归到 try 里，
+    // 转成 { ok:false, message:'执行失败：…' }，而不是让 IPC reject。
     // spawn 的失败是**异步**通过 'error' 事件报告的，try/catch 根本捕不到：
     // 必须等 'spawn'（进程真的起来了）或 'error'（如 ENOENT）才能给出准确结果。
     // 否则命令不存在时既误报「已启动」，又会因为没人监听 'error' 而抛未捕获异常。
     try {
+      argv = splitCommand(cmd)
+      if (!argv.length) return { ok: false, message: '命令为空', kind }
       const child = spawn(argv[0], argv.slice(1), { detached: true, stdio: 'ignore', shell: false })
       await new Promise<void>((resolve, reject) => {
         child.once('spawn', () => resolve())

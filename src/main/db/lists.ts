@@ -102,7 +102,8 @@ export function listTasksByList(listId: number | null): Task[] {
         ' SELECT id, title, notes_md, status, priority, due_date, start_date, reminder_at,' +
         ' list_id, parent_id, repeat_period, repeat_rule, streak, sort_key, resume_at,' +
         ' last_reset_date, completed_at, created_at, updated_at' +
-        ' FROM task WHERE id IN (SELECT id FROM seed)'
+        ' FROM task WHERE id IN (SELECT id FROM seed)' +
+        ' ORDER BY sort_key ASC, id ASC'
     )
     .all(listId, listId, listId) as Task[]
 }

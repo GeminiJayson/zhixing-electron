@@ -115,8 +115,8 @@ export interface WorkflowTemplateSummary {
   updated_at: string
 }
 
-/** 图谱节点 kind，与 graph_service.GraphNode.kind 同名 */
-export type GraphKind = 'note' | 'folder' | 'dangling' | 'task' | 'flash'
+/** 图谱节点 kind，与 graph_service.GraphNode.kind 同名（anchor = v0.15 段落锚） */
+export type GraphKind = 'note' | 'folder' | 'dangling' | 'task' | 'flash' | 'anchor'
 
 export interface GraphNodePayload {
   id: number
@@ -127,6 +127,12 @@ export interface GraphNodePayload {
   colorHint: string
   refId: number
   format: string
+  /** anchor：引用该段落的任务 id（对齐 GraphNode.ref_task） */
+  refTask?: number
+  /** anchor：段落定位键（对齐 GraphNode.block_key） */
+  blockKey?: string
+  /** anchor：段落引文快照（对齐 GraphNode.snippet） */
+  snippet?: string
 }
 
 export interface GraphPayload {
@@ -134,6 +140,38 @@ export interface GraphPayload {
   edges: [number, number][]
   /** "src,dst" → 边类别；归属=实线，引用=虚线 */
   edgeKinds: Record<string, 'ownership' | 'reference'>
+  /** 因环路被破环丢弃的归属层级边（对齐 GraphData.cycle_edges，供图页提示） */
+  cycleEdges: [number, number][]
+}
+
+/** 图谱构建参数（对齐 GraphService.build 的 folder_id / tag_id / include_tasks）。 */
+export interface GraphQuery {
+  /** 是否纳入任务节点（Python 图页默认 True） */
+  includeTasks?: boolean
+  /** 仅看某笔记文件夹 */
+  folderId?: number | null
+  /** 仅看带某笔记标签的笔记 */
+  tagId?: number | null
+  /** 邻域子图：仅保留这些笔记主键（对齐 neighborhood 的 only_ids） */
+  onlyIds?: number[] | null
+}
+
+/**
+ * 图谱增量（对齐 GraphDelta）：相对上一帧的最小变更集。
+ * 消费端据此做定点增删、保留节点坐标与 pinned，避免整图重建。
+ */
+export interface GraphDelta {
+  addedNodes: GraphNodePayload[]
+  removedNodeIds: number[]
+  updatedNodeIds: number[]
+  /** 更新后的节点快照（渲染层拿不到主进程缓存，Python 侧由消费端读 cache.by_id） */
+  updatedNodes?: GraphNodePayload[]
+  addedEdges: [number, number][]
+  removedEdges: [number, number][]
+  /** 新增边的类别 */
+  edgeKinds: Record<string, 'ownership' | 'reference'>
+  /** True=结构剧变（无上一帧），建议整体重建但保留坐标 */
+  full: boolean
 }
 
 /** 任务清单 / 分组（list_folder 表）。kind='group' 可收纳 kind='list'。 */
@@ -168,6 +206,18 @@ export interface NoteRevision {
   content_md: string
   format: string
   created_at: string
+}
+
+/** 任务↔笔记「段落级」上下文（task_note_context 表，schema v12）。 */
+export interface TaskNoteContext {
+  id: number
+  task_id: number
+  note_id: number
+  /** 段落块键（回跳定位用） */
+  block_key: string
+  /** 引文快照（定位兜底 + 预览） */
+  snippet: string
+  created_at: string | null
 }
 
 export interface Backlink {
@@ -205,4 +255,8 @@ export interface AppInfo {
   node: string
   dbPath: string
   dbReady: boolean
+  /** 只读模式原因（库能打开但迁移失败）；空/缺省表示正常（D2） */
+  dbReadonly?: string
+  /** 完全打不开时的中文原因；空/缺省表示正常（D2） */
+  dbError?: string
 }

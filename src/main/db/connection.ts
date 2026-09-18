@@ -42,6 +42,13 @@ export const TASK_COLUMNS = `id, title, notes_md, status, priority, due_date, st
 let openError = ''
 
 /**
+ * 只读模式原因（对齐 Python 的 #12：Database.migrate_error）。
+ * 迁移失败时连接照常打开并记录原因，应用不崩、显示只读横幅 + 恢复备份入口。
+ * 空字符串表示正常可写。
+ */
+let readonlyReason = ''
+
+/**
  * 首次运行建库：等价于 Python 版的 create_all + FTS DDL + 写 schema_version。
  * 两版因此打开的是同一套 schema，之后 Python 版再打开不会触发迁移。
  */
@@ -151,8 +158,18 @@ export function open(): Database.Database | null {
     if (creating) initSchema(db)
     else upgradeSchema(db)
     openError = ''
+    readonlyReason = ''
     return db
   } catch (err) {
+    const message = (err as Error).message
+    // 迁移失败 ≠ 库不可用（对齐 Python #12）：Database 构造期捕获 migrate_error，
+    // 连接保持打开，App 进入只读模式并显示横幅 + 恢复备份入口，而不是整个应用瘫痪（D2）。
+    if (!creating && db) {
+      readonlyReason = message
+      openError = ''
+      console.error('[db] 迁移失败，进入只读模式', p, err)
+      return db
+    }
     console.error('[db] 打开失败', p, err)
     try {
       db?.close()
@@ -162,11 +179,21 @@ export function open(): Database.Database | null {
     db = null
     // 只清理「本来不存在、由我们刚创建」的文件：绝不动用户已有的库
     if (creating && !existed) removeDatabaseFiles(p)
-    openError = creating
-      ? `数据库初始化失败：${p}（${(err as Error).message}）`
-      : `数据库打开失败：${p}（${(err as Error).message}）。若同时开着 Python 版，请先关闭它。`
+    openError = creating ? `数据库初始化失败：${p}（${message}）` : `数据库打开失败：${p}（${message}）。若同时开着 Python 版，请先关闭它。`
     return null
   }
+}
+
+/** 只读模式原因（库能打开但迁移失败）；空字符串表示正常。D2 的 app:info / 横幅数据源。 */
+export function dbReadonlyReason(): string {
+  open()
+  return readonlyReason
+}
+
+/** 最近一次打开/建库失败的中文原因（库完全不可用时非空）。 */
+export function dbOpenError(): string {
+  open()
+  return openError
 }
 
 export function conn(): Database.Database {
@@ -176,17 +203,25 @@ export function conn(): Database.Database {
 }
 
 /**
- * 时间戳必须是 Python `datetime.now()` 的默认字符串形态（微秒 6 位），
- * 否则 SQLAlchemy 之后再读这一列会解析失败。
+ * 把任意时刻格式化成与 `nowStamp()` 相同的字符串形态。
+ * 固定宽度 + 固定字段顺序 ⇒ 字典序即时间序，可直接和 DATETIME 列做字符串比较，
+ * 避免解析 6 位微秒（对齐 D12 的 `deleted_at < now - days` 口径）。
  */
-export function nowStamp(): string {
-  const d = new Date()
+export function stampOf(d: Date): string {
   const pad = (n: number, w = 2): string => String(n).padStart(w, '0')
   return (
     `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
     `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.` +
     pad(d.getMilliseconds() * 1000, 6)
   )
+}
+
+/**
+ * 时间戳必须是 Python `datetime.now()` 的默认字符串形态（微秒 6 位），
+ * 否则 SQLAlchemy 之后再读这一列会解析失败。
+ */
+export function nowStamp(): string {
+  return stampOf(new Date())
 }
 
 export const today = (): string => new Date().toLocaleDateString('sv-SE') // YYYY-MM-DD
@@ -196,6 +231,9 @@ export function closeDb(): void {
   db?.close()
   db = null
   openedPath = ''
+  // 下次打开会重新推导只读状态（恢复备份后可能已正常）
+  readonlyReason = ''
+  openError = ''
 }
 
 export const getTask = (id: number): Task | null =>

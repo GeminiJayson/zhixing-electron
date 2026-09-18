@@ -1,7 +1,10 @@
 import type {
+  GraphDelta,
   GraphNodePayload,
   GraphPayload,
+  GraphQuery,
 } from '../../shared/types'
+import { priorityLabel } from '../../shared/priority'
 import { conn } from './connection'
 import { attachTaskNote, detachTaskNote } from './tasks'
 import { reparentTask } from './task-ops'
@@ -13,7 +16,10 @@ import { saveNote } from './notes'
 export const TASK_ID_OFFSET = 5_000_000
 export const FLASH_ID_OFFSET = 1_000_000
 export const FOLDER_ID_OFFSET = 2_000_000
+/** v0.15 P1-3：段落锚点独立负空间（任务→笔记段落级引用锚，唯一确定性 id）。 */
+export const ANCHOR_ID_OFFSET = 3_000_000
 export const folderNodeId = (id: number): number => -id - FOLDER_ID_OFFSET
+export const anchorNodeId = (contextId: number): number => -contextId - ANCHOR_ID_OFFSET
 
 /**
  * 两类边判定，逐条对齐 graph_service.classify_edge：
@@ -34,26 +40,114 @@ export const graphNodeId = (kind: string, refId: number): number => {
   if (kind === 'folder') return folderNodeId(refId)
   if (kind === 'flash') return -refId - FLASH_ID_OFFSET
   if (kind === 'task') return refId + TASK_ID_OFFSET
+  if (kind === 'anchor') return anchorNodeId(refId)
   return refId
 }
 
 /**
- * 构建图谱数据，对齐 GraphService._assemble + _finalize_edges：
- * 文件夹层级与包含（归属）、note→note 与悬空引用（引用）、闪念为孤立节点。
+ * 归属层级边破环（对齐 _acyclic_ownership_edges）：DFS 三色标记，去掉指向当前访问栈的回边。
+ *
+ * 归属 DAG 只可能被自引用父子链（folder.parent_id / task.parent_id）破坏；
+ * folder→note、task→note 单向，不可能成环，无需进入本函数。
  */
-export function buildGraph(includeTasks = false): GraphPayload {
+export function acyclicOwnershipEdges(edges: [number, number][]): [number, number][] {
+  const adj = new Map<number, number[]>()
+  for (const [s, d] of edges) {
+    const list = adj.get(s)
+    if (list) list.push(d)
+    else adj.set(s, [d])
+  }
+  const WHITE = 0
+  const GRAY = 1
+  const BLACK = 2
+  const color = new Map<number, number>()
+  const bad = new Set<string>()
+  const dfs = (u: number): void => {
+    color.set(u, GRAY)
+    for (const v of adj.get(u) ?? []) {
+      const c = color.get(v) ?? WHITE
+      if (c === WHITE) dfs(v)
+      else if (c === GRAY) bad.add(u + ',' + v)
+    }
+    color.set(u, BLACK)
+  }
+  for (const node of [...adj.keys()]) if ((color.get(node) ?? WHITE) === WHITE) dfs(node)
+  return edges.filter(([s, d]) => !bad.has(s + ',' + d))
+}
+
+/** 把正文压成单行摘要：折叠空白/换行后按字符截断（对齐 _summarize_text）。 */
+function summarizeText(text: string | null | undefined, limit: number): string {
+  const t = (text ?? '').split(/\s+/).filter(Boolean).join(' ')
+  return t.length <= limit ? t : t.slice(0, limit) + '…'
+}
+
+/**
+ * 闪念无标题字段：取正文**首行**截断作为图谱节点标题。
+ * 对齐 _flash_label：首行 trim → 截 40 字 → 空则兜底「闪念」。
+ */
+export function flashLabel(content: string | null | undefined): string {
+  const text = (content ?? '').trim().split('\n')[0].trim()
+  return text.slice(0, 40) || '闪念'
+}
+
+interface NoteRow {
+  id: number
+  title: string | null
+  folder_id: number | null
+  format: string | null
+}
+
+/**
+ * 构建图谱数据，对齐 GraphService.build → _assemble + _finalize_edges：
+ * - 笔记节点（可按 folder_id / tag_id 过滤；onlyIds 用于邻域子图）；
+ * - 文件夹层级与包含（归属）、note→note 与悬空引用（引用）；
+ * - 闪念为孤立节点（仅全图，邻域子图不含，对齐 only_ids 判断）；
+ * - 可选任务节点：task→note 归属 + task→note 引用 + task→task 层级 + 段落锚（G3/G4）。
+ * 归属层级边最后统一破环并把被丢弃的边写入 cycleEdges（G2）。
+ */
+export function buildGraph(query: GraphQuery = {}): GraphPayload {
+  const includeTasks = query.includeTasks ?? false
+  const folderId = query.folderId ?? null
+  const tagId = query.tagId ?? null
+  const onlyIds = query.onlyIds ?? null
   const c = conn()
-  const notes = c
+
+  let notes = c
     .prepare('SELECT id, title, folder_id, format FROM note WHERE deleted_at IS NULL')
-    .all() as { id: number; title: string; folder_id: number | null; format: string }[]
-  const folders = c
-    .prepare('SELECT id, parent_id, name FROM note_folder')
-    .all() as { id: number; parent_id: number | null; name: string }[]
+    .all() as NoteRow[]
+  if (folderId != null) notes = notes.filter((n) => n.folder_id === folderId)
+  if (tagId != null) {
+    const tagged = new Set(
+      (
+        c.prepare('SELECT note_id FROM note_tag WHERE tag_id = ?').all(tagId) as {
+          note_id: number
+        }[]
+      ).map((r) => r.note_id)
+    )
+    notes = notes.filter((n) => tagged.has(n.id))
+  }
+  // 邻域子图：only_ids 同时限制节点与边。Python 侧只用它限制边、节点仍全量，
+  // 会让图页出现一圈无边孤立点；这里按「邻域子图」语义一并裁剪（偏离点见注释）。
+  if (onlyIds) {
+    const keep = new Set(onlyIds)
+    notes = notes.filter((n) => keep.has(n.id))
+  }
+  const allowed = new Set(notes.map((n) => n.id))
+
+  // 文件夹层级节点仅在全图（未按文件夹/标签/邻域过滤）时展示（对齐 _assemble）
+  const folders =
+    folderId == null && tagId == null && onlyIds == null
+      ? (c.prepare('SELECT id, parent_id, name FROM note_folder').all() as {
+          id: number
+          parent_id: number | null
+          name: string
+        }[])
+      : []
+
   const links = c
     .prepare('SELECT src_note_id, dst_note_id, dst_title FROM note_link')
     .all() as { src_note_id: number; dst_note_id: number | null; dst_title: string }[]
 
-  const allowed = new Set(notes.map((n) => n.id))
   const degree = new Map<number, number>()
   for (const l of links) {
     if (l.dst_note_id != null && allowed.has(l.src_note_id) && allowed.has(l.dst_note_id)) {
@@ -83,6 +177,8 @@ export function buildGraph(includeTasks = false): GraphPayload {
   }
 
   const edges: [number, number][] = []
+  /** 已显式标注的边类（task→note 引用）：优先于按节点类型推断的默认结果。 */
+  const presetKinds: Record<string, 'ownership' | 'reference'> = {}
 
   // 文件夹节点 + 层级/包含边（归属实线）
   if (folders.length) {
@@ -138,35 +234,36 @@ export function buildGraph(includeTasks = false): GraphPayload {
     }
   }
 
-  // 闪念：独立负空间，只入图不连线
-  const flashes = c
-    .prepare('SELECT id, content FROM flash WHERE deleted_at IS NULL ORDER BY created_at DESC')
-    .all() as { id: number; content: string }[]
-  for (const f of flashes) {
-    const id = graphNodeId('flash', f.id)
-    const label = (f.content || '').trim().replace(/\s+/g, ' ')
-    nodes.push({
-      id,
-      label: label.length > 16 ? label.slice(0, 16) + '…' : label,
-      kind: 'flash',
-      size: 0.35,
-      degree: 0,
-      colorHint: 'flash',
-      refId: f.id,
-      format: '',
-    })
+  // 闪念：独立负空间，只入图不连线（邻域子图不含，对齐 only_ids 判断）
+  if (onlyIds == null) {
+    const flashes = c
+      .prepare('SELECT id, content FROM flash WHERE deleted_at IS NULL ORDER BY created_at DESC')
+      .all() as { id: number; content: string }[]
+    for (const f of flashes) {
+      const id = graphNodeId('flash', f.id)
+      nodes.push({
+        id,
+        label: flashLabel(f.content),
+        kind: 'flash',
+        size: 0.35,
+        degree: 0,
+        colorHint: 'flash',
+        refId: f.id,
+        format: '',
+      })
+    }
   }
 
-  // 任务节点（可选）：task→note 为引用边，task→task 层级为归属边
-  if (includeTasks) {
+  // 任务节点（可选，仅全图）：task→note 归属 + task→note 引用 + task→task 层级 + 段落锚
+  if (includeTasks && onlyIds == null) {
     const tasks = c
       .prepare('SELECT id, title, parent_id FROM task WHERE deleted_at IS NULL')
-      .all() as { id: number; title: string; parent_id: number | null }[]
+      .all() as { id: number; title: string | null; parent_id: number | null }[]
     const taskIds = new Set(tasks.map((t) => t.id))
     for (const t of tasks) {
       nodes.push({
         id: graphNodeId('task', t.id),
-        label: t.title || '无标题',
+        label: t.title || '（无标题）',
         kind: 'task',
         size: 0.8,
         degree: 0,
@@ -188,16 +285,364 @@ export function buildGraph(includeTasks = false): GraphPayload {
         edges.push([graphNodeId('task', l.task_id), l.note_id])
       }
     }
+    // G3：task_note_ref 引用边与归属并存。同一对同时存在两种关系时按「引用」呈现
+    // （虚线优先），归属语义仍留在 task_note_link 数据层，避免同一条边叠画两次。
+    const refs = c
+      .prepare('SELECT task_id, note_id FROM task_note_ref')
+      .all() as { task_id: number; note_id: number }[]
+    for (const l of refs) {
+      if (!taskIds.has(l.task_id) || !allowed.has(l.note_id)) continue
+      const edge: [number, number] = [graphNodeId('task', l.task_id), l.note_id]
+      if (!edges.some(([s, d]) => s === edge[0] && d === edge[1])) edges.push(edge)
+      presetKinds[edge[0] + ',' + edge[1]] = 'reference'
+    }
+
+    // G4：段落锚子节点——任务引用笔记内某段（task_note_context）时，
+    // 在笔记下挂一个小锚点（引用虚线），锚点带定位键，图谱侧可跳转到该段。
+    const ctxRows = c
+      .prepare('SELECT id, task_id, note_id, block_key, snippet FROM task_note_context')
+      .all() as {
+      id: number
+      task_id: number
+      note_id: number
+      block_key: string | null
+      snippet: string | null
+    }[]
+    for (const ctx of ctxRows) {
+      if (!allowed.has(ctx.note_id) || !taskIds.has(ctx.task_id)) continue
+      if (!byId.has(ctx.note_id)) continue
+      const aid = anchorNodeId(ctx.id)
+      if (byId.has(aid)) continue
+      const snippet = (ctx.snippet ?? '').trim().replace(/\n/g, ' ')
+      const label = snippet.length > 10 ? snippet.slice(0, 10) + '…' : snippet || '段落引用'
+      const node: GraphNodePayload = {
+        id: aid,
+        label,
+        kind: 'anchor',
+        size: 0.3,
+        degree: 0,
+        colorHint: 'anchor',
+        refId: ctx.note_id,
+        refTask: ctx.task_id,
+        blockKey: ctx.block_key ?? '',
+        snippet,
+        format: '',
+      }
+      nodes.push(node)
+      byId.set(aid, node)
+      // note→anchor（就近挂载）+ task→anchor（引用来源）
+      edges.push([ctx.note_id, aid])
+      edges.push([graphNodeId('task', ctx.task_id), aid])
+    }
   }
 
+  // 1) 分类两类边（显式标注的优先保留，否则按端点类型推断）
   const edgeKinds: Record<string, 'ownership' | 'reference'> = {}
   for (const [src, dst] of edges) {
-    const a = byId.get(src)
-    const b = byId.get(dst)
-    edgeKinds[`${src},${dst}`] = classifyEdge(a?.kind ?? '', b?.kind ?? '')
+    const key = src + ',' + dst
+    if (presetKinds[key]) {
+      edgeKinds[key] = presetKinds[key]
+      continue
+    }
+    edgeKinds[key] = classifyEdge(byId.get(src)?.kind ?? '', byId.get(dst)?.kind ?? '')
   }
 
-  return { nodes, edges, edgeKinds }
+  // 2) 归属层级边破环（folder→folder / task→task），丢弃的回边写进 cycleEdges
+  let finalEdges = edges
+  let cycleEdges: [number, number][] = []
+  const hier = new Map<string, [number, number]>()
+  for (const e of edges) {
+    const a = byId.get(e[0])
+    const b = byId.get(e[1])
+    if (a && b && a.kind === b.kind && (a.kind === 'folder' || a.kind === 'task')) {
+      hier.set(e[0] + ',' + e[1], e)
+    }
+  }
+  if (hier.size) {
+    const hierList = [...hier.values()].sort((x, y) => x[0] - y[0] || x[1] - y[1])
+    const keep = new Set(acyclicOwnershipEdges(hierList).map(([s, d]) => s + ',' + d))
+    const dropped = [...hier.keys()].filter((k) => !keep.has(k))
+    if (dropped.length) {
+      const droppedSet = new Set(dropped)
+      for (const k of dropped) delete edgeKinds[k]
+      finalEdges = edges.filter((e) => !droppedSet.has(e[0] + ',' + e[1]))
+      cycleEdges = dropped
+        .map((k) => k.split(',').map(Number) as [number, number])
+        .sort((a, b) => a[0] - b[0] || a[1] - b[1])
+    }
+  }
+
+  return { nodes, edges: finalEdges, edgeKinds, cycleEdges }
+}
+
+// ---------------------------------------------------------------- 增量同步（G5）
+
+/** 最近一帧的构建结果与构建参数（对齐 GraphService._cache / _cache_params）。 */
+let graphCache: GraphPayload | null = null
+let graphParams: GraphQuery = {}
+/** 图页是否在看图谱：没人看就不必每次写入都重算 diff。 */
+let graphWatching = false
+
+export function setGraphWatch(active: boolean): void {
+  graphWatching = active
+}
+
+export function isGraphWatching(): boolean {
+  return graphWatching
+}
+
+/** 构建并缓存一帧（图表打开时用这个，而不是裸 buildGraph）。 */
+export function buildGraphTracked(query: GraphQuery = {}): GraphPayload {
+  const data = buildGraph(query)
+  graphCache = data
+  graphParams = { ...query }
+  return data
+}
+
+/**
+ * 相对上一帧的最小变更集（对齐 GraphService._sync：按缓存参数重建 → diff）。
+ * 无上一帧时返回 full=true，消费端应整体重建但保留节点坐标。
+ */
+export function graphDelta(): GraphDelta {
+  const old = graphCache
+  const fresh = buildGraph(graphParams)
+  const delta = diffGraph(fresh, old)
+  graphCache = fresh
+  return delta
+}
+
+/** 节点是否需要更新（label/kind/color/size/degree/format/ref 任一变化）。 */
+export function nodeChanged(a: GraphNodePayload, b: GraphNodePayload): boolean {
+  return !(
+    a.label === b.label &&
+    a.kind === b.kind &&
+    a.colorHint === b.colorHint &&
+    a.format === b.format &&
+    a.refId === b.refId &&
+    a.size === b.size &&
+    a.degree === b.degree
+  )
+}
+
+/** 计算增量（对齐 GraphService.diff）。 */
+export function diffGraph(next: GraphPayload, prev: GraphPayload | null): GraphDelta {
+  const key = (e: [number, number]): string => e[0] + ',' + e[1]
+  if (!prev) {
+    return {
+      addedNodes: [...next.nodes],
+      removedNodeIds: [],
+      updatedNodeIds: [],
+      addedEdges: next.edges.map((e) => [...e] as [number, number]),
+      removedEdges: [],
+      edgeKinds: { ...next.edgeKinds },
+      full: true,
+    }
+  }
+  const oldById = new Map(prev.nodes.map((n) => [n.id, n]))
+  const newIds = new Set(next.nodes.map((n) => n.id))
+  const addedNodes = next.nodes.filter((n) => !oldById.has(n.id))
+  const removedNodeIds = prev.nodes.filter((n) => !newIds.has(n.id)).map((n) => n.id)
+  const updatedNodes = next.nodes.filter((n) => {
+    const a = oldById.get(n.id)
+    return a != null && nodeChanged(a, n)
+  })
+  const updatedNodeIds = updatedNodes.map((n) => n.id)
+  const oldEdges = new Set(prev.edges.map(key))
+  const newEdges = new Set(next.edges.map(key))
+  const addedEdges = next.edges.filter((e) => !oldEdges.has(key(e)))
+  const removedEdges = prev.edges.filter((e) => !newEdges.has(key(e)))
+  const edgeKinds: Record<string, 'ownership' | 'reference'> = {}
+  for (const e of addedEdges) edgeKinds[key(e)] = next.edgeKinds[key(e)] ?? 'reference'
+  return {
+    addedNodes,
+    removedNodeIds,
+    updatedNodeIds,
+    updatedNodes,
+    addedEdges: addedEdges.map((e) => [...e] as [number, number]),
+    removedEdges: removedEdges.map((e) => [...e] as [number, number]),
+    edgeKinds,
+    full: false,
+  }
+}
+
+// ---------------------------------------------------------------- 邻域（G8）
+
+/**
+ * 某笔记的 1~2 度邻域子图（对齐 GraphService.neighborhood）。
+ *
+ * 只在 note_link 上做 BFS——不掺 folder / flash / task 节点，结果不随
+ * includeTasks 或文件夹节点变化。悬空引用由 buildGraph 的 onlyIds 分支自然带入
+ * （Python 在 neighborhood 里又补了一遍同样的悬空节点，那一步是重复的，这里不重复）。
+ */
+export function graphNeighborhood(noteId: number, degree = 1): GraphPayload {
+  const c = conn()
+  const links = c
+    .prepare('SELECT src_note_id, dst_note_id FROM note_link')
+    .all() as { src_note_id: number; dst_note_id: number | null }[]
+  const adj = new Map<number, Set<number>>()
+  for (const l of links) {
+    if (l.dst_note_id == null) continue
+    if (!adj.has(l.src_note_id)) adj.set(l.src_note_id, new Set())
+    if (!adj.has(l.dst_note_id)) adj.set(l.dst_note_id, new Set())
+    adj.get(l.src_note_id)!.add(l.dst_note_id)
+    adj.get(l.dst_note_id)!.add(l.src_note_id)
+  }
+  const keep = new Set<number>([noteId])
+  let frontier = [noteId]
+  for (let d = 0; d < Math.max(1, Math.trunc(degree)); d++) {
+    const next: number[] = []
+    for (const id of frontier) {
+      for (const nb of adj.get(id) ?? []) {
+        if (!keep.has(nb)) {
+          keep.add(nb)
+          next.push(nb)
+        }
+      }
+    }
+    frontier = next
+  }
+  return buildGraphTracked({ onlyIds: [...keep] })
+}
+
+// ---------------------------------------------------------------- 节点预览（G9）
+
+/** 所属笔记文件夹名（找不到返回空串）。 */
+function folderName(folderId: number | null): string {
+  if (folderId == null) return ''
+  const row = conn().prepare('SELECT name FROM note_folder WHERE id = ?').get(folderId) as
+    | { name: string | null }
+    | undefined
+  return row?.name ?? ''
+}
+
+/**
+ * 按节点类型生成选中面板的预览文本（对齐 GraphService.preview_text）：
+ * note→摘要/字数/置顶；task→状态/优先级/截止/父任务/关联笔记；
+ * folder→上级/子文件夹/笔记数；flash→正文/备注/来源；anchor→引用任务/片段。
+ */
+export function graphPreview(node: GraphNodePayload): string {
+  const c = conn()
+  try {
+    if (node.kind === 'note') {
+      const n = c
+        .prepare('SELECT content_md, word_count, folder_id, pinned FROM note WHERE id = ?')
+        .get(node.refId || node.id) as
+        | { content_md: string | null; word_count: number | null; folder_id: number | null; pinned: number | null }
+        | undefined
+      if (!n) return '类型：笔记\n链接数：' + node.degree
+      const lines = ['类型：笔记']
+      const fn = folderName(n.folder_id)
+      if (fn) lines.push('所属：' + fn)
+      const summary = summarizeText(n.content_md, 140)
+      if (summary) lines.push('摘要：' + summary)
+      lines.push('字数：' + (n.word_count ?? 0) + ' · 链接：' + node.degree)
+      if (n.pinned) lines.push('已置顶')
+      return lines.join('\n')
+    }
+    if (node.kind === 'task') {
+      const t = c
+        .prepare(
+          'SELECT id, title, status, priority, due_date, parent_id, notes_md FROM task WHERE id = ? AND deleted_at IS NULL'
+        )
+        .get(node.refId) as
+        | {
+            id: number
+            title: string | null
+            status: string
+            priority: number
+            due_date: string | null
+            parent_id: number | null
+            notes_md: string | null
+          }
+        | undefined
+      if (!t) return '类型：任务\n链接数：' + node.degree
+      const STATUS: Record<string, string> = {
+        todo: '待办',
+        doing: '进行中',
+        waiting: '等待中',
+        done: '已完成',
+        abandoned: '已放弃',
+      }
+      const lines = ['类型：任务', '状态：' + (STATUS[t.status] ?? t.status) + ' · 优先级：' + priorityLabel(t.priority)]
+      if (t.due_date) lines.push('截止：' + t.due_date)
+      if (t.parent_id != null) {
+        const p = c.prepare('SELECT title FROM task WHERE id = ?').get(t.parent_id) as
+          | { title: string | null }
+          | undefined
+        if (p) lines.push('父任务：' + (p.title || '无标题'))
+      }
+      if ((t.notes_md ?? '').trim()) lines.push('备注：' + summarizeText(t.notes_md, 80))
+      const linked = c
+        .prepare(
+          'SELECT n.title AS title FROM task_note_link l JOIN note n ON n.id = l.note_id WHERE l.task_id = ?'
+        )
+        .all(t.id) as { title: string | null }[]
+      if (linked.length) {
+        lines.push('关联笔记：' + linked.slice(0, 4).map((r) => r.title || '无标题').join('、'))
+        if (linked.length > 4) lines.push('… 共 ' + linked.length + ' 个')
+      } else {
+        lines.push('关联笔记：0 个')
+      }
+      return lines.join('\n')
+    }
+    if (node.kind === 'folder') {
+      const folders = c.prepare('SELECT id, parent_id, name FROM note_folder').all() as {
+        id: number
+        parent_id: number | null
+        name: string | null
+      }[]
+      const target = folders.find((f) => f.id === node.refId)
+      const children = folders.filter((f) => f.parent_id === node.refId)
+      const noteCount = (
+        c
+          .prepare('SELECT COUNT(*) AS c FROM note WHERE deleted_at IS NULL AND folder_id = ?')
+          .get(node.refId) as { c: number }
+      ).c
+      const lines = ['类型：文件夹']
+      if (target && target.parent_id != null) {
+        const parent = folders.find((f) => f.id === target.parent_id)
+        if (parent) lines.push('上级：' + (parent.name ?? ''))
+      }
+      lines.push('子文件夹：' + children.length + ' 个 · 笔记：' + noteCount + ' 篇')
+      if (children.length) lines.push('　' + children.slice(0, 5).map((f) => f.name ?? '').join('、'))
+      return lines.join('\n')
+    }
+    if (node.kind === 'flash') {
+      const f = c
+        .prepare('SELECT content, remark, source_app, source_url FROM flash WHERE id = ? AND deleted_at IS NULL')
+        .get(node.refId) as
+        | { content: string | null; remark: string | null; source_app: string | null; source_url: string | null }
+        | undefined
+      if (!f) return '类型：闪念'
+      const lines = ['类型：闪念']
+      if ((f.content ?? '').trim()) lines.push('正文：' + summarizeText(f.content, 140))
+      if ((f.remark ?? '').trim()) lines.push('备注：' + summarizeText(f.remark, 80))
+      if (f.source_app) lines.push('来源：' + f.source_app)
+      if (f.source_url) lines.push('链接：' + f.source_url.slice(0, 60))
+      return lines.join('\n')
+    }
+    if (node.kind === 'dangling') {
+      return '类型：待建链接\n目标：' + node.label + '\n双击新建笔记'
+    }
+    if (node.kind === 'anchor') {
+      let taskTitle = ''
+      if (node.refTask) {
+        const row = c.prepare('SELECT title FROM task WHERE id = ?').get(node.refTask) as
+          | { title: string | null }
+          | undefined
+        taskTitle = row?.title ?? ''
+      }
+      const snip = (node.snippet || node.label || '').replace(/\n/g, ' ')
+      const lines = ['类型：段落引用']
+      if (taskTitle) lines.push('引用自任务：' + taskTitle)
+      if (snip) lines.push('片段：' + snip.slice(0, 60))
+      lines.push('双击跳转定位到该段落')
+      return lines.join('\n')
+    }
+  } catch {
+    // 预览失败不该把侧栏带崩（对齐 Python 的 except → 兜底文本）
+  }
+  return '类型：' + node.kind + '\n链接数：' + node.degree
 }
 
 // ---------------------------------------------------------------- 图谱写入（拖拽连线）
@@ -373,6 +818,16 @@ export function connectGraphNodes(
   // 方向归一：task↔note 一律按 task 在前（对齐 Python commit_connection）
   if (srcKind === 'note' && dstKind === 'task') {
     return connectGraphNodes(dstKind, dstRef, srcKind, srcRef, edgeKind)
+  }
+  // G2：归属层级改挂（folder→folder / task→task）先做祖先链环路校验
+  // （对齐 commit_connection 第 3 步；避免把节点挂到自己的子孙下）。
+  if (
+    edgeKind === 'ownership' &&
+    srcKind === dstKind &&
+    (srcKind === 'folder' || srcKind === 'task') &&
+    wouldCreateCycle(graphNodeId(srcKind, srcRef), graphNodeId(dstKind, dstRef))
+  ) {
+    return false
   }
   if (srcKind === 'note' && dstKind === 'note') return linkNotes(srcRef, dstRef)
   if (srcKind === 'task' && dstKind === 'note') {

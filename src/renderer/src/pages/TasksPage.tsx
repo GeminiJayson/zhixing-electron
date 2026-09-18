@@ -2,7 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { STATUS_LABELS, buildTaskTree, effectiveDoneMap, type TaskNode } from '@shared/task'
 import { priorityLabel } from '@shared/priority'
-import type { ListFolder, Task, TaskStatus } from '@shared/types'
+import type {
+  ListFolder,
+  Task,
+  TaskStatus,
+  WorkflowInstancePayload,
+  WorkflowTemplateSummary,
+} from '@shared/types'
+import { subscribeDomain } from '@shared/events'
+import { parseSettings } from '@shared/settings'
 import { t } from '../i18n'
 import { useDialog } from '../components/Dialogs'
 import { PopMenu, type PopMenuItem } from '../components/PopMenu'
@@ -33,6 +41,11 @@ const VIEWS: { key: ViewKey; label: string }[] = [
 ]
 
 type Tag = { id: number; name: string; color: string }
+
+/** 工作流实例状态的中文名（与 WorkflowPage 的取值口径一致，I12）。 */
+function wfStatusLabel(status: string): string {
+  return status === 'running' ? '进行中' : status === 'done' ? '已完成' : '已中止'
+}
 
 /** 过滤规则与 Python 的 TaskFilterProxy 一致：自身命中或任一后代命中即保留。 */
 function filterTree(nodes: TaskNode[], query: string): TaskNode[] {
@@ -77,24 +90,41 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
   const [allTags, setAllTags] = useState<{ id: number; name: string; color: string }[]>([])
   const [tagMenu, setTagMenu] = useState<{ id: number; x: number; y: number } | null>(null)
   const [ctxMenu, setCtxMenu] = useState<{ id: number; x: number; y: number } | null>(null)
+  /** 移动到清单的选择器（T1）：ids 支持单选与批量共用 */
+  const [moveMenu, setMoveMenu] = useState<{ x: number; y: number; ids: number[] } | null>(null)
+  /** 「挂到任务下」目标选择器（T17，走 task_candidates） */
+  const [parentPicker, setParentPicker] = useState<{ id: number; x: number; y: number } | null>(null)
+  const [pickerQ, setPickerQ] = useState('')
+  const [pickerItems, setPickerItems] = useState<Task[]>([])
+  /** 日历显示已完成（settings.calendar_show_done，默认 false；此前只写不读，T11） */
+  const [showDone, setShowDone] = useState(false)
   const [adding, setAdding] = useState<{ parentId: number | null } | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [draftTitle, setDraftTitle] = useState('')
+  /** S22 深链目标：等父链展开、目标行进入展平结果后再滚动，然后清空 */
+  const [pendingFocus, setPendingFocus] = useState<number | null>(null)
+  /** 选中任务关联的工作流实例（速览「工作流」卡片，I12） */
+  const [wfInstances, setWfInstances] = useState<WorkflowInstancePayload[]>([])
+  /** 可启动的工作流模板（「启动工作流…」菜单，I12） */
+  const [wfTemplates, setWfTemplates] = useState<WorkflowTemplateSummary[]>([])
+  const [wfMenu, setWfMenu] = useState<{ x: number; y: number } | null>(null)
   const addRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
     // 选中清单时走 list_tree 的语义（根 + 后代闭包）；收件箱对应 list_id 为空
     const scoped: number | null | 'all' =
       listKey === '' ? 'all' : listKey === 'none' ? null : Number(listKey)
-    const [rows, nc, tt, tg, fs] = await Promise.all([
+    const [rows, nc, tt, tg, fs, st] = await Promise.all([
       scoped === 'all' ? window.zhixing.db.tasks() : window.zhixing.db.tasksByList(scoped),
       window.zhixing.db.noteCounts(),
       window.zhixing.db.taskTags(),
       window.zhixing.db.tags(),
       window.zhixing.db.listFolders(),
+      window.zhixing.db.settings(),
     ])
     setAllTags(tg)
     setFolders(fs as ListFolder[])
+    setShowDone(parseSettings(st).calendar_show_done)
     const countMap = new Map<number, number>()
     for (const r of nc) countMap.set(r.task_id, r.c)
     const tagMap = new Map<number, Tag[]>()
@@ -111,6 +141,23 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
   useEffect(() => {
     void load()
   }, [load])
+
+  // 设置页切换「日历显示已完成」后即时生效（T11，calendar_show_done 此前只写不读）
+  useEffect(() => subscribeDomain(['settings'], () => void load()), [load])
+
+  // 「挂到任务下」候选：走 task_candidates（q 变化即时搜索，T17）
+  useEffect(() => {
+    if (!parentPicker) return
+    let alive = true
+    const target = parentPicker.id
+    void (async () => {
+      const rows = await window.zhixing.db.taskCandidates(pickerQ, 20)
+      if (alive) setPickerItems(rows.filter((t) => t.id !== target))
+    })()
+    return () => {
+      alive = false
+    }
+  }, [parentPicker, pickerQ])
 
   useEffect(() => {
     if (adding) addRef.current?.focus()
@@ -176,10 +223,96 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     return find(tree)
   }, [tree, selected])
 
+  // S22：任务深链（托盘 / 图谱 / 命令面板）——切到列表视图、放开清单/聚焦/过滤等收窄条件，
+  // 选中目标并登记待定位 id；父链展开与滚动交给下面的 effect（对齐 task_page 的定位语义）
+  useEffect(() => {
+    const onOpenTask = (e: Event): void => {
+      const id = Number((e as CustomEvent<{ id?: number }>).detail?.id)
+      if (!Number.isFinite(id) || id <= 0) return
+      setView('list')
+      setFilter('')
+      setListKey('')
+      onClearFocus?.()
+      setSelected(id)
+      setSelectedIds(new Set([id]))
+      setInspector(true)
+      setPendingFocus(id)
+    }
+    window.addEventListener('zhixing:open-task', onOpenTask)
+    return () => window.removeEventListener('zhixing:open-task', onOpenTask)
+  }, [onClearFocus])
+
+  // 深链定位：折叠状态下目标行不在 flatRows 里，所以先展开父链，等展平结果就绪再按
+  // 固定行高把虚拟列表滚到目标居中；两步分开是为了避免用错位前的下标滚动
+  useEffect(() => {
+    if (pendingFocus == null) return
+    const byId = new Map(tasks.map((t) => [t.id, t]))
+    const target = byId.get(pendingFocus)
+    if (!target) return
+    const toOpen: number[] = []
+    let cur = target.parent_id
+    while (cur != null) {
+      if (collapsed.has(cur)) toOpen.push(cur)
+      cur = byId.get(cur)?.parent_id ?? null
+    }
+    if (toOpen.length) {
+      setCollapsed((prev) => {
+        const next = new Set(prev)
+        for (const id of toOpen) next.delete(id)
+        return next
+      })
+      return
+    }
+    const index = flatRows.findIndex((r) => r.node?.id === pendingFocus)
+    if (index < 0) return
+    const host = document.querySelector<HTMLElement>('.task-vlist')
+    if (host) host.scrollTop = Math.max(0, index * rowH - host.clientHeight / 2 + rowH / 2)
+    setPendingFocus(null)
+  }, [pendingFocus, tasks, collapsed, flatRows, rowH])
+
+  // I12：选中任务的工作流实例（速览卡片），工作流域有写入时跟着刷新
+  const wfTaskId = selectedNode?.id ?? null
+  useEffect(() => {
+    if (wfTaskId == null) {
+      setWfInstances([])
+      return
+    }
+    let alive = true
+    void window.zhixing.db.workflowInstancesOfTask(wfTaskId).then((rows) => {
+      if (alive) setWfInstances(rows)
+    })
+    return () => {
+      alive = false
+    }
+  }, [wfTaskId])
+
+  useEffect(() => {
+    if (wfTaskId == null) return
+    return subscribeDomain(['workflow'], () => {
+      void window.zhixing.db.workflowInstancesOfTask(wfTaskId).then(setWfInstances)
+    })
+  }, [wfTaskId])
+
+  // 「启动工作流…」菜单的模板清单（模板本身只在工作流页改，进入本页取一次即可）
+  useEffect(() => {
+    void window.zhixing.db.workflowTemplates().then(setWfTemplates)
+  }, [])
+
   const refresh = useCallback(async () => {
     await load()
     await onChanged()
   }, [load, onChanged])
+
+  /** I12：为当前选中任务启动一个工作流实例（origin_task = 该任务）。 */
+  const handleStartWorkflow = async (templateId: number): Promise<void> => {
+    setWfMenu(null)
+    const taskId = selectedNode?.id ?? null
+    if (taskId == null) return
+    await window.zhixing.db.instantiateWorkflow(templateId, null, taskId)
+    onNotice('已启动工作流')
+    setWfInstances(await window.zhixing.db.workflowInstancesOfTask(taskId))
+    await refresh()
+  }
 
 
   /** 列表视图的可见顺序，供 Shift 连选使用。 */
@@ -261,16 +394,46 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     setDragId(null)
     setDropHint(null)
     if (src == null || src === targetId) return
-    if (pos === 'child') await window.zhixing.db.reparentTask(src, targetId)
-    else await window.zhixing.db.reorderTask(src, targetId, pos === 'after')
+    if (pos === 'child') {
+      await window.zhixing.db.reparentTask(src, targetId)
+    } else {
+      // 对齐 Python task_page._on_tree_drop：before/after 落到别的父级下时先显式改挂
+      // （reparent 只改父级、保留 sort_key），再 reorder 只调 sort_key（T12）。
+      const srcTask = tasks.find((t) => t.id === src)
+      const anchor = tasks.find((t) => t.id === targetId)
+      if (srcTask && anchor && srcTask.parent_id !== anchor.parent_id) {
+        await window.zhixing.db.reparentTask(src, anchor.parent_id)
+      }
+      await window.zhixing.db.reorderTask(src, targetId, pos === 'after')
+    }
     await refresh()
   }
 
   const handleToggle = async (id: number): Promise<void> => {
+    const before = tasks.find((t) => t.id === id)
+    const wasDone = before
+      ? (effective.get(id) ?? (before.status === 'done' || before.status === 'abandoned'))
+      : false
     await window.zhixing.db.toggleTask(id)
+    // 对齐 app_controller._toggle_task：撤销要记录勾选前的 prev_status（T13）
     window.dispatchEvent(
-      new CustomEvent('zhixing:undoable', { detail: { ids: [id], label: '任务状态已切换' } })
+      new CustomEvent('zhixing:undoable', {
+        detail: {
+          ids: [id],
+          label: '任务状态已切换',
+          prevStatus: wasDone ? (before?.status ?? 'todo') : 'done',
+        },
+      })
     )
+    // 完成且挂有笔记段落 → 自动把「结论」回写到原笔记（T3 的完成闭环；
+    // 对齐 app_controller._write_note_after_done 的「有关联段落」分支）
+    if (!wasDone) {
+      const ctxs = await window.zhixing.db.linkedContexts(id)
+      if (ctxs.length) {
+        const res = await window.zhixing.db.writeNoteAfterDone(id, before?.title ?? '')
+        if (res) onNotice('已把结论回写到关联笔记')
+      }
+    }
     await refresh()
   }
 
@@ -304,6 +467,34 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
   /** 同级上移/下移（Ctrl+↑/↓，对齐 move_relative）。 */
   const handleMoveRelative = async (id: number, delta: number): Promise<void> => {
     await window.zhixing.db.moveTaskRelative(id, delta)
+    await refresh()
+  }
+
+  /** 移动到清单（T1）：收件箱 = null；复用 moveTaskToList（对齐 move_to_list）。 */
+  const handleMoveToList = async (ids: number[], listId: number | null): Promise<void> => {
+    for (const id of ids) await window.zhixing.db.moveTaskToList(id, listId)
+    setMoveMenu(null)
+    onNotice(ids.length > 1 ? `已移动 ${ids.length} 项` : '已移动 1 项')
+    setSelectedIds(new Set())
+    await refresh()
+  }
+
+  /** 暂停为等待中（T4）；恢复日期由编辑器「恢复于」写入。 */
+  const handlePause = async (id: number): Promise<void> => {
+    await window.zhixing.db.pauseTask(id, null)
+    await refresh()
+  }
+
+  /** 从等待中恢复为待办（T4）。 */
+  const handleResume = async (id: number): Promise<void> => {
+    await window.zhixing.db.resumeTask(id)
+    await refresh()
+  }
+
+  /** 「挂到任务下」：用 task_candidates 选父任务后改挂（T17）。 */
+  const handleReparentTo = async (id: number, parentId: number): Promise<void> => {
+    setParentPicker(null)
+    await window.zhixing.db.reparentTask(id, parentId)
     await refresh()
   }
 
@@ -402,7 +593,14 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     setAdding(null)
     setDraftTitle('')
     if (!title) return
-    const created = await window.zhixing.db.createTask(title, parentId)
+    // 子任务：走 create_task（继承父任务的 list_id，T6）；
+    // 顶层：对齐 task_page.quickAddRequested —— 走 quick_create 并传当前清单（T7），
+    // 未命中 @列表 时回退到该清单而不是新建。
+    const currentList = listKey !== '' && listKey !== 'none' ? Number(listKey) : null
+    const created =
+      parentId !== null
+        ? await window.zhixing.db.createTask(title, parentId, null)
+        : await window.zhixing.db.quickAdd(title, currentList)
     if (created) setSelected(created.id)
     await refresh()
   }
@@ -600,6 +798,7 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
               onOpen={setEditingId}
               onToggle={handleToggle}
               onReschedule={(id, day) => void handleReschedule(id, day)}
+              showDone={showDone}
             />
           ) : view === 'kanban' ? (
             <KanbanBoard
@@ -671,6 +870,32 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
                     <p className="u-aux">无标签</p>
                   )}
                 </section>
+                {/* I12：工作流速览卡片 —— 该任务启动/关联的实例 + 「启动工作流…」入口 */}
+                <section className="inspector__card">
+                  <header className="inspector__head">工作流</header>
+                  {wfInstances.length ? (
+                    <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                      {wfInstances.map((inst) => (
+                        <li key={inst.id} className="u-aux">
+                          {inst.title} · {wfStatusLabel(inst.status)} ·{' '}
+                          {inst.steps.filter((s) => s.done).length}/{inst.steps.length} 步
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="u-aux">暂无关联的工作流</p>
+                  )}
+                  <button
+                    className="text-btn text-btn--accent"
+                    disabled={wfTemplates.length === 0}
+                    onClick={(e) => {
+                      const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                      setWfMenu({ x: r.left, y: r.bottom + 4 })
+                    }}
+                  >
+                    启动工作流…
+                  </button>
+                </section>
               </>
             ) : (
               <p className="u-aux">选中一个任务查看速览。</p>
@@ -708,6 +933,11 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
             { key: 'done', label: '批量完成', onPick: () => void runBatch('complete') },
             { key: 'due', label: '截止设为今天', onPick: () => void runBatch('due') },
             { key: 'cleardue', label: '清除截止日期', onPick: () => void runBatch('clearDue') },
+            {
+              key: 'move',
+              label: '移动到清单…',
+              onPick: () => setMoveMenu({ x: batchMenu.x, y: batchMenu.y, ids: [...selectedIds] }),
+            },
             { key: 'del', label: '批量删除', danger: true, onPick: () => void runBatch('delete') },
           ]}
         />
@@ -740,6 +970,21 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
               { key: 'toggle', label: '完成 / 取消完成', onPick: () => void handleToggle(ctxMenu.id) },
               { key: 'edit', label: '编辑…', onPick: () => setEditingId(ctxMenu.id) },
               { key: 'sub', label: '加子任务', onPick: () => setAdding({ parentId: ctxMenu.id }) },
+              {
+                key: 'move',
+                label: '移动到清单…',
+                onPick: () => setMoveMenu({ x: ctxMenu.x, y: ctxMenu.y, ids: [ctxMenu.id] }),
+              },
+              {
+                key: 'parent',
+                label: '挂到任务下…',
+                onPick: () => {
+                  setPickerQ('')
+                  setParentPicker({ id: ctxMenu.id, x: ctxMenu.x, y: ctxMenu.y })
+                },
+              },
+              { key: 'pause', label: '暂停（等待中）', onPick: () => void handlePause(ctxMenu.id) },
+              { key: 'resume', label: '恢复为待办', onPick: () => void handleResume(ctxMenu.id) },
               { key: 'up', label: '上移一级', onPick: () => void handleMoveRelative(ctxMenu.id, -1) },
               { key: 'down', label: '下移一级', onPick: () => void handleMoveRelative(ctxMenu.id, 1) },
               {
@@ -751,6 +996,86 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
             ] satisfies PopMenuItem[]
           }
         />
+      )}
+
+      {wfMenu && (
+        <PopMenu
+          x={wfMenu.x}
+          y={wfMenu.y}
+          onClose={() => setWfMenu(null)}
+          items={wfTemplates.map((tpl) => ({
+            key: `wf-${tpl.id}`,
+            label: tpl.name,
+            onPick: () => void handleStartWorkflow(tpl.id),
+          }))}
+        />
+      )}
+
+      {moveMenu && (
+        <PopMenu
+          x={moveMenu.x}
+          y={moveMenu.y}
+          onClose={() => setMoveMenu(null)}
+          items={[
+            {
+              key: 'inbox',
+              label: '收件箱（未归属）',
+              onPick: () => void handleMoveToList(moveMenu.ids, null),
+            },
+            ...folders
+              .filter((f) => f.kind === 'list')
+              .map((f) => ({
+                key: `list-${f.id}`,
+                label: f.name,
+                onPick: () => void handleMoveToList(moveMenu.ids, f.id),
+              })),
+          ]}
+        />
+      )}
+
+      {parentPicker && (
+        <div
+          className="popmenu"
+          role="dialog"
+          aria-label="选择父任务"
+          style={{
+            position: 'fixed',
+            left: Math.max(8, Math.min(parentPicker.x, window.innerWidth - 260)),
+            top: parentPicker.y,
+          }}
+        >
+          <input
+            className="field field--compact"
+            autoFocus
+            placeholder="搜索任务标题…"
+            value={pickerQ}
+            onChange={(e) => setPickerQ(e.target.value)}
+          />
+          <ul
+            style={{
+              listStyle: 'none',
+              margin: '4px 0 0',
+              padding: 0,
+              maxHeight: 240,
+              overflow: 'auto',
+            }}
+          >
+            {pickerItems.length === 0 && <li className="u-aux">没有候选任务</li>}
+            {pickerItems.map((t) => (
+              <li key={t.id}>
+                <button
+                  className="popmenu__item"
+                  onClick={() => void handleReparentTo(parentPicker.id, t.id)}
+                >
+                  {t.title}
+                </button>
+              </li>
+            ))}
+          </ul>
+          <button className="popmenu__item" onClick={() => setParentPicker(null)}>
+            取消
+          </button>
+        </div>
       )}
 
       {menu && (

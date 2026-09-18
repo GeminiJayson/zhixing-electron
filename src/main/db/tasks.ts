@@ -4,12 +4,13 @@ import { join } from 'node:path'
 import { clampPriority } from '../../shared/priority'
 import { reindexTask, removeFromIndex } from './fts'
 import { extractLinks } from '../../shared/wiki'
-import { resolveNoteTitle } from './notes'
+import { appendNote, createNote, getNote, resolveNoteTitle } from './notes'
 import { nextRecurrence } from '../../shared/recurrence'
 import type {
   Note,
   Overview,
   Task,
+  TaskNoteContext,
   TaskStatus,
   TodayTasks,
 } from '../../shared/types'
@@ -17,11 +18,16 @@ import { conn, nowStamp, today, getTask, TASK_COLUMNS } from './connection'
 
 // ---------------------------------------------------------------- 只读查询
 
-export function listTasks(limit = 500): Task[] {
-  return conn()
-    .prepare(`SELECT ${TASK_COLUMNS} FROM task WHERE deleted_at IS NULL
-              ORDER BY sort_key ASC, id ASC LIMIT ?`)
-    .all(limit) as Task[]
+/**
+ * 全部任务，对齐 TaskRepository.list_all：默认**无上限**（T15）。
+ * 调用方显式传 limit 时才截断（此前默认 500，渲染层不传参即被静默截断）。
+ */
+export function listTasks(limit?: number): Task[] {
+  const sql = `SELECT ${TASK_COLUMNS} FROM task WHERE deleted_at IS NULL
+              ORDER BY sort_key ASC, id ASC`
+  return (
+    limit === undefined ? conn().prepare(sql).all() : conn().prepare(sql + ' LIMIT ?').all(limit)
+  ) as Task[]
 }
 
 /**
@@ -293,6 +299,10 @@ export function nextSortKey(parentId: number | null): number {
 export function createTask(title: string, parentId: number | null, listId: number | null): Task | null {
   const clean = title.trim()
   if (!clean) return null
+  // 对齐 TaskService.add_subtask：未显式指定清单时继承父任务的 list_id，
+  // 否则子任务会因自身 list_id 为空而同时出现在收件箱（T6）。
+  const parent = parentId !== null ? getTask(parentId) : null
+  const effectiveList = listId ?? parent?.list_id ?? null
   const stamp = nowStamp()
   const info = conn()
     .prepare(
@@ -300,7 +310,7 @@ export function createTask(title: string, parentId: number | null, listId: numbe
                          parent_id, list_id, created_at, updated_at)
        VALUES (?, '', 'todo', 0, 'none', 0, ?, ?, ?, ?, ?)`
     )
-    .run(clean, nextSortKey(parentId), parentId, listId, stamp, stamp)
+    .run(clean, nextSortKey(parentId), parentId, effectiveList, stamp, stamp)
   const created = Number(info.lastInsertRowid)
   reindexTask(created)
   return getTask(created)
@@ -316,6 +326,7 @@ export const EDITABLE_FIELDS = [
   'start_date',
   'repeat_period',
   'repeat_rule',
+  'resume_at',
   'last_reset_date',
 ] as const
 export type EditableField = (typeof EDITABLE_FIELDS)[number]
@@ -338,22 +349,154 @@ export function updateTask(id: number, fields: Partial<Record<EditableField, str
   if (!sets.length) return getTask(id)
 
   const stamp = nowStamp()
-  if ('status' in fields) {
-    sets.push('completed_at = ?')
-    args.push(fields.status === 'done' ? stamp : null)
-  }
+  // 对齐 T5：编辑面板改 status **不**写 completed_at（只有 set_status/toggle_complete 写），
+  // 也不再隐式清 resume_at —— Python task_editor._commit_status 由编辑器显式传 resume_at。
   sets.push('updated_at = ?')
   args.push(stamp, id)
   conn().prepare(`UPDATE task SET ${sets.join(', ')} WHERE id = ?`).run(...args)
 
-  // 与 setStatus 同一规则：离开「等待中」时清掉恢复日期
-  if ('status' in fields && fields.status !== 'waiting') {
-    conn().prepare('UPDATE task SET resume_at = NULL WHERE id = ?').run(id)
-  }
   reindexTask(id)
   // notes_md 变更后重新解析 [[笔记标题]]（对齐 task_service.update → _sync_wiki_links）
   if ('notes_md' in fields) syncTaskNoteLinks(id, String(fields.notes_md ?? ''))
   return getTask(id)
+}
+
+
+/** 置为等待中并可指定恢复日期（对齐 TaskService.pause，v0.15 P2-8）。 */
+export function pauseTask(id: number, resumeAt: string | null = null): Task | null {
+  return updateTask(id, { status: 'waiting', resume_at: resumeAt })
+}
+
+/** 恢复（默认回待办并清恢复日期，对齐 TaskService.resume）。 */
+export function resumeTask(id: number, status: TaskStatus = 'todo'): Task | null {
+  return updateTask(id, { status, resume_at: null })
+}
+
+// ------------------------------------------------ 任务↔笔记「段落级」上下文（T3）
+
+/**
+ * 记录任务关联笔记内某段落（幂等，对齐 TaskService.attach_block /
+ * TaskRepository.link_context）。task 必须已存在，否则返回 null。
+ */
+export function attachBlock(
+  taskId: number,
+  noteId: number,
+  blockKey: string,
+  snippet = ''
+): Task | null {
+  if (!taskId || !noteId || !blockKey.trim()) return null
+  const task = getTask(taskId)
+  if (!task) return null
+  conn()
+    .prepare(
+      `INSERT OR IGNORE INTO task_note_context (task_id, note_id, block_key, snippet, created_at)
+       VALUES (?, ?, ?, ?, ?)`
+    )
+    .run(taskId, noteId, blockKey, snippet ?? '', nowStamp())
+  return getTask(taskId)
+}
+
+/** 解除段落上下文；blockKey 为空则解除该 (task,note) 的全部段落（对齐 unlink_context）。 */
+export function detachBlock(taskId: number, noteId: number, blockKey = ''): number {
+  const c = conn()
+  return blockKey
+    ? c
+        .prepare(
+          'DELETE FROM task_note_context WHERE task_id = ? AND note_id = ? AND block_key = ?'
+        )
+        .run(taskId, noteId, blockKey).changes
+    : c
+        .prepare('DELETE FROM task_note_context WHERE task_id = ? AND note_id = ?')
+        .run(taskId, noteId).changes
+}
+
+/** 某任务的全部段落上下文（软删笔记隐去，对齐 linked_contexts）。 */
+export function listLinkedContexts(taskId: number): TaskNoteContext[] {
+  return conn()
+    .prepare(
+      'SELECT c.* FROM task_note_context c JOIN note n ON n.id = c.note_id ' +
+        'WHERE c.task_id = ? AND n.deleted_at IS NULL ORDER BY c.id'
+    )
+    .all(taskId) as TaskNoteContext[]
+}
+
+/** 某笔记的全部段落上下文（图谱反链/预览用，对齐 contexts_for_note）。 */
+export function contextsForNote(noteId: number): TaskNoteContext[] {
+  return conn()
+    .prepare('SELECT * FROM task_note_context WHERE note_id = ? ORDER BY id')
+    .all(noteId) as TaskNoteContext[]
+}
+
+/** 批量取多任务的段落上下文（图谱 task→anchor 构建用，对齐 context_notes_for）。 */
+export function noteContextMap(taskIds: number[]): Record<number, TaskNoteContext[]> {
+  if (!taskIds.length) return {}
+  const marks = taskIds.map(() => '?').join(',')
+  const rows = conn()
+    .prepare(`SELECT * FROM task_note_context WHERE task_id IN (${marks})`)
+    .all(...taskIds) as TaskNoteContext[]
+  const out: Record<number, TaskNoteContext[]> = {}
+  for (const r of rows) {
+    const list = out[r.task_id] ?? []
+    list.push(r)
+    out[r.task_id] = list
+  }
+  return out
+}
+
+/**
+ * 完成任务时沉淀复盘（对齐 AppController._write_note_after_done，T3）：
+ * 有段落上下文 → 把「结论」追加回原笔记并保留段落锚；否则新建「复盘：X」笔记。
+ */
+export function writeNoteAfterDone(
+  taskId: number,
+  title: string
+): { noteId: number; blockKey: string } | null {
+  const contexts = listLinkedContexts(taskId)
+  const ctx0 = contexts[0]
+  if (ctx0) {
+    const note = getNote(ctx0.note_id)
+    if (note) {
+      // 复用 appendNote（对齐 note_service.append：追加不触发版本快照）
+      const fresh = appendNote(note.id, `## 结论（${today()}）\n- ✅ 已完成：${title}\n`)
+      if (fresh) return { noteId: fresh.id, blockKey: ctx0.block_key }
+    }
+  }
+  const created = createNote(
+    `复盘：${title}`,
+    null,
+    `# 复盘：${title}\n\n## 收获\n\n## 待改进\n\n`
+  )
+  if (!created) return null
+  return { noteId: created.id, blockKey: '' }
+}
+
+/**
+ * 捕获目标选择器的任务候选（对齐 TaskService.task_candidates，T17）：
+ * q 非空按标题模糊搜索（限 limit），否则返回近期（~今天+30 天）内的顶层未完成任务；
+ * 两种口径都过滤已完成/已放弃。
+ */
+export function taskCandidates(q = '', limit = 20): Task[] {
+  const c = conn()
+  const query = q.trim()
+  if (query) {
+    return c
+      .prepare(
+        `SELECT ${TASK_COLUMNS} FROM task
+          WHERE deleted_at IS NULL AND status NOT IN ('done','abandoned') AND title LIKE ?
+          LIMIT ?`
+      )
+      .all(`%${query}%`, limit) as Task[]
+  }
+  const end = new Date(Date.now() + 30 * 86_400_000).toLocaleDateString('sv-SE')
+  return c
+    .prepare(
+      `SELECT ${TASK_COLUMNS} FROM task
+        WHERE deleted_at IS NULL AND status NOT IN ('done','abandoned')
+          AND parent_id IS NULL AND due_date IS NOT NULL
+          AND due_date >= '2000-01-01' AND due_date <= ?
+        ORDER BY due_date ASC, priority DESC, id ASC LIMIT ?`
+    )
+    .all(end, limit) as Task[]
 }
 
 /** 软删除，级联子树（与 TaskRepository.soft_delete(cascade=True) 一致）。 */

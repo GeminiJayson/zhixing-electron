@@ -1,4 +1,4 @@
-import { conn } from './connection'
+import { conn, stampOf } from './connection'
 import { reindexRow, removeFromIndex } from './fts'
 
 // ---------------------------------------------------------------- 回收站 / 标签管理
@@ -9,20 +9,28 @@ export interface TrashItem {
   deleted_at: string
 }
 
-/** 回收站列表：三类软删除记录（对齐 RecycleBinDialog 的三个 Tab）。 */
+/**
+ * 回收站列表：三类软删除记录（对齐 RecycleBinDialog 的三个 Tab）。
+ *
+ * 排序口径与 Python 各自的 trash() 一致（D13）：Python 的 trash() 都是复用各仓储的
+ * list 查询再筛 deleted_at，并不按删除时间排：
+ *   - 任务：TaskRepository.list_all → ORDER BY sort_key, id
+ *   - 笔记：NoteRepository.all    → ORDER BY pinned DESC, updated_at DESC
+ *   - 闪念：FlashRepository         → ORDER BY deleted_at DESC
+ */
 export function trashItems(kind: 'task' | 'note' | 'flash'): TrashItem[] {
   const c = conn()
   if (kind === 'task') {
     return (
       c
-        .prepare("SELECT id, title AS label, deleted_at FROM task WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC")
+        .prepare("SELECT id, title AS label, deleted_at FROM task WHERE deleted_at IS NOT NULL ORDER BY sort_key, id")
         .all() as TrashItem[]
     )
   }
   if (kind === 'note') {
     return (
       c
-        .prepare("SELECT id, title AS label, deleted_at FROM note WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC")
+        .prepare("SELECT id, title AS label, deleted_at FROM note WHERE deleted_at IS NOT NULL ORDER BY pinned DESC, updated_at DESC")
         .all() as TrashItem[]
     )
   }
@@ -87,13 +95,19 @@ export function emptyTrash(kind: 'task' | 'note' | 'flash'): number {
   return n
 }
 
-/** 按保留天数清理（对齐 purge_older_than）。 */
+/**
+ * 按保留天数清理（对齐 Python 的 purge_older_than）。
+ *
+ * Python 用 datetime 比较：`deleted_at < datetime.now() - timedelta(days)`（D12）。
+ * 此前这里把 deleted_at 截到前 10 位再和「今天 - days」比日期，等价于保留到当天 00:00，
+ * 恰 N 天前删除的记录会多留一天。改用完整时间戳比较，与 Python 逐微秒一致。
+ */
 export function purgeTrashOlderThan(days: number): number {
-  const cutoff = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10)
+  const cutoff = stampOf(new Date(Date.now() - days * 86_400_000))
   let n = 0
   for (const kind of ['task', 'note', 'flash'] as const) {
     for (const item of trashItems(kind)) {
-      if ((item.deleted_at ?? '').slice(0, 10) < cutoff) n += purgeTrash(kind, item.id)
+      if (item.deleted_at && item.deleted_at < cutoff) n += purgeTrash(kind, item.id)
     }
   }
   return n

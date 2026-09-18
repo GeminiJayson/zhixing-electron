@@ -83,6 +83,11 @@
 .ntree__folder:hover {
   background: var(--bg-hover);
 }
+/* 深链定位到的文件夹：短暂高亮（S22） */
+.ntree__folder--on {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--fg-primary);
+}
 .ntree__foldername {
   flex: 1;
   min-width: 0;
@@ -342,6 +347,24 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+/* diff 行：只用底色区分增删，文字保持 --fg-primary —— 用 success/danger 当正文色
+   在浅底上只有 3.2:1，达不到 R4 的 4.5:1 下限。段头/文件头是结构性标记，走弱化色。 */
+.history__diff-line {
+  padding: 0 2px;
+  border-radius: 2px;
+}
+.history__diff-line--add {
+  background: color-mix(in srgb, var(--success) 18%, transparent);
+}
+.history__diff-line--del {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+}
+.history__diff-line--hunk {
+  color: var(--fg-secondary);
+}
+.history__diff-line--file {
+  color: var(--fg-tertiary);
+}
 /* 非 Markdown 笔记的外部引用视图 */
 .editor__external {
   flex: 1;
@@ -365,6 +388,34 @@
 .editor__external-actions {
   display: flex;
   gap: var(--space-2);
+}
+/* 链接笔记：与 .editor__external 同构的卡片；一条链接一行，标题与「打开」按钮分居两端 */
+.editor__link {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.editor__link-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-hover);
+  border-radius: var(--radius-md);
+}
+.editor__link-row a {
+  min-width: 0;
+  color: var(--accent-text);
+  word-break: break-all;
 }
 /* 查找替换条（固定在编辑器底部） */
 .find-bar {
@@ -419,6 +470,15 @@
 .editor__office-body img {
   max-width: 100%;
 }
+/* Excel 可编辑网格（N-§1.3#5）：单元格是 contentEditable，聚焦要留下可见落点 */
+.xlsx-grid td:focus {
+  outline: var(--focus-w) solid var(--focus-ring);
+  outline-offset: -1px;
+  background: var(--accent-soft);
+}
+.xlsx-grid td {
+  font-variant-numeric: tabular-nums;
+}
 /* CodeMirror 编辑器容器（O9）：滚动交给 .cm-scroller */
 .md-editor {
   flex: 1;
@@ -430,4 +490,49 @@
 }
 .md-editor .cm-editor {
   height: 100%;
+}
+/* 富文本编辑器（N4）：工具栏 + contenteditable 正文，外层与 .md-editor 同构 */
+.rt-editor {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.rt-editor__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-bottom: var(--border-w) solid var(--border);
+}
+.rt-editor__bar .field--compact {
+  width: auto;
+}
+.rt-editor__bar input[type='color'] {
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-sm);
+  background: none;
+}
+.rt-editor__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-3) var(--space-4);
+  line-height: 1.75;
+}
+/* 空编辑器用 data-placeholder 当占位符（contenteditable 没有原生 placeholder） */
+.rt-editor__body:empty::before {
+  content: attr(data-placeholder);
+  color: var(--fg-tertiary);
+}
+.rt-editor__body img {
+  max-width: 100%;
 }

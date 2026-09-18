@@ -50,7 +50,7 @@ export function pruneBackups(dir: string, keep = BACKUP_KEEP): number {
  * 一致性快照：VACUUM INTO 等价 Python 的 sqlite backup API（WAL 下也安全），
  * 完成后按 BACKUP_KEEP 清理。返回备份文件路径，失败返回 null。
  */
-export function autoBackup(reason: 'auto' | 'pre-restore' | 'before-import' = 'auto'): string | null {
+export function autoBackup(reason: 'auto' | 'pre-restore' | 'pre-import' = 'auto'): string | null {
   const dir = backupDir()
   try {
     mkdirSync(dir, { recursive: true })

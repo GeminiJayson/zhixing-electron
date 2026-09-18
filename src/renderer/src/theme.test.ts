@@ -46,8 +46,11 @@ describe('外观应用（主窗口与浮窗共用）', () => {
   it('字号 / 行高 / 动效一并落到变量上', () => {
     const { root, vars, dataset } = fakeRoot()
     applyAppearance(settings({ font_size: 14, task_row_height: 36, motion_level: 'none' }), root)
-    expect(vars.get('--text-body')).toBe('15.5px')
-    expect(vars.get('--row-h')).toBe('46px')
+    // 设置值即像素值：不再有 +1.5px / +10px 的补偿偏移（S6/S7）
+    expect(vars.get('--text-body')).toBe('14px')
+    expect(vars.get('--row-h')).toBe('36px')
+    // control_height 的消费点（S5）
+    expect(vars.get('--control-h')).toBe('32px')
     expect(dataset.motion).toBe('none')
   })
 

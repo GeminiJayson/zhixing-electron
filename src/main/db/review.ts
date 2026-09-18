@@ -3,11 +3,29 @@ import type {
   Task,
   ReviewStats,
 } from '../../shared/types'
-import { conn, today, TASK_COLUMNS } from './connection'
+import { conn, nowStamp, TASK_COLUMNS } from './connection'
 
 // ---------------------------------------------------------------- 回顾统计
 
 export const dayOf = (value: string | null): string | null => (value ? value.slice(0, 10) : null)
+
+/**
+ * completed_at 落在 [start, end) 的完成时间串（对齐 TaskRepository.completed_between）。
+ *
+ * 关键口径：该查询**不过滤 deleted_at、也不看 status**，只看完成时间是否落在区间内。
+ * 周趋势 / 热力图 / 连续天数都直接使用它，与 Python 侧逐值一致。
+ */
+function completedBetween(start: string, end: string): string[] {
+  const rows = conn()
+    .prepare(
+      'SELECT completed_at FROM task WHERE completed_at IS NOT NULL AND completed_at >= ? AND completed_at < ?'
+    )
+    .all(start, end) as { completed_at: string }[]
+  return rows.map((r) => r.completed_at)
+}
+
+/** 某天 00:00:00 的时间戳串（对齐 datetime.combine(day, datetime.min.time())）。 */
+const dayStartStamp = (day: string): string => day + ' 00:00:00'
 
 /**
  * 今日待办根集合（对齐 task_rules.today_roots）：
@@ -40,10 +58,10 @@ export function reviewStats(weeks = 12, days = 7): ReviewStats {
     (t) => t.due_date !== null && t.due_date < today && !isEffectiveDone(t)
   ).length
   const inbox = tasks.length
+  // 闪念计数 = 全部未删除闪念（含 archived）。对齐 review_service.today_counts 的
+  // `len(self.flashes.list(s))`——那里 status=None，不过滤状态。
   const flash = (
-    c.prepare("SELECT COUNT(*) AS c FROM flash WHERE deleted_at IS NULL AND status = 'inbox'").get() as {
-      c: number
-    }
+    c.prepare('SELECT COUNT(*) AS c FROM flash WHERE deleted_at IS NULL').get() as { c: number }
   ).c
 
   // 近 N 天：完成数 / 番茄分钟 / 新建笔记
@@ -66,11 +84,10 @@ export function reviewStats(weeks = 12, days = 7): ReviewStats {
     const diff = Math.round((new Date(`${day}T00:00:00Z`).getTime() - new Date(`${startKey}T00:00:00Z`).getTime()) / 86400000)
     return diff >= 0 && diff < days ? diff : -1
   }
-  for (const t of tasks) {
-    const day = dayOf(t.completed_at)
-    if (!day) continue
-    const i = idxOf(day)
-    if (i >= 0 && isEffectiveDone(t)) completed[i] += 1
+  // 完成数取 completed_between（不按 deleted_at / status 过滤），与 Python 周趋势同口径
+  for (const stamp of completedBetween(dayStartStamp(start.toLocaleDateString('sv-SE')), nowStamp())) {
+    const i = idxOf(dayOf(stamp) ?? '')
+    if (i >= 0) completed[i] += 1
   }
   const pomoRows = c
     .prepare(
@@ -95,10 +112,16 @@ export function reviewStats(weeks = 12, days = 7): ReviewStats {
   const weekday0 = (todayDate.getUTCDay() + 6) % 7 // 周一=0
   const gridStart = new Date(todayDate)
   gridStart.setUTCDate(todayDate.getUTCDate() - (weeks * 7 - 1 - (6 - weekday0)))
+  // 热力计数同样走 completed_between：[gridStart, today+1) 区间，不过滤 deleted_at/status
+  const heatEnd = new Date(todayDate)
+  heatEnd.setUTCDate(todayDate.getUTCDate() + 1)
   const counts = new Map<string, number>()
-  for (const t of tasks) {
-    const day = dayOf(t.completed_at)
-    if (day && isEffectiveDone(t)) counts.set(day, (counts.get(day) ?? 0) + 1)
+  for (const stamp of completedBetween(
+    dayStartStamp(gridStart.toISOString().slice(0, 10)),
+    dayStartStamp(heatEnd.toISOString().slice(0, 10))
+  )) {
+    const day = dayOf(stamp)
+    if (day) counts.set(day, (counts.get(day) ?? 0) + 1)
   }
   const heatmap: number[][] = []
   for (let w = 0; w < weeks; w++) {
@@ -113,10 +136,11 @@ export function reviewStats(weeks = 12, days = 7): ReviewStats {
   }
 
   // 连续完成天数（今日或昨天为止）
+  // 连续天数：自 2000-01-01 起的所有完成时间（completed_between，无 deleted_at/status 过滤）
   const doneDays = new Set<string>()
-  for (const t of tasks) {
-    const day = dayOf(t.completed_at)
-    if (day && isEffectiveDone(t)) doneDays.add(day)
+  for (const stamp of completedBetween(dayStartStamp('2000-01-01'), nowStamp())) {
+    const day = dayOf(stamp)
+    if (day) doneDays.add(day)
   }
   let streak = 0
   const cursor = new Date(todayDate)

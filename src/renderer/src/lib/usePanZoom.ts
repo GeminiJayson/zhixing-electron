@@ -7,6 +7,7 @@ import {
   type PointerEvent as ReactPointerEvent
 } from 'react'
 import {
+  centerView,
   fitView,
   panBy,
   scaleOf,
@@ -50,6 +51,8 @@ export interface PanZoomApi {
    */
   toWorld: (clientX: number, clientY: number) => { x: number; y: number } | null
   reset: () => void
+  /** 镜头飞入：把视图中心移到该世界坐标（保持当前缩放），对齐 view.centerOn。 */
+  centerOn: (worldX: number, worldY: number) => void
 }
 
 /**
@@ -165,6 +168,11 @@ export function usePanZoom({ baseW, baseH, onMove, onEnd }: PanZoomOptions): Pan
 
   const reset = useCallback(() => setView(fitView(baseW, baseH)), [baseW, baseH])
 
+  /** G7：镜头飞入 —— 只改中心，不动缩放（搜索命中节点时用）。 */
+  const centerOn = useCallback((worldX: number, worldY: number) => {
+    setView((v) => centerView(v, worldX, worldY))
+  }, [])
+
   return {
     viewBox: toViewBoxString(view),
     svgRef,
@@ -172,6 +180,7 @@ export function usePanZoom({ baseW, baseH, onMove, onEnd }: PanZoomOptions): Pan
     panning,
     scale: scaleOf(view, baseW),
     toWorld: worldAt,
-    reset
+    reset,
+    centerOn
   }
 }

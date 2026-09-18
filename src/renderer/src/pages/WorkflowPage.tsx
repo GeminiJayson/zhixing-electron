@@ -1,6 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { GitBranch, Maximize2, Play, Plus, Trash2, X } from 'lucide-react'
+import {
+  ArrowDown,
+  ArrowUp,
+  Copy,
+  GitBranch,
+  LayoutGrid,
+  Maximize2,
+  Pencil,
+  Play,
+  Plus,
+  Trash2,
+  X,
+} from 'lucide-react'
 import type {
+  Note,
   WorkflowInstancePayload,
   WorkflowNodePayload,
   WorkflowTemplatePayload,
@@ -25,6 +38,10 @@ const CANVAS_H = 520
 /** 节点详情浮卡尺寸 */
 const CARD_W = 236
 const CARD_H = 168
+/** 「一键对齐」纵向网格间距（对齐 _auto_layout 的 _NODE_H + 54） */
+const ALIGN_Y_GAP = NODE_H + 54
+/** 步骤编辑弹窗里「SOP 文档」下拉最多列出的笔记数（对齐 note_choices 的 recent(200)） */
+const NOTE_CHOICE_LIMIT = 200
 
 /** 没有持久化坐标时按执行顺序横向排布。 */
 function layoutOf(nodes: WorkflowNodePayload[]): Map<number, { x: number; y: number }> {
@@ -49,6 +66,12 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   const [pos, setPos] = useState<Map<number, { x: number; y: number }>>(new Map())
   const [selected, setSelected] = useState<number | null>(null)
   const [editing, setEditing] = useState<WorkflowNodePayload | null>(null)
+  /** editing 是否为「新增步骤」（决定保存时插到选中节点之后，而不是原位替换） */
+  const [editingNew, setEditingNew] = useState(false)
+  /** 新增步骤时是否设为选中节点的条件分支（对齐 _StepEditDialog 的 branch_check） */
+  const [asBranch, setAsBranch] = useState(false)
+  /** 步骤可绑定的 SOP 笔记（对齐 note_choices：recent(200) 的 id/标题） */
+  const [noteChoices, setNoteChoices] = useState<Note[]>([])
   const dragRef = useRef<{ id: number; dx: number; dy: number } | null>(null)
   /** 悬停的分支连线（用源步骤 id 标识），以及正在改挂的那一条 */
   const [branchHover, setBranchHover] = useState<number | null>(null)
@@ -82,6 +105,17 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
       await loadInstances()
     })()
   }, [loadTemplates, openTemplate, loadInstances])
+
+  // SOP 文档候选：与 Python 的 note_choices 同口径（近期笔记，最多 200 条）
+  useEffect(() => {
+    void (async () => {
+      try {
+        setNoteChoices(await window.zhixing.db.recentNotes(NOTE_CHOICE_LIMIT))
+      } catch {
+        setNoteChoices([])
+      }
+    })()
+  }, [])
 
   // 任务完成会推进所属实例（主进程广播 'workflow' 域），这里跟着刷新实例进度
   useEffect(() => subscribeDomain(['workflow', 'task'], () => void loadInstances()), [loadInstances])
@@ -226,6 +260,112 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     onNotice(`已创建「${name.trim()}」`)
   }
 
+  /** 当前模板节点的保存入参（坐标取画布上的当前值）。 */
+  const nodePayload = (
+    nodes: WorkflowNodePayload[]
+  ): Parameters<typeof window.zhixing.db.saveWorkflowTemplate>[0]['nodes'] =>
+    nodes.map((n) => ({
+      id: n.id,
+      title: n.title,
+      detail: n.detail,
+      order_index: n.order_index,
+      note_id: n.note_id,
+      action_kind: n.action_kind,
+      action_value: n.action_value,
+      condition: n.condition,
+      branch_node_id: n.branch_node_id,
+      pos_x: pos.get(n.id)?.x ?? n.pos_x ?? null,
+      pos_y: pos.get(n.id)?.y ?? n.pos_y ?? null,
+    }))
+
+  /** 统一的模板保存入口：校验失败给出 problems，成功则刷新并返回 true。 */
+  const persistTemplate = async (
+    nodes: WorkflowNodePayload[],
+    patch?: { name?: string; description?: string; start_policy?: string }
+  ): Promise<boolean> => {
+    if (!current) return false
+    const res = await window.zhixing.db.saveWorkflowTemplate({
+      id: current.id,
+      name: patch?.name ?? current.name,
+      description: patch?.description ?? current.description,
+      start_policy: patch?.start_policy ?? current.start_policy,
+      nodes: nodePayload(nodes),
+    })
+    if (!res.ok) {
+      onNotice(`保存失败：${res.problems.join('；')}`)
+      return false
+    }
+    await refresh()
+    return true
+  }
+
+  /** I14 复制一份（对齐 duplicate_template）：名称加「 副本」，节点整体复制、不复制坐标。 */
+  const handleDuplicateTemplate = async (id?: number): Promise<void> => {
+    const tid = id ?? current?.id
+    if (!tid) return
+    const copy = await window.zhixing.db.duplicateWorkflowTemplate(tid)
+    if (!copy) {
+      onNotice('复制失败：模板不存在')
+      return
+    }
+    await loadTemplates()
+    await openTemplate(copy.id)
+    onNotice(`已复制为「${copy.name}」`)
+  }
+
+  /** I15 重命名模板（对齐 _rename_template_by_id：改名后整体保存）。 */
+  const handleRenameTemplate = async (): Promise<void> => {
+    if (!current) return
+    const name = await dialog.prompt({
+      title: '重命名工作流',
+      label: '名称',
+      defaultValue: current.name,
+    })
+    if (name == null || !name.trim()) return
+    if (await persistTemplate(ordered, { name: name.trim() })) onNotice('已重命名')
+  }
+
+  /** I16 启动策略可编辑（对齐 _on_policy_changed：改完立即保存）。 */
+  const handlePolicyChange = async (policy: string): Promise<void> => {
+    if (!current) return
+    await persistTemplate(ordered, { start_policy: policy })
+  }
+
+  /** I17 删除选中步骤（对齐 _delete_step：删后按顺序整体重排 order_index）。 */
+  const handleDeleteStep = async (): Promise<void> => {
+    if (!current || selected == null) return
+    const rest = ordered
+      .filter((n) => n.id !== selected)
+      .map((n, i) => ({ ...n, order_index: i }))
+    if (!rest.length) {
+      onNotice('至少要保留一个步骤')
+      return
+    }
+    if (!window.confirm('删除选中的步骤？')) return
+    setSelected(null)
+    await persistTemplate(rest)
+  }
+
+  /** I17 上移 / 下移（对齐 _move_step：交换后整体重排 order_index）。 */
+  const handleMoveStep = async (delta: number): Promise<void> => {
+    if (!current || selected == null) return
+    const list = [...ordered]
+    const idx = list.findIndex((n) => n.id === selected)
+    const tgt = idx + delta
+    if (idx < 0 || tgt < 0 || tgt >= list.length) return
+    ;[list[idx], list[tgt]] = [list[tgt], list[idx]]
+    await persistTemplate(list.map((n, i) => ({ ...n, order_index: i })))
+  }
+
+  /** I20 一键对齐（对齐 _auto_layout：pos_x=0、pos_y=i*间距，然后适配视图）。 */
+  const handleAutoLayout = async (): Promise<void> => {
+    if (!current) return
+    await window.zhixing.db.autoLayoutWorkflow(current.id, ALIGN_Y_GAP)
+    await refresh()
+    pan.reset()
+    onNotice('已按执行顺序纵向对齐')
+  }
+
   const handleDeleteTemplate = async (): Promise<void> => {
     if (!current) return
     if (!window.confirm(`删除工作流「${current.name}」及其节点？`)) return
@@ -241,61 +381,65 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     onNotice('已删除')
   }
 
-  const handleAddStep = async (): Promise<void> => {
+  /**
+   * I18 加一步：先弹步骤编辑窗，保存时**插到选中节点之后**（未选中则追加末尾），
+   * 并可勾选「作为选中节点的条件分支」（对齐 _add_step 的 dlg + as_branch）。
+   * 新节点用负临时 id，保存时经 id_map 重映射成真实 id，分支引用才不会悬空。
+   */
+  const handleAddStep = (): void => {
     if (!current) return
-    const res = await window.zhixing.db.saveWorkflowTemplate({
-      id: current.id,
-      name: current.name,
-      description: current.description,
-      start_policy: current.start_policy,
-      nodes: [
-        ...ordered.map((n) => ({
-          id: n.id,
-          title: n.title,
-          detail: n.detail,
-          order_index: n.order_index,
-          note_id: n.note_id,
-          action_kind: n.action_kind,
-          action_value: n.action_value,
-          condition: n.condition,
-          branch_node_id: n.branch_node_id,
-          pos_x: pos.get(n.id)?.x ?? null,
-          pos_y: pos.get(n.id)?.y ?? null,
-        })),
-        { title: `第 ${ordered.length + 1} 步`, order_index: ordered.length },
-      ],
+    setEditing({
+      id: -(ordered.length + 1),
+      template_id: current.id,
+      title: '',
+      detail: '',
+      order_index: ordered.length,
+      note_id: null,
+      action_kind: 'none',
+      action_value: '',
+      condition: '',
+      branch_node_id: null,
+      pos_x: null,
+      pos_y: null,
     })
-    if (!res.ok) onNotice(`保存失败：${res.problems.join('；')}`)
-    await refresh()
+    setEditingNew(true)
+    setAsBranch(false)
+  }
+
+  /** 打开已有步骤的编辑弹窗（双击节点 / 卡片「编辑」）。 */
+  const openEditNode = (node: WorkflowNodePayload): void => {
+    setEditing(node)
+    setEditingNew(false)
+    setAsBranch(false)
   }
 
   const handleSaveNode = async (node: WorkflowNodePayload): Promise<void> => {
     if (!current) return
-    const res = await window.zhixing.db.saveWorkflowTemplate({
-      id: current.id,
-      name: current.name,
-      description: current.description,
-      start_policy: current.start_policy,
-      nodes: ordered.map((n) => ({
-        id: n.id,
-        title: n.id === node.id ? node.title : n.title,
-        detail: n.id === node.id ? node.detail : n.detail,
-        order_index: n.order_index,
-        note_id: n.id === node.id ? node.note_id : n.note_id,
-        action_kind: n.id === node.id ? node.action_kind : n.action_kind,
-        action_value: n.id === node.id ? node.action_value : n.action_value,
-        condition: n.id === node.id ? node.condition : n.condition,
-        branch_node_id: n.id === node.id ? node.branch_node_id : n.branch_node_id,
-        pos_x: pos.get(n.id)?.x ?? null,
-        pos_y: pos.get(n.id)?.y ?? null,
-      })),
-    })
-    if (!res.ok) {
-      onNotice(`保存失败：${res.problems.join('；')}`)
+    if (!node.title.trim()) {
+      onNotice('请填写步骤标题')
       return
     }
+    if (editingNew) {
+      const list = [...ordered]
+      const selIdx = selected != null ? list.findIndex((n) => n.id === selected) : -1
+      if (selIdx >= 0) list.splice(selIdx + 1, 0, node)
+      else list.push(node)
+      // 勾了「设为分支」才把选中节点的 branch 指到新节点（对齐 _add_step）
+      const linked =
+        asBranch && selIdx >= 0
+          ? list.map((n) => (n.id === selected ? { ...n, branch_node_id: node.id } : n))
+          : list
+      if (!(await persistTemplate(linked.map((n, i) => ({ ...n, order_index: i }))))) return
+      // 新节点的负临时 id 保存后已失效：清掉选中态，避免高亮指向不存在的节点
+      setSelected(null)
+    } else {
+      // 只覆盖被编辑节点自身字段，其余保持原样（避免把未保存的拖动坐标写串）
+      const list = ordered.map((n) => (n.id === node.id ? { ...n, ...node } : n))
+      if (!(await persistTemplate(list))) return
+    }
     setEditing(null)
-    await refresh()
+    setEditingNew(false)
+    setAsBranch(false)
     onNotice('步骤已保存')
   }
 
@@ -319,7 +463,13 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
 
   const handleInstantiate = async (): Promise<void> => {
     if (!current) return
-    const inst = await window.zhixing.db.instantiateWorkflow(current.id, null, null)
+    // 与 Python 一样把当前启动策略显式传给实例化（不依赖库里的旧值）
+    const inst = await window.zhixing.db.instantiateWorkflow(
+      current.id,
+      null,
+      null,
+      current.start_policy
+    )
     if (!inst) {
       onNotice('该模板没有可运行的步骤')
       return
@@ -385,11 +535,73 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
               {current ? `${current.name} · ${ordered.length} 步` : '未选择模板'}
             </span>
             <div className="tasks-toolbar__right">
-              <button className="text-btn" onClick={() => void handleAddStep()} disabled={!current}>
+              {/* 步骤编排（对齐 workflow_page 的 ＋步骤/编辑/删除步骤/上移/下移/一键对齐） */}
+              <button className="text-btn" onClick={handleAddStep} disabled={!current}>
                 <Plus size={13} /> 加一步
+              </button>
+              <button
+                className="text-btn"
+                onClick={() => {
+                  const n = ordered.find((x) => x.id === selected)
+                  if (n) openEditNode(n)
+                }}
+                disabled={selected == null}
+                title="编辑选中步骤（也可双击节点）"
+              >
+                <Pencil size={13} /> 编辑
+              </button>
+              <button
+                className="text-btn"
+                onClick={() => void handleDeleteStep()}
+                disabled={selected == null}
+              >
+                <Trash2 size={13} /> 删除步骤
+              </button>
+              <button
+                className="text-btn"
+                onClick={() => void handleMoveStep(-1)}
+                disabled={selected == null}
+                title="上移"
+              >
+                <ArrowUp size={13} /> 上移
+              </button>
+              <button
+                className="text-btn"
+                onClick={() => void handleMoveStep(1)}
+                disabled={selected == null}
+                title="下移"
+              >
+                <ArrowDown size={13} /> 下移
+              </button>
+              <button
+                className="text-btn"
+                onClick={() => void handleAutoLayout()}
+                disabled={!current}
+                title="按执行顺序纵向对齐所有步骤"
+              >
+                <LayoutGrid size={13} /> 一键对齐
               </button>
               <button className="text-btn" onClick={pan.reset}>
                 <Maximize2 size={13} /> 重置视图
+              </button>
+              {/* 启动策略（对齐 policy_combo：改完立即保存） */}
+              <label className="wf-policy">
+                <span className="u-aux">启动策略</span>
+                <select
+                  className="field field--mini"
+                  value={current?.start_policy === 'all' ? 'all' : 'first'}
+                  disabled={!current}
+                  onChange={(e) => void handlePolicyChange(e.target.value)}
+                >
+                  <option value="first">只生成第一步待办</option>
+                  <option value="all">一次性生成全部待办</option>
+                </select>
+              </label>
+              <button className="text-btn" onClick={() => void handleRenameTemplate()} disabled={!current}>
+                <Pencil size={13} /> 重命名
+              </button>
+              <button className="text-btn" onClick={() => void handleDuplicateTemplate()} disabled={!current}>
+                <Copy size={13} /> 复制
               </button>
               <button className="text-btn text-btn--accent" onClick={() => void handleInstantiate()} disabled={!current}>
                 <Play size={13} /> 启动实例
@@ -523,7 +735,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                   }}
                   onPointerLeave={() => setHoverStep((h) => (h === n.id ? null : h))}
                   onPointerDown={startDrag(n)}
-                  onDoubleClick={() => setEditing(n)}
+                  onDoubleClick={() => openEditNode(n)}
                   role="button"
                   aria-label={`步骤 ${i + 1}：${n.title}`}
                   tabIndex={0}
@@ -644,7 +856,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                         ) : (
                           <span className="u-aux">无动作</span>
                         )}
-                        <button className="text-btn" onClick={() => setEditing(node)}>
+                        <button className="text-btn" onClick={() => openEditNode(node)}>
                           编辑
                         </button>
                       </div>
@@ -661,10 +873,17 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
       </div>
 
       {editing && (
-        <div className="modal-mask" onMouseDown={() => setEditing(null)}>
+        <div
+          className="modal-mask"
+          onMouseDown={() => {
+            setEditing(null)
+            setEditingNew(false)
+            setAsBranch(false)
+          }}
+        >
           <div className="modal" role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()}>
             <header className="modal__head">
-              <h2>编辑步骤 #{editing.id}</h2>
+              <h2>{editingNew ? '新增步骤' : `编辑步骤 #${editing.id}`}</h2>
             </header>
             <div className="modal__body">
               <label className="form-row">
@@ -684,6 +903,38 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                   onChange={(e) => setEditing({ ...editing, detail: e.target.value })}
                 />
               </label>
+              {/* I19 绑定 SOP 文档（对齐 note_combo → note_id）：下发步骤时会写成任务备注的 [[链接]] */}
+              <label className="form-row">
+                <span>SOP 文档</span>
+                <select
+                  className="field"
+                  value={editing.note_id ?? ''}
+                  onChange={(e) =>
+                    setEditing({ ...editing, note_id: e.target.value ? Number(e.target.value) : null })
+                  }
+                >
+                  <option value="">（不绑定）</option>
+                  {noteChoices.map((n) => (
+                    <option key={n.id} value={n.id}>
+                      {n.title || '（无标题）'}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {editingNew && selected != null && (
+                <label className="form-row">
+                  <span>分支</span>
+                  <label className="check-row">
+                    <input
+                      type="checkbox"
+                      checked={asBranch}
+                      onChange={(e) => setAsBranch(e.target.checked)}
+                    />
+                    作为「{ordered.find((x) => x.id === selected)?.title ?? ''}」的条件分支
+                    （条件满足时从其跳到此步）
+                  </label>
+                </label>
+              )}
               <div className="form-grid">
                 <label className="form-row">
                   <span>动作</span>
@@ -740,7 +991,16 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
             </div>
             <footer className="modal__foot">
               <span className="modal__spacer" />
-              <button className="text-btn" onClick={() => setEditing(null)}>取消</button>
+              <button
+                className="text-btn"
+                onClick={() => {
+                  setEditing(null)
+                  setEditingNew(false)
+                  setAsBranch(false)
+                }}
+              >
+                取消
+              </button>
               <button className="text-btn text-btn--accent" onClick={() => void handleSaveNode(editing)}>
                 保存
               </button>

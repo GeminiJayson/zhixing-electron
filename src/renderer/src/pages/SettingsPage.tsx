@@ -3,7 +3,7 @@ import { Database, Download, Info, Palette, SlidersHorizontal, Tag, Timer, Trash
 import { parseSettings, type AppSettings } from '@shared/settings'
 import { THEME_PACK_NAMES } from '@shared/theme-packs'
 import { t } from '../i18n'
-import { applyAppearance } from '../theme'
+import { applyAppearance, prefersReducedMotion } from '../theme'
 import { useDialog } from '../components/Dialogs'
 import type { AppInfo } from '@shared/types'
 import { RecycleBin } from '../components/RecycleBin'
@@ -17,6 +17,21 @@ interface Props {
 type Tab = 'appearance' | 'tasks' | 'data' | 'about'
 
 const ACCENTS = ['#0D9488', '#2563EB', '#7C3AED', '#DB2777', '#EA580C', '#16A34A', '#D97706', '#0891B2']
+
+/**
+ * 可改键的四项全局热键（对齐 Python settings_page._build_capture 的四行）。
+ * hint 是改键失败时的降级说明 —— 注册不上的热键一律回到托盘菜单。
+ */
+const HOTKEY_ROWS: { key: keyof AppSettings; label: string; hint: string }[] = [
+  { key: 'capture_hotkey', label: '划词捕获', hint: '捕获当前选中内容' },
+  {
+    key: 'select_quick_hotkey',
+    label: '读取选中并速记',
+    hint: '读取选中文字预填快速捕获',
+  },
+  { key: 'quick_capture_hotkey', label: '快速任务', hint: '弹出快速捕获窗口' },
+  { key: 'widget_hotkey', label: '浮窗显隐', hint: '显示 / 隐藏桌面浮窗' },
+]
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'appearance', label: '外观' },
@@ -36,11 +51,98 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
   const rawRef = useRef<Record<string, string>>({})
   /** 自动备份列表（进入「数据」页时刷新） */
   const [backups, setBackups] = useState<{ name: string; path: string; bytes: number }[]>([])
+  /** 系统级「减少动态效果」探测结果（对齐 Python 的 _os_reduce_motion） */
+  const [osReducedMotion, setOsReducedMotion] = useState(() => prefersReducedMotion())
+  /** 热键注册状态：settings 键 → 中文状态串（对齐 Python 的 hotkey_status） */
+  const [hotkeys, setHotkeys] = useState<Record<string, string>>({})
+  /** 正在改键的 settings 键；null = 未在改键 */
+  const [rebinding, setRebinding] = useState<keyof AppSettings | null>(null)
+  /** 捕获到的组合键（显示用；真正取值走 ref，避免键盘监听闭包读到旧值） */
+  const [captured, setCaptured] = useState('')
+  const capturedRef = useRef('')
 
   useEffect(() => {
     if (tab !== 'data') return
     void window.zhixing.db.listBackups().then(setBackups)
   }, [tab])
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const onChange = (): void => setOsReducedMotion(mq.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+
+  // 读一次热键注册状态（对齐 Python 设置页构造时的 hotkey_status 回填）
+  useEffect(() => {
+    void window.zhixing.app
+      .hotkeyStatus()
+      .then(setHotkeys)
+      .catch(() => undefined)
+  }, [])
+
+  /** 结束改键：save=true 时先落库，然后无论成败都重注册并刷新状态标签。 */
+  const finishRebind = useCallback(
+    async (save: boolean): Promise<void> => {
+      // 幂等：遮罩点击与键盘事件可能同时触发
+      if (!rebinding) return
+      const key = rebinding
+      const combo = capturedRef.current
+      setRebinding(null)
+      setCaptured('')
+      capturedRef.current = ''
+      if (save && key && combo) {
+        try {
+          await window.zhixing.db.setSetting(key, combo)
+          rawRef.current = await window.zhixing.db.settings()
+          setSettings(parseSettings(rawRef.current))
+        } catch (err) {
+          onNotice(`热键未能保存：${(err as Error).message}`)
+        }
+      }
+      // 取消也要重注册：进入捕获态时已把全部热键注销了
+      try {
+        setHotkeys(await window.zhixing.app.rebindHotkeys())
+      } catch {
+        // 主进程重注册失败不阻塞界面，状态标签保留上一次结果
+      }
+      if (save && key && combo) onNotice(`热键已改为 ${combo}`)
+    },
+    [rebinding, onNotice]
+  )
+
+  /** 改键捕获：必须有修饰键；Enter 确认、Esc 取消（对齐 HotkeyCaptureDialog）。 */
+  useEffect(() => {
+    if (!rebinding) return
+    const onKey = (e: KeyboardEvent): void => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.key === 'Escape') {
+        void finishRebind(false)
+        return
+      }
+      if (e.key === 'Enter') {
+        if (capturedRef.current) void finishRebind(true)
+        return
+      }
+      const parts: string[] = []
+      if (e.ctrlKey) parts.push('ctrl')
+      if (e.altKey) parts.push('alt')
+      if (e.shiftKey) parts.push('shift')
+      if (e.metaKey) parts.push('cmd')
+      const k = e.key.toLowerCase()
+      if (['control', 'alt', 'shift', 'meta'].includes(k)) return
+      // 至少一个修饰键，否则会抢占普通按键输入（与 toAccelerator 的校验一致）
+      if (!parts.length) return
+      parts.push(k === ' ' ? 'space' : k)
+      const combo = parts.join('+')
+      capturedRef.current = combo
+      setCaptured(combo)
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [rebinding, finishRebind])
 
   useEffect(() => {
     void (async () => {
@@ -66,6 +168,8 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
       if (key === 'widget_click_through') {
         await window.zhixing.widget.setClickThrough(optimistic.widget_click_through)
       }
+      // 云母材质即时生效（对齐 app_controller 的 K_MICA 分支：改完不必重启）
+      if (key === 'mica_enabled') await window.zhixing.app.setMica(optimistic.mica_enabled)
       try {
         await window.zhixing.db.setSetting(key, value)
         // 写完回读并重新解析：state 始终是类型化值，不再散落字符串
@@ -183,11 +287,41 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                   <option value="essential">仅必要</option>
                   <option value="none">关闭</option>
                 </select>
+                <span className="u-aux">
+                  {osReducedMotion
+                    ? '系统已开启「减少动态效果」，实际按「仅必要」降级'
+                    : '完整 / 仅必要 / 关闭'}
+                </span>
+              </label>
+              <label className="set-row">
+                <span>Mica 材质</span>
+                <input
+                  type="checkbox"
+                  checked={settings.mica_enabled}
+                  disabled={window.zhixing.platform !== 'win32'}
+                  onChange={(e) => void update('mica_enabled', e.target.checked ? '1' : '0')}
+                />
+                <span className="u-aux">
+                  {window.zhixing.platform === 'win32'
+                    ? 'Windows 11 云母背景，改动即时生效'
+                    : '仅 Windows 11 可用'}
+                </span>
               </label>
             </section>
 
             <section className="set-card">
               <header className="set-card__head"><SlidersHorizontal size={15} /> 桌面浮窗</header>
+              <label className="set-row">
+                <span>启用桌面浮窗</span>
+                <input
+                  type="checkbox"
+                  checked={settings.widget_enabled}
+                  onChange={(e) => void update('widget_enabled', e.target.checked ? '1' : '0')}
+                />
+                <span className="u-aux">
+                  启动只显示主窗口；主窗隐藏或最小化时才浮出待办
+                </span>
+              </label>
               <label className="set-row">
                 <span>不透明度</span>
                 <input
@@ -223,23 +357,36 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
 
             <section className="set-card">
               <header className="set-card__head"><SlidersHorizontal size={15} /> 密度</header>
+              {/* 滑杆区间与 parseSettings 的钳位区间同源（Python constants.py：
+                  字号 9–20、控件高度 24–48、行高 24–72），不再自定一套偏移区间 */}
               <label className="set-row">
                 <span>字号</span>
                 <input
                   type="range"
-                  min={10}
-                  max={18}
+                  min={9}
+                  max={20}
                   value={settings.font_size}
                   onChange={(e) => void update('font_size', e.target.value)}
                 />
                 <span className="u-aux">{settings.font_size}px</span>
               </label>
               <label className="set-row">
+                <span>控件高度</span>
+                <input
+                  type="range"
+                  min={24}
+                  max={48}
+                  value={settings.control_height}
+                  onChange={(e) => void update('control_height', e.target.value)}
+                />
+                <span className="u-aux">{settings.control_height}px</span>
+              </label>
+              <label className="set-row">
                 <span>任务行高</span>
                 <input
                   type="range"
-                  min={22}
-                  max={56}
+                  min={24}
+                  max={72}
                   value={settings.task_row_height}
                   onChange={(e) => void update('task_row_height', e.target.value)}
                 />
@@ -268,8 +415,8 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
               <input
                 type="number"
                 className="field field--num"
-                min={1}
-                max={120}
+                min={5}
+                max={90}
                 value={settings.pomodoro_focus_min}
                 onChange={(e) => void update('pomodoro_focus_min', e.target.value)}
               />
@@ -281,11 +428,20 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                 type="number"
                 className="field field--num"
                 min={1}
-                max={60}
+                max={30}
                 value={settings.pomodoro_break_min}
                 onChange={(e) => void update('pomodoro_break_min', e.target.value)}
               />
               <span className="u-aux">分钟</span>
+            </label>
+            <label className="set-row">
+              <span>专注结束自动休息</span>
+              <input
+                type="checkbox"
+                checked={settings.pomodoro_auto_break}
+                onChange={(e) => void update('pomodoro_auto_break', e.target.checked ? '1' : '0')}
+              />
+              <span className="u-aux">专注结束后自动开始休息计时</span>
             </label>
             <label className="set-row">
               <span>到点提醒</span>
@@ -294,15 +450,6 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                 checked={settings.reminder_enabled}
                 onChange={(e) => void update('reminder_enabled', e.target.checked ? '1' : '0')}
               />
-            </label>
-            <label className="set-row">
-              <span>划词速记热键</span>
-              <input
-                className="field field--compact"
-                value={settings.select_quick_hotkey}
-                onChange={(e) => void update('select_quick_hotkey', e.target.value)}
-              />
-              <span className="u-aux">选中文字后按此键速记</span>
             </label>
             <label className="set-row">
               <span>剪贴板监听</span>
@@ -343,8 +490,36 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                 <Tag size={13} /> 打开标签管理…
               </button>
             </div>
+          </section>
+        )}
+
+        {tab === 'tasks' && (
+          <section className="set-card">
+            <header className="set-card__head"><SlidersHorizontal size={15} /> 全局热键</header>
+            {HOTKEY_ROWS.map((row) => (
+              <div className="set-row" key={row.key}>
+                <span>{row.label}</span>
+                <input
+                  className="field field--compact"
+                  value={String(settings[row.key] ?? '')}
+                  readOnly
+                  aria-label={`${row.label}热键`}
+                />
+                <button className="text-btn" onClick={() => {
+                  setCaptured('')
+                  capturedRef.current = ''
+                  setRebinding(row.key)
+                  // 捕获期间先注销全部全局热键，否则组合键被系统层吞掉（对齐 _suspend_hotkeys）
+                  void window.zhixing.app.suspendHotkeys()
+                }}>
+                  改键
+                </button>
+                <span className="u-aux">{hotkeys[row.key] ?? row.hint}</span>
+              </div>
+            ))}
             <p className="u-aux">
-              浮窗、全局划词捕获与热键重绑定尚未迁移，设置项保留在同一个 settings 表里，Python 版仍可读。
+              改键后立即生效；被系统或其他程序占用时会降级为托盘菜单项（状态显示在行尾）。
+              「读取选中并速记」在 Electron 侧无跨应用模拟复制能力，降级为读取系统剪贴板。
             </p>
           </section>
         )}
@@ -407,6 +582,17 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                 >
                   笔记 Markdown
                 </button>
+                {/* D26：整包 Markdown（ZIP），与 Python 的 export_markdown_zip 对齐 */}
+                <button
+                  className="text-btn"
+                  onClick={() =>
+                    void window.zhixing.db.exportData('markdown-zip').then((r) => {
+                      if (r) onNotice(`已导出 ${r.count} 篇笔记（ZIP）到 ${r.path}`)
+                    })
+                  }
+                >
+                  笔记 Markdown（ZIP）
+                </button>
               </div>
             </div>
             <div className="set-row">
@@ -424,22 +610,33 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
             </div>
             <div className="set-row">
               <span>导入</span>
-              <button
-                className="text-btn"
-                onClick={() => {
-                  if (
-                    !window.confirm(
-                      '导入会用文件内容**覆盖**当前全部数据（任务/笔记/闪念/标签/设置）。\n\n导入前会自动把当前数据库备份到 backups/before-import/。\n\n确定继续？'
+              <div className="set-actions">
+                <button
+                  className="text-btn"
+                  onClick={() => {
+                    if (
+                      !window.confirm(
+                        '导入会用文件内容**覆盖**当前全部数据（任务/笔记/闪念/标签/设置）。\n\n导入前会自动把当前数据库备份到 backups/（与自动备份同一目录，保留最近 10 份）。\n\n确定继续？'
+                      )
                     )
-                  )
-                    return
-                  void window.zhixing.db.importData().then((r) => {
-                    onNotice(r.backup ? `${r.message}；备份：${r.backup}` : r.message)
-                  })
-                }}
-              >
-                从 JSON 恢复…
-              </button>
+                      return
+                    void window.zhixing.db.importData().then((r) => {
+                      onNotice(r.backup ? `${r.message}；备份：${r.backup}` : r.message)
+                    })
+                  }}
+                >
+                  从 JSON 恢复…
+                </button>
+                {/* D25：Markdown 文件夹导入（preload 已暴露，走系统目录选择框） */}
+                <button
+                  className="text-btn"
+                  onClick={() =>
+                    void window.zhixing.db.importMarkdownFolder().then((r) => onNotice(r.message))
+                  }
+                >
+                  Markdown 文件夹…
+                </button>
+              </div>
             </div>
             <div className="set-row">
               <span>备份</span>
@@ -482,6 +679,40 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
       )}
       {tagsOpen && (
         <TagManager onNotice={onNotice} onChanged={onChanged} onClose={() => setTagsOpen(false)} />
+      )}
+
+      {/* 改键捕获浮层（对齐 HotkeyCaptureDialog）：按键由 window 级监听捕获，
+          Enter 保存、Esc 取消，必须有修饰键 */}
+      {rebinding && (
+        <div
+          className="modal-mask"
+          role="dialog"
+          aria-modal="true"
+          aria-label="改键"
+          onMouseDown={() => void finishRebind(false)}
+        >
+          <div className="modal" style={{ maxWidth: 380 }}>
+            <div className="modal__head">改键</div>
+            <div className="modal__body">
+              <p className="u-aux">按下新的组合键（必须包含 Ctrl / Alt / Shift / Cmd）</p>
+              <p style={{ fontSize: 20, fontWeight: 600 }}>
+                {captured || '等待按键…'}
+              </p>
+            </div>
+            <div className="modal__foot">
+              <button className="text-btn" onClick={() => void finishRebind(false)}>
+                取消
+              </button>
+              <button
+                className="text-btn"
+                disabled={!captured}
+                onClick={() => void finishRebind(true)}
+              >
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

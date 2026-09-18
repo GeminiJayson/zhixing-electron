@@ -10,6 +10,8 @@ interface Props {
   onOpen: (id: number) => void
   onToggle: (id: number) => void
   onReschedule: (id: number, day: string) => void
+  /** 日历是否显示已完成任务（settings.calendar_show_done，默认 false，T11） */
+  showDone: boolean
 }
 
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日']
@@ -32,8 +34,53 @@ function monthGrid(year: number, month0: number): { day: string; inMonth: boolea
   return cells
 }
 
+/**
+ * 任务按日期归类，与 Python task_page.group_tasks_by_date 逐条对齐（T11）：
+ * - 开始+截止：区间内每一天都显示（含两端，逐日展开，防御性上限约 10 年）；
+ * - 仅截止：截止当天；仅开始：开始当天；无日期：归入「今日」；
+ * - 每日内按 (-priority, sort_key, id) 升序。
+ */
+export function groupTasksByDate(tasks: Task[], today: string): Map<string, Task[]> {
+  const out = new Map<string, Task[]>()
+  const push = (day: string, t: Task): void => {
+    const list = out.get(day) ?? []
+    list.push(t)
+    out.set(day, list)
+  }
+  const addDays = (day: string, n: number): string => {
+    const d = new Date(day + 'T00:00:00Z')
+    d.setUTCDate(d.getUTCDate() + n)
+    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`
+  }
+  const MAX_SPAN_DAYS = 3660
+  for (const t of tasks) {
+    if (t.start_date && t.due_date) {
+      let lo = t.start_date
+      let hi = t.due_date
+      if (lo > hi) [lo, hi] = [hi, lo]
+      const span = Math.round((Date.parse(hi) - Date.parse(lo)) / 86_400_000)
+      if (span > MAX_SPAN_DAYS) hi = addDays(lo, MAX_SPAN_DAYS)
+      let cur = lo
+      while (cur <= hi) {
+        push(cur, t)
+        cur = addDays(cur, 1)
+      }
+    } else if (t.due_date) {
+      push(t.due_date, t)
+    } else if (t.start_date) {
+      push(t.start_date, t)
+    } else {
+      push(today, t)
+    }
+  }
+  for (const list of out.values()) {
+    list.sort((a, b) => b.priority - a.priority || a.sort_key - b.sort_key || a.id - b.id)
+  }
+  return out
+}
+
 /** 月历 + 右侧当日任务清单；任务胶囊可拖到另一天改期（对齐 CalendarTaskView）。 */
-export function CalendarBoard({ tasks, effective, onOpen, onToggle, onReschedule }: Props) {
+export function CalendarBoard({ tasks, effective, onOpen, onToggle, onReschedule, showDone }: Props) {
   const today = new Date().toLocaleDateString('sv-SE')
   const [cursor, setCursor] = useState(() => {
     const d = new Date()
@@ -46,16 +93,13 @@ export function CalendarBoard({ tasks, effective, onOpen, onToggle, onReschedule
   const isDone = (t: Task): boolean =>
     effective.get(t.id) ?? (t.status === 'done' || t.status === 'abandoned')
 
-  const byDay = useMemo(() => {
-    const map = new Map<string, Task[]>()
-    for (const t of tasks) {
-      if (!t.due_date || isDone(t)) continue
-      const list = map.get(t.due_date) ?? []
-      list.push(t)
-      map.set(t.due_date, list)
-    }
-    return map
-  }, [tasks, effective])
+  // 已完成过滤与 Python _visible_tasks 同口径：开关关（默认 false）才隐去有效完成
+  const visible = useMemo(
+    () => (showDone ? tasks : tasks.filter((t) => !isDone(t))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tasks, showDone, effective]
+  )
+  const byDay = useMemo(() => groupTasksByDate(visible, today), [visible, today])
 
   const cells = useMemo(() => monthGrid(cursor.y, cursor.m), [cursor])
   const dayTasks = byDay.get(selected) ?? []

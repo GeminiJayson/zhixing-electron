@@ -31,7 +31,8 @@ export function ReviewPage() {
     { key: 'doneToday', label: '今日完成', value: stats.todayCounts.doneToday, icon: CheckCircle2, tone: 'success' },
     { key: 'overdue', label: '逾期', value: stats.todayCounts.overdue, icon: CircleAlert, tone: 'danger' },
     { key: 'inbox', label: '全部任务', value: stats.todayCounts.inbox, icon: Inbox, tone: 'neutral' },
-    { key: 'flash', label: '待整理闪念', value: stats.todayCounts.flash, icon: Sparkles, tone: 'warm' },
+    // 口径含归档闪念，故用「闪念收件箱」而不是「待整理闪念」（对齐 today_page.card_flash）
+    { key: 'flash', label: '闪念收件箱', value: stats.todayCounts.flash, icon: Sparkles, tone: 'warm' },
   ] as const
 
   const weekMax = Math.max(1, ...stats.week.completed, ...stats.week.notes)
