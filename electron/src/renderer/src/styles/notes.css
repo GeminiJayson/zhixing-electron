@@ -1,0 +1,433 @@
+/* 笔记页：树 | 编辑器 | 链接面板 */
+.notes-wrap {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: var(--space-3);
+  align-items: stretch;
+}
+.ntree {
+  position: relative;
+  width: 240px;
+  flex: 0 0 240px;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+}
+/* 右边缘的宽度手柄：拖它调整笔记树宽度 */
+.ntree__resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -3px;
+  width: 7px;
+  border-radius: var(--radius-pill);
+  cursor: col-resize;
+}
+.ntree__resizer:hover,
+.ntree__resizer:active {
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.ntree__tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+/* 树总宽 240px：格式选择器若沿用 .field--compact 的 200px，再加上搜索框与两个
+   图标按钮必然顶破卡片。这里收窄成固定小宽，剩余空间交给搜索框。 */
+.ntree__format {
+  width: 72px;
+  flex: 0 0 auto;
+}
+.ntree__search {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 var(--space-2);
+  height: 28px;
+  background: var(--bg-hover);
+  border-radius: var(--radius-ctl);
+  color: var(--fg-secondary);
+}
+.ntree__search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: var(--text-aux);
+}
+.ntree__body {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ntree__folder {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  border-radius: var(--radius-ctl);
+  color: var(--fg-secondary);
+}
+.ntree__folder:hover {
+  background: var(--bg-hover);
+}
+.ntree__foldername {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-aux);
+  font-weight: 600;
+}
+.ntree__note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding-right: var(--space-1);
+  border-radius: var(--radius-ctl);
+  cursor: pointer;
+}
+.ntree__note:hover {
+  background: var(--bg-hover);
+}
+.ntree__note--on {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.ntree__dot {
+  width: 4px;
+  height: 4px;
+  flex: 0 0 4px;
+  margin: 0 4px;
+  border-radius: var(--radius-pill);
+  background: var(--fg-tertiary);
+}
+.ntree__pin {
+  flex: 0 0 12px;
+  color: var(--accent-warm);
+  margin: 0 0 0 0;
+}
+.ntree__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-body);
+}
+.ntree__actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+}
+.ntree__note:hover .ntree__actions {
+  opacity: 1;
+}
+.editor {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.editor__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.editor__title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-lead);
+  font-weight: 600;
+  padding: 6px var(--space-3);
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-md);
+}
+.editor__title:focus {
+  border-color: var(--accent);
+}
+.editor__area {
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+  resize: none;
+  line-height: 1.75;
+  font-family: var(--font-mono);
+  font-size: var(--text-body);
+}
+.editor__area:focus {
+  border-color: var(--accent);
+}
+.editor__preview {
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-4);
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: auto;
+}
+/* 编辑区 + 链接面板的纵向容器 */
+.notes-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+/* 链接面板：原来贴在右侧当第三栏，现在放到编辑区下方。
+   两张卡片横向并排，省纵向空间；面板自己有高度上限并内部滚动。 */
+.links {
+  flex: 0 0 auto;
+  max-height: 220px;
+  overflow: auto;
+  display: flex;
+  flex-direction: row;
+  gap: var(--space-3);
+}
+.links__card {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3);
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.links__head {
+  font-size: var(--text-aux);
+  color: var(--fg-secondary);
+  margin-bottom: var(--space-1);
+}
+.links__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2);
+  border-radius: var(--radius-ctl);
+  text-align: left;
+  color: var(--fg-primary);
+}
+.links__item:hover {
+  background: var(--bg-hover);
+}
+.links__item strong {
+  font-weight: 600;
+  font-size: var(--text-body);
+}
+.links__item--dangling .dangling {
+  color: var(--accent-warm);
+}
+.links__item span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* Markdown 渲染 */
+.md {
+  line-height: 1.75;
+  font-size: var(--text-body);
+}
+.md h1, .md h2, .md h3 {
+  margin: var(--space-4) 0 var(--space-2);
+  line-height: 1.35;
+}
+.md h1 { font-size: var(--text-hero); }
+.md h2 { font-size: var(--text-title); }
+.md p { margin: 0 0 var(--space-3); }
+.md ul, .md ol { margin: 0 0 var(--space-3); padding-left: 1.4em; }
+.md code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+}
+.md pre {
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--bg-hover);
+  overflow: auto;
+}
+.md pre code { background: transparent; padding: 0; }
+.md blockquote {
+  margin: 0 0 var(--space-3);
+  padding-left: var(--space-3);
+  border-left: 3px solid var(--border-strong);
+  color: var(--fg-secondary);
+}
+.md table { border-collapse: collapse; margin-bottom: var(--space-3); }
+.md th, .md td { border: 1px solid var(--border); padding: 4px 8px; }
+.md a {
+  color: var(--accent-text);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.md a[href^='zhixing-note://new/'] {
+  color: var(--accent-warm);
+  border-bottom-style: dashed;
+}
+.modal--wide {
+  width: min(820px, calc(100vw - 64px));
+}
+.history {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: var(--space-3);
+  padding: 0 var(--space-4) var(--space-2);
+  min-height: 320px;
+}
+.history__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  max-height: 46vh;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.history__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: var(--space-2);
+  border-radius: var(--radius-ctl);
+  text-align: left;
+  color: var(--fg-primary);
+}
+.history__item:hover {
+  background: var(--bg-hover);
+}
+.history__item--on {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.history__preview {
+  overflow: auto;
+  max-height: 46vh;
+  padding: var(--space-3);
+  background: var(--bg-hover);
+  border-radius: var(--radius-md);
+}
+.history__preview pre {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+/* 非 Markdown 笔记的外部引用视图 */
+.editor__external {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.editor__path {
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-hover);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  word-break: break-all;
+}
+.editor__external-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+/* 查找替换条（固定在编辑器底部） */
+.find-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius-lg);
+}
+/* Office 内嵌预览 */
+.editor__office {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.editor__office-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--border-w) solid var(--border);
+}
+.editor__office-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-4);
+  line-height: 1.7;
+}
+.editor__office-body h3 {
+  margin: var(--space-3) 0 var(--space-2);
+  font-size: var(--text-body);
+}
+.editor__office-body table {
+  border-collapse: collapse;
+  margin-bottom: var(--space-3);
+  font-size: var(--text-aux);
+}
+.editor__office-body td, .editor__office-body th {
+  border: 1px solid var(--border);
+  padding: 2px 8px;
+  min-width: 48px;
+}
+.editor__office-body img {
+  max-width: 100%;
+}
+/* CodeMirror 编辑器容器（O9）：滚动交给 .cm-scroller */
+.md-editor {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.md-editor .cm-editor {
+  height: 100%;
+}

@@ -1,0 +1,173 @@
+/* =============================================================================
+   知行 ZhiXing · 设计 Token
+   语义对齐 docs/03-UI-UX交互设计.md §2.1–2.4（色彩 / 字体形状间距 / 图标 / 动效）。
+   组件内禁止写死色值与圆角：一律引用这里的语义变量。
+   ============================================================================= */
+
+:root {
+  /* 原生控件（输入框、下拉、日期选择器、滚动条底）跟随应用主题，而不是系统偏好：
+     不声明时 Windows 深色系统 + 应用浅色主题下，输入框会是深底深字。 */
+  color-scheme: light;
+
+  /* --- 色彩：浅色（默认） --- */
+  /* 窗口底由页面自己给出实色：CDP 与系统截图都不含原生材质，实色才能保证
+     「看到的即真实」，同时 Windows/Linux 与 macOS 表现一致。 */
+  --bg-canvas: #f3f3f3;
+  --bg-layer: rgb(255 255 255 / 90%);
+  --bg-layer-solid: #ffffff;
+  --bg-hover: #f5f5f5;
+  --bg-pressed: #ebebeb;
+
+  --fg-primary: #1a1a1a;
+  --fg-secondary: #6b6b6b;
+  --fg-tertiary: #9a9a9a;
+  --fg-on-accent: #ffffff;
+
+  --accent: #0d9488;                      /* 默认青；主题包与自定义强调色覆盖此值 */
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+  --accent-solid: color-mix(in srgb, var(--accent) 88%, #000);
+  --accent-solid-hover: color-mix(in srgb, var(--accent) 78%, #000);
+  /* 强调色**当文字用**时的变体。--accent 按品牌色原值定义，当文字落在浅底上只有
+     2.9–3.7:1（选中态的 accent-soft 底上仅 2.94），达不到 4.5:1；用户自选浅色强调色
+     时更低（浅黄只有 1.51）。applyTheme 会按实际背景把它校正到达标并保留色相。
+     只用于 color，填充 / 边框 / accent-color 继续用品牌原值。 */
+  --accent-text: #0a6f66;
+
+  --accent-warm: #ea580c;
+  --danger: #dc2626;
+  --success: #16a34a;
+
+  --border: rgb(0 0 0 / 9%);
+  --border-strong: rgb(0 0 0 / 18%);
+  /* 焦点环跟随主题包的强调色，而不是写死的青 */
+  --focus-ring: var(--accent);
+
+  /* --- 形状：与 theme.COMPONENT_TOKENS 对齐 --- */
+  --radius-sm: 4px;      /* 小控件 / 菜单 */
+  --radius-ctl: 6px;     /* 按钮与全局统一控件 */
+  --radius-md: 8px;      /* 内容内嵌 / 输入 */
+  --radius-lg: 12px;     /* 卡片 / 浮层 */
+  --radius-xl: 16px;     /* 大弹窗 / 捕获卡 */
+  --radius-pill: 999px;
+  --border-w: 1px;
+  --focus-w: 2px;
+
+  /* --- 间距：4px 节奏（4 / 8 / 12 / 16 / 24） --- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+
+  /* --- 字体 --- */
+  --font-ui: "PingFang SC", "Microsoft YaHei UI", "HarmonyOS Sans", "Noto Sans CJK SC",
+    system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
+  --text-aux: 12px;
+  --text-body: 13.5px;
+  --text-lead: 15px;
+  --text-title: 18px;
+  --text-hero: 22px;
+
+  /* --- 尺寸 --- */
+  --titlebar-h: 44px;
+  --nav-w: 220px;
+  --nav-w-collapsed: 48px;
+  --control-h: 32px;
+  --row-h: 40px;
+  --hit-min: 32px;
+
+  /* --- 层级：唯一的层叠尺度，组件里禁止再写裸数字。
+     原来散着 50 / 60 / 68 / 70 / 72 五个魔数，且页面级浮条（68/70）反而压在
+     全屏模态（60）之上 —— 模态打开时浮条会亮在遮罩上面。 --- */
+  --z-float: 20;       /* 页面级浮条：番茄钟、信息条 */
+  --z-menu: 40;        /* 弹出菜单、下拉、气泡 */
+  --z-modal: 60;       /* 全屏遮罩 + 对话框 */
+  --z-reminder: 80;    /* 系统级提醒弹窗 */
+  --z-toast: 90;       /* 全局提示，最高 */
+  /* 非文本图形（边框、指示条、图标）对相邻底的对比下限按 3:1 记，见 docs/parity-audit.md */
+
+  /* --- 动效（docs/03 §2.4） --- */
+  --dur-instant: 100ms;
+  --dur-fast: 150ms;
+  --dur-normal: 250ms;
+  --dur-slow: 400ms;
+  --dur-strike: 200ms;
+  --dur-page: 200ms;
+  --dur-panel: 280ms;
+
+  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);   /* OutCubic 近似：进入 */
+  --ease-exit: cubic-bezier(0.55, 0, 1, 0.45);    /* InCubic 近似：退出 */
+  --ease-panel: cubic-bezier(0.19, 1, 0.22, 1);   /* OutExpo：面板展开 */
+  --ease-page: cubic-bezier(0.45, 0, 0.55, 1);    /* InOutQuad：页面标题 */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* --- 浮层阴影：按浮层层级分四档。
+     此前是 5 种值散在 10 处、没有 token，深色模式也没适配。 --- */
+  --shadow-sm: 0 1px 3px rgb(0 0 0 / 12%);
+  --shadow-md: 0 8px 24px rgb(0 0 0 / 20%);
+  --shadow-lg: 0 12px 32px rgb(0 0 0 / 24%);
+  --shadow-xl: 0 24px 64px rgb(0 0 0 / 28%);
+
+  /* --- 模态遮罩 --- */
+  --overlay: rgb(0 0 0 / 32%);
+
+  /* 图谱连线：默认要「隐没在背景里」。深色主题直接沿用 Obsidian 的 #444；
+     浅色主题不能用同一个值 —— 纯 #444 在浅底上会变成抢眼的黑线，改用同等的低对比度 */
+  --graph-edge: color-mix(in srgb, var(--fg-primary) 26%, transparent);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg-canvas: #1f1f1f;
+  --bg-layer: rgb(43 43 43 / 85%);
+  --bg-layer-solid: #2b2b2b;
+  --bg-hover: #383838;
+  --bg-pressed: #454545;
+
+  --fg-primary: #f2f2f2;
+  --fg-secondary: #a0a0a0;
+  --fg-tertiary: #7a7a7a;
+
+  --accent-warm: #fb923c;
+  --danger: #f87171;
+  --success: #4ade80;
+
+  --border: rgb(255 255 255 / 10%);
+  --border-strong: rgb(255 255 255 / 22%);
+
+  /* 同样的黑色透明度在深色底上几乎不可见，深色模式需要加深 */
+  --shadow-sm: 0 1px 3px rgb(0 0 0 / 28%);
+  --shadow-md: 0 8px 24px rgb(0 0 0 / 44%);
+  --shadow-lg: 0 12px 32px rgb(0 0 0 / 50%);
+  --shadow-xl: 0 24px 64px rgb(0 0 0 / 56%);
+
+  --overlay: rgb(0 0 0 / 55%);
+
+  --graph-edge: #444444;
+}
+
+/* 设置里把动效关掉时同样全量降级为直接切换 */
+:root[data-motion='none'] {
+  --dur-instant: 0ms;
+  --dur-fast: 0ms;
+  --dur-normal: 0ms;
+  --dur-slow: 0ms;
+  --dur-strike: 0ms;
+  --dur-page: 0ms;
+  --dur-panel: 0ms;
+}
+
+/* 系统「减少动态效果」时全部降级为直接切换（docs/03 §2.4 性能预算） */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-instant: 0ms;
+    --dur-fast: 0ms;
+    --dur-normal: 0ms;
+    --dur-slow: 0ms;
+    --dur-strike: 0ms;
+    --dur-page: 0ms;
+    --dur-panel: 0ms;
+  }
+}

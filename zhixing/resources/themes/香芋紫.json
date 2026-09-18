@@ -1,0 +1,17 @@
+{
+  "name": "香芋紫",
+  "light": {
+    "canvas": "#F7F1FA", "layer": "#FFFFFF", "hover": "#EEE0F4", "hover2": "#E2CEEB",
+    "fg": "#4A2F55", "fg2": "#A17FAD", "fg3": "#CBB2D3",
+    "border": "#EADEF0", "border2": "#D6BFE0",
+    "input": "rgba(255,255,255,0.9)", "scroll": "#D6BEE0",
+    "accent_soft": "#EFE2F5", "warm": "#E8A87C", "danger": "#E57373", "success": "#7FC8A9"
+  },
+  "dark": {
+    "canvas": "#231A2C", "layer": "#2C2137", "hover": "#3A2E47", "hover2": "#443653",
+    "fg": "#F0E8F4", "fg2": "#BCA3C7", "fg3": "#8A6F97",
+    "border": "#4C3D59", "border2": "#5F4D70",
+    "input": "rgba(44,33,55,0.9)", "scroll": "#5F4D70",
+    "accent_soft": "#412B50", "warm": "#F3B58A", "danger": "#F58B8B", "success": "#8FD4B8"
+  }
+}

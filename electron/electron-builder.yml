@@ -1,0 +1,56 @@
+# electron-builder 配置：Windows 出包（NSIS 安装包 + 免安装 portable）
+#
+# 关键点：
+#   1. better-sqlite3 是原生模块，必须 asarUnpack 到包外，否则运行时加载失败；
+#   2. productName 带中文只影响显示名，产物文件名用 ASCII 的 artifactName，避免跨平台路径问题；
+#   3. 打包时会执行 install-app-deps 重建原生模块，Windows 上需要 VS Build Tools（见 docs/windows-build.md）。
+
+appId: com.geminijayson.zhixing
+productName: 知行 ZhiXing
+copyright: Copyright © 2026 GeminiJayson
+
+directories:
+  output: dist
+  buildResources: resources
+
+# 只打构建产物与运行时资源；源码与检查脚本不进包
+files:
+  - out/**/*
+  - resources/**/*
+  - package.json
+  - '!**/*.map'
+
+# 原生模块必须解包到 asar 之外
+asarUnpack:
+  - '**/node_modules/better-sqlite3/**'
+  # 中文分词（FTS 索引用）：napi-rs 预编译二进制，同样要留在 asar 外
+  - '**/node_modules/@node-rs/**'
+
+win:
+  icon: resources/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  # 安装包用 -setup 后缀；免安装版在下面的 portable 块单独命名。
+  # 否则两个 target 会写同一个文件名，后者覆盖前者。
+  artifactName: Zhixing-${version}-${arch}-setup.${ext}
+
+# 免安装单文件版
+portable:
+  artifactName: Zhixing-${version}-${arch}-portable.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: 知行
+  language: '2052'
+
+# 中文产品名在部分 Windows 环境下会因编码问题出错，显式固定文件关联与卸载名
+  uninstallDisplayName: 知行 ZhiXing

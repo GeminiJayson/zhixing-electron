@@ -1,0 +1,71 @@
+/* 桌面浮窗：透明窗口 + 自带圆角卡片。
+   只对浮窗生效——主窗口若也透明，底色就只剩 Electron 的窗口 backgroundColor，
+   主题变量一起失效，界面会裂成「外壳跟着系统色、内容区跟着主题包」两半。 */
+html[data-surface='widget'],
+html[data-surface='widget'] body,
+html[data-surface='widget'] #root {
+  background: transparent;
+}
+.widget {
+  height: 100%;
+  padding: 4px;
+}
+.widget__card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--bg-layer);
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  position: relative;
+}
+.widget__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.widget__title {
+  font-weight: 600;
+  font-size: var(--text-body);
+}
+.widget__input {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.widget__input .field {
+  flex: 1;
+  min-width: 0;
+}
+.widget__list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.widget__empty {
+  margin: auto;
+}
+.widget__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.widget__toast {
+  position: absolute;
+  left: var(--space-3);
+  right: var(--space-3);
+  bottom: var(--space-3);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-ctl);
+  background: var(--accent-solid);
+  color: var(--fg-on-accent);
+  font-size: var(--text-aux);
+  text-align: center;
+}

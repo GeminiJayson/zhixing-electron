@@ -1,0 +1,92 @@
+/* 回顾页 */
+.review-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+.stat-card--warm svg {
+  color: var(--accent-warm);
+}
+.chart {
+  width: 100%;
+  /* 不设 max-width：要横向铺满卡片并随卡片宽度缩放 */
+}
+.chart__bar {
+  fill: var(--accent);
+}
+.chart__bar--note {
+  fill: var(--accent-warm);
+}
+.chart__label {
+  font-size: 10px;
+  fill: var(--fg-secondary);
+}
+.chart__sub {
+  font-size: 9px;
+  fill: var(--fg-tertiary);
+}
+.heatmap {
+  width: 100%;
+}
+.heat__cell {
+  stroke: var(--border);
+  stroke-width: 0.5;
+}
+.tagdist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 460px;
+}
+.tagdist__row {
+  display: grid;
+  grid-template-columns: 72px 1fr 28px;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-aux);
+}
+.tagdist__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tagdist__bar {
+  height: 8px;
+  background: var(--bg-hover);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+.tagdist__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+}
+.achv {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.achv__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3);
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--fg-tertiary);
+  opacity: 0.6;
+}
+.achv__item--on {
+  color: var(--accent-text);
+  opacity: 1;
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.achv__item strong {
+  font-size: var(--text-body);
+  color: var(--fg-primary);
+}

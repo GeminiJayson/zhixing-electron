@@ -1,0 +1,61 @@
+{
+  "name": "zhixing-electron",
+  "version": "0.1.7",
+  "description": "知行 ZhiXing — Electron 重构版（本地优先待办 + 知识图谱）",
+  "main": "./out/main/index.js",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.json",
+    "rebuild": "electron-rebuild -f -w better-sqlite3",
+    "dist:win": "node scripts/ensure-jieba-win-binding.mjs && electron-vite build && electron-builder --win --x64",
+    "dist:dir": "node scripts/ensure-jieba-win-binding.mjs && electron-vite build && electron-builder --win --x64 --dir",
+    "postdist:win": "npm run rebuild",
+    "postdist:dir": "npm run rebuild",
+    "binding:win": "node scripts/ensure-jieba-win-binding.mjs",
+    "check:jieba": "node scripts/check-jieba-fallback.mjs",
+    "check:security": "node scripts/securitycheck.mjs",
+    "check:contrast": "node scripts/contrast-audit.mjs",
+    "check:interaction": "node scripts/interactioncheck.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@codemirror/autocomplete": "^6.20.3",
+    "@codemirror/commands": "^6.11.1",
+    "@codemirror/lang-markdown": "^6.5.2",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/state": "^6.7.5",
+    "@codemirror/view": "^6.43.12",
+    "@node-rs/jieba": "^2.0.3",
+    "better-sqlite3": "^11.10.0",
+    "codemirror": "^6.0.2",
+    "d3-force": "^3.0.0",
+    "lucide-react": "^0.468.0",
+    "mammoth": "^1.12.3",
+    "marked": "^18.0.13",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.7.2",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/d3-force": "^3.0.10",
+    "@types/node": "^22.10.5",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.3.1",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^2.3.0",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.9"
+  },
+  "optionalDependencies": {
+    "@node-rs/jieba-win32-x64-msvc": "^2.0.3"
+  }
+}

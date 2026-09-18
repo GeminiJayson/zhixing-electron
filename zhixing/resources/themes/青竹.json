@@ -1,0 +1,17 @@
+{
+  "name": "青竹",
+  "light": {
+    "canvas": "#F4FAF8", "layer": "#FFFFFF", "hover": "#F1F5F3", "hover2": "#E8EFEB",
+    "fg": "#1A1A1A", "fg2": "#6B7280", "fg3": "#A8AEB6",
+    "border": "#E4EDE8", "border2": "#CBD8D0",
+    "input": "rgba(255,255,255,0.72)", "scroll": "#C4D2C8",
+    "accent_soft": "#D7F0EB", "warm": "#EA580C", "danger": "#DC2626", "success": "#16A34A"
+  },
+  "dark": {
+    "canvas": "#1E2422", "layer": "#283029", "hover": "#334036", "hover2": "#3B4B41",
+    "fg": "#EDF2EE", "fg2": "#9DAFA4", "fg3": "#6E8880",
+    "border": "#35443B", "border2": "#48604F",
+    "input": "rgba(40,48,41,0.85)", "scroll": "#41544A",
+    "accent_soft": "#254B45", "warm": "#FB923C", "danger": "#F87171", "success": "#4ADE80"
+  }
+}

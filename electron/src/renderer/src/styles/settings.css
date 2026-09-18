@@ -1,0 +1,130 @@
+/* 设置页 */
+.set-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  /* 不设 max-width：设置卡片要横向铺满父布局，窄窗口时自然收窄 */
+}
+.set-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.set-card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 600;
+  margin-bottom: var(--space-1);
+}
+.set-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 34px;
+  font-size: var(--text-body);
+}
+.set-row > span:first-child {
+  flex: 0 0 132px;
+  color: var(--fg-secondary);
+}
+.set-row input[type='range'] {
+  flex: 1;
+  accent-color: var(--accent);
+}
+.field--num {
+  width: 88px;
+}
+.set-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.swatches {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.swatch {
+  /* 可点击控件：WCAG 2.2 的指针目标下限是 24×24 CSS px，22px 差 2px 不达标 */
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-pill);
+  border: 2px solid transparent;
+  transition: transform var(--dur-instant);
+}
+.swatch:hover {
+  transform: scale(1.12);
+}
+.swatch--on {
+  border-color: var(--fg-primary);
+}
+/* 回收站 / 标签管理 */
+.trash-list, .tag-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 40vh;
+  overflow: auto;
+}
+.trash-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 34px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-ctl);
+}
+.trash-row:hover {
+  background: var(--bg-hover);
+}
+.trash-row__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trash-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.trash-tools .form-row {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+}
+.tag-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 34px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-ctl);
+  cursor: pointer;
+}
+.tag-row:hover {
+  background: var(--bg-hover);
+}
+.tag-row__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-pill);
+}
+.tag-row__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -1,0 +1,152 @@
+/* 全局基础样式：重置、滚动条、焦点环、通用原子类。 */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: var(--text-body);
+  color: var(--fg-primary);
+  background: var(--bg-canvas);
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+/* 交互状态：按压用位移表达、禁用用降透明度 —— 两者都不改布局边界，避免抖动。
+   用独立的 translate 属性而不是 transform，免得覆盖组件自己的 transform
+   （比如 .toast 的 translateX(-50%)）。 */
+button:not(:disabled):not([aria-disabled='true']):active,
+[role='button']:not([aria-disabled='true']):active {
+  translate: 0 1px;
+}
+button:disabled,
+button[aria-disabled='true'],
+[role='button'][aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+input,
+textarea {
+  font: inherit;
+  color: var(--fg-primary);
+}
+
+/* 焦点环：永远可见，不可删（无障碍硬约束，docs/03 §2.1） */
+:focus-visible {
+  outline: var(--focus-w) solid var(--focus-ring);
+  outline-offset: 1px;
+  border-radius: var(--radius-sm);
+}
+
+/* 输入框 / 下拉用「边框变色」表达焦点，不再叠加全局焦点环 —— 否则两层，且颜色不一致 */
+.field:focus-visible {
+  outline: none;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border: 3px solid transparent;
+  border-radius: var(--radius-pill);
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--fg-tertiary);
+  background-clip: content-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 拖拽区：无边框窗口的自定义标题栏 */
+.drag-region {
+  -webkit-app-region: drag;
+}
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* 语义化工具类，避免组件里散落色值 */
+.u-muted {
+  color: var(--fg-secondary);
+}
+.u-aux {
+  font-size: var(--text-aux);
+  color: var(--fg-secondary);
+}
+.u-card {
+  background: var(--bg-layer);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+}
+/* 连线箭头：默认跟随连线的暗色，高亮时用主题色 */
+.edge-arrow {
+  fill: var(--graph-edge);
+}
+.edge-arrow--on {
+  fill: var(--accent);
+}
+
+/* 悬浮聚焦：与当前悬浮对象无关的图元淡到几乎隐形（图谱 / 工作流共用）。
+   0.05 是 Obsidian 的取值 —— 不是消失，而是留一丝轮廓当上下文。 */
+.is-dimmed {
+  opacity: 0.05;
+}
+.graph__edges > g,
+.gnode,
+.wf-edge-group,
+.wf-node {
+  transition: opacity var(--dur-fast);
+}
+
+/* 卡片内部的滚动容器：滚到底之后**不要**把滚动传给父容器。
+   否则子卡片滚到尽头会继续带动父卡片一起滚，看起来像「父卡片也在滚」。 */
+.ntree,
+.links,
+.inspector,
+.graph-side,
+.wf-side,
+.vlist,
+.editor__body {
+  overscroll-behavior: contain;
+}
+
+/* 虚拟列表：绝对定位的行 + 撑高的内层 */
+.vlist {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+}
+.vlist__inner {
+  position: relative;
+  width: 100%;
+}
+.vlist__row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+}

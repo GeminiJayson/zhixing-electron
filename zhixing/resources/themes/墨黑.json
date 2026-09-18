@@ -1,0 +1,17 @@
+{
+  "name": "墨黑",
+  "light": {
+    "canvas": "#F5F5F5", "layer": "#FFFFFF", "hover": "#EFEFEF", "hover2": "#E5E5E5",
+    "fg": "#171717", "fg2": "#737373", "fg3": "#B3B3B3",
+    "border": "#E5E5E5", "border2": "#D4D4D4",
+    "input": "rgba(255,255,255,0.8)", "scroll": "#C9C9C9",
+    "accent_soft": "#E4E4E4", "warm": "#EA580C", "danger": "#DC2626", "success": "#16A34A"
+  },
+  "dark": {
+    "canvas": "#141414", "layer": "#1E1E1E", "hover": "#2A2A2A", "hover2": "#333333",
+    "fg": "#F2F2F2", "fg2": "#A0A0A0", "fg3": "#6B6B6B",
+    "border": "#303030", "border2": "#454545",
+    "input": "rgba(30,30,30,0.9)", "scroll": "#3E3E3E",
+    "accent_soft": "#2E2E2E", "warm": "#FB923C", "danger": "#F87171", "success": "#4ADE80"
+  }
+}

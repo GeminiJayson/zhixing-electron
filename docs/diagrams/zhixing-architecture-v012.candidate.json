@@ -1,0 +1,478 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "知行 ZhiXing · v0.12 架构图",
+    "locale": "zh-CN",
+    "quality_profile": "standard",
+    "views": [
+      {
+        "id": "mvc-layers",
+        "label": "MVC 分层",
+        "focus": [
+          "ctrl",
+          "view",
+          "udialog",
+          "noteviews",
+          "graphview",
+          "kit",
+          "svc",
+          "dom",
+          "qtbridge",
+          "repo"
+        ],
+        "note": "Controller 居中，View 在左、Model 在右（含 Qt 桥）。"
+      },
+      {
+        "id": "data-flow",
+        "label": "核心数据流",
+        "focus": [
+          "entry",
+          "ctrl",
+          "svc",
+          "bus",
+          "repo",
+          "db"
+        ],
+        "note": "待办/笔记/闪念/回顾经 Service→Repository→SQLite，事件经 EventBus 回灌刷新。"
+      },
+      {
+        "id": "v012-components",
+        "label": "v0.12 新增组件",
+        "focus": [
+          "udialog",
+          "noteviews",
+          "pylibs",
+          "graphview",
+          "entry"
+        ],
+        "note": "无边框弹窗、五类笔记、图谱标题/预览、stderr 重定向。"
+      },
+      {
+        "id": "graph-chain",
+        "label": "知识图谱链路",
+        "focus": [
+          "graphview",
+          "svc",
+          "bus",
+          "dom"
+        ],
+        "note": "GraphService 订阅总线、产出 graph_delta、连线写回 link_notes。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "entry",
+      "type": "backend",
+      "label": "入口装配 __main__",
+      "tag": "单实例锁 · stderr重定向 · 日志装配 · AppContext 组合根",
+      "pos": [
+        520,
+        30
+      ],
+      "size": [
+        220,
+        84
+      ]
+    },
+    {
+      "id": "os",
+      "type": "external",
+      "label": "系统平台",
+      "tag": "macOS / Windows · 热键 · 选区 · 剪贴板 · 托盘",
+      "pos": [
+        800,
+        60
+      ],
+      "size": [
+        230,
+        96
+      ]
+    },
+    {
+      "id": "ctrl",
+      "type": "cloud",
+      "label": "AppController",
+      "sublabel": "Controller",
+      "tag": "View 信号→Service 接线 · 命令 · 生命周期",
+      "pos": [
+        520,
+        140
+      ],
+      "size": [
+        230,
+        100
+      ]
+    },
+    {
+      "id": "bus",
+      "type": "messagebus",
+      "label": "EventBus",
+      "sublabel": "core",
+      "tag": "task/note/flash/graph_delta 事件",
+      "pos": [
+        520,
+        400
+      ],
+      "size": [
+        210,
+        84
+      ]
+    },
+    {
+      "id": "view",
+      "type": "frontend",
+      "label": "MainWindow × 7 页",
+      "sublabel": "今日·任务·收件箱·笔记·图谱·回顾·设置",
+      "tag": "View 层",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        230,
+        100
+      ]
+    },
+    {
+      "id": "udialog",
+      "type": "frontend",
+      "label": "无边框弹窗框架 view/ui",
+      "sublabel": "UDialog · UInputDialog · 无边框标题栏",
+      "tag": "DialogType INPUT/RESIZABLE · 主题自愈",
+      "pos": [
+        40,
+        520
+      ],
+      "size": [
+        230,
+        96
+      ]
+    },
+    {
+      "id": "noteviews",
+      "type": "frontend",
+      "label": "笔记类型视图",
+      "sublabel": "NoteCreateDialog · 五类笔记只读预览",
+      "tag": "python-docx · openpyxl 只读预览",
+      "pos": [
+        40,
+        360
+      ],
+      "size": [
+        260,
+        104
+      ]
+    },
+    {
+      "id": "graphview",
+      "type": "frontend",
+      "label": "GraphPage 知识图谱",
+      "sublabel": "节点换行标题·点击预览·连线",
+      "tag": "ownership/reference 两类边",
+      "pos": [
+        40,
+        200
+      ],
+      "size": [
+        220,
+        96
+      ]
+    },
+    {
+      "id": "kit",
+      "type": "frontend",
+      "label": "view/kit 主题引擎",
+      "sublabel": "ThemeEngine·SVG图标·动效",
+      "tag": "语义 token · changed 自愈",
+      "pos": [
+        40,
+        680
+      ],
+      "size": [
+        190,
+        96
+      ]
+    },
+    {
+      "id": "svc",
+      "type": "backend",
+      "label": "应用服务 model/application",
+      "sublabel": "待办·笔记·闪念·图谱·回顾",
+      "tag": "含 [[链接]] 管线 · 反链",
+      "pos": [
+        1040,
+        200
+      ],
+      "size": [
+        280,
+        116
+      ]
+    },
+    {
+      "id": "dom",
+      "type": "backend",
+      "label": "领域规则 model/domain",
+      "sublabel": "entities · rules · link_parser",
+      "tag": "零 Qt 纯规则",
+      "pos": [
+        1040,
+        40
+      ],
+      "size": [
+        210,
+        96
+      ]
+    },
+    {
+      "id": "qtbridge",
+      "type": "backend",
+      "label": "Qt Model 桥 model/qt",
+      "sublabel": "任务树 · 笔记列表 · 闪念列表模型",
+      "tag": "供 View 树/列表渲染",
+      "pos": [
+        1040,
+        380
+      ],
+      "size": [
+        230,
+        96
+      ]
+    },
+    {
+      "id": "repo",
+      "type": "backend",
+      "label": "基础设施 model/infrastructure",
+      "sublabel": "仓储 · 全文检索 · 备份 · 导出",
+      "tag": "持久化 · 全文检索",
+      "pos": [
+        1400,
+        380
+      ],
+      "size": [
+        230,
+        96
+      ]
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "SQLite zhixing.db",
+      "sublabel": "WAL · FTS5 · schema_version=6",
+      "tag": "迁移 v1-v6",
+      "pos": [
+        1400,
+        540
+      ],
+      "size": [
+        230,
+        96
+      ]
+    },
+    {
+      "id": "pylibs",
+      "type": "external",
+      "label": "第三方库",
+      "sublabel": "python-docx · openpyxl · loguru",
+      "tag": "Word/Excel 解析 · 日志",
+      "pos": [
+        1040,
+        700
+      ],
+      "size": [
+        250,
+        96
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "View 层 · zhixing/view",
+      "wraps": [
+        "view",
+        "graphview",
+        "noteviews",
+        "udialog",
+        "kit"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Model 层 · zhixing/model（含 Qt 桥）",
+      "wraps": [
+        "dom",
+        "svc",
+        "qtbridge",
+        "repo"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "entry-ctrl",
+      "from": "entry",
+      "to": "ctrl",
+      "label": "装配 Controller",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        640,
+        124
+      ]
+    },
+    {
+      "id": "os-ctrl",
+      "from": "os",
+      "to": "ctrl",
+      "label": "热键 · 选区 · 托盘",
+      "variant": "security",
+      "labelAt": [
+        800,
+        170
+      ]
+    },
+    {
+      "id": "view-ctrl",
+      "from": "view",
+      "to": "ctrl",
+      "label": "用户动作信号"
+    },
+    {
+      "id": "ctrl-svc",
+      "from": "ctrl",
+      "to": "svc",
+      "label": "编排调用"
+    },
+    {
+      "id": "svc-bus",
+      "from": "svc",
+      "to": "bus",
+      "label": "emit 领域事件",
+      "variant": "dashed"
+    },
+    {
+      "id": "bus-ctrl",
+      "from": "bus",
+      "to": "ctrl",
+      "label": "订阅 → 刷新",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "bus-graphview",
+      "from": "bus",
+      "to": "graphview",
+      "label": "graph_delta 增量",
+      "variant": "dashed",
+      "toSide": "top"
+    },
+    {
+      "id": "svc-dom",
+      "from": "svc",
+      "to": "dom",
+      "label": "领域规则",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "svc-qtbridge",
+      "from": "svc",
+      "to": "qtbridge",
+      "label": "Qt Model 数据源",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "svc-repo",
+      "from": "svc",
+      "to": "repo",
+      "label": "持久化访问"
+    },
+    {
+      "id": "repo-db",
+      "from": "repo",
+      "to": "db",
+      "label": "SQL · WAL · 迁移 v1-v6",
+      "labelAt": [
+        1515,
+        490
+      ]
+    },
+    {
+      "id": "noteviews-udialog",
+      "from": "noteviews",
+      "to": "udialog",
+      "label": "继承 UDialog",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "noteviews-pylibs",
+      "from": "noteviews",
+      "to": "pylibs",
+      "label": "python-docx/openpyxl 解析",
+      "labelAt": [
+        324,
+        630
+      ]
+    },
+    {
+      "id": "noteviews-svc",
+      "from": "noteviews",
+      "to": "svc",
+      "label": "create 直连（新建）",
+      "variant": "dashed"
+    },
+    {
+      "id": "graphview-svc",
+      "from": "graphview",
+      "to": "svc",
+      "label": "连线写回",
+      "variant": "dashed",
+      "labelAt": [
+        330,
+        236
+      ]
+    },
+    {
+      "id": "kit-udialog",
+      "from": "kit",
+      "to": "udialog",
+      "label": "changed → 自愈重建",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "事实链路",
+      "items": [
+        "View 信号 → Controller → Service → Repository → SQLite",
+        "Service → EventBus(领域事件) → Controller/GraphPage 局部刷新（graph_delta 增量）"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "v0.12 新增",
+      "items": [
+        "view/ui 无边框弹窗 UDialog（INPUT/RESIZABLE · 自绘标题栏 · 主题自愈）",
+        "笔记五类 Markdown/富文本/Word/Excel/链接，python-docx/openpyxl 只读预览",
+        "图谱节点可换行标题 + 点击四类预览；windowed 冻结 stderr/stdout 重定向到日志文件"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "MVC 分层（文件·符号）",
+      "items": [
+        "View：zhixing/view · Controller：zhixing/controller/app_controller.py:39",
+        "Model：TaskService:22 · NoteService:74 · GraphService:118 · Qt桥 models.py:44",
+        "证据：UDialog=dialog.py:195 · NodeItem=graph_page.py:143 · ensure_std_streams=logging_util.py:27"
+      ]
+    }
+  ]
+}

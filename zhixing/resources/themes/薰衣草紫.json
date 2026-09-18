@@ -1,0 +1,17 @@
+{
+  "name": "薰衣草紫",
+  "light": {
+    "canvas": "#F4F0FB", "layer": "#FFFFFF", "hover": "#E7DFF8", "hover2": "#D9CCF2",
+    "fg": "#3A2E55", "fg2": "#8E7BB0", "fg3": "#BCAECD",
+    "border": "#E4DCF4", "border2": "#CDBEE8",
+    "input": "rgba(255,255,255,0.9)", "scroll": "#CBB9E5",
+    "accent_soft": "#EAE2F8", "warm": "#E8A87C", "danger": "#E57373", "success": "#7FC8A9"
+  },
+  "dark": {
+    "canvas": "#1D1830", "layer": "#252040", "hover": "#332B52", "hover2": "#3B3160",
+    "fg": "#EDE8F9", "fg2": "#B4A6D4", "fg3": "#7E6FA1",
+    "border": "#463C66", "border2": "#5A4E82",
+    "input": "rgba(37,32,64,0.9)", "scroll": "#5A4E82",
+    "accent_soft": "#372D5C", "warm": "#F3B58A", "danger": "#F58B8B", "success": "#8FD4B8"
+  }
+}

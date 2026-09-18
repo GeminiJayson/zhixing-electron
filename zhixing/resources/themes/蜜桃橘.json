@@ -1,0 +1,17 @@
+{
+  "name": "蜜桃橘",
+  "light": {
+    "canvas": "#FFF4EC", "layer": "#FFFFFF", "hover": "#FFE9DA", "hover2": "#FFD9C2",
+    "fg": "#5A2E1C", "fg2": "#C08B72", "fg3": "#E0BCA7",
+    "border": "#F7DFCE", "border2": "#EFC3A6",
+    "input": "rgba(255,255,255,0.9)", "scroll": "#F0B28F",
+    "accent_soft": "#FFE7D6", "warm": "#F08A3C", "danger": "#E57373", "success": "#7FC8A9"
+  },
+  "dark": {
+    "canvas": "#271A12", "layer": "#30231A", "hover": "#40301F", "hover2": "#4B3725",
+    "fg": "#F7ECE3", "fg2": "#D0A488", "fg3": "#966C55",
+    "border": "#513D2B", "border2": "#684B34",
+    "input": "rgba(48,35,26,0.9)", "scroll": "#684B34",
+    "accent_soft": "#52331F", "warm": "#F5A45E", "danger": "#F58B8B", "success": "#8FD4B8"
+  }
+}

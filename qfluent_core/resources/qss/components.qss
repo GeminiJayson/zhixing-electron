@@ -1,0 +1,528 @@
+/* =============================================================================
+   qfluent_core / components.qss —— 组件库皮肤
+   占位符 $token；变体用动态属性选择器 [tone=][kind=][uiSize=][state=]。
+   规则全部以 #UC 组件 objectName 为根，不污染宿主项目的其它控件。
+   ============================================================================= */
+
+/* ============================ 按钮 ============================ */
+#UButton { border: $border-w solid transparent; border-radius: $radius-ctl;
+  padding: 0 $space-3; font-size: $control-font-size;
+  min-height: $control-content-h; max-height: $control-content-h; color: $fg;
+  background: transparent; text-align: center; }
+#UButton[uiSize="compact"] { min-height: $control-content-compact;
+  max-height: $control-content-compact; font-size: $control-font-size;
+  padding: 0 $space-2; }
+#UButton[uiSize="large"] { min-height: $control-content-large;
+  max-height: $control-content-large; font-size: $control-font-size;
+  padding: 0 $space-4; }
+
+/* solid：唯一主动作用 accent，普通动作用 standard，低强调用 subtle */
+#UButton[kind="solid"][tone="standard"] { background: $control-hover;
+  border-color: $border; color: $fg; }
+#UButton[kind="solid"][tone="standard"]:hover { background: $control-pressed; }
+#UButton[kind="solid"][tone="accent"] { background: $accent-solid;
+  color: $accent-on; border-color: transparent; }
+#UButton[kind="solid"][tone="accent"]:hover { background: $accent-solid-hover; }
+#UButton[kind="solid"][tone="subtle"] { background: transparent; color: $fg2;
+  border-color: transparent; }
+#UButton[kind="solid"][tone="subtle"]:hover { background: $control-hover; color: $fg; }
+
+/* 破坏性动作：常态中性，hover/确认才转红（不要永久大红） */
+#UButton[kind="solid"][tone="danger"] { background: $control-hover;
+  border-color: $border2; color: $danger; }
+#UButton[kind="solid"][tone="danger"]:hover { background: $danger; color: $accent-on;
+  border-color: $danger; }
+
+/* ghost：只描边不填充 */
+#UButton[kind="ghost"] { background: transparent; border-color: $border2; color: $fg; }
+#UButton[kind="ghost"]:hover { background: $control-hover; border-color: $border-strong; }
+#UButton[kind="ghost"][tone="accent"] { border-color: $accent; color: $accent; }
+#UButton[kind="ghost"][tone="accent"]:hover { background: $accent-soft; }
+#UButton[kind="ghost"][tone="danger"] { border-color: $border2; color: $danger; }
+#UButton[kind="ghost"][tone="danger"]:hover { background: $danger-soft;
+  border-color: $danger; }
+
+/* 按压反馈：QSS 无 transform，用 1px 内缩 + 底色变化表达（几何属 QSS 例外） */
+#UButton[pressed="true"] { padding-left: $pad-press-md; padding-right: $pad-press-md; }
+#UButton[uiSize="compact"][pressed="true"] { padding-left: $pad-press-sm; padding-right: $pad-press-sm; }
+#UButton[uiSize="large"][pressed="true"] { padding-left: $pad-press-lg; padding-right: $pad-press-lg; }
+#UButton:focus { border: $focus-ring solid $accent; }
+#UButton:disabled { background: $control-disabled; color: $fg-disabled;
+  border-color: transparent; }
+
+/* ========================= 图标按钮 ========================= */
+#UIconButton { background: transparent; border: $border-w solid transparent;
+  border-radius: $radius-ctl; color: $fg2; padding: 0;
+  min-width: $control-h-icon; max-width: $control-h-icon;
+  min-height: $control-h-icon; max-height: $control-h-icon; }
+#UIconButton[uiSize="compact"] { min-width: $control-h-sm;
+  max-width: $control-h-sm; min-height: $control-h-sm; max-height: $control-h-sm; }
+#UIconButton:hover { background: $control-hover; color: $fg; }
+#UIconButton:checked { background: $accent-soft; color: $accent; }
+#UIconButton:focus { border: $focus-ring solid $accent; }
+#UIconButton:disabled { color: $fg-disabled; background: transparent; }
+#UIconButton[role="close"]:hover { background: $danger; color: $accent-on; }
+
+/* ========================= 开关 ========================= */
+#UToggleSwitch { background: transparent; border: none; padding: 0;
+  min-width: $switch-w; max-width: $switch-w;
+  min-height: $control-h; max-height: $control-h; }
+#UToggleSwitch:focus { border: $focus-ring solid $accent; border-radius: $radius-pill; }
+
+/* ====================== 分段控件 ====================== */
+#USegmentedControl { background: $track; border: $border-w solid $border;
+  border-radius: $radius-md; padding: 2px; }
+#USegmentedControl[variant="pill"] { border-radius: $radius-pill; }
+#USegmentButton { background: transparent; border: none; color: $fg2;
+  border-radius: $radius-ctl; padding: 0 $space-3; font-size: $control-font-size;
+  min-height: $control-content-compact; max-height: $control-content-compact; }
+#USegmentButton:hover { color: $fg; background: $control-pressed; }
+/* 选中态由会位移的 thumb 表达，按钮自身保持透明 */
+#USegmentButton:checked { background: transparent; color: $fg;
+  font-weight: $font-weight-strong; border: none; }
+#USegmentThumb { background: $layer; border: $border-w solid $border;
+  border-radius: $radius-ctl; }
+#USegmentButton:focus { border: $focus-ring solid $accent; }
+
+/* ========================= 输入框 ========================= */
+#ULineEdit { background: $control; border: $border-w solid $border2;
+  border-radius: $radius-md; padding: 0 $space-2; color: $fg;
+  font-size: $control-font-size;
+  min-height: $control-content-h; max-height: $control-content-h; }
+#ULineEdit:hover { border-color: $border-strong; }
+#ULineEdit:focus { border: $focus-ring solid $accent; }
+#ULineEdit[state="error"] { border-color: $danger; }
+#ULineEdit:disabled { background: $control-disabled; color: $fg-disabled; }
+#USearchBox { background: $control; border: $border-w solid $border2;
+  border-radius: $radius-md; padding: 0 $space-1 0 $space-2;
+  min-height: $control-content-h; max-height: $control-content-h; }
+#USearchBox[focused="true"] { border: $focus-ring solid $accent; }
+#USearchBox QLineEdit#USearchInput { background: transparent; border: none;
+  padding-left: $space-1; min-height: 0; }
+#USearchBox QLineEdit#USearchInput:focus { border: none; }
+#USearchBox QToolButton#USearchClear { background: transparent; border: none;
+  border-radius: $radius-sm; color: $fg3; min-width: $control-h-sm; max-width: $control-h-sm;
+  min-height: $control-h-sm; max-height: $control-h-sm; }
+#USearchBox QToolButton#USearchClear:hover { background: $control-hover; color: $fg; }
+
+/* ========================= 文字层级 ========================= */
+#UTitle[role="title"] { color: $fg; font-size: $font-size-title;
+  font-weight: $font-weight-strong; background: transparent; }
+#UTitle[role="subtitle"] { color: $fg; font-size: $font-size-lg;
+  font-weight: $font-weight-strong; background: transparent; }
+#UTitle[role="body"] { color: $fg; font-size: $font-size; background: transparent; }
+#UTitle[role="caption"] { color: $fg2; font-size: $font-size-sm; background: transparent; }
+#UTitle[role="muted"] { color: $fg3; font-size: $font-size-sm; background: transparent; }
+
+/* ========================= 卡片 ========================= */
+#UCard { background: $layer; border: $border-w solid $stroke-card;
+  border-radius: $radius-lg; }
+#UCard[variant="sunken"] { background: $layer-alt; border-color: transparent; }
+#UCard[variant="plain"] { background: transparent; border-color: transparent; }
+#UCardHeader { background: transparent; }
+#UCardTitle { color: $fg; font-weight: $font-weight-strong; }
+#UCardSubtitle { color: $fg2; font-size: $font-size-sm; }
+#UCardBody { background: transparent; }
+#UCardFooter { background: transparent; border-top: $border-w solid $border; }
+
+/* ========================= 分隔线 ========================= */
+#UDivider { background: $border; border: none; }
+#UDivider[orientation="vertical"] { max-width: $divider-w; min-width: $divider-w; }
+
+/* ========================= 折叠面板 ========================= */
+#UExpander { background: transparent; border: none; }
+#UExpanderHeader { background: transparent; border: none; color: $fg;
+  border-radius: $radius-ctl; padding: $space-1 $space-2; text-align: left;
+  min-height: $control-h; }
+#UExpanderHeader:hover { background: $control-hover; }
+#UExpanderHeader:focus { border: $focus-ring solid $accent; }
+#UExpanderBody { background: transparent; border: none; }
+
+/* ======================= 页头 ======================= */
+#UPageHeader { background: transparent; }
+#UPageHeaderTitle { color: $fg; font-size: $font-size-title;
+  font-weight: $font-weight-strong; }
+#UPageHeaderSubtitle { color: $fg2; font-size: $font-size-sm; }
+
+/* ======================= 表单行 ======================= */
+#UField { background: transparent; }
+#UFieldLabel { color: $fg2; font-size: $font-size-sm; }
+#UFieldHelp { color: $fg3; font-size: $font-size-sm; }
+#UFieldHelp[state="error"] { color: $danger; }
+
+/* ======================= 状态胶囊 ======================= */
+#UStatusPill { border-radius: $radius-pill; padding: 0 $space-2;
+  font-size: $control-font-size; border: $border-w solid transparent;
+  min-height: $control-h-sm; max-height: $control-h-sm; }
+#UStatusPill QLabel#UStatusPillText { background: transparent; }
+#UStatusPill[kind="soft"][tone="standard"] { background: $control-hover; color: $fg2; }
+#UStatusPill[kind="soft"][tone="accent"] { background: $accent-soft; color: $accent; }
+#UStatusPill[kind="soft"][tone="danger"] { background: $danger-soft; color: $danger; }
+#UStatusPill[kind="soft"][tone="warn"] { background: $warn-soft; color: $warn; }
+#UStatusPill[kind="soft"][tone="success"] { background: $success-soft; color: $success; }
+#UStatusPill[kind="soft"][tone="info"] { background: $info-soft; color: $info; }
+#UStatusPill[kind="solid"][tone="accent"] { background: $accent-solid;
+  color: $accent-on; }
+#UStatusPill[kind="outline"][tone="standard"] { border-color: $border2; color: $fg2; }
+#UStatusPill[kind="outline"][tone="danger"] { border-color: $danger; color: $danger; }
+#UStatusPill[kind="outline"][tone="success"] { border-color: $success; color: $success; }
+#UStatusPill[kind="outline"][tone="warn"] { border-color: $warn; color: $warn; }
+#UStatusPill[kind="outline"][tone="accent"] { border-color: $accent; color: $accent; }
+#UStatusPill[kind="outline"][tone="info"] { border-color: $info; color: $info; }
+
+/* ======================= 徽标 ======================= */
+#UBadge { background: $accent-solid; color: $accent-on;
+  border-radius: $radius-pill; font-size: $font-size-sm;
+  font-weight: $font-weight-strong; padding: 0 $space-1;
+  min-width: $control-h-sm; min-height: $control-h-sm; max-height: $control-h-sm; }
+#UBadge[tone="danger"] { background: $danger; }
+#UBadge[tone="warn"] { background: $warn; }
+#UBadge[tone="success"] { background: $success; }
+#UBadge[tone="standard"] { background: $control-pressed; color: $fg2; }
+
+/* ======================= 内联状态条 ======================= */
+#UInfoBar { border-radius: $radius-md; padding: $space-2 $space-3;
+  border: $border-w solid transparent; }
+#UInfoBar[tone="standard"] { background: $control-hover; color: $fg; }
+#UInfoBar[tone="success"] { background: $success-soft; color: $success; }
+#UInfoBar[tone="warn"] { background: $warn-soft; color: $warn; }
+#UInfoBar[tone="danger"] { background: $danger-soft; color: $danger; }
+#UInfoBar[tone="info"] { background: $info-soft; color: $info; }
+#UInfoBar QLabel#UInfoBarText { background: transparent; }
+#UInfoBar QToolButton#UInfoBarClose { background: transparent; border: none;
+  border-radius: $radius-sm; color: $fg2;
+  min-width: $control-h-sm; max-width: $control-h-sm;
+  min-height: $control-h-sm; max-height: $control-h-sm; }
+#UInfoBar QToolButton#UInfoBarClose:hover { background: $control-pressed; color: $fg; }
+
+/* ======================= 进度条 ======================= */
+#UProgressBar { background: $track; border: none;
+  border-radius: $radius-sm; min-height: $progress-h; max-height: $progress-h; text-align: center; }
+#UProgressBar::chunk { background: $accent-solid; border-radius: $radius-sm; }
+#UProgressBar[tone="success"]::chunk { background: $success; }
+#UProgressBar[tone="warn"]::chunk { background: $warn; }
+#UProgressBar[tone="danger"]::chunk { background: $danger; }
+
+/* ======================= 空状态 ======================= */
+#UEmptyState { background: transparent; border: 1px dashed $border2;
+  border-radius: $radius-lg; }
+#UEmptyStateTitle { color: $fg; font-weight: $font-weight-strong; }
+#UEmptyStateText { color: $fg2; }
+#UEmptyStateIcon { background: $control-hover; border-radius: $radius-lg; }
+
+/* ======================= 骨架屏 ======================= */
+/* 骨架屏必须在亮色下也看得见（control-hover 在白底上对比不足），呼吸态换更浅一档 */
+#USkeleton { background: $track; border-radius: $radius-sm; }
+#USkeleton[pulse="true"] { background: $border; }
+
+/* ======================= 对话框 ======================= */
+#UDialog { background: $surface; border: $border-w solid $border;
+  border-radius: $radius-lg; }
+#UDialogTitleBar { background: transparent; }
+#UDialogTitle { color: $fg; font-weight: $font-weight-strong; }
+#UDialogBody { background: transparent; }
+#UDialogFooter { background: transparent; border-top: $border-w solid $border; }
+#UDialogClose { background: transparent; border: none; border-radius: $radius-ctl;
+  color: $fg2; min-width: $control-h-icon; max-width: $control-h-icon;
+  min-height: $control-h-sm; max-height: $control-h-sm; }
+#UDialogClose:hover { background: $danger; color: $accent-on; }
+
+
+/* =========================================================================
+   扩展组件（表单 / 数据 / 导航 / 反馈）—— 同样全部走 token，无写死圆角
+   ========================================================================= */
+
+/* ---------------------------- 复选框 ---------------------------- */
+#UCheckBox { spacing: 8px; color: $fg; padding: 2px 0; }
+#UCheckBox:disabled { color: $fg-disabled; }
+#UCheckBox[state="error"] { color: $danger; }
+#UCheckBox[state="error"]::indicator { border-color: $danger; }
+
+/* ---------------------------- 滑块 ---------------------------- */
+#USlider { min-height: $control-h; max-height: $control-h;
+  background: transparent; border: none; }   /* 轨道与手柄由组件自绘 */
+/* 注意：sub-control 的尺寸必须用 min-height/max-height，写 height 在 Qt 里不生效
+   （轨道会撑成默认的粗条） */
+#USlider:focus { border: none; }
+
+/* ---------------------------- 下拉 ---------------------------- */
+#UComboBox, #UMultiComboBox { color: $fg; background: $control;
+  border: $border-w solid $border2; border-radius: $radius-md; padding: 0 10px;
+  font-size: $control-font-size;
+  min-height: $control-content-h; max-height: $control-content-h; }
+#UComboBox:hover, #UMultiComboBox:hover { border-color: $border-strong; }
+#UComboBox:focus, #UMultiComboBox:focus { border: $focus-ring solid $accent; }
+#UComboBox::drop-down, #UMultiComboBox::drop-down { border: none;
+  background: transparent; width: $drop-btn-w; }
+#UComboBox::down-arrow, #UMultiComboBox::down-arrow {
+  image: url($chevron-down); width: $chevron-w; height: $chevron-w; }
+#UComboBox QAbstractItemView, #UMultiComboBox QAbstractItemView {
+  color: $fg; background: transparent; border: none;
+  border-radius: $radius-md; padding: 4px;
+  selection-background-color: $accent-soft; selection-color: $fg; outline: 0; }
+#UComboBox QAbstractItemView::item, #UMultiComboBox QAbstractItemView::item {
+  min-height: $control-content-compact; padding: 2px 8px;
+  border-radius: $radius-sm; }
+#UMultiComboBox:disabled, #UComboBox:disabled { background: $control-disabled;
+  color: $fg-disabled; }
+
+/* ---------------------------- 日期 ---------------------------- */
+#UDatePicker { color: $fg; background: $control; border: $border-w solid $border2;
+  border-radius: $radius-md; padding: 0 10px; font-size: $control-font-size;
+  min-height: $control-content-h; max-height: $control-content-h; }
+#UDatePicker:hover { border-color: $border-strong; }
+#UDatePicker:focus { border: $focus-ring solid $accent; }
+#UDatePicker::drop-down { border: none; background: transparent; width: $drop-btn-w; }
+#UDatePicker::down-arrow { image: url($chevron-down); width: $chevron-w; height: $chevron-w; }
+QCalendarWidget QWidget { background: $surface; color: $fg; }
+QCalendarWidget QToolButton { background: transparent; color: $fg;
+  border-radius: $radius-sm; padding: 4px 8px; }
+QCalendarWidget QToolButton:hover { background: $control-hover; }
+QCalendarWidget QAbstractSpinBox, QCalendarWidget QSpinBox {
+  color: $fg; background: $control; selection-color: $accent-on;
+  selection-background-color: $accent-solid; }
+QCalendarWidget QTableView { background: $surface; color: $fg;
+  selection-color: $accent-on; selection-background-color: $accent-solid; }
+QCalendarWidget QTableView::item:hover { background: $control-hover; }
+
+/* ---------------------------- 文件上传 ---------------------------- */
+#UUpload { background: transparent; }
+#UUploadDrop { background: $layer-alt; border: 1px dashed $border2;
+  border-radius: $radius-lg; }
+#UUploadDrop[dragging="true"] { background: $accent-soft; border-color: $accent; }
+#UUploadLabel { color: $fg; background: transparent; }
+#UUploadHint { color: $fg3; font-size: $font-size-sm; background: transparent; }
+#UUploadChoose { background: $control-hover; color: $fg;
+  border: $border-w solid $border2; border-radius: $radius-ctl; padding: 0 14px;
+  font-size: $control-font-size;
+  min-height: $control-content-compact; max-height: $control-content-compact; }
+#UUploadChoose:hover { background: $control-pressed; border-color: $border-strong; }
+#UUploadChoose:focus { border: $focus-ring solid $accent; }
+#UUploadRow { background: $layer; border: $border-w solid $border;
+  border-radius: $radius-md; }
+#UUploadName { color: $fg; background: transparent; }
+#UUploadEmpty { color: $fg3; font-size: $font-size-sm; }
+#UUploadRemove { background: transparent; border: none; color: $fg2;
+  border-radius: $radius-sm; min-width: $control-h-sm; max-width: $control-h-sm;
+  min-height: $control-h-sm; max-height: $control-h-sm; }
+#UUploadRemove:hover { background: $danger; color: $accent-on; }
+
+/* ---------------------------- 表格 ---------------------------- */
+#UTable, #UDataTableGrid { background: $layer; border: $border-w solid $border;
+  border-radius: $radius-md; gridline-color: $border; color: $fg;
+  alternate-background-color: $layer-alt; outline: 0; }
+#UTable::item, #UDataTableGrid::item { padding: $space-1 $space-2; }
+#UTable::item:selected, #UDataTableGrid::item:selected {
+  background: $accent-soft; color: $fg; }
+#UTable QHeaderView::section, #UDataTableGrid QHeaderView::section {
+  background: $layer-alt; color: $fg2; border: none;
+  border-bottom: $border-w solid $border; padding: 6px 8px;
+  font-weight: $font-weight-strong; }
+#UTable QTableCornerButton::section, #UDataTableGrid QTableCornerButton::section {
+  background: $layer-alt; border: none; }
+#UDataTable { background: transparent; }
+#UDataTableToolbar { background: transparent; }
+#UDataTableSummary { color: $fg3; font-size: $font-size-sm; }
+
+/* ---------------------------- 控制台 ---------------------------- */
+#UConsole { background: transparent; }
+#UConsoleTitle { color: $fg2; font-size: $font-size-sm;
+  font-weight: $font-weight-strong; }
+#UConsoleView { background: $layer-alt; color: $fg2;
+  border: $border-w solid $border; border-radius: $radius-md; padding: 8px;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: $font-size-sm; selection-background-color: $accent-soft;
+  selection-color: $fg; }
+
+/* ---------------------------- 警告提示 ---------------------------- */
+#UAlert { border-radius: $radius-md; border: $border-w solid transparent; }
+#UAlert[tone="standard"] { background: $control-hover; }
+#UAlert[tone="info"] { background: $info-soft; }
+#UAlert[tone="success"] { background: $success-soft; }
+#UAlert[tone="warn"] { background: $warn-soft; }
+#UAlert[tone="danger"] { background: $danger-soft; }
+#UAlert[tone="standard"] #UAlertText, #UAlert[tone="standard"] #UAlertTitle { color: $fg; }
+#UAlert[tone="info"] #UAlertText, #UAlert[tone="info"] #UAlertTitle { color: $info; }
+#UAlert[tone="success"] #UAlertText, #UAlert[tone="success"] #UAlertTitle { color: $success; }
+#UAlert[tone="warn"] #UAlertText, #UAlert[tone="warn"] #UAlertTitle { color: $warn; }
+#UAlert[tone="danger"] #UAlertText, #UAlert[tone="danger"] #UAlertTitle { color: $danger; }
+#UAlertTitle { font-weight: $font-weight-strong; background: transparent; }
+#UAlertText { background: transparent; }
+#UAlertIcon { border-radius: $radius-sm; color: $layer; background: $accent-solid; }
+#UAlert[tone="standard"] #UAlertIcon { background: $fg3; }
+#UAlert[tone="info"] #UAlertIcon { background: $info; }
+#UAlert[tone="success"] #UAlertIcon { background: $success; }
+#UAlert[tone="warn"] #UAlertIcon { background: $warn; }
+#UAlert[tone="danger"] #UAlertIcon { background: $danger; }
+#UAlertClose { background: transparent; border: none; color: $fg2;
+  border-radius: $radius-sm; min-width: 22px; max-width: 22px;
+  min-height: $control-h-sm; max-height: $control-h-sm; }
+#UAlertClose:hover { background: $control-pressed; color: $fg; }
+
+/* ---------------------------- 侧边菜单 ---------------------------- */
+#UMenu { background: $layer; border-right: $border-w solid $border; }
+#UMenuGroup { color: $fg3; font-size: $font-size-sm; padding: 8px 8px 2px 8px;
+  background: transparent; }
+#UMenuIndicator { background: $accent; border-radius: $radius-xs; }
+#UMenuItem { background: transparent; border: none; border-radius: $radius-ctl;
+  color: $fg2; padding: 0 10px; text-align: left; font-size: $control-font-size;
+  min-height: $control-content-h; max-height: $control-content-h; }
+#UMenuItem:hover { background: $control-hover; color: $fg; }
+#UMenuItem:checked { background: $accent-soft; color: $accent;
+  font-weight: $font-weight-strong; }
+#UMenuItem:focus { border: $focus-ring solid $accent; }
+/* 折叠态：文字转图标块（方形居中字形 + 淡底，视觉上就是一个图标按钮） */
+#UMenuItem[collapsed="true"] { padding: 0; text-align: center;
+  background: $control-hover; color: $fg;
+  min-height: $control-h; max-height: $control-h; }
+#UMenuItem[collapsed="true"]:hover { background: $control-pressed; }
+#UMenuItem[collapsed="true"]:checked { background: $accent-soft; color: $accent; }
+#UMenuToggle { background: transparent; border: none; color: $fg2;
+  border-radius: $radius-ctl; min-height: $control-h-sm; max-height: $control-h-sm; }
+#UMenuToggle:hover { background: $control-hover; color: $fg; }
+#UMenuToggle:focus { border: $focus-ring solid $accent; }
+
+/* ---------------------------- 顶部栏 ---------------------------- */
+#UTopbar { background: $layer; border-bottom: $border-w solid $border; }
+#UTopbarTitle { color: $fg; font-weight: $font-weight-strong; background: transparent; }
+#UTopbarSubtitle { color: $fg3; font-size: $font-size-sm; background: transparent; }
+
+/* ---------------------------- 面包屑 ---------------------------- */
+#UBreadcrumb { background: transparent; }
+#UBreadcrumbItem { background: transparent; border: none; color: $fg2;
+  padding: 2px 4px; border-radius: $radius-sm; }
+#UBreadcrumbItem[state="link"]:hover { background: $control-hover; color: $fg; }
+#UBreadcrumbItem[state="current"] { color: $fg;
+  font-weight: $font-weight-strong; }
+#UBreadcrumbSeparator { color: $fg3; background: transparent; }
+
+/* ---------------------------- 标签页 ---------------------------- */
+#UTabs::pane { border: $border-w solid $border; border-radius: $radius-md;
+  background: $layer; top: -1px; }
+#UTabs QTabBar::tab { color: $fg2; background: transparent; padding: 7px 16px;
+  border-bottom: $underline-h solid transparent; margin-right: $tab-gap; }
+#UTabs QTabBar::tab:hover { color: $fg; background: $control-hover; }
+#UTabs QTabBar::tab:selected { color: $fg; border-bottom: 2px solid $accent;
+  background: transparent; }
+
+/* ---------------------------- 分页器 ---------------------------- */
+#UPagination { background: transparent; }
+#UPaginationRange { color: $fg3; font-size: $font-size-sm; }
+
+/* ---------------------------- 下拉菜单按钮 ---------------------------- */
+#UDropdown { background: $control-hover; border: $border-w solid $border;
+  border-radius: $radius-ctl; color: $fg; padding: 0 10px;
+  font-size: $control-font-size;
+  min-height: $control-content-h; max-height: $control-content-h; }
+#UDropdown:hover { background: $control-pressed; }
+#UDropdown:focus { border: $focus-ring solid $accent; }
+#UDropdown::menu-indicator { image: none; width: 0; }
+#UDropdown:disabled { background: $control-disabled; color: $fg-disabled; }
+
+/* ======================= 顶部标签页 ======================= */
+#UTabStrip { background: transparent; }
+#UTabStripScroll, #UTabStripTrack { background: transparent; }
+#UTabStripItem { background: transparent; border: none; color: $fg2;
+  padding: 8px 14px; font-size: $control-font-size;
+  min-height: $control-h; max-height: $control-h; }
+#UTabStripItem:hover { color: $fg; }
+#UTabStripItem:checked { color: $fg; font-weight: $font-weight-strong; }
+#UTabStripItem:focus { border: none; }
+#UTabUnderline { background: $accent; border-radius: $radius-xs; }
+
+
+/* =========================================================================
+   交互动效组件
+   ========================================================================= */
+/* 折叠卡片没有外层卡片托底，边框取深一档（stroke-card 在白底上几乎看不见） */
+#UCollapseCard { background: $layer; border: $border-w solid $border;
+  border-radius: $radius-lg; }
+/* 内边距由布局提供（QToolButton 自身的内边距会叠加，导致内容比其它卡片更贴边/更内缩） */
+#UCollapseHeader { background: transparent; border: none; color: $fg;
+  padding: 0; text-align: left; min-height: $control-h; }
+#UCollapseHeader:hover { background: $control-hover; border-radius: $radius-ctl; }
+/* 焦点用左侧竖条：整块 focus 边框会贴着卡片边缘，看起来像卡片自己多了一圈、
+   还会盖掉卡片的圆角 */
+#UCollapseHeader:focus { border: none; border-left: $indicator-w solid $accent;
+  background: transparent; }
+#UCollapseTitle { color: $fg; font-weight: $font-weight-strong;
+  background: transparent; }
+#UCollapseBody { background: transparent; }
+
+#UFlipCard { background: transparent; }
+#UFlipFront, #UFlipBack { background: $layer; border: $border-w solid $stroke-card;
+  border-radius: $radius-lg; }
+
+#USwipeConfirm { background: transparent; }
+
+#UActionCard { background: $layer; border: $border-w solid $stroke-card;
+  border-radius: $radius-lg; }
+#UActionCardTitle { color: $fg; font-weight: $font-weight-strong;
+  background: transparent; }
+#UActionCardSubtitle, #UActionCardLabel { color: $fg2;
+  font-size: $font-size-sm; background: transparent; }
+#UActionCardValue { color: $fg; font-weight: $font-weight-strong;
+  background: transparent; }
+#UActionCardResult { color: $accent; font-size: $font-size-sm;
+  background: $accent-soft; border-radius: $radius-ctl; padding: 6px 10px; }
+
+#UFilterChips, #UFilterChipsScroll, #UFilterChipsTrack { background: transparent; }
+
+#UProgressCard { background: $layer; border: $border-w solid $stroke-card;
+  border-radius: $radius-lg; }
+#UProgressCardTitle { color: $fg; font-weight: $font-weight-strong;
+  background: transparent; }
+#UProgressCardCaption { color: $fg2; font-size: $font-size-sm;
+  background: transparent; }
+#UProgressCardDetail { color: $fg2; background: transparent; }
+
+#UBottomBar { background: $layer; border-top: $border-w solid $border; }
+#UBottomBarTitle { color: $fg; font-weight: $font-weight-strong;
+  background: transparent; }
+#UBottomBarSubtitle { color: $fg3; font-size: $font-size-sm;
+  background: transparent; }
+
+#UMaskedInput { background: $control; border: $border-w solid $border2;
+  border-radius: $radius-md; min-height: $control-content-h;
+  max-height: $control-content-h; }
+#UMaskedInput[focused="true"] { border: $focus-ring solid $accent; }
+#UMaskedField, #UMaskedField:focus { background: transparent; border: none;
+  padding: 0; }
+#UMaskedUnit, #UMaskedCounter { color: $fg3; font-size: $font-size-sm;
+  background: transparent; }
+
+/* ========================= 列表 ========================= */
+#UList { background: $layer; border: 1px solid $border; border-radius: $radius-lg;
+  color: $fg; outline: 0; padding: 4px; }
+#UList::item { min-height: $control-h; padding: 2px 8px; border-radius: $radius-ctl;
+  color: $fg; }
+#UList::item:hover { background: $control-hover; }
+#UList::item:selected { background: $accent-soft; color: $fg; }
+#UList:focus { border: $focus-ring solid $accent; }
+
+/* ========================= 浮层通知 ========================= */
+#UToast { background: $layer; border: 1px solid $border;
+  border-radius: $radius-lg; }
+#UToast[tone="success"] { border-left: $indicator-w solid $success; }
+#UToast[tone="warn"] { border-left: $indicator-w solid $warn; }
+#UToast[tone="danger"] { border-left: $indicator-w solid $danger; }
+#UToast[tone="info"] { border-left: $indicator-w solid $accent; }
+#UToastIcon { color: $fg2; font-size: $font-size; background: transparent;
+  min-width: $icon-size; }
+#UToastTitle { color: $fg; font-weight: $font-weight-strong;
+  background: transparent; }
+#UToastText { color: $fg2; background: transparent; }
+#UToastClose { background: transparent; border: none; color: $fg3;
+  border-radius: $radius-sm; min-width: $icon-size; max-width: $icon-size;
+  min-height: $icon-size; max-height: $icon-size; }
+#UToastClose:hover { background: $control-hover; color: $fg; }
+
+
+/* ========================= 分栏 ========================= */
+/* 默认 handle 只有 1~2px，根本抓不住 —— 给足命中宽度并做悬停反馈 */
+QSplitter { background: transparent; }
+QSplitter::handle { background: $border; }
+QSplitter::handle:horizontal { width: $split-handle; margin: 0 1px; }
+QSplitter::handle:vertical { height: $split-handle; margin: 1px 0; }
+QSplitter::handle:hover { background: $accent; }
+QSplitter::handle:pressed { background: $accent; }

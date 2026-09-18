@@ -1,0 +1,17 @@
+{
+  "name": "莓果粉",
+  "light": {
+    "canvas": "#FCF0F3", "layer": "#FFFFFF", "hover": "#F9DCE4", "hover2": "#F3C3D2",
+    "fg": "#5A2033", "fg2": "#B2788B", "fg3": "#D9B1BF",
+    "border": "#F4D6DE", "border2": "#EBB4C4",
+    "input": "rgba(255,255,255,0.9)", "scroll": "#EEAFC1",
+    "accent_soft": "#FADCE5", "warm": "#E07A9B", "danger": "#E57373", "success": "#7FC8A9"
+  },
+  "dark": {
+    "canvas": "#271520", "layer": "#311C29", "hover": "#412B38", "hover2": "#4B3342",
+    "fg": "#F8E9EF", "fg2": "#CE9DAE", "fg3": "#96687D",
+    "border": "#55404D", "border2": "#6C5362",
+    "input": "rgba(49,28,41,0.9)", "scroll": "#6C5362",
+    "accent_soft": "#552C40", "warm": "#EF9BB6", "danger": "#F58B8B", "success": "#8FD4B8"
+  }
+}

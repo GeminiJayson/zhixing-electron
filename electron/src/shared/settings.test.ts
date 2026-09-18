@@ -1,0 +1,59 @@
+import { describe, expect, it } from 'vitest'
+import { parseSettings, serializeSetting } from '@shared/settings'
+
+// 这组断言的起因是一次真实事故：settings 读出来是字符串，
+// `${s.font_size + 1.5}` 被拼成 "121.5px"，整屏被撑大。
+describe('settings 类型层', () => {
+  it('空表回退到默认值', () => {
+    const s = parseSettings({})
+    // 默认值以 Python 的 ensure_defaults / settings_page 为准（两版共用同一张表）
+    expect(s.font_size).toBe(14)
+    expect(s.theme_mode).toBe('system')
+    expect(s.theme_pack).toBe('青竹')
+    expect(s.capture_hotkey).toBe('ctrl+shift+s')
+    expect(s.widget_opacity).toBe(85)
+  })
+
+  it('数值字段是 number，能安全参与算术', () => {
+    const s = parseSettings({ font_size: '12' })
+    expect(typeof s.font_size).toBe('number')
+    expect(`${s.font_size + 1.5}px`).toBe('13.5px')
+    expect(`${parseSettings({ task_row_height: '30' }).task_row_height + 10}px`).toBe('40px')
+  })
+
+  it('非法值回退，越界值钳制', () => {
+    expect(parseSettings({ font_size: 'abc' }).font_size).toBe(14)
+    expect(parseSettings({ font_size: '999' }).font_size).toBe(20)
+    expect(parseSettings({ widget_opacity: '10' }).widget_opacity).toBe(60)
+  })
+
+  it('空串视为缺失而不是 0（Number("") === 0 的坑）', () => {
+    expect(parseSettings({ font_size: '' }).font_size).toBe(14)
+  })
+
+  it('布尔语义：0 为假、缺失用默认', () => {
+    expect(parseSettings({ pomodoro_auto_break: '0' }).pomodoro_auto_break).toBe(false)
+    expect(parseSettings({ pomodoro_auto_break: '1' }).pomodoro_auto_break).toBe(true)
+    expect(parseSettings({}).pomodoro_auto_break).toBe(false)
+    expect(parseSettings({ reminder_enabled: '' }).reminder_enabled).toBe(true)
+  })
+
+  it('枚举回退与保留', () => {
+    expect(parseSettings({ theme_mode: 'weird' }).theme_mode).toBe('system')
+    expect(parseSettings({ theme_mode: 'dark' }).theme_mode).toBe('dark')
+    expect(parseSettings({ theme_mode: 'system' }).theme_mode).toBe('system')
+    expect(parseSettings({ motion_level: 'none' }).motion_level).toBe('none')
+    expect(parseSettings({ motion_level: 'x' }).motion_level).toBe('full')
+  })
+
+  it('ui_state 原样透传（嵌套 JSON 由使用方解析）', () => {
+    expect(parseSettings({ ui_state: '{"a":1}' }).ui_state).toBe('{"a":1}')
+  })
+
+  it('字符串化与解析对称', () => {
+    expect(serializeSetting.bool(true)).toBe('1')
+    expect(serializeSetting.bool(false)).toBe('0')
+    expect(serializeSetting.num(30)).toBe('30')
+    expect(parseSettings({ font_size: serializeSetting.num(18) }).font_size).toBe(18)
+  })
+})

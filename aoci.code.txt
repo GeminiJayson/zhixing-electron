@@ -1,0 +1,53 @@
+#AOCI-CODE-VOLUME: 1
+
+===/Volumes/Personal/Develope/VibeCoding/PersonalToDoAndKnowledgeBase/===
+.gitattributes[FC3T]: F:强制全仓按 LF 检出，令 AOCI 基线哈希跨平台可比 | R:- | A:全仓 * text=auto eol=lf | S:Windows 默认 autocrlf 会改写行尾并把整棵树判为 stale
+.gitignore[FC5T]: F:声明不进版本库的凭据、构建产物、本机工具状态与个人 Agent 文件 | R:- | A:Git 忽略规则 | S:AGENTS.md 与 memory/ 也被忽略，AOCI 会静默跳过而建不进认知索引
+README.md[SG8L]: F:项目总入口：定位、技术栈、文档导航、里程碑与 v0.5→v0.17.4 版本历史 | R:code:docs/01-需求规格说明书.md, code:docs/02-技术架构设计.md, code:docs/03-UI-UX交互设计.md, code:docs/04-用户使用手册.md | A:面向使用者的项目概览 | S:当前基线 v0.17.4；README、设计文档与 __version__ 版本号长期不一致
+build_windows.bat[OV5T]: F:Windows 一键打包：装依赖后用 pyinstaller --clean --noconfirm 跑 zhixing.spec | R:code:requirements.txt, code:zhixing.spec | A:双击或命令行运行 | S:须 chcp 65001 与 cd /d %~dp0 才能中文正确并定位脚本目录
+
+===/Volumes/Personal/Develope/VibeCoding/PersonalToDoAndKnowledgeBase/docs/===
+01-需求规格说明书.md[SG8L]: F:需求唯一来源，定义 F1–F12 功能需求、非功能需求、范围外与验收要点 | R:code:docs/req_acceptance_baseline_t1.md, code:docs/backend_review_t2.md | A:F1–F12 需求编号契约 | S:文首版本与 README 不一致；范围外清单约束 v1 边界
+02-技术架构设计.md[SG8L]: F:架构权威文档：MVC 分层、目录结构、线程与生命周期、数据模型、图谱与捕获管线、ADR | R:code:zhixing/controller/app_controller.py, code:zhixing/view/shell/main_window.py | A:MVC 分层与目录结构契约 | S:线程与生命周期规约为硬约束，改动须遵守
+03-UI-UX交互设计.md[SG7L]: F:UI/UX 规范：语义色彩 Token、字体形状间距、SVG 图标与动效、信息架构、页面设计与主题 | R:code:docs/qfluent_core_组件库.md | A:设计 Token 与关键交互流契约 | S:组件代码不得出现色值、字号与圆角，样式只能来自 qss 与语义 token
+04-用户使用手册.md[SG7L]: F:面向终端用户的手册：安装启动、界面总览、今日页、任务、笔记、图谱与工作流说明 | R:code:README.md | A:v0.17.4 实测功能说明 | S:只描述代码中真实存在的能力；「关于」页 v0.1.0 是占位版本号
+backend_review_t2.md[SQ6S]: F:后端审查报告：model/controller/core 的未实现、弱实现与已闭环项及整改优先级 | R:code:docs/req_acceptance_baseline_t1.md | A:后端整改清单 | S:结论基于 grep 存在性与调用点，不含运行验证
+feature_compare_vs_dualcore_electron.md[SA5S]: F:与 Electron 双核效能系统的能力对照、借鉴评估与 P0/P1/P2 提案，附 v0.15 落地回写 | R:code:README.md | A:提案清单与落地节奏 | S:另列不建议照搬项，以守住知行技术底盘
+graph_redesign_contract_t1.md[SG6S]: F:图谱重构需求契约：四类节点视觉语义、归属与引用两类边拓扑规则、允许连接矩阵、增量刷新 | R:code:zhixing/model/application/graph_service.py, code:zhixing/view/pages/graph_page.py | A:边类型与 src→dst 连接矩阵 | S:仅需求契约不含实现代码，下游实现与审查据此进行
+qfluent_core_组件库.md[SU6M]: F:qfluent_core 框架层组件库的接入步骤、组件清单、迁移对照与设计约束 | R:- | A:三步接入：装配配置源与主题、建窗口、直接用组件 | S:组件只表达外观与交互状态，代码中不得出现色值字号圆角
+req_acceptance_baseline_t1.md[SQ7M]: F:F1–F11 需求与验收标准对照基线，供审查员逐项核对代码实现 | R:code:docs/01-需求规格说明书.md, code:docs/backend_review_t2.md | A:需求ID→验收标准→状态标记 | S:文档状态以 03 文档 §11 为准，且须以代码交叉验证
+ui_audit_final_report.md[SQ7M]: F:全局 UI 审计最终整改清单：未实现、弱实现、已实现待验收三档与优先级排序 | R:code:docs/backend_review_t2.md, code:docs/req_acceptance_baseline_t1.md | A:P0/P1 剩余工作清单 | S:分级区分功能缺失与质量不足，结论均附文件证据
+ui_controls_matrix_vs_neodark.md[SU6S]: F:控件级逐项对照矩阵：把对手 Neo-Dark 规范的按钮/输入/列表/弹层/动效逐条核验知行真实实现，给出 ✅·可补·不采判定与 P0–P2 批次 | R:code:docs/ui_design_compare_vs_neodark_glass.md, code:docs/ui_polish_v014_audit.md | A:逐控件「判定与建议」矩阵与 v0.16 落地回写 | S:明确指出 Qt QSS 不支持 box-shadow/transition/transform:scale，照对手 QSS 抄必然无效
+ui_design_compare_vs_neodark_glass.md[SU6S]: F:UI 高层差异分析与扩展提案：视觉/布局/控件三面向对照 Neo-Dark Glass，产出 P0–P2 增量改造与不采纳清单 | R:code:docs/ui_controls_matrix_vs_neodark.md, code:docs/03-UI-UX交互设计.md | A:提案编号 P0-1…P2 与截图+测试验收方式 | S:拒绝 emoji 图标、纯黑单日主题与整体 Frameless 换壳，只做加法不动 token 体系
+ui_polish_v014_audit.md[SQ6S]: F:v0.14 视觉精修审计报告：三路取证实测对比度、token 纪律与渲染缺陷，含 Top10 整改清单与 T1–T10 执行回写 | R:code:docs/ui_audit_final_report.md, code:docs/03-UI-UX交互设计.md | A:P1/P2 问题清单与逐项落点文件 | S:对比度是 WCAG 实测值非估算；本批为纯视觉整改，改动不触碰 Model/Service 层
+打包说明.md[OV6T]: F:Windows 打包说明：build_windows.bat 与 zhixing.spec 的前置条件、产物 dist/ZhiXing/、数据目录及冻结后日志重定向 | R:code:build_windows.bat, code:zhixing.spec, code:zhixing/core/logging_util.py | A:打包命令、隐藏导入与目录交付契约 | S:PyInstaller 不能跨平台打包须在 Windows 出包；分发必须拷整个 dist/ZhiXing/ 而非只拷 exe
+
+===/Volumes/Personal/Develope/VibeCoding/PersonalToDoAndKnowledgeBase/docs/diagrams/===
+zhixing-architecture-v012.candidate.json[SG4S]: F:v0.12 架构图的 archify 输入：四个视图与组件、边定义 | R:code:docs/diagrams/zhixing-architecture-v012.html, code:docs/diagrams/zhixing-architecture-v012.evidence.md | A:archify diagram schema_version 1 | S:未用 archify sources 字段，因其要求 GitHub 地址而本仓库为 Gitee
+zhixing-architecture-v012.evidence.md[SG5T]: F:v0.12 架构图节点到源码文件行号与符号的证据映射清单 | R:code:docs/diagrams/zhixing-architecture-v012.candidate.json | A:节点 id→组件→源码符号对照表 | S:因 sources 字段与 Gitee 不兼容，证据改由本清单承载
+zhixing-architecture-v012.html[SG6L]: F:自包含的 v0.12 架构图页面，内联样式与交互脚本，可切主题与预设 | R:code:docs/diagrams/zhixing-architecture-v012.candidate.json | A:浏览器直接打开的架构图 | S:单文件自包含且超过 700KB，不宜按源码逐行阅读
+zhixing-architecture-v012.visual-check.html[TQ4T]: F:浏览器截图证据页，并排展示 1440×900 与 2048×1320 的明暗四张截图 | R:code:docs/diagrams/zhixing-architecture-v012.html | A:架构图可视化验收面 | S:仅完成 containment pass，感知级评审仍待人工确认
+zhixing-architecture.candidate.json[SG4T]: F:优化基线架构图的 archify 输入：划词捕获主链、MVC 偏差点、数据与迁移层三视图 | R:code:docs/diagrams/zhixing-architecture.html | A:archify diagram schema_version 1 | S:明确标注 View 直接 import 并调用 Model 的 MVC 偏差点
+zhixing-architecture.html[SG5L]: F:优化基线架构图页面，呈现划词捕获主链、MVC 偏差与数据迁移层 | R:code:docs/diagrams/zhixing-architecture.candidate.json | A:浏览器直接打开的架构图 | S:单文件自包含且体积大；描述优化前基线，早于 v0.12 图
+
+===/Volumes/Personal/Develope/VibeCoding/PersonalToDoAndKnowledgeBase/examples/===
+__init__.py[XG2T]: F:examples 包标记：声明这是 qfluent_core 业务组合层用法示范的包入口 | R:code:examples/component_gallery.py | A:包导入入口 | S:无任何逻辑，仅包标记
+component_gallery.py[XU7L]: F:组件库画廊：分页铺开全部 U 系列组件的可视化验收面与迁移抄写参考，含主题/材质/动效/设置页 | R:code:qfluent_core/__init__.py, code:examples/motion_showcase.py | A:build_gallery_window(settings, theme) 返回窗口与 page_index/set_current_index 页导航 | S:每页须用 _page() 套 QScrollArea，否则长内容被裁切压缩；布局必须挂在 widget 上否则成无父顶层窗
+fluent_business_shell.py[XU6M]: F:业务组合层示范：在宿主项目里用 FluentTemplateWindow 组装页面、重绑业务信号、订阅 UISettings 实现不重启刷新 | R:code:qfluent_core/__init__.py, code:examples/component_gallery.py | A:DemoTaskService/BusinessThemeSource/TaskListPage/MainWindow 与 --selftest 无界面自检 | S:皮肤算法留业务侧（BusinessThemeSource），框架只消费 token；本文件代码可直接抄进 MainWindow
+interactive_showcase.py[XU3T]: F:交互动效页直达入口：建画廊窗口后定时切到 interactive 页，省去每次手动切换 | R:code:examples/component_gallery.py | A:main() 返回 QApplication.exec() 退出码 | S:须先注入 sys.path 并 UISettings.install，再延迟切页
+motion_showcase.py[XU6M]: F:动效验收窗口：分页覆盖壳层折叠、页面切换、控件动画、反馈与降级，每页进入自动重播且可手动重播 | R:code:qfluent_core/__init__.py, code:examples/component_gallery.py | A:MotionShowcase 及 replay_current/roll_numbers/ring_sweep/open_demo_dialog 公开触发 | S:动效开关关闭后正在播放的动画须立即停止，此页即降级验证面
+
+===/Volumes/Personal/Develope/VibeCoding/PersonalToDoAndKnowledgeBase/qfluent_core/===
+__init__.py[LG8S]: F:框架层唯一公开门面：汇总导出组件库、主题、配置、动效、材质与窗口壳，并声明零业务依赖分层契约 | R:code:qfluent_core/components/__init__.py, code:qfluent_core/theme.py, code:qfluent_core/motion.py, code:qfluent_core/window.py | A:from qfluent_core import FluentTemplateWindow/UISettings/ThemeManager/全部 U* 组件与 motion | S:业务组合层必须留在宿主项目；框架不持业务语义；此 __version__ 0.1.0 与知行项目版本无关
+
+===/Volumes/Personal/Develope/VibeCoding/PersonalToDoAndKnowledgeBase/qfluent_core/components/===
+__init__.py[LG8T]: F:组件库聚合入口：按动作/输入/数据/导航/反馈/状态/容器/浮层分组再导出全部 U 系列组件，重申组件零业务语义 | R:code:qfluent_core/components/base.py, code:qfluent_core/components/actions.py, code:qfluent_core/components/data.py | A:from qfluent_core.components import UButton/UCard/… 及 TONES/KINDS/SIZES/ThemedMixin | S:皮肤全在 resources/qss/components.qss，组件代码里不得出现色值、字号与圆角
+actions.py[LU8L]: F:动作类组件：语义按钮、图标按钮、自绘滑轨开关、分段控件与色板，并把 Fluent 控件选择约束写进实现 | R:code:qfluent_core/components/base.py, code:qfluent_core/theme.py, code:qfluent_core/motion.py | A:UButton(text,tone,kind,size)/UIconButton(icon,tooltip)/UToggleSwitch/USegmentedControl(add_segment,bind_stack)/UColorSwatch | S:图标按钮的 tooltip 是必填参数（无障碍）；破坏性动作常态中性只在 hover/确认转红；UButton solid hover 底色靠 QVariantAnimation 帧插值，QSS 无 transition
+base.py[CG9M]: F:组件库公共底座：ThemedMixin 主题与 UI 配置自愈、变体动态属性工具、语义 tone→token 映射，全部组件共用 | R:code:qfluent_core/theme.py, code:qfluent_core/settings.py, code:qfluent_core/components/actions.py | A:ThemedMixin(_init_theme/repolish/restyle/_set_variant/theme_tokens) 与 tone_color/tone_soft/apply_skin/token_px/TONES/KINDS/SIZES | S:ThemedMixin 必须排在 Qt 基类之前；QLabel 画不出 QSS border-radius，胶囊与徽标的圆角必须由 QFrame 承担；变体只能用动态属性否则属性选择器失效
+data.py[LU8L]: F:数据展示组件：自绘头像、表格与带搜索排序分页的高级表格、图像对比滑块、控制台日志与全局堆叠 Toast | R:code:qfluent_core/components/base.py, code:qfluent_core/components/actions.py, code:qfluent_core/icons.py | A:UAvatar/UTable/UDataTable(set_data,set_page_size,selected_rows)/UImageCompare/UConsole(append(level))/UList/UToast.show_message | S:UToast 是无父顶层窗并按 _stack_offset 堆叠，宿主要持引用否则被回收；级别到语义色映射在 CONSOLE_LEVEL_TONES
+dialogs.py[LU7L]: F:无边框主题化弹层：UDialog 自绘标题栏与边缘拉伸，UConfirmDialog/UInputDialog 快捷框，DialogType 与自转 USpinner | R:code:qfluent_core/components/actions.py, code:qfluent_core/components/inputs.py | A:UDialog(title)/add_widget/add_action/set_primary_action；UConfirmDialog.ask()；USpinner.start|stop | S:UDialog 是一次性浮层，由调用方持引用到 exec()/finished，框架不维护全局对话框注册表
+feedback.py[LU6S]: F:反馈提示 UAlert：圆角图标块 + 标题 + 正文 + 可选动作与关闭，用于需要解释原因或给后续动作的提示 | R:code:qfluent_core/components/actions.py, code:qfluent_core/components/base.py | A:UAlert(text,tone,title,closable,icon) 与 set_text/set_tone/add_action 及 closed、actionTriggered 信号 | S:与 UInfoBar 分工：UInfoBar 是一行轻量常驻状态条，UAlert 带标题负责解释
+forms.py[LU8L]: F:表单类组件：复选框、自绘滑块、下拉与多选下拉、日期选择、拖拽上传等，只做主题化外观与一致 API 不重写交互 | R:code:qfluent_core/components/base.py, code:qfluent_core/components/actions.py, code:qfluent_core/icons.py | A:UCheckbox/USlider/UComboBox(current_value,select_value)/UMultiComboBox(selected)/UDatePicker/UUpload(files,add_files)/URadioButton/USpinBox | S:弹出容器是独立顶层窗口，应用级 QSS 对它的 objectName 匹配不稳定，必须用控件级样式表 style_combo_popup()
+inputs.py[LU7S]: F:输入类组件：主题化单行输入、带图标的搜索框与多行编辑器，QSS 表达不了的占位符色改走 QPalette | R:code:qfluent_core/components/base.py, code:qfluent_core/icons.py | A:ULineEdit(clearable,set_error)/USearchBox(textChanged,submitted)/UTextEdit(placeholder,read_only) | S:占位符色与高亮色只能走 QPalette（QSS 无 placeholder 色），须在 restyle 里随主题重刷
+interactive.py[LU8L]: F:交互动效组件：折叠卡、翻转卡、滑动确认条、动作卡、筛选 chip、步骤进度卡、底部操作栏与掩码输入 | R:code:qfluent_core/components/actions.py, code:qfluent_core/components/forms.py, code:qfluent_core/motion.py | A:UCollapseCard.set_expanded/UFlipCard.flip/USwipeConfirm.progress/UActionCard.values/UFilterChips.selected/UProgressCard.set_steps/UBottomBar.attach_to/UMaskedInput.raw_text | S:所有动画必须走 motion.animate_value()，否则不遵守全局动效开关与档位，降级会失效
+navigation.py[LU8L]: F:导航类组件：可独立嵌入任意布局的侧边菜单、顶部栏、面包屑、标签页与页签条、分页器和下拉菜单 | R:code:qfluent_core/components/actions.py, code:qfluent_core/components/base.py, code:qfluent_core/motion.py | A:UMenu(itemSelected,add_item,set_collapsed)/UTopbar/UBreadcrumb/UTabs/UTabStrip(set_current)/UPagination(set_total,pageChanged)/UDropdown | S:这些控件把窗口壳里验证过的导航交互抽成独立控件，业务不必继承 FluentTemplateWindow；UMenu 只上报 key，切页由使用方决定

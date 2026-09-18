@@ -1,0 +1,103 @@
+/* 图谱页 */
+.graph-wrap {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: var(--space-3);
+  align-items: stretch;
+}
+.graph {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+  touch-action: none;
+}
+/* 连线（Obsidian 风）：默认极细、暗到几乎隐没 —— 整张图读起来是骨架，不是网格 */
+.graph__edge {
+  fill: none;
+  stroke: var(--graph-edge);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  /* 「瞬间渐变」：给极短过渡，有反馈但不像在放动画 */
+  transition: stroke var(--dur-instant), stroke-width var(--dur-instant);
+}
+/* 引用边用虚线区分语义；颜色不再单独设，默认与实线同色，免得抢注意力 */
+.graph__edge--ref {
+  stroke-dasharray: 4 3;
+}
+/* 与悬浮节点直接相连：抬成主题包颜色并加粗到 2px */
+.graph__edge--on {
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: none;
+}
+/* 淡化规则见 global.css 的 .is-dimmed（图谱与工作流共用） */
+/* --- 连线编辑：删除 + 端点改挂 --- */
+/* 1.2px 的线本身根本点不到，铺一条透明粗线做热区 */
+.graph__edge-hit {
+  /* path 默认 fill 是黑色，必须显式清掉，否则热区会变成一条粗黑带 */
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  cursor: pointer;
+}
+.edge-handle {
+  fill: var(--bg-layer-solid);
+  stroke: var(--accent);
+  stroke-width: 2;
+  cursor: crosshair;
+}
+.edge-del {
+  cursor: pointer;
+}
+.edge-del circle {
+  fill: var(--bg-layer-solid);
+  stroke: var(--danger);
+  stroke-width: 1.5;
+}
+.edge-del path {
+  stroke: var(--danger);
+  stroke-width: 1.6;
+  fill: none;
+}
+/* 改挂时跟随指针的虚线 */
+.graph__edge-drag {
+  stroke: var(--accent);
+  stroke-width: 1.6;
+  stroke-dasharray: 5 4;
+  pointer-events: none;
+}
+
+.gnode {
+  cursor: grab;
+}
+.gnode:active {
+  cursor: grabbing;
+}
+.gnode__label {
+  font-size: 9px;
+  fill: var(--fg-secondary);
+  pointer-events: none;
+  user-select: none;
+}
+.graph-side {
+  width: 240px;
+  flex: 0 0 240px;
+  max-height: 100%;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.graph-side__title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lead);
+  word-break: break-word;
+}
