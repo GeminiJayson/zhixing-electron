@@ -471,6 +471,21 @@ const api = {
     deleteTask: (id: number): Promise<number> => ipcRenderer.invoke('db:deleteTask', id),
   },
   /**
+   * 工作流条件节点的人工确认（「提示确认」来源）：
+   * 主进程发起询问 → 渲染层弹应用内对话框 → 回传成立 / 不成立。
+   * 判定逻辑与原先一致，只是把原生模态换成了自绘弹框。
+   */
+  condition: {
+    onAsk: (cb: (ask: { id: string; prompt: string }) => void): (() => void) => {
+      const handler = (_e: unknown, ask: { id: string; prompt: string }): void => cb(ask)
+      ipcRenderer.on('condition:confirm', handler)
+      return () => ipcRenderer.removeListener('condition:confirm', handler)
+    },
+    answer: (id: string, ok: boolean): void => {
+      ipcRenderer.send('condition:answer', id, ok)
+    },
+  },
+  /**
    * 笔记的「大模型解读整理归纳」。
    * 请求本身在主进程发出（渲染层不该拿到 API Key，也不该被 CORS 拦住）。
    */

@@ -146,6 +146,40 @@ textarea {
   color: var(--danger);
 }
 
+/* ---- 工作流条件的独立确认窗口（?condition=1）----
+   窗口本身就是那个框，所以这里不做遮罩，只排一张卡片。 */
+html[data-surface='condition'] body {
+  background: var(--bg-layer-solid);
+}
+.cond-win {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  height: 100vh;
+  box-sizing: border-box;
+  padding: var(--space-4);
+}
+.cond-win__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.cond-win__msg {
+  margin: 0;
+  flex: 1;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.cond-win__hint {
+  margin: 0;
+}
+.cond-win__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
 /* 输入框 / 下拉用「边框变色」表达焦点，不再叠加全局焦点环 —— 否则两层，且颜色不一致 */
 .field:focus-visible {
   outline: none;

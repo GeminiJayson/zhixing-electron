@@ -1055,6 +1055,19 @@ const CONDITION_TIMEOUT_MS = 15_000
  *   - prev：读实例上下文里的「上一步结果」（命令/脚本的退出码、任务的完成状态）——
  *           ctx.lastResult 由推进逻辑在调用前写入，这就是自动步骤把结果交给条件节点的通道
  */
+/**
+ * 人工确认的「问界面」通道，由 IPC 层注入（workflow.ts 不该直接碰 BrowserWindow）。
+ * 返回 **null** 表示没有可用窗口 —— 调用方回落到原生模态框，
+ * 这样「窗口都没了、没人应答」也不会把实例永久卡在条件节点上。
+ */
+let conditionAsker: ((prompt: string) => Promise<boolean | null>) | null = null
+
+export function setConditionAsker(
+  fn: ((prompt: string) => Promise<boolean | null>) | null
+): void {
+  conditionAsker = fn
+}
+
 export async function evaluateCondition(
   raw: string | null | undefined,
   ctx?: { lastResult?: NodeRunResult | null }
@@ -1066,16 +1079,24 @@ export async function evaluateCondition(
   if (!cfg) return { ok: false, message: '条件未配置或格式错误' }
 
   if (cfg.kind === 'confirm') {
-    const answer = dialog.showMessageBoxSync({
-      type: 'question',
-      buttons: ['否', '是'],
-      defaultId: 1,
-      cancelId: 0,
-      title: '工作流条件',
-      message: cfg.prompt?.trim() || '这个条件成立吗？',
-      detail: '这是工作流里的人工确认条件节点：选「是」走条件分支，选「否」走顺序下一步。',
-    })
-    return { ok: answer === 1, message: answer === 1 ? '人工确认：是' : '人工确认：否' }
+    const prompt = cfg.prompt?.trim() || '这个条件成立吗？'
+    // 优先用应用内弹框（与其它确认操作同一套样式与图标）；
+    // 只有拿不到可见窗口时才回落到主进程原生模态 —— 判定语义两边完全一致：
+    // 「是」= 条件成立走分支，「否」= 不成立走顺序下一步。
+    const viaUi = conditionAsker ? await conditionAsker(prompt) : null
+    const ok =
+      viaUi === null
+        ? dialog.showMessageBoxSync({
+            type: 'question',
+            buttons: ['否', '是'],
+            defaultId: 1,
+            cancelId: 0,
+            title: '工作流条件',
+            message: prompt,
+            detail: '这是工作流里的人工确认条件节点：选「是」走条件分支，选「否」走顺序下一步。',
+          }) === 1
+        : viaUi
+    return { ok, message: ok ? '人工确认：是' : '人工确认：否' }
   }
 
   if (cfg.kind === 'task') {

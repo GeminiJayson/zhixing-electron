@@ -27,6 +27,7 @@ import {
   setAiLibraryNotifier,
   testAiConnection,
 } from './ai'
+import { setConditionAsker } from './db/workflow'
 
 const SCHEME = 'zhixing'
 
@@ -1006,6 +1007,113 @@ if (!gotTheLock) {
  * AI 整理的两个入口。命名成 ai: 前缀而不是塞进 db:* ——
  * 它不是数据库操作，而是一次外部网络请求 + 审计 + 可能的写库。
  */
+/** 正在等待应答的人工确认（工作流条件节点）：一次只开一个窗口 */
+let conditionAsk: { id: string; resolve: (ok: boolean) => void } | null = null
+let conditionAskSeq = 0
+let conditionWindow: BrowserWindow | null = null
+/** 兜底等待上限：极端情况（窗口开着但没人理）不能让实例永久挂起 */
+const CONDITION_ASK_TIMEOUT_MS = 10 * 60 * 1000
+
+/** 排队：真出现并发询问（多个实例同时跑到条件节点）时一个一个来 */
+const conditionQueue: { prompt: string; resolve: (ok: boolean | null) => void }[] = []
+let conditionQueueBusy = false
+
+/**
+ * 工作流条件节点的「提示确认」：**单独开一个小窗口**（像浮窗那样独立于主窗口）。
+ *
+ * 为什么不像其它确认那样弹在应用窗口里：工作流是在后台推进的 —— 那一刻主窗口可能
+ * 被最小化、藏进托盘，用户也可能正在别处。弹在应用窗口里要么看不见、要么像打断。
+ * 独立小窗钉在屏幕中央、置顶，谁的窗口状态都不影响它出现。
+ * 判定语义与原生模态完全一致：「成立」走条件分支，「不成立」走顺序下一步，直接关窗按「不成立」。
+ */
+function showConditionWindow(prompt: string): Promise<boolean | null> {
+  return new Promise<boolean | null>((resolve) => {
+    const win = new BrowserWindow({
+      width: 420,
+      height: 200,
+      useContentSize: true,
+      resizable: false,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      alwaysOnTop: true,
+      center: true,
+      show: false,
+      title: '工作流条件',
+      autoHideMenuBar: true,
+      webPreferences: {
+        preload: join(__dirname, '../preload/index.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false,
+      },
+    })
+    conditionWindow = win
+    const id = 'cond-' + String(++conditionAskSeq)
+
+    let settled = false
+    let timer: NodeJS.Timeout | undefined
+    const finish = (ok: boolean | null): void => {
+      if (settled) return
+      settled = true
+      if (timer) clearTimeout(timer)
+      conditionAsk = null
+      if (!win.isDestroyed()) win.close()
+      resolve(ok)
+    }
+
+    timer = setTimeout(() => finish(false), CONDITION_ASK_TIMEOUT_MS)
+    conditionAsk = { id, resolve: finish }
+
+    win.webContents.once('did-finish-load', () => {
+      if (win.isDestroyed()) return
+      win.webContents.send('condition:confirm', { id, prompt })
+      win.show()
+    })
+    // 页面根本没加载出来（渲染层异常等）：交给调用方回落原生模态，
+    // 免得用户永远看不到这个确认框
+    win.webContents.on('did-fail-load', () => finish(null))
+    // 用户直接关窗 = 不成立（与原生的 cancelId=0 一致）
+    win.on('closed', () => {
+      if (conditionWindow === win) conditionWindow = null
+      finish(false)
+    })
+
+    if (process.env.ELECTRON_RENDERER_URL) {
+      void win.loadURL(`${process.env.ELECTRON_RENDERER_URL}?condition=1`)
+    } else {
+      void win.loadFile(join(__dirname, '../renderer/index.html'), { query: { condition: '1' } })
+    }
+  })
+}
+
+async function pumpConditionQueue(): Promise<void> {
+  if (conditionQueueBusy) return
+  const next = conditionQueue.shift()
+  if (!next) return
+  conditionQueueBusy = true
+  try {
+    next.resolve(await showConditionWindow(next.prompt))
+  } finally {
+    conditionQueueBusy = false
+    void pumpConditionQueue()
+  }
+}
+
+function registerConditionAsk(): void {
+  setConditionAsker(
+    (prompt) =>
+      new Promise<boolean | null>((resolve) => {
+        conditionQueue.push({ prompt, resolve })
+        void pumpConditionQueue()
+      })
+  )
+  ipcMain.on('condition:answer', (_e, id: string, ok: boolean) => {
+    if (!conditionAsk || conditionAsk.id !== String(id ?? '')) return
+    conditionAsk.resolve(ok === true)
+  })
+}
+
 function registerAiHandlers(): void {
   // 整库整理是长任务：进度用事件推给所有窗口，界面据此显示「第 n/m 篇」与停止按钮
   setAiLibraryNotifier((p) => {
@@ -1039,6 +1147,7 @@ app.whenReady().then(() => {
   buildMenu()
   registerDbHandlers()
   registerAiHandlers()
+  registerConditionAsk()
   // 欢迎页要先于主窗出现（对齐 __main__.py：splash.show() 在 AppContext 构造之前）
   try {
     createSplash()
