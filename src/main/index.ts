@@ -18,7 +18,8 @@ import { extractDeepLink, parseDeepLink, toAccelerator } from '../shared/deep-li
 import { resolveThemePack } from '../shared/theme-packs'
 import { initFileLog } from './log'
 import { hardenWindow } from './security'
-import { autoBackup, closeDb, currentSettings, dbPath, dbOpenError, dbReadonlyReason, ensureDefaultSettings, listTodayTasks, open, registerDbHandlers, saveWidgetGeometry, saveWidgetBall, setDataChangedHook } from './db'
+import { autoBackup, broadcastDataChanged, closeDb, currentSettings, dbPath, dbOpenError, dbReadonlyReason, ensureDefaultSettings, listTodayTasks, open, registerDbHandlers, saveWidgetGeometry, saveWidgetBall, setDataChangedHook } from './db'
+import { organizeNoteWithAi, testAiConnection } from './ai'
 
 const SCHEME = 'zhixing'
 
@@ -994,10 +995,28 @@ if (!gotTheLock) {
   })
 }
 
+/**
+ * AI 整理的两个入口。命名成 ai: 前缀而不是塞进 db:* ——
+ * 它不是数据库操作，而是一次外部网络请求 + 审计 + 可能的写库。
+ */
+function registerAiHandlers(): void {
+  ipcMain.handle('ai:organizeNote', async (_e, noteId: number) => {
+    const outcome = await organizeNoteWithAi(Number(noteId))
+    // 整理会改标题 / 文件夹 / 正文：笔记、任务（引用）与图谱都可能受影响
+    if (outcome.ok) {
+      broadcastDataChanged('note')
+      broadcastDataChanged('task')
+    }
+    return outcome
+  })
+  ipcMain.handle('ai:testConnection', () => testAiConnection())
+}
+
 app.whenReady().then(() => {
   app.setName('知行 ZhiXing')
   buildMenu()
   registerDbHandlers()
+  registerAiHandlers()
   // 欢迎页要先于主窗出现（对齐 __main__.py：splash.show() 在 AppContext 构造之前）
   try {
     createSplash()

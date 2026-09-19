@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Database, Download, Info, Palette, SlidersHorizontal, Tag, Timer, Trash2 } from '@renderer/lib/icons'
+import { Database, Download, FileText, Info, Palette, SlidersHorizontal, Sparkles, Tag, Timer, Trash2 } from '@renderer/lib/icons'
 import { parseSettings, type AppSettings } from '@shared/settings'
+import { AI_PROTOCOLS, DEFAULT_AI_PROMPT, normalizeAiProtocol } from '@shared/ai-note'
 import { THEME_PACK_NAMES } from '@shared/theme-packs'
 import { t } from '../i18n'
 import { Toolbar } from '../components/Toolbar'
@@ -15,7 +16,7 @@ interface Props {
   onChanged: () => Promise<void>
 }
 
-type Tab = 'appearance' | 'tasks' | 'data' | 'about'
+type Tab = 'appearance' | 'tasks' | 'data' | 'ai' | 'about'
 
 const ACCENTS = ['#0D9488', '#2563EB', '#7C3AED', '#DB2777', '#EA580C', '#16A34A', '#D97706', '#0891B2']
 
@@ -38,6 +39,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'appearance', label: '外观' },
   { key: 'tasks', label: '任务与提醒' },
   { key: 'data', label: '数据' },
+  { key: 'ai', label: 'AI 整理' },
   { key: 'about', label: '关于' },
 ]
 
@@ -156,6 +158,25 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
       setInfo(await window.zhixing.app.info())
     })()
   }, [])
+
+  /** AI 整理：连接测试的进行态，以及提示词的本地草稿（大段文本不适合每敲一个字就写库）。 */
+  const [aiTesting, setAiTesting] = useState(false)
+  const [promptDraft, setPromptDraft] = useState('')
+
+  // 提示词：库里有就用库里的，没有则铺上默认提示词（用户可在此基础上改）
+  useEffect(() => {
+    setPromptDraft(settings.ai_prompt || DEFAULT_AI_PROMPT)
+  }, [settings.ai_prompt])
+
+  const handleTestAi = async (): Promise<void> => {
+    setAiTesting(true)
+    try {
+      const res = await window.zhixing.ai.testConnection()
+      onNotice(res.message)
+    } finally {
+      setAiTesting(false)
+    }
+  }
 
   const update = useCallback(
     async (key: keyof AppSettings, value: string): Promise<void> => {
@@ -637,6 +658,111 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
               </button>
             </div>
           </section>
+        )}
+
+        {tab === 'ai' && (
+          <>
+            <section className="set-card">
+              <header className="set-card__head"><Sparkles size={15} /> 笔记 AI 整理（大模型）</header>
+              <label className="set-row">
+                <span>协议</span>
+                <select
+                  className="field field--compact"
+                  value={settings.ai_protocol}
+                  onChange={(e) => void update('ai_protocol', normalizeAiProtocol(e.target.value))}
+                >
+                  {AI_PROTOCOLS.map((p) => (
+                    <option key={p.value} value={p.value}>{p.label}</option>
+                  ))}
+                </select>
+              </label>
+              <p className="u-aux">
+                {AI_PROTOCOLS.find((p) => p.value === settings.ai_protocol)?.hint}
+              </p>
+              <label className="set-row">
+                <span>请求地址</span>
+                <input
+                  className="field field--grow"
+                  value={settings.ai_base_url}
+                  placeholder={AI_PROTOCOLS.find((p) => p.value === settings.ai_protocol)?.baseUrlHint}
+                  onChange={(e) => void update('ai_base_url', e.target.value)}
+                />
+              </label>
+              <label className="set-row">
+                <span>API Key</span>
+                <input
+                  className="field field--grow"
+                  type="password"
+                  value={settings.ai_api_key}
+                  placeholder="本地模型（Ollama 等）可留空"
+                  onChange={(e) => void update('ai_api_key', e.target.value)}
+                />
+              </label>
+              <label className="set-row">
+                <span>模型</span>
+                <input
+                  className="field field--grow"
+                  value={settings.ai_model}
+                  placeholder={AI_PROTOCOLS.find((p) => p.value === settings.ai_protocol)?.defaultModel}
+                  onChange={(e) => void update('ai_model', e.target.value)}
+                />
+                <span className="u-aux">留空则无法整理</span>
+              </label>
+              <label className="set-row">
+                <span>超时</span>
+                <input
+                  type="number"
+                  className="field field--num"
+                  min={10}
+                  max={600}
+                  value={settings.ai_timeout_sec}
+                  onChange={(e) => void update('ai_timeout_sec', e.target.value)}
+                />
+                <span className="u-aux">秒（长笔记可能要等上一两分钟）</span>
+              </label>
+              <div className="set-row">
+                <span />
+                <button className="text-btn" onClick={() => void handleTestAi()} disabled={aiTesting}>
+                  {aiTesting ? '测试中…' : '测试连接'}
+                </button>
+                <span className="u-aux">
+                  Key 只保存在本机数据库；请求由主进程发出，渲染层与网页端都拿不到它。
+                </span>
+              </div>
+            </section>
+
+            <section className="set-card">
+              <header className="set-card__head"><FileText size={15} /> 整理提示词</header>
+              <p className="u-aux">
+                用下面这几个变量把数据带进提示词：{'{{FOLDERS}}'} 现有文件夹、{'{{TITLE}}'} 标题、
+                {'{{FORMAT}}'} 格式、{'{{ATTACHMENTS}}'} 图片/文件占位符清单、{'{{CONTENT}}'} 正文。
+                其中 <b>{'{{CONTENT}}'}</b> 必须保留，否则模型拿不到正文，整理会被直接拒绝。
+                正文里的图片与附件不会上传，只以 {'@@IMG1@@'}、{'@@FILE1@@'} 这类标记占位，返回后自动填回。
+              </p>
+              <textarea
+                className="field field--area field--code"
+                rows={18}
+                value={promptDraft}
+                onChange={(e) => setPromptDraft(e.target.value)}
+                aria-label="整理提示词"
+              />
+              <div className="set-row">
+                <span />
+                <button className="text-btn" onClick={() => setPromptDraft(DEFAULT_AI_PROMPT)}>
+                  恢复默认提示词
+                </button>
+                <button
+                  className="text-btn text-btn--accent"
+                  onClick={() => void update('ai_prompt', promptDraft).then(() => onNotice('提示词已保存'))}
+                >
+                  保存提示词
+                </button>
+                {promptDraft !== (settings.ai_prompt || DEFAULT_AI_PROMPT) && (
+                  <span className="u-aux">未保存…</span>
+                )}
+              </div>
+            </section>
+          </>
         )}
 
         {tab === 'about' && (

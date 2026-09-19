@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { DeepLink } from '../shared/deep-link'
+import type { AiOrganizeOutcome } from '../shared/ai-note'
 import type {
   AppInfo,
   Backlink,
@@ -468,6 +469,16 @@ const api = {
       fields: Record<string, string | number | null>
     ): Promise<Task | null> => ipcRenderer.invoke('db:updateTask', id, fields),
     deleteTask: (id: number): Promise<number> => ipcRenderer.invoke('db:deleteTask', id),
+  },
+  /**
+   * 笔记的「大模型解读整理归纳」。
+   * 请求本身在主进程发出（渲染层不该拿到 API Key，也不该被 CORS 拦住）。
+   */
+  ai: {
+    organizeNote: (noteId: number): Promise<AiOrganizeOutcome> =>
+      ipcRenderer.invoke('ai:organizeNote', noteId),
+    testConnection: (): Promise<{ ok: boolean; message: string }> =>
+      ipcRenderer.invoke('ai:testConnection'),
   },
   app: {
     info: (): Promise<AppInfo> => ipcRenderer.invoke('app:info'),

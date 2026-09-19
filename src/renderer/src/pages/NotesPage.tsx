@@ -1,7 +1,7 @@
 import type { EditorView } from '@codemirror/view'
 import { sanitizeHtml } from '@shared/sanitize-html'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Morph, IconData, Link2, Plus, UserPlus } from '@renderer/lib/icons'
+import { Morph, IconData, Link2, Plus, Sparkles, UserPlus } from '@renderer/lib/icons'
 import { subscribeDomain } from '@shared/events'
 import { useDialog } from '../components/Dialogs'
 import type { Backlink, Note, NoteFolder, NoteLink } from '@shared/types'
@@ -69,6 +69,10 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
   /** Word/Excel 可编辑内容（N-§1.3#5） */
   const [officeEdit, setOfficeEdit] = useState<{ kind: string; html: string; rows: string[][]; message: string } | null>(null)
   const [excelRows, setExcelRows] = useState<string[][]>([])
+  /** AI 整理进行中（请求可能跑几十秒，期间按钮要禁用并给出文案） */
+  const [aiBusy, setAiBusy] = useState(false)
+  /** 同 id 重载计数器：AI 改写后标题/正文/文件夹都变了，得把加载流程再跑一遍 */
+  const [reloadToken, setReloadToken] = useState(0)
   const officeTimer = useRef<number | null>(null)
 
   const isOffice = current?.format === 'word' || current?.format === 'excel'
@@ -129,7 +133,7 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
     return () => {
       alive = false
     }
-  }, [selectedId])
+  }, [selectedId, reloadToken])
 
   // Office 笔记：选中时按需载入可编辑内容（Word→HTML，Excel→单元格）
   useEffect(() => {
@@ -188,6 +192,44 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
     }
     await persist(current.id, { title, content_md: content })
   }, [current, dirty, persist, title, content])
+
+  /**
+   * AI 整理当前笔记：先把未落盘的编辑冲出去（否则整理的是旧内容），
+   * 再交给主进程「取出 → 占位 → 请求 → 审计 → 归类 → 入库」。
+   * 成功后才重载本地视图；失败时原笔记一个字节都没动。
+   */
+  const handleAiOrganize = async (): Promise<void> => {
+    if (!current || aiBusy) return
+    await flushPending()
+    setAiBusy(true)
+    try {
+      const res = await window.zhixing.ai.organizeNote(current.id)
+      if (!res.ok) {
+        const errors = (res.issues ?? [])
+          .filter((i) => i.level === 'error')
+          .slice(0, 2)
+          .map((i) => i.message)
+          .join('；')
+        onNotice(errors ? `${res.message}：${errors}` : res.message)
+        return
+      }
+      const parts = ['AI 已整理并保存']
+      if (res.summary) parts.push(res.summary)
+      if (res.folderPath) {
+        parts.push(
+          res.createdFolders?.length ? `新建并归入「${res.folderPath}」` : `归入「${res.folderPath}」`
+        )
+      }
+      const warns = (res.issues ?? []).filter((i) => i.level === 'warn').length
+      if (warns) parts.push(`${warns} 条提醒`)
+      onNotice(parts.join('｜'))
+      setReloadToken((n) => n + 1)
+      // 可能新建了文件夹，笔记树要重新拉一遍
+      await load()
+    } finally {
+      setAiBusy(false)
+    }
+  }
 
   /** 所有「切换笔记」的入口都走这里：先落盘，再切换。 */
   const selectNote = useCallback(
@@ -637,6 +679,15 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
                     <button key="preview" className="text-btn" aria-pressed={preview} onClick={() => setPreview((v) => !v)}>
                       <Morph icon={preview ? IconData.Pencil : IconData.Eye} size={13} />
                       {preview ? '编辑' : '预览'}
+                    </button>,
+                    <button
+                      key="ai"
+                      className="text-btn"
+                      title="把这篇笔记交给大模型重新归类并优化排版（结果先过审计再入库）"
+                      disabled={aiBusy || current.format === 'word' || current.format === 'excel' || current.format === 'link'}
+                      onClick={() => void handleAiOrganize()}
+                    >
+                      <Sparkles size={13} /> {aiBusy ? '整理中…' : 'AI 整理'}
                     </button>,
                     <button key="links" className="text-btn" aria-pressed={linksOpen} onClick={() => setLinksOpen((v) => !v)}>
                       <Link2 size={13} /> 链接

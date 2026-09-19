@@ -155,7 +155,7 @@ export function setDataChangedHook(fn: () => void): void {
 }
 
 /** 向所有窗口广播一次数据变更（浮窗等第二窗口也能同步）。 */
-function broadcastDataChanged(domain: DataDomain): void {
+export function broadcastDataChanged(domain: DataDomain): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) win.webContents.send('data:changed', domain)
   }

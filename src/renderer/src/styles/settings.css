@@ -40,6 +40,11 @@
 .field--num {
   width: 88px;
 }
+/* 长文本配置项：URL / API Key / 模型名比输入框默认宽度长得多，占满剩余宽度才看得全 */
+.set-row .field--grow {
+  flex: 1;
+  min-width: 0;
+}
 .set-actions {
   display: flex;
   flex-wrap: wrap;

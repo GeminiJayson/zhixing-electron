@@ -6,6 +6,8 @@
  * 调用方拿到的就是 number/boolean，这类拼接错误在类型层已不可能发生。
  */
 
+import { AI_DEFAULT_TIMEOUT_SEC, normalizeAiProtocol, type AiProtocol } from './ai-note'
+
 export type ThemeMode = 'light' | 'dark' | 'system'
 export type MotionLevel = 'full' | 'essential' | 'none'
 
@@ -42,6 +44,14 @@ export interface AppSettings {
   capture_hotkey: string
   /** ui_state 是嵌套 JSON，这里保持原始字符串，由需要的一方自行解析 */
   ui_state: string
+  /** 笔记「大模型整理」的配置，详见 shared/ai-note.ts */
+  ai_base_url: string
+  ai_api_key: string
+  ai_protocol: AiProtocol
+  ai_model: string
+  /** 提示词模板（可编辑）；为空时主进程回落到 DEFAULT_AI_PROMPT */
+  ai_prompt: string
+  ai_timeout_sec: number
 }
 
 const num = (raw: string | undefined, fallback: number, min: number, max: number): number => {
@@ -98,6 +108,14 @@ export function parseSettings(raw: Record<string, string> = {}): AppSettings {
     quick_capture_hotkey: str(raw.quick_capture_hotkey, 'ctrl+alt+n'),
     capture_hotkey: str(raw.capture_hotkey, 'ctrl+shift+s'),
     ui_state: str(raw.ui_state, '{}'),
+    // AI 整理：默认「没配」——地址/Key/模型都留空，界面据此提示先去设置里填。
+    // 这几项不进 DEFAULT_SETTINGS：它们是本应用私有的键，没必要写进与 Python 共用的默认集合。
+    ai_base_url: (raw.ai_base_url ?? '').trim(),
+    ai_api_key: (raw.ai_api_key ?? '').trim(),
+    ai_protocol: normalizeAiProtocol(raw.ai_protocol),
+    ai_model: (raw.ai_model ?? '').trim(),
+    ai_prompt: raw.ai_prompt ?? '',
+    ai_timeout_sec: num(raw.ai_timeout_sec, AI_DEFAULT_TIMEOUT_SEC, 10, 600),
   }
 }
 
