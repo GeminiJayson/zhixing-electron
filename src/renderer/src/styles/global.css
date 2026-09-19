@@ -212,6 +212,29 @@ html[data-surface='capture'] #root {
   max-height: none;
   /* 高度交给内容，窗口随后贴合它（写成 100% 会与窗口互相追） */
   height: auto;
+  /* 透明窗口里**不能留投影**：窗口比卡片大不了几像素，阴影会被窗口边界裁成
+     一圈浅灰的方角残影 —— 看起来像「布局背景没清干净」。 */
+  box-shadow: none;
+}
+/* 独立弹窗的宿主层与页面底色：一律压到透明，不留任何一层背景
+   （用 !important 是因为它们要和通用布局规则抢优先级） */
+.capture-host,
+.cond-win {
+  padding: 0 !important;
+  margin: 0 !important;
+  background: transparent !important;
+}
+html[data-surface='capture'],
+html[data-surface='capture'] body,
+html[data-surface='capture'] #root,
+html[data-surface='condition'],
+html[data-surface='condition'] body,
+html[data-surface='condition'] #root {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
 }
 /* 无边框窗口没有标题栏可拖：卡片头部当拖拽区（里面有按钮时要还原成可点） */
 html[data-surface='condition'] .modal__head,

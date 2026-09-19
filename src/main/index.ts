@@ -1055,6 +1055,8 @@ function openCaptureWindow(mode: 'quick' | 'capture', seed: { text: string; html
     transparent: true,
     backgroundColor: '#00000000',
     hasShadow: false,
+    // 同条件窗：去掉 WS_THICKFRAME，消除透明窗口上那圈浅灰方角描边
+    thickFrame: false,
     minWidth: 420,
     minHeight: 160,
     // 透明窗口在 Windows 上对 resizable 支持很差（会出现不显示/闪烁），
@@ -1167,6 +1169,9 @@ function showConditionWindow(prompt: string): Promise<boolean | null> {
       transparent: true,
       backgroundColor: '#00000000',
       hasShadow: false,
+      // Windows 上无边框窗口仍带 WS_THICKFRAME（可缩放边框），透明窗口上它表现为
+      // 一圈浅灰的**方角**描边。关掉它，圆角外面才是真正透明。
+      thickFrame: false,
       resizable: false,
       minimizable: false,
       maximizable: false,
