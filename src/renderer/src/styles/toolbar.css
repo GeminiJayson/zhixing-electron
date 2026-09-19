@@ -89,10 +89,12 @@
   min-width: 0;
 }
 .tb__subright {
-  margin-left: auto;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  /* **从左往右排**，不靠右。靠右（margin-left:auto + flex-end）看起来更「规范」，
+     但只要内容没占满，左边就会空出一大块 —— 折叠之后尤其明显（用户实测截图）。
+     折中：内容左对齐，右侧留白，符合「工具行从左往右读」的直觉。 */
+  justify-content: flex-start;
   gap: var(--space-2);
   min-width: 0;
 }

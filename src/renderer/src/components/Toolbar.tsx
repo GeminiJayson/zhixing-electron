@@ -77,30 +77,29 @@ export function Toolbar({
     const avail = Math.max(0, right.clientWidth - 8)
     const gap = parseFloat(getComputedStyle(box).columnGap || '0') || 0
     const kids = Array.from(box.children) as HTMLElement[]
-    // 测量行的顺序与真实渲染一致：搜索框 → 「更多」占位 → 筛选 → 次要操作 → 主操作
     const head = search ? 1 : 0 // 搜索框固定留在最前
-    const moreW = kids[head]?.getBoundingClientRect().width ?? 0
-    const tail = primary ? 1 : 0 // 主操作固定留在最后
-    const cand = kids.slice(head + 1, kids.length - tail)
+    const tail = 1 + (primary ? 1 : 0) // 「更多」与主操作固定留在最后
+    const moreW = kids[kids.length - tail]?.getBoundingClientRect().width ?? 0
+    const cand = kids.slice(head, kids.length - tail)
     const headW = kids.slice(0, head).reduce((n, k) => n + k.getBoundingClientRect().width, 0)
     const tailW = kids.slice(kids.length - tail).reduce((n, k) => n + k.getBoundingClientRect().width, 0)
     const candW = cand.map((c) => c.getBoundingClientRect().width)
     const gapOf = (n: number): number => gap * Math.max(0, n - 1)
     // 先看「一个都不收」能不能放下：能放下就不该为了让位给「更多」而白收一个。
     // 全平铺时「更多」不渲染，所以它的宽度不能算进去 —— 算进去会在边界上误判。
-    const allW = headW + tailW + candW.reduce((n, w) => n + w, 0)
-    const allN = head + tail + cand.length
+    const allW = headW + tailW - moreW + candW.reduce((n, w) => n + w, 0)
+    const allN = head + tail - 1 + cand.length // 「更多」不计入
     if (allW + gapOf(allN) <= avail) {
       setCap(cand.length)
       return
     }
-    // 放不下才预留「更多」的位置。**从右往左**累加：折叠从左边开始收，
-    // 保留的是靠右的那几个 —— 右侧那组（次级操作、主操作）在视觉上原地不动。
+    // 放不下才预留「更多」的位置，**从左往右**累加：折叠从右边开始收，
+    // 从左往右能放几个就留几个，「⋯」紧跟在它们后面。
     let used = headW + tailW + moreW
     let shown = 0
-    for (let i = candW.length - 1; i >= 0; i--) {
-      if (used + candW[i] + gapOf(head + 1 + shown + 1 + tail) > avail) break
-      used += candW[i]
+    for (const w of candW) {
+      if (used + w + gapOf(head + 1 + shown + tail) > avail) break
+      used += w
       shown++
     }
     setCap(shown)
@@ -120,14 +119,13 @@ export function Toolbar({
     ro.observe(el)
     return () => ro.disconnect()
   }, [recompute])
-  // cap = 保留的**尾部**个数（折叠从左边开始收，右侧那组保持不动）。
-  // 筛选排在次要操作前面，所以被收起的总是「若干个筛选 + 可能一段次要操作」。
-  const hiddenCount = Math.max(0, flatTotal - cap)
-  const hiddenFilters = hiddenCount <= filters.length ? filters.slice(0, hiddenCount) : filters
-  const hiddenSecondary = hiddenCount <= filters.length ? [] : secondary.slice(0, hiddenCount - filters.length)
-  const shownFilters = hiddenCount <= filters.length ? filters.slice(hiddenCount) : []
-  const shownSecondary = hiddenCount <= filters.length ? secondary : secondary.slice(hiddenCount - filters.length)
-  const overflowCount = hiddenCount
+  // cap = 保留的**头部**个数（折叠从右边开始收，「⋯」紧跟其后）。
+  // 筛选排在次要操作前面，所以被收起的总是「尾部若干项」，左侧那组原地不动。
+  const shownFilters = filters.slice(0, cap)
+  const shownSecondary = secondary.slice(0, Math.max(0, cap - filters.length))
+  const hiddenFilters = filters.slice(shownFilters.length)
+  const hiddenSecondary = secondary.slice(shownSecondary.length)
+  const overflowCount = hiddenFilters.length + hiddenSecondary.length
 
   return (
     <div className={'tb ' + (variant === 'page' ? 'tb--page' : 'tb--panel') + (sticky ? ' tb--sticky' : '')}>
@@ -148,19 +146,25 @@ export function Toolbar({
         </div>
         <div className="tb__subright" ref={rightRef}>
           {search}
-          {/* 「更多」排在已显示项的**左侧**：收起的是左边那些，省略号就该出现在那个位置 */}
+          {shownFilters.map((f, i) => <span key={i}>{f}</span>)}
+          {shownSecondary.map((s, i) => <span key={i}>{s}</span>)}
+          {/* 「更多」排在已显示项之后：收起的是右边那些，省略号就落在它们的原位 */}
           {overflowCount > 0 ? (
             <MoreMenu filters={hiddenFilters} secondary={hiddenSecondary} count={overflowCount} />
           ) : null}
-          {shownFilters.map((f, i) => <span key={i}>{f}</span>)}
-          {shownSecondary.map((s, i) => <span key={i}>{s}</span>)}
           {/* 主操作永远在工具栏行最右端，两种形态一致 */}
           {primary}
         </div>
         {/* 隐藏测量行：脱离文档流、不可见、不接收事件，只为量宽度。
-            顺序必须与实际渲染一致（搜索 → 更多 → 筛选 → 次要操作 → 主操作）。 */}
+            顺序必须与实际渲染一致（搜索 → 筛选 → 次要操作 → 更多 → 主操作）。 */}
         <div className="tb__measure" ref={measureRef} aria-hidden>
           {search}
+          {filters.map((f, i) => (
+            <span key={'mf' + i}>{f}</span>
+          ))}
+          {secondary.map((s, i) => (
+            <span key={'ms' + i}>{s}</span>
+          ))}
           {/* 占位要与真按钮同款：图标给它 44px 的底宽，数字用两位数取上限 ——
               真实按钮的数字会随收起数量从 1 位涨到 2 位，漏算就会让折叠数量偏大，
               表现正是「折叠生效了、最左侧控件却仍超出」。宁可保守一点。 */}
@@ -168,12 +172,6 @@ export function Toolbar({
             <MoreHorizontal size={15} />
             <span className="tb-btn__n">88</span>
           </span>
-          {filters.map((f, i) => (
-            <span key={'mf' + i}>{f}</span>
-          ))}
-          {secondary.map((s, i) => (
-            <span key={'ms' + i}>{s}</span>
-          ))}
           {primary}
         </div>
       </div>

@@ -238,7 +238,7 @@ await conn.evaluate("window.zhixing.db.deleteNote(" + linkNote.id + ").catch(() 
 
 // 改动 3：折叠从左边开始收 —— 「⋯」出现在已显示项的左侧，右侧那组原位不动
 await conn.send('Emulation.setDeviceMetricsOverride', {
-  width: 760,
+  width: 1000,
   height: 900,
   deviceScaleFactor: 1,
   mobile: false,
@@ -263,11 +263,22 @@ const fold = await conn.evaluate(`(() => {
   return { moreIdx, before, after, count }
 })()`)
 check('窄窗口下确实发生了折叠', !!fold && fold.moreIdx >= 0 && Number(fold.count) > 0, JSON.stringify(fold))
+// 「⋯」必须落在已显示项**之后**（after=0）—— 这就是「从右边开始收」的判据；
+// 宽度再窄时会全部收进 ⋯，那时 after 同样是 0，属于该方向的极端情形。
 check(
-  '「⋯」排在已显示项左侧（从左边收起）',
-  !!fold && fold.before === 0 && fold.after >= 1,
+  '「⋯」排在已显示项之后（从右边开始收）',
+  !!fold && fold.moreIdx >= 0 && fold.after === 0,
   JSON.stringify(fold)
 )
+// 左侧不留空：工具行内容从左边缘开始排
+const flushLeft = await conn.evaluate(`(() => {
+  const right = document.querySelector('.tb__subright')
+  if (!right) return null
+  const first = right.firstElementChild
+  if (!first) return null
+  return Math.round(first.getBoundingClientRect().left - right.getBoundingClientRect().left)
+})()`)
+check('工具行内容贴着左侧排（消除左侧留空）', flushLeft !== null && Math.abs(flushLeft) <= 2, 'gap=' + flushLeft + 'px')
 await shoot('ui-toolbar-fold.png')
 await conn.send('Emulation.clearDeviceMetricsOverride')
 
