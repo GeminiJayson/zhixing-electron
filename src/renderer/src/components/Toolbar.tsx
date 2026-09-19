@@ -15,7 +15,7 @@
  *
  * 约定：样式里控件高度一律取 --control-h 家族（见 docs/03 §2.7、npm run check:ctlheight）。
  */
-import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { MoreHorizontal, SlidersHorizontal } from '@renderer/lib/icons'
 
 export type ToolbarProps = {
@@ -119,6 +119,29 @@ export function Toolbar({
     ro.observe(el)
     return () => ro.disconnect()
   }, [recompute])
+
+  /**
+   * 窗口尺寸**停稳之后**，把这一行剩下的宽度交给第一个控件（下拉 / 输入框）。
+   *
+   * 为什么等停稳：折叠数量是按自然宽度算出来的，而拉伸会改变控件宽度 ——
+   * 拖动窗口时如果立刻拉伸，「拉伸 → 测量基准变 → 折叠数量抖 → 空间又变」会互相追。
+   * 拖动期间保持自然宽度，松手（尺寸 250ms 不变）后再补上这个类。
+   */
+  const [fillFirst, setFillFirst] = useState(false)
+  useEffect(() => {
+    let timer: number | undefined
+    const onResize = (): void => {
+      setFillFirst(false)
+      if (timer) window.clearTimeout(timer)
+      timer = window.setTimeout(() => setFillFirst(true), 250)
+    }
+    onResize()
+    window.addEventListener('resize', onResize)
+    return () => {
+      if (timer) window.clearTimeout(timer)
+      window.removeEventListener('resize', onResize)
+    }
+  }, [])
   // cap = 保留的**头部**个数（折叠从右边开始收，「⋯」紧跟其后）。
   // 筛选排在次要操作前面，所以被收起的总是「尾部若干项」，左侧那组原地不动。
   const shownFilters = filters.slice(0, cap)
@@ -144,7 +167,7 @@ export function Toolbar({
           {nav}
           {meta ? <span className="tb__meta">{meta}</span> : null}
         </div>
-        <div className="tb__subright" ref={rightRef}>
+        <div className={'tb__subright' + (fillFirst ? ' tb__subright--fill' : '')} ref={rightRef}>
           {search}
           {shownFilters.map((f, i) => <span key={i}>{f}</span>)}
           {shownSecondary.map((s, i) => <span key={i}>{s}</span>)}

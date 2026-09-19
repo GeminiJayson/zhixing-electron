@@ -279,8 +279,30 @@ const flushLeft = await conn.evaluate(`(() => {
   return Math.round(first.getBoundingClientRect().left - right.getBoundingClientRect().left)
 })()`)
 check('工具行内容贴着左侧排（消除左侧留空）', flushLeft !== null && Math.abs(flushLeft) <= 2, 'gap=' + flushLeft + 'px')
+// 窗口停稳后：第一个控件吃掉剩余宽度，行尾不再留空
+const fillGap = await conn.evaluate(`(() => {
+  const right = document.querySelector('.tb__subright')
+  if (!right) return null
+  const first = right.firstElementChild
+  const last = right.lastElementChild
+  if (!first || !last) return null
+  const inner = first.querySelector('select, input') || first
+  return {
+    trailing: Math.round(right.getBoundingClientRect().right - last.getBoundingClientRect().right),
+    firstWidth: Math.round(inner.getBoundingClientRect().width),
+    filled: right.classList.contains('tb__subright--fill'),
+    sel: (inner.tagName || '').toLowerCase(),
+  }
+})()`)
+check(
+  '第一个控件占满剩余宽度（行尾无留白）',
+  !!fillGap && fillGap.trailing <= 2 && fillGap.sel !== 'button',
+  JSON.stringify(fillGap)
+)
 await shoot('ui-toolbar-fold.png')
 await conn.send('Emulation.clearDeviceMetricsOverride')
+await sleep(900)
+await shoot('ui-toolbar-wide.png')
 
 conn.ws.close()
 child.kill()
