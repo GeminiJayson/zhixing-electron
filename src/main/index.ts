@@ -29,6 +29,7 @@ import {
 } from './ai'
 import { setConditionAsker } from './db/workflow'
 import { syncExternalTasks, taskSyncStatus } from './task-sync'
+import { readSelectedText } from './selection'
 
 const SCHEME = 'zhixing'
 
@@ -642,9 +643,25 @@ function deliverDeepLink(url: string): void {
   }
 }
 
-function sendAction(action: string): void {
+function sendAction(action: string, payload?: unknown): void {
   showMain()
-  mainWindow?.webContents.send('app:action', action)
+  mainWindow?.webContents.send('app:action', action, payload ?? '')
+}
+
+/** 这三个热键动作都要把「当前选中的文字」带进去 */
+const SELECTION_ACTIONS = new Set(['capture', 'select-quick', 'quick-capture'])
+
+/**
+ * 热键动作分发。读选区的三个动作必须**先取文本、再显示窗口** ——
+ * showMain 会把焦点抢过来，之后模拟复制就只剩自己的界面可复制了。
+ */
+async function dispatchHotkeyAction(action: string): Promise<void> {
+  if (SELECTION_ACTIONS.has(action)) {
+    const selected = await readSelectedText()
+    sendAction(action, selected)
+    return
+  }
+  sendAction(action)
 }
 
 /**
@@ -688,7 +705,7 @@ function registerHotkeys(): Record<string, string> {
       ok = globalShortcut.register(accel, () => {
         // 浮窗显隐是主进程侧动作，不需要绕到渲染进程
         if (action === 'toggle-widget') toggleWidget()
-        else sendAction(action)
+        else void dispatchHotkeyAction(action)
       })
     } catch (err) {
       console.error('[hotkey] 注册失败', accel, err)

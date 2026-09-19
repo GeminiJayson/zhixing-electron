@@ -56,6 +56,8 @@ export default function App() {
   const [pomo, setPomo] = useState({ focus: 25, break: 5, autoBreak: true })
   const [captureOpen, setCaptureOpen] = useState(false)
   const [captureMode, setCaptureMode] = useState<'quick' | 'capture'>('quick')
+  /** 热键唤出面板时带进来的「当前选中文字」（主进程模拟 Ctrl+C 取的） */
+  const [captureSeed, setCaptureSeed] = useState<{ text: string; html: string } | null>(null)
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem(THEME_KEY)
     return saved === 'light' || saved === 'dark' ? saved : 'dark'
@@ -266,11 +268,13 @@ export default function App() {
     }
     window.addEventListener('zhixing:open-note', onOpenNote)
 
-    window.zhixing.app.onAction((action) => {
+    window.zhixing.app.onAction((action, payload) => {
       if (action === 'quick-capture') {
+        setCaptureSeed(payload ?? null)
         setCaptureMode('quick')
         setCaptureOpen(true)
       } else if (action === 'capture') {
+        setCaptureSeed(payload ?? null)
         setCaptureMode('capture')
         setCaptureOpen(true)
       } else if (action === 'new-note') {
@@ -283,7 +287,8 @@ export default function App() {
       } else if (action === 'clipboard-notice') {
         showToast('已复制内容 — 可用快速捕获（Ctrl+N）记下来')
       } else if (action === 'select-quick') {
-        // 划词速记：Electron 侧读系统剪贴板预填（无跨应用模拟复制能力，属降级实现）
+        // 划词速记：主进程已经模拟 Ctrl+C 取到当前选中的文字，直接作为内容预填
+        setCaptureSeed(payload ?? null)
         setCaptureMode('capture')
         setCaptureOpen(true)
       }
@@ -541,6 +546,7 @@ export default function App() {
       <CapturePanel
         open={captureOpen}
         mode={captureMode}
+        seed={captureSeed}
         onClose={() => setCaptureOpen(false)}
         onNotice={showToast}
         onChanged={refreshOverview}

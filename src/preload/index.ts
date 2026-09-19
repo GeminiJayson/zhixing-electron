@@ -374,6 +374,7 @@ const api = {
     onDataChanged: (cb: (domain: string) => void): void => {
       ipcRenderer.on('data:changed', (_e, domain) => cb(domain))
     },
+
     noteRevisions: (id: number): Promise<NoteRevision[]> =>
       ipcRenderer.invoke('db:noteRevisions', id),
     restoreNoteRevision: (noteId: number, revId: number): Promise<Note | null> =>
@@ -544,9 +545,13 @@ const api = {
     onDeepLink: (cb: (link: DeepLink) => void): void => {
       ipcRenderer.on('app:deeplink', (_e, link) => cb(link))
     },
-    /** 托盘/全局热键触发的应用动作 */
-    onAction: (cb: (action: string) => void): void => {
-      ipcRenderer.on('app:action', (_e, action) => cb(action))
+    /**
+     * 托盘 / 全局热键触发的应用动作。
+     * 「划词捕获 / 读取选中并速记 / 快速任务」这三个会带上主进程刚取到的**当前选中文字**
+     * （文本 + HTML，HTML 用于解析来源 URL）。
+     */
+    onAction: (cb: (action: string, payload?: { text: string; html: string }) => void): void => {
+      ipcRenderer.on('app:action', (_e, action, payload) => cb(action, payload || undefined))
     },
   },
   widget: {

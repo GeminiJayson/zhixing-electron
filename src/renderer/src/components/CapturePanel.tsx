@@ -7,6 +7,11 @@ interface Props {
   open: boolean
   /** quick：只管快速建任务（语法糖）；capture：划词捕获卡（五去向） */
   mode: 'quick' | 'capture'
+  /**
+   * 热键唤出时由主进程带进来的「当前选中文字」（它模拟了一次 Ctrl+C）。
+   * 有它就优先用它，没有才退回剪贴板 —— 三个读选区的热键都走这条路。
+   */
+  seed?: { text: string; html: string } | null
   onClose: () => void
   onNotice: (message: string) => void
   onChanged: () => Promise<void>
@@ -75,10 +80,11 @@ export async function readClipboard(): Promise<{ text: string; html: string }> {
  * quick 模式回车即建任务（支持 !2 @列表 #标签 明天 语法糖，对齐 quick_capture.quick_create）；
  * capture 模式是划词捕获卡的**五去向**：闪念 / 任务 / 笔记 / 入分组 / 子任务。
  *
- * 与 Python 的差别（Electron 无跨应用选区 API）：读不到别的应用当前选中文字，
- * 只能降级读系统剪贴板（等价 Python 的 clipboard_fallback）。
+ * 内容来源：全局热键唤出时，主进程会先模拟 Ctrl+C 取来**当前选中的文字**（连 HTML 一起），
+ * 通过 seed 传进来；从托盘/浮窗打开、或确实取不到选区时，退回读系统剪贴板
+ * （等价 Python 的 clipboard_fallback）。
  */
-export function CapturePanel({ open, mode, onClose, onNotice, onChanged }: Props) {
+export function CapturePanel({ open, mode, seed = null, onClose, onNotice, onChanged }: Props) {
   const [text, setText] = useState('')
   const [remark, setRemark] = useState('')
   /** 剪贴板 HTML 里解析出的来源 URL（I2），随闪念一起落库 */
@@ -94,7 +100,11 @@ export function CapturePanel({ open, mode, onClose, onNotice, onChanged }: Props
     setSourceUrl('')
     setSelector(null)
     void (async () => {
-      if (mode === 'capture') {
+      if (seed?.text?.trim()) {
+        // 热键带来的「当前选中文字」最准：它就是用户此刻高亮的那段
+        setText(seed.text.trim())
+        setSourceUrl(extractSourceUrl(seed.html ?? '', seed.text))
+      } else if (mode === 'capture') {
         const { text: clip, html } = await readClipboard()
         // 不再 slice(0,500)：Python 的 get_text 读全文，截断会丢内容
         if (clip?.trim()) setText(clip.trim())
@@ -102,7 +112,7 @@ export function CapturePanel({ open, mode, onClose, onNotice, onChanged }: Props
       }
       window.setTimeout(() => inputRef.current?.focus(), 30)
     })()
-  }, [open, mode])
+  }, [open, mode, seed])
 
   useEffect(() => {
     if (!open) return
