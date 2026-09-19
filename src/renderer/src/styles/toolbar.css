@@ -25,6 +25,9 @@
    panel（笔记树）与 page（今日页的快速添加）在这一点的诉求是一样的。 */
 .tb .tb__subright {
   flex: 1 1 auto;
+  /* flex 项默认 min-width:auto —— 没有它，这一组压不回容器里，就会连卡片一起撑破
+     （看起来是「工具栏溢出父布局」）。有了它才能真的被压缩，进而由溢出检测触发折叠。 */
+  min-width: 0;
 }
 .tb .tb__subright input {
   flex: 1 1 auto;
@@ -58,7 +61,9 @@
   min-width: 0;
   margin-top: var(--space-2);
   padding-top: var(--space-2);
-  border-top: var(--border-w) solid var(--border);
+  /* 分区线用 --border-strong：--border 只有 9% 黑，工具栏内容少的页面（设置页的 tab、
+     工作流的统计行）几乎看不出标题区与工具栏区的分界 */
+  border-top: var(--border-w) solid var(--border-strong);
 }
 .tb__subleft {
   display: flex;

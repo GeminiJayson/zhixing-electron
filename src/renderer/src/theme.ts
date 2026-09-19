@@ -180,4 +180,11 @@ export function applyAppearance(
   // 材质开关暴露给 CSS：材质生效时根节点要让出底色，否则 body 的实色底会把
   // DWM 画的 Mica/Acrylic 整块盖住（表现就是「切了没反应」）
   root.dataset.material = s.material
+  // 切主题 / 材质后强制刷新一次合成：Chromium 在没有新合成层时会复用上一帧，
+  // 表现就是侧边残留旧内容（尤其是窗口材质变化、整层底色都变的时候）。
+  // 用 transform 短暂建一个新层，下一帧再撤掉 —— 比改窗口尺寸温和得多。
+  root.style.transform = 'translateZ(0)'
+  requestAnimationFrame(() => {
+    root.style.transform = ''
+  })
 }

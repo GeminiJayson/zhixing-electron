@@ -609,9 +609,13 @@ function applyMaterial(win: BrowserWindow | null, material: WindowMaterial): voi
   // 窗口自带的 backgroundColor 会整块盖住材质（Mica/Acrylic 是 DWM 画在窗口底下的）——
   // 这是「切了材质没反应」的直接原因。材质生效时底色必须让位；退回 none 时给回不透明底色，
   // 否则 Win10 或 DWM 合成关闭的机器会直接透出桌面。
-  win.setBackgroundColor(
-    effective === 'none' ? (nativeTheme.shouldUseDarkColors ? '#1F1F1F' : '#F3F3F3') : '#00000000'
-  )
+  try {
+    win.setBackgroundColor(
+      effective === 'none' ? (nativeTheme.shouldUseDarkColors ? '#1F1F1F' : '#F3F3F3') : '#00000000'
+    )
+  } catch {
+    // 背景色只是材质的配套项，设不了也不该让主进程挂掉
+  }
   try {
     win.setBackgroundMaterial(effective)
   } catch (err) {
