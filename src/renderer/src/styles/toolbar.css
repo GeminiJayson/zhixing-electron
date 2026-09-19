@@ -99,6 +99,18 @@
   width: auto;
   min-width: 96px;
 }
+/* 隐藏测量行：只为量出各控件的自然宽度。fixed + 移出视口，确保它既不参与布局也不触发滚动。 */
+.tb__measure {
+  position: fixed;
+  left: -9999px;
+  top: 0;
+  display: flex;
+  gap: var(--space-2);
+  white-space: nowrap;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .tb__meta {
   color: var(--fg-tertiary);
   font-size: var(--text-aux);

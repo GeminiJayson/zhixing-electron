@@ -15,7 +15,7 @@
  *
  * 约定：样式里控件高度一律取 --control-h 家族（见 docs/03 §2.7、npm run check:ctlheight）。
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { MoreHorizontal, SlidersHorizontal } from 'lucide-react'
 
 export type ToolbarProps = {
@@ -55,65 +55,57 @@ export function Toolbar({
   sticky = variant === 'page',
 }: ToolbarProps): JSX.Element {
   const rightRef = useRef<HTMLDivElement>(null)
-  /** 在阈值之外**额外**收起的控件数：只在溢出时递增 */
-  const [extra, setExtra] = useState(0)
+  /** 隐藏的测量行：按最终顺序渲染一份完整内容，只为量出每项的自然宽度 */
+  const measureRef = useRef<HTMLDivElement>(null)
   const flatTotal = filters.length + secondary.length
-
-  // 控件数量变了（收件箱切 tab、条件项出现/消失）就重新评估收起数量。
-  // 只靠宽度变化重置是不够的：容器宽度没变但内容变了时，会沿用上一次的收起数，
-  // 该收的没收（溢出）或不该收的收了（白收）。
-  useEffect(() => {
-    setExtra(0)
-  }, [flatTotal])
+  /** 能平铺几个「非搜索」控件 —— 由可用宽度一次算准 */
+  const [cap, setCap] = useState(flatTotal)
 
   /**
-   * 检测一次：当前渲染出的子项放不下就多收一个。
-   * 不用 scrollWidth —— 对 overflow:visible 的元素它等于 padding box 宽，量不出溢出；
-   * 直接求子项布局宽度和（子项都是 flex: 0 0 auto，宽度即真实需求）。
+   * 一次算准能放几个：用隐藏测量行量出每个候选的真实宽度，按顺序累加到放不下为止。
+   *
+   * 为什么不做「逐个收 + 重渲染再检测」：那条路依赖逐帧收敛，实测在笔记编辑区会停在第 1 次
+   * （子项宽和是容器的 6 倍、⋯ 却只显示 1），既慢又不可靠。一次量完直接得出数量。
+   * 也不能用 scrollWidth —— 对 overflow:visible 的元素它等于 padding box 宽，量不出溢出。
    */
-  const detect = useCallback((): void => {
-    const el = rightRef.current
-    if (!el) return
-    const style = getComputedStyle(el)
-    const gap = parseFloat(style.columnGap || style.gap || '0') || 0
-    const kids = Array.from(el.children) as HTMLElement[]
-    const need =
-      kids.reduce((n, k) => n + k.getBoundingClientRect().width, 0) + gap * Math.max(0, kids.length - 1)
-    if (need > el.clientWidth + 1) setExtra((e) => (e < flatTotal ? e + 1 : e))
+  const recompute = useCallback((): void => {
+    const right = rightRef.current
+    const box = measureRef.current
+    if (!right || !box) return
+    const avail = right.clientWidth
+    const gap = parseFloat(getComputedStyle(box).columnGap || '0') || 0
+    const kids = Array.from(box.children) as HTMLElement[]
+    const head = search ? 1 : 0 // 搜索框固定留在最前
+    const tail = 1 + (primary ? 1 : 0) // 「更多」与主操作固定留在最后
+    const cand = kids.slice(head, kids.length - tail)
+    let used = 0
+    for (const k of kids.slice(0, head)) used += k.getBoundingClientRect().width
+    for (const k of kids.slice(kids.length - tail)) used += k.getBoundingClientRect().width
+    let shown = 0
+    for (const c of cand) {
+      const w = c.getBoundingClientRect().width
+      // 加这一项之后的总项数决定要留几个间隙
+      if (used + w + gap * (head + shown + tail) > avail) break
+      used += w
+      shown++
+    }
+    setCap(shown)
+    // search / primary 在各页面都是固定的，故不列入依赖
   }, [flatTotal])
 
-  // 渲染后检测一次：每收一个就重渲染，再检测，直到放得下（收敛在这里）
+  // 渲染后与容器尺寸变化时都重算。recompute 是幂等的，同值时 setCap 会被 React bailout，
+  // 所以不需要额外的「基准值」判断，也不会振荡。
   useLayoutEffect(() => {
-    detect()
+    recompute()
   })
 
-  // 容器尺寸变化：重置收起数量，并**立刻再检测一次**。
-  // 只重置是不够的 —— extra 本来就是 0 时 setExtra(0) 是个 no-op，React 不会重渲染，
-  // 上面那条检测 effect 就永远不跑，窗口缩放后折叠会彻底失效（笔记编辑区正是如此）。
   useLayoutEffect(() => {
     const el = rightRef.current
     if (!el) return
-    // 首次回调只记录宽度：effect 运行时布局未必稳定，拿未稳定的值当基准会误判
-    let last = -1
-    const ro = new ResizeObserver(() => {
-      const w = el.clientWidth
-      if (last < 0) {
-        last = w
-        detect()
-        return
-      }
-      if (w === last) return
-      last = w
-      setExtra(0)
-      detect()
-    })
+    const ro = new ResizeObserver(() => recompute())
     ro.observe(el)
     return () => ro.disconnect()
-  }, [detect])
-
-  // 平铺几个**完全由可用宽度决定**：默认全部平铺，放不下才逐个收（extra 由溢出递增）。
-  // 之前那个固定阈值是错的 —— 它会把「明明放得下」的控件也收进浮层。
-  const cap = Math.max(0, flatTotal - extra)
+  }, [recompute])
   const shownFilters = filters.slice(0, cap)
   const shownSecondary = secondary.slice(0, Math.max(0, cap - filters.length))
   const hiddenFilters = filters.slice(shownFilters.length)
@@ -145,6 +137,19 @@ export function Toolbar({
             <MoreMenu filters={hiddenFilters} secondary={hiddenSecondary} count={overflowCount} />
           ) : null}
           {/* 主操作永远在工具栏行最右端，两种形态一致 */}
+          {primary}
+        </div>
+        {/* 隐藏测量行：脱离文档流、不可见、不接收事件，只为量宽度。
+            顺序必须与实际渲染一致（搜索 → 筛选 → 次要操作 → 更多 → 主操作）。 */}
+        <div className="tb__measure" ref={measureRef} aria-hidden>
+          {search}
+          {filters.map((f, i) => (
+            <span key={'mf' + i}>{f}</span>
+          ))}
+          {secondary.map((s, i) => (
+            <span key={'ms' + i}>{s}</span>
+          ))}
+          <span className="tb-btn" />
           {primary}
         </div>
       </div>
