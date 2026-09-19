@@ -3,6 +3,7 @@ import { Database, Download, Info, Palette, SlidersHorizontal, Tag, Timer, Trash
 import { parseSettings, type AppSettings } from '@shared/settings'
 import { THEME_PACK_NAMES } from '@shared/theme-packs'
 import { t } from '../i18n'
+import { PrototypeToolbar } from '../prototype/toolbar-prototype'
 import { applyAppearance, prefersReducedMotion } from '../theme'
 import { useDialog } from '../components/Dialogs'
 import type { AppInfo } from '@shared/types'
@@ -223,6 +224,27 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
         <p className="page__subtitle">{t('page.settings.sub')}</p>
       </div>
       <div className="page__body">
+      <PrototypeToolbar
+        spec={{
+          title: t('page.settings'),
+          subtitle: t('page.settings.sub'),
+          nav: (
+            <div className="seg" role="tablist" aria-label="设置分区">
+              {TABS.map((tabItem) => (
+                <button
+                  key={tabItem.key}
+                  role="tab"
+                  aria-selected={tab === tabItem.key}
+                  onClick={() => setTab(tabItem.key)}
+                >
+                  {tabItem.label}
+                </button>
+              ))}
+            </div>
+          ),
+        }}
+        fallback={
+          <>
       <div className="seg" role="tablist">
         {TABS.map((t) => (
           <button key={t.key} role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)}>
@@ -230,6 +252,9 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
           </button>
         ))}
       </div>
+          </>
+        }
+      />
 
       <div className="set-body">
         {tab === 'appearance' && (

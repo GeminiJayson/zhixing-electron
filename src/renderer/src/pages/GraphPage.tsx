@@ -6,6 +6,7 @@ import type { Simulation, SimulationLinkDatum, SimulationNodeDatum } from 'd3-fo
 import { Maximize2, RefreshCw } from 'lucide-react'
 import type { GraphDelta, GraphNodePayload, GraphPayload, NoteFolder } from '@shared/types'
 import { t } from '../i18n'
+import { PrototypeToolbar } from '../prototype/toolbar-prototype'
 import { usePanZoom } from '../lib/usePanZoom'
 import { edgeMidpoint, edgePath, trimEnd } from '../lib/edge-path'
 
@@ -692,6 +693,86 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
         <p className="page__subtitle">{t('page.graph.sub')}</p>
       </div>
       <div className="page__body">
+      <PrototypeToolbar
+        spec={{
+          title: t('page.graph'),
+          subtitle: t('page.graph.sub'),
+          nav: (
+            <div className="seg" role="group" aria-label="范围">
+              {(['all', 'n1', 'n2'] as Scope[]).map((s) => (
+                <button key={s} aria-pressed={scope === s} onClick={() => setScope(s)}>
+                  {s === 'all' ? '全部' : s === 'n1' ? '1 度邻域' : '2 度邻域'}
+                </button>
+              ))}
+            </div>
+          ),
+          filters: [
+            <select
+              key="folder"
+              className="field field--compact"
+              aria-label="按文件夹过滤"
+              value={folderId ?? ''}
+              onChange={(e) => setFolderId(e.target.value === '' ? null : Number(e.target.value))}
+            >
+              <option value="">全部文件夹</option>
+              {folders.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>,
+            <select
+              key="tag"
+              className="field field--compact"
+              aria-label="按标签过滤"
+              value={tagId ?? ''}
+              onChange={(e) => setTagId(e.target.value === '' ? null : Number(e.target.value))}
+            >
+              <option value="">全部标签</option>
+              {tags.map((tg) => (
+                <option key={tg.id} value={tg.id}>
+                  {tg.name}
+                </option>
+              ))}
+            </select>,
+          ],
+          search: (
+            <input
+              ref={searchRef}
+              className="field field--compact"
+              type="search"
+              value={search}
+              placeholder="搜索节点（Ctrl+F）…"
+              aria-label="搜索节点"
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          ),
+          meta: (
+            <span className="u-aux">
+              {nodes.length} 节点 · {(links ?? []).length} 边
+            </span>
+          ),
+          secondary: [
+            <button key="tn" className="text-btn" aria-pressed={includeTasks} onClick={() => setIncludeTasks((v) => !v)}>
+              任务节点
+            </button>,
+            <button
+              key="relayout"
+              className="text-btn"
+              onClick={() => {
+                simRef.current?.alpha(1).restart()
+                setTick((t) => t + 1)
+              }}
+            >
+              <RefreshCw size={13} /> 重新布局
+            </button>,
+            <button key="reset" className="text-btn" onClick={pan.reset}>
+              <Maximize2 size={13} /> 重置视图
+            </button>,
+          ],
+        }}
+        fallback={
+          <>
       <div className="tasks-toolbar">
         <div className="seg" role="group" aria-label="范围">
           {(['all', 'n1', 'n2'] as Scope[]).map((s) => (
@@ -756,6 +837,9 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
           </button>
         </div>
       </div>
+          </>
+        }
+      />
 
       <div className="graph-wrap">
         <svg

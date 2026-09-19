@@ -14,6 +14,7 @@ import {
 import { buildTaskTree, effectiveDoneMap, type TaskNode } from '@shared/task'
 import type { Flash, NoteFolder, Task } from '@shared/types'
 import { t } from '../i18n'
+import { PrototypeToolbar } from '../prototype/toolbar-prototype'
 import { useDialog } from '../components/Dialogs'
 import { TaskRow } from '../components/TaskRow'
 import { TargetSelector } from '../components/TargetSelector'
@@ -288,6 +289,23 @@ export function InboxPage({ onNotice, onChanged }: Props) {
       </div>
       <div className="page__body">
 
+      <PrototypeToolbar
+        spec={{
+          title: t('page.inbox'),
+          subtitle: t('page.inbox.sub'),
+          nav: (
+            <div className="seg" role="tablist" aria-label="收件箱分区">
+              <button role="tab" aria-selected={tab === 'tasks'} onClick={() => setTab('tasks')}>
+                任务收件箱 · {undone}
+              </button>
+              <button role="tab" aria-selected={tab === 'flash'} onClick={() => setTab('flash')}>
+                闪念 · {flashes.length}
+              </button>
+            </div>
+          ),
+        }}
+        fallback={
+          <>
       <div className="seg inbox-tabs" role="tablist">
         <button role="tab" aria-selected={tab === 'tasks'} onClick={() => setTab('tasks')}>
           任务收件箱 · {undone}
@@ -296,6 +314,9 @@ export function InboxPage({ onNotice, onChanged }: Props) {
           闪念 · {flashes.length}
         </button>
       </div>
+          </>
+        }
+      />
 
       {tab === 'tasks' ? (
         <section className="inbox-panel" aria-label="任务收件箱">

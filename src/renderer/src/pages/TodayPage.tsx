@@ -3,6 +3,7 @@ import { CalendarClock, CheckCircle2, CircleAlert, NotebookPen, Sparkles } from 
 import { buildTaskTree, effectiveDoneMap, type TaskNode } from '@shared/task'
 import type { Note, Overview, TodayTasks } from '@shared/types'
 import { t } from '../i18n'
+import { PrototypeToolbar } from '../prototype/toolbar-prototype'
 import { PriorityMenu } from '../components/PriorityMenu'
 import { TaskRow } from '../components/TaskRow'
 import { TaskEditor } from '../components/TaskEditor'
@@ -172,6 +173,30 @@ export function TodayPage({ overview, onChanged, onNotice, onOpenNote, onFocusTa
       </div>
       <div className="page__body">
 
+        <PrototypeToolbar
+          spec={{
+            title: t('page.today'),
+            subtitle: greeting,
+            search: (
+              <input
+                className="field field--compact"
+                value={draft}
+                placeholder="快速添加今日任务，回车确认（支持 !2 @列表 #标签 明天）"
+                aria-label="快速添加任务"
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void handleQuickAdd()
+                }}
+              />
+            ),
+            primary: (
+              <button className="text-btn text-btn--accent" onClick={() => void handleQuickAdd()}>
+                添加
+              </button>
+            ),
+          }}
+          fallback={
+            <>
         <div className="quick-add">
           <input
             className="field"
@@ -187,6 +212,9 @@ export function TodayPage({ overview, onChanged, onNotice, onOpenNote, onFocusTa
             添加
           </button>
         </div>
+            </>
+          }
+        />
 
         <section className="stat-grid" aria-label="概览">
           {cards.map((c) => {

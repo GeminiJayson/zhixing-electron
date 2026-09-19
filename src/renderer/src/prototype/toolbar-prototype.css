@@ -1,0 +1,201 @@
+/* 原型样式（可抛弃）：三种工具栏范式 + 悬浮切换栏。选定变体后整份删除。 */
+
+/* 变体默认让工具条**常驻**（sticky）—— 现状是随内容滚走。
+   这是本原型要一起评估的点：常驻是否值得多占那一条高度。 */
+.pto {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-float);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-2) 0;
+  margin-bottom: var(--space-2);
+  background: var(--bg-canvas);
+}
+/* 变体自己渲染标题，原 page__head 让位。
+   :has(.pto) 只在变体启用时命中 —— off 时渲染的是各页原工具栏，不含 .pto，标题照常显示。 */
+.page:has(.pto) > .page__head {
+  display: none;
+}
+.pto__lead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  /* 标题是身份，永远不参与压缩 —— 否则会被挤成竖排的单字 */
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.pto__lead .page__title {
+  margin: 0;
+}
+.pto__nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+}
+/* A 的降级策略：要保住「一行」，唯一的可压缩项是搜索框 —— 其余控件一律不缩 */
+.pto--a .pto__tail {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.pto--a .pto__tail > * {
+  flex: 0 0 auto;
+}
+/* 唯一的可压缩项：搜索框。其余一律不缩 —— 否则标题会被挤成竖排单字、主操作折行 */
+.pto--a .pto__tail input {
+  flex: 1 1 100px;
+  width: auto;
+  min-width: 92px;
+}
+.pto__meta {
+  color: var(--fg-tertiary);
+  font-size: var(--text-aux);
+  white-space: nowrap;
+}
+.pto__tail {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.pto__row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.pto__row--sub {
+  margin-top: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: var(--border-w) solid var(--border);
+}
+
+/* A：一屏一行 */
+.pto--a .pto__tail {
+  flex-wrap: nowrap;
+}
+
+/* B：两层 */
+.pto--b {
+  display: block;
+}
+
+/* C：折叠命令式 + 浮层 */
+.pto--c {
+  position: relative;
+}
+.pto-sheet {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  z-index: var(--z-menu);
+  min-width: 360px;
+  max-width: 560px;
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+.pto-sheet__group {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+.pto-sheet__k {
+  flex: 0 0 84px;
+  color: var(--fg-secondary);
+  font-size: var(--text-aux);
+  padding-top: 6px;
+}
+.pto-sheet__v {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* 原型自己的按钮：与控件同高，避免看起来像另一个设计语言 */
+.pto-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--control-h);
+  padding: 0 var(--space-3);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-ctl);
+  background: var(--bg-layer-solid);
+  color: var(--fg-primary);
+  white-space: nowrap;
+}
+.pto-btn:hover {
+  background: var(--bg-hover);
+}
+.pto-more {
+  position: relative;
+}
+.pto-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: var(--z-menu);
+  min-width: 180px;
+  padding: var(--space-1);
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+.pto-menu__row {
+  display: flex;
+}
+.pto-menu__row > * {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+/* 切换栏：刻意与页面区隔，一眼看出不是设计的一部分 */
+.pto-switch {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: var(--z-toast);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 8px;
+  background: #111;
+  color: #fff;
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-lg);
+  font-size: var(--text-aux);
+}
+.pto-switch button {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-pill);
+  color: inherit;
+  font-size: 14px;
+  line-height: 1;
+}
+.pto-switch button:hover {
+  background: rgb(255 255 255 / 16%);
+}
+.pto-switch__k {
+  min-width: 190px;
+  text-align: center;
+  white-space: nowrap;
+}
+.pto-switch__x {
+  margin-left: var(--space-1);
+}

@@ -6,6 +6,7 @@
   "private": true,
   "scripts": {
     "dev": "electron-vite dev",
+    "prototype:toolbars": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.json",

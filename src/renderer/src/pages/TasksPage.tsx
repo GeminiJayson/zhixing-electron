@@ -21,6 +21,7 @@ import { KanbanBoard } from '../components/KanbanBoard'
 import { QuadrantBoard, quadrantAssignment, type QuadrantKey } from '../components/QuadrantBoard'
 import { TaskEditor } from '../components/TaskEditor'
 import { TaskRow } from '../components/TaskRow'
+import { PrototypeToolbar } from '../prototype/toolbar-prototype'
 import { dueLabel } from '../lib/date'
 
 interface Props {
@@ -694,6 +695,103 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
       </div>
       <div className="page__body">
 
+      <PrototypeToolbar
+        spec={{
+          title: t('page.tasks'),
+          subtitle: t('page.tasks.sub'),
+          nav: (
+            <div className="seg" role="group" aria-label="视图切换">
+              {VIEWS.map((v) => (
+                <button key={v.key} aria-pressed={view === v.key} onClick={() => setView(v.key)}>
+                  {v.label}
+                </button>
+              ))}
+            </div>
+          ),
+          meta: (
+            <span className="u-aux">
+              共 {tree.length} 项
+              {focus ? ` · 聚焦「${focus === 'today' ? '今日待办' : focus === 'done' ? '今日已完成' : '已逾期'}」` : ''}
+            </span>
+          ),
+          search: (
+            <input
+              className="field field--compact"
+              placeholder="过滤当前视图…"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              aria-label="过滤任务"
+            />
+          ),
+          filters: [
+            <select
+              key="list"
+              className="field field--compact"
+              value={listKey}
+              onChange={(e) => setListKey(e.target.value)}
+              aria-label="按清单筛选"
+            >
+              <option value="">全部清单</option>
+              <option value="none">收件箱（未归属）</option>
+              {folders
+                .filter((f) => f.kind === 'list')
+                .map((f) => (
+                  <option key={f.id} value={String(f.id)}>
+                    {f.name}
+                  </option>
+                ))}
+            </select>,
+          ],
+          secondary: [
+            <button
+              key="newlist"
+              className="text-btn"
+              onClick={async () => {
+                const name = await dialog.prompt({ title: '新建清单', label: '清单名称' })
+                if (!name?.trim()) return
+                await window.zhixing.db.createListFolder(name.trim(), 'list', null)
+                await load()
+                onNotice(`已新建清单「${name.trim()}」`)
+              }}
+            >
+              新建清单
+            </button>,
+            <button
+              key="batch"
+              className="text-btn"
+              disabled={selectedIds.size === 0}
+              onClick={(e) => {
+                const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                setBatchMenu({ x: r.left, y: r.bottom + 4 })
+              }}
+            >
+              批量{selectedIds.size > 0 ? ` · ${selectedIds.size}` : ''}
+            </button>,
+            <button key="insp" className="text-btn" aria-pressed={inspector} onClick={() => setInspector((v) => !v)}>
+              速览
+            </button>,
+            ...(focus && onClearFocus
+              ? [
+                  <button key="clear" className="text-btn" onClick={onClearFocus}>
+                    清除聚焦
+                  </button>,
+                ]
+              : []),
+          ],
+          primary: (
+            <button
+              className="text-btn text-btn--accent"
+              onClick={() => {
+                setAdding({ parentId: null })
+                setDraftTitle('')
+              }}
+            >
+              <Plus size={14} /> 新建任务
+            </button>
+          ),
+        }}
+        fallback={
+          <>
       <div className="tasks-toolbar">
         <div className="seg" role="group" aria-label="视图切换">
           {VIEWS.map((v) => (
@@ -771,6 +869,9 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
           </button>
         </div>
       </div>
+          </>
+        }
+      />
 
       <div className="tasks-work">
         <div className="tasks-main">

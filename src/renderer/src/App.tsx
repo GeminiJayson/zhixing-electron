@@ -21,6 +21,7 @@ import { SettingsPage } from './pages/SettingsPage'
 import { WorkflowPage } from './pages/WorkflowPage'
 import { TasksPage } from './pages/TasksPage'
 import { TodayPage } from './pages/TodayPage'
+import { PrototypeSwitcher } from './prototype/toolbar-prototype'
 import type { Overview, TaskStatus } from '@shared/types'
 import './styles/app.css'
 import './styles/tasks.css'
@@ -526,6 +527,8 @@ export default function App() {
             }}
             onFlash={() => setPage('inbox')}
           />
+          {/* 原型（可抛弃）：工具栏变体切换栏。不开 hash 时只是一个 dev 提示条 */}
+          <PrototypeSwitcher />
         </main>
       </div>
       <CapturePanel
