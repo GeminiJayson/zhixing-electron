@@ -63,7 +63,25 @@
   stroke-width: 1.6;
   fill: none;
 }
-/* 改挂时跟随指针的虚线 */
+/* 节点的连接手柄：hover / 选中时浮现，从这里按住拖出去即可拉出连线 */
+.gnode__link-handle {
+  cursor: crosshair;
+}
+.gnode__link-handle circle {
+  fill: var(--bg-layer-solid);
+  stroke: var(--accent);
+  stroke-width: 1.4;
+}
+.gnode__link-handle path {
+  stroke: var(--accent);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  fill: none;
+}
+.gnode__link-handle:hover circle {
+  fill: var(--accent-soft);
+}
+/* 拉新连线与改挂端点共用同一条跟随虚线 */
 .graph__edge-drag {
   stroke: var(--accent);
   stroke-width: 1.6;

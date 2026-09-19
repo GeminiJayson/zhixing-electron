@@ -116,6 +116,12 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
   const [preview, setPreview] = useState('')
   /** 连线起点：点「从此节点连线」后进入连线模式，再点另一个节点建立关系 */
   const [linkFrom, setLinkFrom] = useState<number | null>(null)
+  /**
+   * 正在从节点手柄「拉」连线：记源节点与指针的世界坐标，用来画那条跟随的虚线。
+   * 与 linkFrom 是同一件事的两个阶段 —— 按下手柄即进入连线态（linkFrom），
+   * 松开时按落点判定，所以在节点上直接拖拽也能建链，而不是只能「点按钮再点目标」。
+   */
+  const [linkDrag, setLinkDrag] = useState<{ from: number; x: number; y: number } | null>(null)
   /** 任务↔笔记两种关系皆可：归属（实线）或引用（虚线） */
   const [linkMode, setLinkMode] = useState<'ownership' | 'reference'>('ownership')
   /** 鼠标悬停的边（按下标标识）：只在悬停时才亮出端点手柄与删除按钮 */
@@ -134,6 +140,9 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
   const height = 560
   const simRef = useRef<Simulation<SimNode, SimLink> | null>(null)
   const dragRef = useRef<number | null>(null)
+  // 拉连线要用世界坐标（画布可能被缩放/平移）。startLinkDrag 定义在 usePanZoom 之前，
+  // 用这个 ref 桥接。
+  const panRef = useRef<ReturnType<typeof usePanZoom> | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   /** 上一次提示过的循环归属边集合（同一组只提示一次，对齐 _last_cycle_warn） */
   const lastCycleWarn = useRef('')
@@ -591,6 +600,67 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
     [edgeDrag, links, edgeEnds, canEditEdge, nodes, onNotice, load]
   )
 
+  /**
+   * 从节点手柄按下：进入连线态并开始拉虚线。
+   * 手柄是节点 <g> 的子元素，stopPropagation 能挡在节点拖拽之前 —— 所以「拖节点」与
+   * 「拉连线」两种手势不会互相打架。
+   */
+  const startLinkDrag = (n: SimNode) => (e: React.PointerEvent<SVGGElement>): void => {
+    e.stopPropagation()
+    try {
+      // 由手柄自己接管指针：之后即使指针划出节点，move/up 也仍然回到这里。
+      // （先前试过让画布 svg 转发 pointerup，但它并不总能到达 endDrag，虚线会留在画布上。）
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch {
+      // 捕获失败（合成事件等）不影响连线本身
+    }
+    setLinkFrom(n.id)
+    // 初始位置取节点自身坐标（世界坐标），指针一移动就会被覆盖
+    setLinkDrag({ from: n.id, x: n.x ?? 0, y: n.y ?? 0 })
+  }
+
+  /** 手柄接管的指针移动：把虚线终点跟到指针（世界坐标）。 */
+  const onLinkHandleMove = (e: React.PointerEvent<SVGGElement>): void => {
+    if (!linkDrag) return
+    const w = panRef.current?.toWorld(e.clientX, e.clientY)
+    if (w) setLinkDrag((d) => (d ? { ...d, x: w.x, y: w.y } : d))
+  }
+
+  /** 手柄接管的抬手：交给落点判定。 */
+  const onLinkHandleUp = (e: React.PointerEvent<SVGGElement>): void => {
+    if (!linkDrag) return
+    void dropLinkAt(e.clientX, e.clientY)
+  }
+
+  /**
+   * 拉线的落点判定：与改挂端点同一套反查（拖拽期间指针被画布捕获，hover 不触发）。
+   * 落在空白或自己身上就取消，否则交给 tryLink 走既有的允许矩阵与写入分支。
+   */
+  const dropLinkAt = useCallback(
+    async (clientX: number, clientY: number): Promise<void> => {
+      const drag = linkDrag
+      setLinkDrag(null)
+      if (!drag) return
+      const hit = document.elementFromPoint(clientX, clientY)?.closest('[data-node-id]')
+      const target = hit
+        ? nodes.find((n) => n.id === Number(hit.getAttribute('data-node-id')))
+        : undefined
+      if (!target) {
+        // 明确回执：否则用户不知道是「没落到节点上」还是「功能坏了」
+        setLinkFrom(null)
+        onNotice('已取消连线（没有落在节点上）')
+        return
+      }
+      if (target.id === drag.from) {
+        setLinkFrom(null)
+        onNotice('已取消连线（不能连到自己）')
+        return
+      }
+      await tryLink(target)
+    },
+    [linkDrag, nodes, tryLink, onNotice]
+  )
+
   const onNodePointerDown = (n: SimNode) => (e: React.PointerEvent<SVGGElement>) => {
     dragRef.current = n.id
     try {
@@ -611,6 +681,11 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
       if (world) setEdgeDrag((d) => (d ? { ...d, x: world.x, y: world.y } : d))
       return
     }
+    // 正在拉新连线：同样只更新虚线终点
+    if (linkDrag) {
+      if (world) setLinkDrag((d) => (d ? { ...d, x: world.x, y: world.y } : d))
+      return
+    }
     const id = dragRef.current
     if (id == null || !simRef.current || !world) return
     const node = (simRef.current.nodes() as SimNode[]).find((n) => n.id === id)
@@ -629,6 +704,14 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
       else void dropEdgeAt(e.clientX, e.clientY)
       return
     }
+    if (linkDrag) {
+      // 同上：移出画布算取消
+      if (e?.type === 'pointerleave' || e?.clientX == null || e?.clientY == null) {
+        setLinkDrag(null)
+        setLinkFrom(null)
+      } else void dropLinkAt(e.clientX, e.clientY)
+      return
+    }
     const id = dragRef.current
     dragRef.current = null
     if (id == null || !simRef.current) return
@@ -642,6 +725,7 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
   // 画布级平移 / 缩放：拖背景平移、滚轮以光标为中心缩放。
   // 节点拖拽继续走原来的 onSvgPointerMove / endDrag，由 hook 在非平移时转发。
   const pan = usePanZoom({ baseW: width, baseH: height, onMove: onSvgPointerMove, onEnd: endDrag })
+  panRef.current = pan
 
   // G7：图内搜索命中首个节点时镜头飞入（对齐 Python _focus_node_search 的 view.centerOn）。
   // 坐标在力导向模拟里，所以从 sim 取当前落位；centerOn 是稳定引用，避免每次渲染都重跑。
@@ -895,6 +979,22 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
                   <text y={r + 12} textAnchor="middle" className="gnode__label">
                     {n.label.length > 12 ? n.label.slice(0, 12) + '…' : n.label}
                   </text>
+                  {/* 连接手柄：hover 或选中时出现在节点右侧，从这里按住往外拖就能拉出连线。
+                      它是本 <g> 的子元素，pointerdown 里 stopPropagation 挡在节点拖拽之前 ——
+                      于是「拖节点」与「拉连线」两种手势各走各的，不打架。 */}
+                  {(n.id === hoverNode || isSel) && linkDrag == null && (
+                    <g
+                      className="gnode__link-handle"
+                      onPointerDown={startLinkDrag(n)}
+                      onPointerMove={onLinkHandleMove}
+                      onPointerUp={onLinkHandleUp}
+                      role="button"
+                      aria-label={`从「${n.label}」拉出连线`}
+                    >
+                      <circle cx={r + 11} cy={0} r={6} />
+                      <path d={`M${r + 8} 0 h6 M${r + 11} -3 v6`} />
+                    </g>
+                  )}
                 </g>
               )
             })}
@@ -973,6 +1073,23 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
                   y1={keep.y ?? 0}
                   x2={edgeDrag.x}
                   y2={edgeDrag.y}
+                />
+              )
+            })()}
+          {/* 拉新连线的虚线：从源节点跟到指针 */}
+          {linkDrag &&
+            (() => {
+              const from = (simRef.current?.nodes() as SimNode[] | undefined)?.find(
+                (n) => n.id === linkDrag.from
+              )
+              if (!from) return null
+              return (
+                <line
+                  className="graph__edge-drag"
+                  x1={from.x ?? 0}
+                  y1={from.y ?? 0}
+                  x2={linkDrag.x}
+                  y2={linkDrag.y}
                 />
               )
             })()}
