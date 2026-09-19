@@ -658,7 +658,8 @@ const SELECTION_ACTIONS = new Set(['capture', 'select-quick', 'quick-capture'])
 async function dispatchHotkeyAction(action: string): Promise<void> {
   if (SELECTION_ACTIONS.has(action)) {
     const selected = await readSelectedText()
-    sendAction(action, selected)
+    // 独立窗口，且**不显示主窗口**：用户正按着热键在别的应用里选词
+    openCaptureWindow(action === 'quick-capture' ? 'quick' : 'capture', selected)
     return
   }
   sendAction(action)
@@ -834,10 +835,10 @@ function createTray(): void {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: '显示主窗口', click: () => showMain() },
-      { label: '快速添加任务', click: () => sendAction('quick-capture') },
+      { label: '快速添加任务', click: () => void dispatchHotkeyAction('quick-capture') },
       { label: '新建笔记', click: () => sendAction('new-note') },
       { label: '记闪念', click: () => sendAction('flash-inbox') },
-      { label: '划词捕获', click: () => sendAction('capture') },
+      { label: '划词捕获', click: () => void dispatchHotkeyAction('capture') },
       { label: '读取选中并速记', click: () => sendAction('select-quick') },
       { label: '显示/隐藏浮窗', click: () => toggleWidget() },
       { type: 'separator' },
@@ -1025,6 +1026,92 @@ if (!gotTheLock) {
  * AI 整理的两个入口。命名成 ai: 前缀而不是塞进 db:* ——
  * 它不是数据库操作，而是一次外部网络请求 + 审计 + 可能的写库。
  */
+// ---------------------------------------------------------------- 捕获面板（独立窗口）
+
+let captureWindow: BrowserWindow | null = null
+let captureShowOnce: (() => void) | null = null
+
+/**
+ * 全局热键唤出的捕获面板：**独立小窗口**，且**不显示主窗口**。
+ *
+ * 与条件确认窗同理 —— 用户按下热键时正在别的应用里做事，把主窗口拽到前台等于打断他。
+ * 窗口已经开着就直接复用（连按两次不会开出两个）。
+ */
+function openCaptureWindow(mode: 'quick' | 'capture', seed: { text: string; html: string }): void {
+  const height = mode === 'capture' ? 470 : 300
+  if (captureWindow && !captureWindow.isDestroyed()) {
+    captureWindow.setSize(560, height)
+    captureWindow.webContents.send('capture:open', { mode, seed })
+    captureWindow.show()
+    captureWindow.focus()
+    return
+  }
+  const win = new BrowserWindow({
+    width: 560,
+    height,
+    useContentSize: true,
+    minWidth: 420,
+    minHeight: 240,
+    resizable: true,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    alwaysOnTop: true,
+    center: true,
+    show: false,
+    title: mode === 'quick' ? '快速添加任务' : '划词捕获',
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  })
+  captureWindow = win
+  let shown = false
+  const showOnce = (): void => {
+    if (shown || win.isDestroyed()) return
+    shown = true
+    captureShowOnce = null
+    win.show()
+    win.focus()
+  }
+  captureShowOnce = showOnce
+  win.on('closed', () => {
+    if (captureWindow === win) captureWindow = null
+    if (captureShowOnce === showOnce) captureShowOnce = null
+  })
+  win.webContents.once('did-finish-load', () => {
+    if (win.isDestroyed()) return
+    win.webContents.send('capture:open', { mode, seed })
+    // 与条件窗一样：等渲染层把主题应用完再显示（1.5s 兜底）
+    setTimeout(showOnce, 1500)
+  })
+  if (process.env.ELECTRON_RENDERER_URL) {
+    void win.loadURL(`${process.env.ELECTRON_RENDERER_URL}?capture=1`)
+  } else {
+    void win.loadFile(join(__dirname, '../renderer/index.html'), { query: { capture: '1' } })
+  }
+}
+
+function registerCaptureWindow(): void {
+  // 应用内的入口（快捷键 n / 右下角浮条）：同样开独立窗口，不占主窗口
+  ipcMain.handle('capture:open', (_e, mode: 'quick' | 'capture') => {
+    openCaptureWindow(mode === 'capture' ? 'capture' : 'quick', { text: '', html: '' })
+    return true
+  })
+  ipcMain.on('capture:ready', () => captureShowOnce?.())
+  ipcMain.on('capture:close', () => captureWindow?.close())
+  ipcMain.on('capture:done', (_e, message: string) => {
+    captureWindow?.close()
+    // 回执只发给主窗口（不把它显示出来 —— 用户此刻在别的应用里）
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('app:action', 'notice', String(message ?? ''))
+    }
+  })
+}
+
 /** 正在等待应答的人工确认（工作流条件节点）：一次只开一个窗口 */
 let conditionAsk: { id: string; resolve: (ok: boolean) => void } | null = null
 let conditionAskSeq = 0
@@ -1221,6 +1308,7 @@ app.whenReady().then(() => {
   registerAiHandlers()
   registerConditionAsk()
   registerTaskSyncHandlers()
+  registerCaptureWindow()
   scheduleTaskSync()
   // 欢迎页要先于主窗出现（对齐 __main__.py：splash.show() 在 AppContext 构造之前）
   try {

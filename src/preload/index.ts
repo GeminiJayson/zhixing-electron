@@ -472,6 +472,28 @@ const api = {
     deleteTask: (id: number): Promise<number> => ipcRenderer.invoke('db:deleteTask', id),
   },
   /**
+   * 全局热键唤出的捕获面板（独立小窗口）：主进程推 payload、渲染层回执。
+   * 与条件确认窗同一套协议 —— 渲染层应用完主题发 ready，主进程才把窗口显示出来。
+   */
+  capture: {
+    onOpen: (
+      cb: (payload: { mode: 'quick' | 'capture'; seed: { text: string; html: string } }) => void
+    ): (() => void) => {
+      const handler = (
+        _e: unknown,
+        payload: { mode: 'quick' | 'capture'; seed: { text: string; html: string } }
+      ): void => cb(payload)
+      ipcRenderer.on('capture:open', handler)
+      return () => ipcRenderer.removeListener('capture:open', handler)
+    },
+    /** 应用内入口（快捷键 / 浮条）主动开一个捕获窗口 */
+    open: (mode: 'quick' | 'capture'): Promise<boolean> =>
+      ipcRenderer.invoke('capture:open', mode),
+    ready: (): void => ipcRenderer.send('capture:ready'),
+    close: (): void => ipcRenderer.send('capture:close'),
+    done: (message: string): void => ipcRenderer.send('capture:done', message),
+  },
+  /**
    * 外部任务源：设置页手动同步 / 读状态 / 改完设置后重排定时器。
    * 类型与主进程 src/main/task-sync.ts 对齐（preload 不便 import 主进程代码）。
    */

@@ -159,6 +159,44 @@ html[data-surface='condition'] body {
   box-sizing: border-box;
   padding: var(--space-3);
 }
+
+/* ---- 捕获面板（快速任务 / 划词捕获）----
+   与条件确认一样跑在**独立小窗口**里，卡片骨架直接复用 .modal--dialog 那一套，
+   这里只补它特有的部分（多行输入 + 一排去向按钮）。 */
+.capture-host {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  box-sizing: border-box;
+  padding: var(--space-3);
+}
+.modal--capture {
+  width: min(560px, calc(100vw - 48px));
+  max-height: 100%;
+}
+.capture__text {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-hover);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--fg-primary);
+  font: inherit;
+  line-height: 1.6;
+}
+.capture__text:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+.capture__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
 /* 窗口里放的就是应用内弹框那张卡片本身（.modal--dialog），
    这里只把它撑到窗口高度内可滚动，其余外观一律沿用弹框样式 */
 .cond-win .modal {

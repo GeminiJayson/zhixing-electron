@@ -1,13 +1,14 @@
 /**
- * 全局热键「读取当前选中文字」验证。
+ * 全局热键 → **独立捕获窗口** 的端到端验证。
  *
- * 做法：在主窗口的输入框里真的选中一段文字 → 用 PowerShell SendKeys 发**真实**的全局热键
- * （ctrl+alt+n，快速任务）→ 检查捕获面板是否被预填成那段文字。
- * 这正是「主进程先模拟 Ctrl+C、再显示窗口」这条链路的端到端验证。
+ * 做法：在主窗口输入框里真的选中一段文字 → PowerShell SendKeys 发**真实**全局热键
+ * （ctrl+alt+n，快速任务）→ 检查是否开出一个独立窗口（url 含 capture=1）、
+ * 内容是否为那段选中的文字，且主窗口里没有面板。
  *
  * 覆盖：
- *   1. 有选区时：面板内容 = 选中的文字
- *   2. 没有选区、但剪贴板里有旧内容时：面板**为空**（不会误用旧剪贴板）
+ *   1. 有选区：独立窗口出现，内容 = 选中的文字；主窗口里没有捕获面板
+ *   2. 没有选区、剪贴板里有旧内容：窗口内容为空（不误用旧剪贴板）
+ *   3. Esc 关闭窗口 → 窗口消失
  *
  * 用法：node scripts/selectioncheck.mjs（需先 npm run build）
  */
@@ -15,13 +16,14 @@ import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { copyFileSync, existsSync, mkdirSync, rmSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 const require = createRequire(import.meta.url)
 const electronPath = require('electron')
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const tmpHome = join(root, '.screenshots', 'sel-home')
+const shotDir = join(root, '.screenshots')
 const PORT = 9254
 const PS = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'
 
@@ -45,19 +47,15 @@ const child = spawn(
   }
 )
 
-const attach = async () => {
-  let page = null
-  for (let i = 0; i < 60 && !page; i++) {
-    try {
-      const list = await (await fetch('http://127.0.0.1:' + PORT + '/json/list')).json()
-      page = list.find((t) => t.type === 'page')
-    } catch {
-      /* 等待 */
-    }
-    if (!page) await sleep(500)
+const list = async () => {
+  try {
+    return await (await fetch('http://127.0.0.1:' + PORT + '/json/list')).json()
+  } catch {
+    return []
   }
-  if (!page) return null
-  const ws = new WebSocket(page.webSocketDebuggerUrl)
+}
+const connect = async (target) => {
+  const ws = new WebSocket(target.webSocketDebuggerUrl)
   await new Promise((res, rej) => {
     ws.addEventListener('open', res, { once: true })
     ws.addEventListener('error', rej, { once: true })
@@ -75,6 +73,7 @@ const attach = async () => {
       ws.send(JSON.stringify({ id, method, params }))
     })
   await send('Runtime.enable')
+  await send('Page.enable')
   const evaluate = async (expression) => {
     const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })
     if (r.result?.exceptionDetails)
@@ -84,7 +83,6 @@ const attach = async () => {
   return { ws, send, evaluate }
 }
 
-/** 用真实按键触发热键（SendKeys：^ = Ctrl、% = Alt） */
 const pressHotkey = (keys) =>
   new Promise((resolve) => {
     const ps = spawn(PS, ['-NoProfile', '-NonInteractive', '-STA', '-Command', `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait("${keys}")`], { windowsHide: true, stdio: 'ignore' })
@@ -92,12 +90,12 @@ const pressHotkey = (keys) =>
     ps.once('error', resolve)
   })
 
-const conn = await attach()
-if (!conn) {
-  console.error('✗ 无法连接渲染进程')
-  child.kill()
-  process.exit(1)
+let mainTarget = null
+for (let i = 0; i < 60 && !mainTarget; i++) {
+  mainTarget = (await list()).find((t) => t.type === 'page' && !String(t.url).includes('capture=1'))
+  if (!mainTarget) await sleep(500)
 }
+const conn = await connect(mainTarget)
 await sleep(3000)
 
 const results = []
@@ -107,33 +105,32 @@ const check = (name, ok, detail = '') => {
 }
 const J = (v) => JSON.stringify(v)
 
-/** 等捕获面板出现并拿到内容 */
-const waitPanelText = async (timeout = 12000) => {
+/** 等捕获窗口出现并 attach，返回 { cw, text }（text 会等它填好） */
+const waitCaptureWindow = async (timeout = 15000) => {
   const t0 = Date.now()
-  let seen = ''
   while (Date.now() - t0 < timeout) {
-    const v = await conn.evaluate(
-      "(document.querySelector('.capture__text') || {}).value ?? null"
-    )
-    if (typeof v === 'string') {
-      seen = v
-      if (v.trim()) return v
+    const win = (await list()).find((t) => String(t.url).includes('capture=1'))
+    if (win) {
+      const cw = await connect(win)
+      let text = null
+      for (let i = 0; i < 40; i++) {
+        const v = await cw.evaluate("(document.querySelector('.capture__text') || {}).value ?? null")
+        if (typeof v === 'string') {
+          if (v.trim()) return { cw, text: v }
+          text = v
+        }
+        await sleep(150)
+      }
+      return { cw, text: text ?? '' }
     }
-    await sleep(200)
+    await sleep(250)
   }
-  return seen
-}
-const closePanel = async () => {
-  await conn.evaluate(
-    "document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))"
-  )
-  await sleep(400)
+  return null
 }
 
-// 切到笔记页，那里有搜索框可以「真的选中一段文字」
+// 主窗口：切到笔记页，选中搜索框里的一段文字
 await conn.evaluate("document.querySelector('[data-nav-item=notes]').click()")
 await sleep(1500)
-
 const SELECTED = 'SELECTED-TEXT-FOR-CHECK'
 const selected = await conn.evaluate(`(() => {
   const el = document.querySelector('.ntree__search-input')
@@ -141,34 +138,44 @@ const selected = await conn.evaluate(`(() => {
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
   setter.call(el, ${J(SELECTED)})
   el.dispatchEvent(new Event('input', { bubbles: true }))
-  el.focus()
-  el.select()
-  return (el.selectionStart === 0 && el.selectionEnd === ${SELECTED.length})
+  el.focus(); el.select()
+  return el.selectionStart === 0 && el.selectionEnd === ${SELECTED.length}
 })()`)
-check('在主窗口的输入框里选中了一段文字', selected === true, '')
+check('在主窗口里选中了一段文字', selected === true, '')
 
-// ---------------- 场景 1：有选区 → 面板预填选中的文字
+// ---------------- 场景 1：独立窗口 + 选中文字
 await pressHotkey('^%n')
-const text1 = await waitPanelText()
-check('热键唤出捕获面板', typeof text1 === 'string' && text1.length > 0, J(text1))
-check('面板内容 = 当前选中的文字', text1.trim() === SELECTED, J(text1))
-await closePanel()
+const captured = await waitCaptureWindow()
+check('热键开出了**独立窗口**（不是主窗口里的面板）', !!captured, captured ? 'capture=1' : '（没出现）')
+check('窗口里就是捕获卡片（复用弹框骨架）', (await captured?.cw.evaluate("!!document.querySelector('.modal--capture .modal__head')")) === true, '')
+check('内容 = 当前选中的文字', captured?.text?.trim() === SELECTED, J(captured?.text))
+const mainHasPanel = await conn.evaluate("!!document.querySelector('.capture-host')")
+check('主窗口里没有捕获面板', mainHasPanel === false, '')
+if (captured) {
+  const shot = await captured.cw.send('Page.captureScreenshot', { format: 'png' })
+  if (shot.result?.data) writeFileSync(join(shotDir, 'capture-window.png'), Buffer.from(shot.result.data, 'base64'))
+}
 
-// ---------------- 场景 2：没有选区 + 剪贴板里有旧内容 → 面板应为空
-await conn.evaluate(`navigator.clipboard.writeText('OLD-CLIP-CONTENT').catch(() => 0)`)
+// ---------------- 场景 3：Esc 关窗
+await captured?.cw.evaluate("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
+await sleep(900)
+const gone = (await list()).every((t) => !String(t.url).includes('capture=1'))
+check('Esc 关闭后窗口消失', gone, '')
+captured?.cw.ws.close()
+
+// ---------------- 场景 2：没有选区 + 剪贴板有旧内容 → 空
+await conn.evaluate("navigator.clipboard.writeText('OLD-CLIP-CONTENT').catch(() => 0)")
 await sleep(300)
 await conn.evaluate(`(() => {
   const el = document.querySelector('.ntree__search-input')
-  if (el) { el.value = ''; el.dispatchEvent(new Event('input', { bubbles: true })); el.blur() }
+  if (el) { const s = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; s.call(el, ''); el.dispatchEvent(new Event('input', { bubbles: true })); el.blur() }
   window.getSelection()?.removeAllRanges()
-  document.body.focus()
 })()`)
 await sleep(300)
 await pressHotkey('^%n')
-await sleep(3500)
-const text2 = await conn.evaluate("(document.querySelector('.capture__text') || {}).value ?? null")
-check('没有选区时面板不误用旧剪贴板内容', typeof text2 === 'string' && text2.trim() === '', J(text2))
-await closePanel()
+const second = await waitCaptureWindow()
+check('没有选区时窗口仍然是空的（不误用旧剪贴板）', second?.text?.trim() === '', J(second?.text))
+second?.cw.ws.close()
 
 conn.ws.close()
 child.kill()

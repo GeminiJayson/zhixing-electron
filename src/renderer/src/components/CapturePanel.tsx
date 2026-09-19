@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { FileText, FolderPlus, Inbox, ListPlus, Pin } from '@renderer/lib/icons'
+import { ClipboardList, FileText, FolderPlus, Inbox, ListPlus, Pin } from '@renderer/lib/icons'
 import type { Task } from '@shared/types'
 import { TargetSelector } from './TargetSelector'
 
@@ -12,6 +12,11 @@ interface Props {
    * 有它就优先用它，没有才退回剪贴板 —— 三个读选区的热键都走这条路。
    */
   seed?: { text: string; html: string } | null
+  /**
+   * 跑在独立窗口里（热键唤出的形态）：窗口本身就是「外面」，
+   * 所以不再铺一层遮罩、点空白也不关闭。
+   */
+  embedded?: boolean
   onClose: () => void
   onNotice: (message: string) => void
   onChanged: () => Promise<void>
@@ -84,7 +89,15 @@ export async function readClipboard(): Promise<{ text: string; html: string }> {
  * 通过 seed 传进来；从托盘/浮窗打开、或确实取不到选区时，退回读系统剪贴板
  * （等价 Python 的 clipboard_fallback）。
  */
-export function CapturePanel({ open, mode, seed = null, onClose, onNotice, onChanged }: Props) {
+export function CapturePanel({
+  open,
+  mode,
+  seed = null,
+  embedded = false,
+  onClose,
+  onNotice,
+  onChanged,
+}: Props) {
   const [text, setText] = useState('')
   const [remark, setRemark] = useState('')
   /** 剪贴板 HTML 里解析出的来源 URL（I2），随闪念一起落库 */
@@ -240,18 +253,23 @@ export function CapturePanel({ open, mode, seed = null, onClose, onNotice, onCha
   }
 
   return (
-    <div className="modal-mask" onMouseDown={onClose}>
+    <div className="capture-host" onMouseDown={embedded ? undefined : onClose}>
       <div
-        className="capture"
+        className="modal modal--capture"
         role="dialog"
         aria-modal="true"
         aria-label={mode === 'quick' ? '快速添加任务' : '划词捕获'}
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={onPanelKeyDown}
       >
-        <header className="capture__head">
-          {mode === 'quick' ? '快速添加任务' : '捕获 · Esc 取消'}
+        {/* 与工作流条件确认窗同一套卡片骨架：图标 + 标题 + 内容 + 底部按钮 */}
+        <header className="modal__head">
+          <span className="dialog__icon" aria-hidden>
+            {mode === 'quick' ? <ListPlus size={15} /> : <ClipboardList size={15} />}
+          </span>
+          <h2>{mode === 'quick' ? '快速添加任务' : '划词捕获'}</h2>
         </header>
+        <div className="modal__body">
         <textarea
           ref={inputRef}
           className="capture__text"
@@ -279,18 +297,20 @@ export function CapturePanel({ open, mode, seed = null, onClose, onNotice, onCha
           aria-label="备注"
           onChange={(e) => setRemark(e.target.value)}
         />
-        {selector && mode === 'capture' && (
-          <TargetSelector
-            mode={selector}
-            onCancel={() => setSelector(null)}
-            onPick={(id, name) => {
-              setSelector(null)
-              if (selector === 'group') void toGroup(id, name)
-              else void toSubtask(id, name)
-            }}
-          />
-        )}
-        <div className="capture__actions">
+          {selector && mode === 'capture' && (
+            <TargetSelector
+              mode={selector}
+              onCancel={() => setSelector(null)}
+              onPick={(id, name) => {
+                setSelector(null)
+                if (selector === 'group') void toGroup(id, name)
+                else void toSubtask(id, name)
+              }}
+            />
+          )}
+        </div>
+        <footer className="modal__foot">
+          <div className="capture__actions">
           {mode === 'capture' && (
             <>
               <button className="text-btn" onClick={() => void toFlash()}>
@@ -315,14 +335,18 @@ export function CapturePanel({ open, mode, seed = null, onClose, onNotice, onCha
               </button>
             </>
           )}
-          <span className="modal__spacer" />
-          <button className="text-btn" onClick={onClose}>
-            取消
-          </button>
-          <button className="text-btn text-btn--accent" onClick={() => void (mode === 'quick' ? quickAddTask() : toTask())}>
-            <ListPlus size={13} /> 任务
-          </button>
-        </div>
+            <span className="modal__spacer" />
+            <button className="text-btn" onClick={onClose}>
+              取消
+            </button>
+            <button
+              className="text-btn text-btn--accent"
+              onClick={() => void (mode === 'quick' ? quickAddTask() : toTask())}
+            >
+              <ListPlus size={13} /> 任务
+            </button>
+          </div>
+        </footer>
       </div>
     </div>
   )

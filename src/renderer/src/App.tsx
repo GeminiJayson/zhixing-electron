@@ -3,7 +3,6 @@ import { bindHostEvents, subscribeDomain } from '@shared/events'
 import { t } from './i18n'
 import { parseSettings, type AppSettings } from '@shared/settings'
 import { applyAppearance, applyMotion, resolveThemeMode } from './theme'
-import { CapturePanel } from './components/CapturePanel'
 import { CommandPalette } from './components/CommandPalette'
 import { DialogProvider } from './components/Dialogs'
 import { FloatingDock } from './components/FloatingDock'
@@ -54,10 +53,6 @@ export default function App() {
   const [taskFocus, setTaskFocus] = useState<'today' | 'done' | 'overdue' | null>(null)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [pomo, setPomo] = useState({ focus: 25, break: 5, autoBreak: true })
-  const [captureOpen, setCaptureOpen] = useState(false)
-  const [captureMode, setCaptureMode] = useState<'quick' | 'capture'>('quick')
-  /** 热键唤出面板时带进来的「当前选中文字」（主进程模拟 Ctrl+C 取的） */
-  const [captureSeed, setCaptureSeed] = useState<{ text: string; html: string } | null>(null)
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem(THEME_KEY)
     return saved === 'light' || saved === 'dark' ? saved : 'dark'
@@ -269,14 +264,11 @@ export default function App() {
     window.addEventListener('zhixing:open-note', onOpenNote)
 
     window.zhixing.app.onAction((action, payload) => {
-      if (action === 'quick-capture') {
-        setCaptureSeed(payload ?? null)
-        setCaptureMode('quick')
-        setCaptureOpen(true)
-      } else if (action === 'capture') {
-        setCaptureSeed(payload ?? null)
-        setCaptureMode('capture')
-        setCaptureOpen(true)
+      // 「快速任务 / 划词捕获 / 读取选中并速记」现在开在**独立的捕获窗口**里，
+      // 主窗口不再接管（按热键时用户正在别的应用里，不该把他拽回来）。
+      if (action === 'notice') {
+        // 捕获窗口完成后把回执转过来：只提示，不显示主窗口
+        showToast(String(payload ?? ''))
       } else if (action === 'new-note') {
         // 托盘/浮窗「新建笔记」（对齐 _dispatch_action 的 new-note）
         setPage('notes')
@@ -286,11 +278,6 @@ export default function App() {
         setPage('inbox')
       } else if (action === 'clipboard-notice') {
         showToast('已复制内容 — 可用快速捕获（Ctrl+N）记下来')
-      } else if (action === 'select-quick') {
-        // 划词速记：主进程已经模拟 Ctrl+C 取到当前选中的文字，直接作为内容预填
-        setCaptureSeed(payload ?? null)
-        setCaptureMode('capture')
-        setCaptureOpen(true)
       }
     })
 
@@ -400,8 +387,8 @@ export default function App() {
       }
       if (key === 'n') {
         e.preventDefault()
-        setCaptureMode('quick')
-        setCaptureOpen(true)
+        // 与应用内其它捕获入口一致：开独立窗口
+        void window.zhixing.capture.open('quick')
         return
       }
       if (key === 'b') {
@@ -530,10 +517,7 @@ export default function App() {
           {/* 右下角快捷新建浮条（S27）：只在今日/任务页显示 */}
           <FloatingDock
             page={page}
-            onTask={() => {
-              setCaptureMode('quick')
-              setCaptureOpen(true)
-            }}
+            onTask={() => void window.zhixing.capture.open('quick')}
             onNote={() => {
               setPage('notes')
               // 页面切换是异步渲染的，等一帧再派发「新建笔记」
@@ -543,15 +527,6 @@ export default function App() {
           />
         </main>
       </div>
-      <CapturePanel
-        open={captureOpen}
-        mode={captureMode}
-        seed={captureSeed}
-        onClose={() => setCaptureOpen(false)}
-        onNotice={showToast}
-        onChanged={refreshOverview}
-      />
-
       <PomodoroBar
         focusMinutes={pomo.focus}
         breakMinutes={pomo.break}
