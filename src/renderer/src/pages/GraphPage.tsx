@@ -7,6 +7,7 @@ import { Maximize2, RefreshCw } from '@renderer/lib/icons'
 import type { GraphDelta, GraphNodePayload, GraphPayload, NoteFolder } from '@shared/types'
 import { t } from '../i18n'
 import { Toolbar } from '../components/Toolbar'
+import { GraphNodeIcon } from '../components/GraphNodeIcon'
 import { usePanZoom } from '../lib/usePanZoom'
 import { edgeMidpoint, edgePath, trimEnd } from '../lib/edge-path'
 
@@ -57,38 +58,8 @@ interface SimLink extends SimulationLinkDatum<SimNode> {
 const NODE_R = 9
 const radiusOf = (): number => NODE_R
 
-/** 笔记：文档形（右上角折起），比纯方块更贴「一篇笔记」的语义。 */
-function notePath(r: number): string {
-  const f = r * 0.42
-  return `M${-r},${-r} L${r - f},${-r} L${r},${-r + f} L${r},${r} L${-r},${r} Z`
-}
-
-function starPoints(r: number): string {
-  const pts: string[] = []
-  for (let i = 0; i < 10; i++) {
-    const rad = i % 2 === 0 ? r : r * 0.45
-    const a = (Math.PI / 5) * i - Math.PI / 2
-    pts.push(`${(Math.cos(a) * rad).toFixed(2)},${(Math.sin(a) * rad).toFixed(2)}`)
-  }
-  return pts.join(' ')
-}
-
-function boltPoints(r: number): string {
-  return [
-    `${(-r * 0.35).toFixed(2)},${(-r).toFixed(2)}`,
-    `${(r * 0.55).toFixed(2)},${(-r * 0.15).toFixed(2)}`,
-    `${(r * 0.1).toFixed(2)},${(-r * 0.15).toFixed(2)}`,
-    `${(r * 0.4).toFixed(2)},${r.toFixed(2)}`,
-    `${(-r * 0.5).toFixed(2)},${(r * 0.1).toFixed(2)}`,
-    `${(-r * 0.1).toFixed(2)},${(r * 0.1).toFixed(2)}`,
-  ].join(' ')
-}
-
-/** 段落锚：小菱形（与笔记/闪念/任务/文件夹四类形状都区分得开）。 */
-function anchorPoints(r: number): string {
-  const rad = r * 0.72
-  return `0,${-rad} ${rad},0 0,${rad} ${-rad},0`
-}
+/* 节点形状已迁到 components/GraphNodeIcon.tsx —— 那里按类型给出多色分层图标，
+   本文件只负责把 kind / 半径 / 主色传进去。 */
 
 /** 图谱页：力导向布局 + 按 kind 区分的节点形状 + 归属实线/引用虚线。 */
 /**
@@ -958,22 +929,8 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
                   role="button"
                   aria-label={`${KIND_CN[n.kind] ?? n.kind} ${n.label}`}
                 >
-                  {n.kind === 'task' ? (
-                    <polygon points={starPoints(r)} fill={color} />
-                  ) : n.kind === 'flash' ? (
-                    <polygon points={boltPoints(r)} fill={color} />
-                  ) : n.kind === 'anchor' ? (
-                    <polygon points={anchorPoints(r)} fill={color} />
-                  ) : n.kind === 'dangling' ? (
-                    <circle r={r} fill="none" stroke={color} strokeWidth={1.4} strokeDasharray="3 3" />
-                  ) : n.kind === 'folder' ? (
-                    <>
-                      <rect x={-r} y={-r * 0.75} width={r * 2} height={r * 1.5} rx={2} fill={color} />
-                      <rect x={-r} y={-r * 1.05} width={r * 0.9} height={r * 0.34} rx={1.5} fill={color} />
-                    </>
-                  ) : (
-                    <path d={notePath(r)} fill={color} />
-                  )}
+                  {/* 节点图标：多色分层（主色 + 派生内层 + 深描边），见 GraphNodeIcon */}
+                  <GraphNodeIcon kind={n.kind} r={r} color={color} />
                   {isSel && <circle r={r + 4} fill="none" stroke="var(--accent)" strokeWidth={2} />}
                   {isHit && <circle r={r + 7} fill="none" stroke="var(--accent)" strokeWidth={1} strokeDasharray="2 2" />}
                   <text y={r + 12} textAnchor="middle" className="gnode__label">
