@@ -8,7 +8,9 @@ html[data-surface='widget'] #root {
 }
 .widget {
   height: 100%;
-  padding: 4px;
+  /* 不留内边距：卡片直接铺满窗口，窗口那层矩形（平台可能补的直角底）就没有露出来的地方。
+     原来留 4px，露出的正是一圈直角。 */
+  padding: 0;
 }
 .widget__card {
   display: flex;
@@ -19,7 +21,7 @@ html[data-surface='widget'] #root {
   background: var(--bg-layer);
   border: var(--border-w) solid var(--border-strong);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  /* 不投影：阴影会超出窗口被硬裁成矩形边，反而更像「第二层边框」 */
   overflow: hidden;
   position: relative;
 }

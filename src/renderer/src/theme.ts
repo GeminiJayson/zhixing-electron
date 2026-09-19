@@ -177,4 +177,7 @@ export function applyAppearance(
   // control_height 的消费点：tokens.css 的 --control-h（任务行内控件等按它撑高）
   root.style.setProperty('--control-h', `${s.control_height}px`)
   applyMotion(s.motion_level, root)
+  // 材质开关暴露给 CSS：材质生效时根节点要让出底色，否则 body 的实色底会把
+  // DWM 画的 Mica/Acrylic 整块盖住（表现就是「切了没反应」）
+  root.dataset.material = s.material
 }

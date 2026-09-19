@@ -4,6 +4,22 @@
      所以缩放≈1；再配上整数的格子边界与「不描边」，就不会出现发虚的边。 */
   --review-heat-min: 300px;
 }
+/* 每个统计分区套一层卡片：与设置页 .set-card 同一套视觉语言。
+   此前几块图表只有标题，分区之间没有边界，读起来是连成一片的。 */
+.page--review .section {
+  padding: var(--space-4);
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.page--review .section + .section,
+.page--review .review-pair {
+  margin-top: var(--space-3);
+}
+/* 并排的两块已经在同一行里，不需要再各留上边距 */
+.page--review .review-pair > .section + .section {
+  margin-top: 0;
+}
 /* 柱状图：横向铺满卡片并随卡片宽度缩放。
    它的 viewBox 比例（1132:186 ≈ 6:1）本身就是高度上限——铺满时约 185px，
    再叠加 max-height 只会把图挤到一侧留出空白，所以这里只保留宽度约束。 */

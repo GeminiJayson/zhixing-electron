@@ -22,6 +22,14 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* 开启窗口材质时根节点让出底色：窗口材质是 DWM 画在窗口底下的，
+   实色 body 会把它整块盖住。内容卡片本身仍是半透明/实色，可读性不受影响。 */
+:root[data-material='mica'] body,
+:root[data-material='acrylic'] body,
+:root[data-material='tabbed'] body {
+  background: transparent;
+}
+
 button {
   font: inherit;
   color: inherit;

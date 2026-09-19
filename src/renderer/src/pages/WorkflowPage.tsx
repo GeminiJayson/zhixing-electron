@@ -499,7 +499,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
       <label key="policy" className="wf-policy">
         <span className="u-aux">启动策略</span>
         <select
-          className="field field--mini"
+          className="field field--compact"
           value={current?.start_policy === 'all' ? 'all' : 'first'}
           disabled={!current}
           onChange={(e) => void handlePolicyChange(e.target.value)}
