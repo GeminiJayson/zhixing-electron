@@ -152,12 +152,17 @@ if (condTarget) {
     info = await cw.evaluate(`(() => {
     const root = document.querySelector('.cond-win')
     if (!root) return null
+    const card = root.querySelector('.modal.modal--dialog')
     return {
-      title: document.querySelector('.cond-win__head strong')?.textContent.trim() ?? '',
-      msg: document.querySelector('.cond-win__msg')?.textContent.trim() ?? '',
-      buttons: [...root.querySelectorAll('button')].map((b) => b.textContent.trim()),
-      hasIcon: !!root.querySelector('.dialog__icon svg'),
+      title: card?.querySelector('.modal__head h2')?.textContent.trim() ?? '',
+      msg: card?.querySelector('.dialog__message')?.textContent.trim() ?? '',
+      buttons: [...root.querySelectorAll('.modal__foot button')].map((b) => b.textContent.trim()),
+      hasIcon: !!card?.querySelector('.dialog__icon svg'),
       surface: document.documentElement.dataset.surface,
+      // 与应用内弹框同一套骨架（head / body / foot）
+      reusesModal: !!card && !!card.querySelector('.modal__body') && !!card.querySelector('.modal__foot'),
+      theme: document.documentElement.dataset.theme ?? '',
+      cardBg: card ? getComputedStyle(card).backgroundColor : '',
     }
   })()`)
     if (!info) await sleep(200)
@@ -166,6 +171,13 @@ if (condTarget) {
   check('标题与提示文案正确', info?.title === '工作流条件' && info?.msg === '继续吗？', `${info?.title} / ${info?.msg}`)
   check('按钮是「不成立 / 成立」', JSON.stringify(info?.buttons) === JSON.stringify(['不成立', '成立']), J(info?.buttons))
   check('带图标', info?.hasIcon === true, '')
+  check('复用应用内弹框的骨架（head / body / foot）', info?.reusesModal === true, '')
+  const mainTheme = await conn.evaluate("document.documentElement.dataset.theme ?? ''")
+  check(
+    '主题与应用一致（不再是默认深色）',
+    !!info?.theme && info.theme === mainTheme,
+    `确认窗=${info?.theme} 主窗口=${mainTheme}`
+  )
   const shot = await cw.send('Page.captureScreenshot', { format: 'png' })
   if (shot.result?.data) {
     writeFileSync(join(shotDir, 'condition-window.png'), Buffer.from(shot.result.data, 'base64'))

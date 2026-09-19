@@ -1011,6 +1011,8 @@ if (!gotTheLock) {
 let conditionAsk: { id: string; resolve: (ok: boolean) => void } | null = null
 let conditionAskSeq = 0
 let conditionWindow: BrowserWindow | null = null
+/** 当前窗口的「可以显示了」回调（渲染层应用完主题后调用） */
+let conditionShowOnce: (() => void) | null = null
 /** 兜底等待上限：极端情况（窗口开着但没人理）不能让实例永久挂起 */
 const CONDITION_ASK_TIMEOUT_MS = 10 * 60 * 1000
 
@@ -1065,10 +1067,21 @@ function showConditionWindow(prompt: string): Promise<boolean | null> {
     timer = setTimeout(() => finish(false), CONDITION_ASK_TIMEOUT_MS)
     conditionAsk = { id, resolve: finish }
 
+    let shown = false
+    const showOnce = (): void => {
+      if (shown || win.isDestroyed()) return
+      shown = true
+      conditionShowOnce = null
+      win.show()
+      win.focus()
+    }
+    conditionShowOnce = showOnce
     win.webContents.once('did-finish-load', () => {
       if (win.isDestroyed()) return
       win.webContents.send('condition:confirm', { id, prompt })
-      win.show()
+      // 渲染层应用完主题（浅色/深色、字号）再显示 —— 否则会先闪一下默认配色。
+      // 1.5s 兜底：万一 ready 没来，也不能让用户看不到这个确认框。
+      setTimeout(showOnce, 1500)
     })
     // 页面根本没加载出来（渲染层异常等）：交给调用方回落原生模态，
     // 免得用户永远看不到这个确认框
@@ -1108,6 +1121,7 @@ function registerConditionAsk(): void {
         void pumpConditionQueue()
       })
   )
+  ipcMain.on('condition:ready', () => conditionShowOnce?.())
   ipcMain.on('condition:answer', (_e, id: string, ok: boolean) => {
     if (!conditionAsk || conditionAsk.id !== String(id ?? '')) return
     conditionAsk.resolve(ok === true)

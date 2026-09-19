@@ -484,6 +484,10 @@ const api = {
     answer: (id: string, ok: boolean): void => {
       ipcRenderer.send('condition:answer', id, ok)
     },
+    /** 主题应用完毕：主进程收到后才把窗口显示出来，避免先闪一下默认配色 */
+    ready: (): void => {
+      ipcRenderer.send('condition:ready')
+    },
   },
   /**
    * 笔记的「大模型解读整理归纳」。

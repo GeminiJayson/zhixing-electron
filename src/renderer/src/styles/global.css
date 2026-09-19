@@ -153,31 +153,16 @@ html[data-surface='condition'] body {
 }
 .cond-win {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
+  align-items: center;
+  justify-content: center;
   height: 100vh;
   box-sizing: border-box;
-  padding: var(--space-4);
+  padding: var(--space-3);
 }
-.cond-win__head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-.cond-win__msg {
-  margin: 0;
-  flex: 1;
-  overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.cond-win__hint {
-  margin: 0;
-}
-.cond-win__foot {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-2);
+/* 窗口里放的就是应用内弹框那张卡片本身（.modal--dialog），
+   这里只把它撑到窗口高度内可滚动，其余外观一律沿用弹框样式 */
+.cond-win .modal {
+  max-height: 100%;
 }
 
 /* 输入框 / 下拉用「边框变色」表达焦点，不再叠加全局焦点环 —— 否则两层，且颜色不一致 */
