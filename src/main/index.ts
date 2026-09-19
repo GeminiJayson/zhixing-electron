@@ -15,7 +15,6 @@ import { join } from 'node:path'
 import { release } from 'node:os'
 import { extractDeepLink, parseDeepLink, toAccelerator } from '../shared/deep-link'
 import { resolveThemePack } from '../shared/theme-packs'
-import { WINDOW_MATERIALS, type WindowMaterial } from '../shared/settings'
 import { initFileLog } from './log'
 import { hardenWindow } from './security'
 import { autoBackup, closeDb, currentSettings, dbPath, dbOpenError, dbReadonlyReason, ensureDefaultSettings, listTodayTasks, open, registerDbHandlers, saveWidgetGeometry, setDataChangedHook } from './db'
@@ -563,78 +562,6 @@ function buildMenu(): void {
  * 材质 + 实际下发的取值。数据变更钩子每次写库都会跑，带着窗口引用去重：
  * 既省掉无谓的重复调用，又能保证窗口重建后一定重新下发一次。
  */
-let lastMaterial: { win: BrowserWindow; material: WindowMaterial } | null = null
-
-/**
- * 本机真正支持的材质。
- *
- * Electron 的 setBackgroundMaterial 在不支持的机器上**既不报错也不生效**（静默失效），
- * 所以支持性必须自己判：非 win32、Windows 10（build < 22000）、DWM 合成被关掉时
- * 一律退回 none。tabbed 要 22H2（build 22621）起才有，低版本同样降级。
- * 宁可给用户一个确定的实色窗口，也不要一个「选了没反应」的半透明项。
- */
-function supportedMaterial(material: WindowMaterial): WindowMaterial {
-  if (material === 'none' || process.platform !== 'win32') return 'none'
-  const build = Number(/^\d+\.\d+\.(\d+)/.exec(release())?.[1] ?? 0)
-  if (!build || build < 22000) return 'none'
-  if (material === 'tabbed' && build < 22621) return 'none'
-  try {
-    // DWM 合成关闭时半透明窗口会画错，Electron 文档也建议先判这一项
-    if (!systemPreferences.isAeroGlassEnabled()) return 'none'
-  } catch {
-    return 'none'
-  }
-  return material
-}
-
-/** 兼容两种载荷：旧调用点传布尔（true→mica、false→none），新代码传枚举字符串。 */
-function normalizeMaterial(value: unknown): WindowMaterial {
-  if (typeof value === 'boolean') return value ? 'mica' : 'none'
-  return typeof value === 'string' && (WINDOW_MATERIALS as readonly string[]).includes(value)
-    ? (value as WindowMaterial)
-    : 'none'
-}
-
-/**
- * 下发窗口材质（对齐 Python 侧对 K_MICA 调 setMicaEffectEnabled）。
- *
- * 半透明材质是锦上添花：任何一步失败都只记录并退回 none，绝不让主进程因为一个
- * 外观选项崩掉 —— 这也是「枚举材质」比旧布尔开关多出来的风险面（acrylic / tabbed
- * 在低版本系统上更容易失效）。
- */
-function applyMaterial(win: BrowserWindow | null, material: WindowMaterial): void {
-  if (!win || win.isDestroyed()) return
-  const effective = supportedMaterial(material)
-  if (lastMaterial?.win === win && lastMaterial.material === effective) return
-  // 窗口自带的 backgroundColor 会整块盖住材质（Mica/Acrylic 是 DWM 画在窗口底下的）——
-  // 这是「切了材质没反应」的直接原因。材质生效时底色必须让位；退回 none 时给回不透明底色，
-  // 否则 Win10 或 DWM 合成关闭的机器会直接透出桌面。
-  try {
-    win.setBackgroundColor(
-      effective === 'none' ? (nativeTheme.shouldUseDarkColors ? '#1F1F1F' : '#F3F3F3') : '#00000000'
-    )
-  } catch {
-    // 背景色只是材质的配套项，设不了也不该让主进程挂掉
-  }
-  try {
-    win.setBackgroundMaterial(effective)
-  } catch (err) {
-    console.error('[window] 材质不可用，回退实色底', material, err)
-    try {
-      win.setBackgroundMaterial('none')
-    } catch {
-      // 连 none 都设不了就维持窗口自带的 backgroundColor，不再往上抛
-    }
-    lastMaterial = { win, material: 'none' }
-    return
-  }
-  lastMaterial = { win, material: effective }
-}
-
-/** 材质设置变更后即时生效（对齐 app_controller 的 K_MICA 分支：改完不必重启）。 */
-function syncWindowMaterial(): void {
-  applyMaterial(mainWindow, currentSettings().material)
-}
 
 /**
  * 启动欢迎页（对齐 view/shell/splash.py + __main__.py:106-135）：
@@ -727,8 +654,6 @@ function createWindow(): BrowserWindow {
       win.hide()
     }
   })
-  // 窗口材质（旧 mica_enabled；其他平台/系统不支持时降级为不透明）
-  applyMaterial(win, currentSettings().material)
   // 主窗显隐 → 浮窗显隐联动（S16）。主窗显示时收起浮窗，隐藏/最小化时放出浮窗。
   const onMainVisibility = (): void => {
     widgetManualOpen = false
@@ -835,8 +760,6 @@ app.whenReady().then(() => {
     refreshTrayIcon()
     // widget_enabled / close_to_widget 改动后浮窗显隐立刻跟着变，不必重启
     syncWidgetVisibility()
-    // 材质也是设置项：settings 域的任何写入都顺势重设一次（applyMaterial 内部去重）
-    syncWindowMaterial()
   })
   // 浮窗随应用启动创建，但**不显示**（对齐 app_controller.startup 末尾的 self.widget.hide()）：
   // 启动只露主窗，之后由主窗显隐联动浮窗。
@@ -873,15 +796,6 @@ app.whenReady().then(() => {
     }
   })
 
-  /**
-   * 材质即时设置。设置页现在走「写 settings → 数据变更钩子」这条主链路，
-   * 这个通道保留是为了 preload 里已暴露的 app.setMica（其公开签名仍是布尔，
-   * 不在本次改动范围）：载荷放宽为 unknown，布尔按老语义映射，非法值一律 none，
-   * 旧调用点不会因此报错。
-   */
-  ipcMain.handle('app:setMica', (_e, value: unknown) =>
-    applyMaterial(mainWindow, normalizeMaterial(value))
-  )
   // 渲染层首屏就绪 → 关闭欢迎页并显示主窗（splash 流程的「完成」信号）
   ipcMain.handle('app:ready', () => revealMain())
   // 托盘图标随主题重建（S23）：设置页改主题/主题包后由数据变更钩子触发

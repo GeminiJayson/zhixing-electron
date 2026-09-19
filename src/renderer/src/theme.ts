@@ -177,14 +177,14 @@ export function applyAppearance(
   // control_height 的消费点：tokens.css 的 --control-h（任务行内控件等按它撑高）
   root.style.setProperty('--control-h', `${s.control_height}px`)
   applyMotion(s.motion_level, root)
-  // 材质开关暴露给 CSS：材质生效时根节点要让出底色，否则 body 的实色底会把
-  // DWM 画的 Mica/Acrylic 整块盖住（表现就是「切了没反应」）
-  root.dataset.material = s.material
-  // 切主题 / 材质后强制刷新一次合成：Chromium 在没有新合成层时会复用上一帧，
-  // 表现就是侧边残留旧内容（尤其是窗口材质变化、整层底色都变的时候）。
-  // 用 transform 短暂建一个新层，下一帧再撤掉 —— 比改窗口尺寸温和得多。
+  // 切主题后强制刷新一次合成：Chromium 在没有新合成层时会复用上一帧，表现为侧边残留旧内容。
+  // 用 transform 短暂建一个新层、下一帧撤掉 —— 比改窗口尺寸温和。单测跑在 node 环境里没有 rAF，故带守卫。
   root.style.transform = 'translateZ(0)'
-  requestAnimationFrame(() => {
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => {
+      root.style.transform = ''
+    })
+  } else {
     root.style.transform = ''
-  })
+  }
 }

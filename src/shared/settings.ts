@@ -9,14 +9,6 @@
 export type ThemeMode = 'light' | 'dark' | 'system'
 export type MotionLevel = 'full' | 'essential' | 'none'
 
-/**
- * 窗口背景材质（Windows 11）。mica / acrylic / tabbed 是 Electron 支持的全部半透明材质，
- * none 表示普通不透明窗口。macOS 的 vibrancy 刻意不进枚举 —— 列给 Windows 用户
- * 只会得到一个必然无效的选项。
- */
-export const WINDOW_MATERIALS = ['mica', 'acrylic', 'tabbed', 'none'] as const
-export type WindowMaterial = (typeof WINDOW_MATERIALS)[number]
-
 export interface AppSettings {
   theme_mode: ThemeMode
   theme_pack: string
@@ -46,11 +38,6 @@ export interface AppSettings {
   select_quick_hotkey: string
   /** 标题栏签名文案 */
   signature: string
-  /**
-   * 窗口背景材质（旧 mica_enabled 的迁移目标）。这里只存「用户意图」，
-   * 真正能否生效由主进程按平台/系统版本判定，不支持时降级为 none。
-   */
-  material: WindowMaterial
   quick_capture_hotkey: string
   capture_hotkey: string
   /** ui_state 是嵌套 JSON，这里保持原始字符串，由需要的一方自行解析 */
@@ -77,23 +64,6 @@ const oneOf = <T extends string>(raw: string | undefined, values: readonly T[], 
   values.includes(raw as T) ? (raw as T) : fallback
 
 const MOTION_LEVELS = ['full', 'essential', 'none'] as const
-
-/** 默认沿用旧 mica_enabled 的默认 true，老库升级后外观不会突然变。 */
-const DEFAULT_MATERIAL: WindowMaterial = 'mica'
-
-/**
- * mica_enabled（boolean）→ material（枚举）的向后兼容解析。
- *
- * 先看新键，新键缺失或为空才回退旧键：true → mica、false → none（与 bool() 同规则，
- * '0'/'' 视为 false）。非法值钳到默认，避免手改库或被别的客户端写入脏值后材质乱跳。
- */
-const parseMaterial = (raw: Record<string, string>): WindowMaterial => {
-  const direct = raw.material
-  if (direct !== undefined && direct !== '') return oneOf(direct, WINDOW_MATERIALS, DEFAULT_MATERIAL)
-  const legacy = raw.mica_enabled
-  if (legacy === undefined || legacy === '') return DEFAULT_MATERIAL
-  return legacy === '0' ? 'none' : 'mica'
-}
 
 /** 原始设置表 → 类型化设置。所有默认值与取值范围都集中在这里。 */
 export function parseSettings(raw: Record<string, string> = {}): AppSettings {
@@ -124,7 +94,6 @@ export function parseSettings(raw: Record<string, string> = {}): AppSettings {
     clipboard_monitor: bool(raw.clipboard_monitor, false),
     select_quick_hotkey: str(raw.select_quick_hotkey, 'ctrl+shift+u'),
     signature: str(raw.signature, '知行合一'),
-    material: parseMaterial(raw),
     widget_hotkey: str(raw.widget_hotkey, 'ctrl+shift+d'),
     quick_capture_hotkey: str(raw.quick_capture_hotkey, 'ctrl+alt+n'),
     capture_hotkey: str(raw.capture_hotkey, 'ctrl+shift+s'),
@@ -144,10 +113,6 @@ export const DEFAULT_SETTINGS: Record<string, string> = {
   theme_mode: 'system',
   theme_pack: '青竹',
   accent_color: '#0D9488',
-  // 这里故意只留旧键、不写新的 material：ensureDefaultSettings 是 ON CONFLICT DO NOTHING，
-  // 老库里 material 本就不存在，一旦补进默认值 'mica' 会盖掉老用户「关掉材质」
-  // （mica_enabled='0'）的偏好。新键缺失时 parseMaterial 会回退读旧键，默认值照样生效。
-  mica_enabled: '1',
   motion_level: 'full',
   pomodoro_focus_min: '25',
   pomodoro_break_min: '5',
