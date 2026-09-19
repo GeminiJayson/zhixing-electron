@@ -60,6 +60,20 @@ export function edgePath(ends: EdgeEnds): string {
 }
 
 /**
+ * 沿连线方向、从起点前进 dist 的点 —— 给「贴着起点的边标签」用。
+ *
+ * 为什么不用中点：边的中段很可能正好穿过另一个节点（纵向分层布局里很常见），
+ * 标签压上去就糊成一团；而起点附近一定是空的。
+ */
+export function edgePointFrom(ends: EdgeEnds, dist: number): { x: number; y: number } {
+  const { x1, y1, x2, y2 } = ends
+  const len = Math.hypot(x2 - x1, y2 - y1)
+  if (len < 0.5) return { x: x1, y: y1 }
+  const step = Math.min(dist, len / 2)
+  return { x: x1 + ((x2 - x1) / len) * step, y: y1 + ((y2 - y1) / len) * step }
+}
+
+/**
  * 把两端从节点中心沿连线方向收回一段，给箭头留出落点。
  *
  * 不收边的话箭头会压在节点图形下面 —— 表现就是「明明设了箭头却看不到」。

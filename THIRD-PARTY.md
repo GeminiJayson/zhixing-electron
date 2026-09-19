@@ -34,6 +34,17 @@
 无商用限制；零运行时依赖；它的 `react` / `vue` / `svelte` / `react-native` peer 全部标记为
 optional，因此安装它不会把其它框架拖进依赖树（已核对 `node_modules`）。
 
+## dagre（有向图分层布局）
+
+| 项 | 内容 |
+| --- | --- |
+| 来源 | https://github.com/dagrejs/dagre |
+| 版本 | `@dagrejs/dagre@3.1.1`（npm 依赖） |
+| 使用处 | `src/renderer/src/lib/workflow-layout.ts` —— 工作流画布的分层布局 |
+| 许可 | **MIT** |
+
+无商用限制；零额外运行时依赖（自带 TS 类型）。
+
 ## lucide（图标形状数据）
 
 | 项 | 内容 |

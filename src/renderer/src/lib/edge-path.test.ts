@@ -5,6 +5,7 @@ import {
   controlPoints,
   edgeMidpoint,
   edgePath,
+  edgePointFrom,
   trimEnd,
   type EdgeEnds
 } from './edge-path'
@@ -61,6 +62,19 @@ describe('连线贝塞尔几何（对齐 Obsidian 的流体弧）', () => {
   it('过短的边不收，避免退化成零长甚至反向', () => {
     const ends = { x1: 0, y1: 0, x2: 12, y2: 0 }
     expect(trimEnd(ends, 10)).toEqual(ends)
+  })
+
+  it('贴起点的标签位置：沿单位方向前进，不是按分量', () => {
+    const flat = edgePointFrom({ x1: 0, y1: 0, x2: 100, y2: 0 }, 30)
+    expect(flat.x).toBeCloseTo(30, 6)
+    expect(flat.y).toBeCloseTo(0, 6)
+    const diag = edgePointFrom({ x1: 0, y1: 0, x2: 30, y2: 40 }, 25)
+    expect(Math.hypot(diag.x, diag.y)).toBeCloseTo(25, 6)
+  })
+
+  it('贴起点时超过半长会收到中点，不会越过目标；零长退化为起点', () => {
+    expect(edgePointFrom({ x1: 0, y1: 0, x2: 20, y2: 0 }, 999)).toEqual({ x: 10, y: 0 })
+    expect(edgePointFrom({ x1: 5, y1: 7, x2: 5, y2: 7 }, 30)).toEqual({ x: 5, y: 7 })
   })
 
   it('弧高不随方向变化（旋转后仍是对称的微弱弯）', () => {

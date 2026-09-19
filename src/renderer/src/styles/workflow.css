@@ -100,6 +100,22 @@
 .wf-edge--branch {
   stroke-dasharray: 5 4;
 }
+/* 条件分支的文案：压在连线中点，用底色的粗描边把线「擦」开，小字才读得清 */
+.wf-edge__label {
+  font-size: 10px;
+  fill: var(--fg-secondary);
+  text-anchor: middle;
+  dominant-baseline: middle;
+  paint-order: stroke;
+  stroke: var(--bg-layer-solid);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  pointer-events: none;
+  user-select: none;
+}
+.wf-edge__label--on {
+  fill: var(--accent-text);
+}
 /* 与悬浮步骤相连：抬成主题色并加粗 */
 .wf-edge--on {
   stroke: var(--accent);

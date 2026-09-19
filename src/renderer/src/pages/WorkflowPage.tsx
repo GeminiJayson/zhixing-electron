@@ -24,7 +24,13 @@ import { t } from '../i18n'
 import { Toolbar } from '../components/Toolbar'
 import { useDialog } from '../components/Dialogs'
 import { usePanZoom } from '../lib/usePanZoom'
-import { edgePath } from '../lib/edge-path'
+import { edgePath, edgePointFrom } from '../lib/edge-path'
+import {
+  edgeAnchors,
+  layoutBounds,
+  layoutWorkflow,
+  type WorkflowRankDir,
+} from '../lib/workflow-layout'
 
 interface Props {
   onNotice: (message: string) => void
@@ -39,23 +45,24 @@ const CANVAS_H = 520
 /** 节点详情浮卡尺寸 */
 const CARD_W = 236
 const CARD_H = 168
-/** 「一键对齐」纵向网格间距（对齐 _auto_layout 的 _NODE_H + 54） */
-const ALIGN_Y_GAP = NODE_H + 54
 /** 步骤编辑弹窗里「SOP 文档」下拉最多列出的笔记数（对齐 note_choices 的 recent(200)） */
 const NOTE_CHOICE_LIMIT = 200
 
-/** 没有持久化坐标时按执行顺序横向排布。 */
-function layoutOf(nodes: WorkflowNodePayload[]): Map<number, { x: number; y: number }> {
-  const ordered = [...nodes].sort(
-    (a, b) => (a.order_index || 0) - (b.order_index || 0) || a.id - b.id
-  )
+/**
+ * 画布初始坐标：用户拖过的位置（pos_x/pos_y）优先，没拖过的用 dagre 分层结果补齐。
+ * 早先这里是「60 + i * 190、上下交替」的手工排布 —— 步骤一多就横竖重叠；
+ * 现在交给分层布局，同层间距、层间距、是否绕开分支都由 dagre 算。
+ */
+function layoutOf(
+  nodes: WorkflowNodePayload[],
+  rankdir: WorkflowRankDir
+): Map<number, { x: number; y: number }> {
+  const computed = layoutWorkflow(nodes, { rankdir, nodeWidth: NODE_W, nodeHeight: NODE_H })
   const map = new Map<number, { x: number; y: number }>()
-  ordered.forEach((n, i) => {
-    map.set(n.id, {
-      x: n.pos_x ?? 60 + i * 190,
-      y: n.pos_y ?? 120 + (i % 2) * 130,
-    })
-  })
+  for (const n of nodes) {
+    const c = computed.get(n.id)
+    map.set(n.id, { x: n.pos_x ?? c?.x ?? 60, y: n.pos_y ?? c?.y ?? 120 })
+  }
   return map
 }
 
@@ -66,6 +73,23 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   const [instances, setInstances] = useState<WorkflowInstancePayload[]>([])
   const [pos, setPos] = useState<Map<number, { x: number; y: number }>>(new Map())
   const [selected, setSelected] = useState<number | null>(null)
+  /**
+   * 布局方向（TB 纵向 / LR 横向）。记住选择，重开页面仍是上次那个方向；
+   * 它同时决定 dagre 的分层方向与连线的出入边（见 edgeAnchors）。
+   */
+  const [rankdir, setRankdir] = useState<WorkflowRankDir>(() => {
+    try {
+      return localStorage.getItem('wf.rankdir') === 'LR' ? 'LR' : 'TB'
+    } catch {
+      return 'TB'
+    }
+  })
+  /**
+   * 画布基准尺寸：随布局结果伸缩。
+   * 必须是独立 state 而不是从 pos 现算 —— pos 在拖拽时会逐帧变化，基准一变
+   * usePanZoom 就会 fitView，视图会在拖拽过程中不停跳。
+   */
+  const [canvasSize, setCanvasSize] = useState({ width: CANVAS_W, height: CANVAS_H })
   const [editing, setEditing] = useState<WorkflowNodePayload | null>(null)
   /** editing 是否为「新增步骤」（决定保存时插到选中节点之后，而不是原位替换） */
   const [editingNew, setEditingNew] = useState(false)
@@ -95,9 +119,11 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   const openTemplate = useCallback(async (id: number) => {
     const tpl = await window.zhixing.db.workflowTemplate(id)
     setCurrent(tpl)
-    setPos(tpl ? layoutOf(tpl.nodes) : new Map())
+    const layout = tpl ? layoutOf(tpl.nodes, rankdir) : new Map()
+    setPos(layout)
+    setCanvasSize(layoutBounds(layout, NODE_W, NODE_H))
     setSelected(null)
-  }, [])
+  }, [rankdir])
 
   useEffect(() => {
     void (async () => {
@@ -236,12 +262,19 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
 
   // 画布级平移 / 缩放：拖背景平移、滚轮以光标为中心缩放；非平移时的移动转给节点拖拽
   const pan = usePanZoom({
-    baseW: CANVAS_W,
-    baseH: CANVAS_H,
+    baseW: canvasSize.width,
+    baseH: canvasSize.height,
     onMove,
     onEnd: (e) => void endDrag(e),
   })
   panRef.current = pan
+
+  // 基准尺寸一变（打开模板 / 自动布局 / 切方向）就适配一次视图。
+  // 不能直接在 handleAutoLayout 里调 pan.reset()：那时 setCanvasSize 尚未生效，
+  // reset 用的是旧基准，视图会缩在角落（实测横向布局后节点全挤在右上角）。
+  useEffect(() => {
+    panRef.current?.reset()
+  }, [canvasSize])
 
   const handleNewTemplate = async (): Promise<void> => {
     const name = await dialog.prompt({ title: '新建工作流', label: '名称' })
@@ -358,13 +391,21 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     await persistTemplate(list.map((n, i) => ({ ...n, order_index: i })))
   }
 
-  /** I20 一键对齐（对齐 _auto_layout：pos_x=0、pos_y=i*间距，然后适配视图）。 */
-  const handleAutoLayout = async (): Promise<void> => {
+  /**
+   * 自动布局：交给 dagre 按依赖关系分层 —— 顺序边（order_index 相邻）与条件分支边
+   * 一起参与，所以分支会落在与主线不同的层，不再和主线挤在同一列。
+   * 坐标逐个写回后在本地一并更新（persistTemplate 读的是闭包里的旧 pos，会盖掉新坐标）。
+   */
+  const handleAutoLayout = async (dir: WorkflowRankDir = rankdir): Promise<void> => {
     if (!current) return
-    await window.zhixing.db.autoLayoutWorkflow(current.id, ALIGN_Y_GAP)
+    const next = layoutWorkflow(ordered, { rankdir: dir, nodeWidth: NODE_W, nodeHeight: NODE_H })
+    if (!next.size) return
+    for (const [id, p] of next) await window.zhixing.db.updateWorkflowNodePos(id, p.x, p.y)
     await refresh()
-    pan.reset()
-    onNotice('已按执行顺序纵向对齐')
+    setPos(next)
+    // 只改基准：适配视图由上面那个 effect 统一做（它等得到新基准）
+    setCanvasSize(layoutBounds(next, NODE_W, NODE_H))
+    onNotice(dir === 'TB' ? '已按依赖关系纵向分层排布' : '已按依赖关系横向分层排布')
   }
 
   const handleDeleteTemplate = async (): Promise<void> => {
@@ -545,9 +586,27 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
         className="text-btn"
         onClick={() => void handleAutoLayout()}
         disabled={!current}
-        title="按执行顺序纵向对齐所有步骤"
+        title="按依赖关系分层重新排布（顺序边 + 条件分支边一起参与）"
       >
-        <LayoutGrid size={13} /> 一键对齐
+        <LayoutGrid size={13} /> 自动布局
+      </button>,
+      <button
+        key="dir"
+        className="text-btn"
+        onClick={() => {
+          const nextDir: WorkflowRankDir = rankdir === 'TB' ? 'LR' : 'TB'
+          setRankdir(nextDir)
+          try {
+            localStorage.setItem('wf.rankdir', nextDir)
+          } catch {
+            // 存不下就只在本次会话里生效
+          }
+          void handleAutoLayout(nextDir)
+        }}
+        disabled={!current}
+        title="切换分层方向并立即重排：纵向（步骤自上而下）/ 横向（步骤自左而右）"
+      >
+        <GitBranch size={13} /> {rankdir === 'TB' ? '纵向' : '横向'}
       </button>,
       <button key="reset" className="text-btn" onClick={pan.reset}>
         <Maximize2 size={13} /> 重置视图
@@ -667,12 +726,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
               return (
                 <g key={`seq-${n.id}`} className={'wf-edge-group' + (dim ? ' is-dimmed' : '')}>
                   <path
-                    d={edgePath({
-                      x1: a.x + NODE_W / 2,
-                      y1: a.y + NODE_H,
-                      x2: b.x + NODE_W / 2,
-                      y2: b.y
-                    })}
+                    d={edgePath(edgeAnchors(a, b, NODE_W, NODE_H))}
                     markerEnd={related ? 'url(#wf-arrow-on)' : 'url(#wf-arrow)'}
                     className={'wf-edge' + (related ? ' wf-edge--on' : '')}
                   />
@@ -684,11 +738,8 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
               const a = pos.get(n.id)
               const b = pos.get(n.branch_node_id)
               if (!a || !b) return null
-              const x1 = a.x + NODE_W
-              const y1 = a.y + NODE_H / 2
-              const x2 = b.x
-              const y2 = b.y + NODE_H / 2
-              const d = edgePath({ x1, y1, x2, y2 })
+              const anchors = edgeAnchors(a, b, NODE_W, NODE_H)
+              const d = edgePath(anchors)
               const related = hoverStep != null && (n.id === hoverStep || n.branch_node_id === hoverStep)
               const dim = stepFocusSet != null && !related
               return (
@@ -698,6 +749,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                     markerEnd={related ? 'url(#wf-arrow-on)' : 'url(#wf-arrow)'}
                     className={'wf-edge wf-edge--branch' + (related ? ' wf-edge--on' : '')}
                   />
+                  {/* 条件文案不在这里画：它得在所有节点之上，见下面的「分支标签层」 */}
                   {/* 热区复用图谱那边的透明粗线：1px 的线本身点不到 */}
                   <path
                     d={d}
@@ -754,6 +806,30 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                     {n.title.length > 10 ? n.title.slice(0, 10) + '…' : n.title}
                   </text>
                 </g>
+              )
+            })}
+
+            {/* 分支条件标签单独一层，画在所有节点之上。
+                原先它跟连线一起画，而节点在其后渲染 —— SVG 后画的在上，标签会被节点盒
+                盖掉（实测「资料不全」只露出一个字）。虚线只说明「这是条件分支」，
+                不把条件写出来就不知道什么情况下走它，所以这句必须看得见。 */}
+            {ordered.map((n) => {
+              if (!n.branch_node_id || !n.condition) return null
+              const a = pos.get(n.id)
+              const b = pos.get(n.branch_node_id)
+              if (!a || !b) return null
+              const related = hoverStep != null && (n.id === hoverStep || n.branch_node_id === hoverStep)
+              // 贴分支起点 30px，而不是边中点：中段可能正好穿过另一个节点
+              const mid = edgePointFrom(edgeAnchors(a, b, NODE_W, NODE_H), 30)
+              return (
+                <text
+                  key={`blabel-${n.id}`}
+                  x={mid.x}
+                  y={mid.y}
+                  className={'wf-edge__label' + (related ? ' wf-edge__label--on' : '')}
+                >
+                  {n.condition}
+                </text>
               )
             })}
 
