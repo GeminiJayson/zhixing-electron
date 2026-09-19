@@ -78,14 +78,24 @@ export function Toolbar({
     const head = search ? 1 : 0 // 搜索框固定留在最前
     const tail = 1 + (primary ? 1 : 0) // 「更多」与主操作固定留在最后
     const cand = kids.slice(head, kids.length - tail)
-    let used = 0
-    for (const k of kids.slice(0, head)) used += k.getBoundingClientRect().width
-    for (const k of kids.slice(kids.length - tail)) used += k.getBoundingClientRect().width
+    const headW = kids.slice(0, head).reduce((n, k) => n + k.getBoundingClientRect().width, 0)
+    const tailW = kids.slice(kids.length - tail).reduce((n, k) => n + k.getBoundingClientRect().width, 0)
+    const candW = cand.map((c) => c.getBoundingClientRect().width)
+    const gapOf = (n: number): number => gap * Math.max(0, n - 1)
+    // 先看「一个都不收」能不能放下：能放下就不该为了让位给「更多」而白收一个。
+    // 关键是这里要把「更多」的宽度**减掉** —— 全平铺时它不渲染，算进去会在边界上误判。
+    const moreW = kids[kids.length - tail]?.getBoundingClientRect().width ?? 0
+    const allW = headW + tailW - moreW + candW.reduce((n, w) => n + w, 0)
+    const allN = head + tail - 1 + cand.length // 「更多」不计入
+    if (allW + gapOf(allN) <= avail) {
+      setCap(cand.length)
+      return
+    }
+    // 放不下：这时才预留「更多」的位置，逐个累加
+    let used = headW + tailW
     let shown = 0
-    for (const c of cand) {
-      const w = c.getBoundingClientRect().width
-      // 加这一项之后的总项数决定要留几个间隙
-      if (used + w + gap * (head + shown + tail) > avail) break
+    for (const w of candW) {
+      if (used + w + gapOf(head + shown + tail) > avail) break
       used += w
       shown++
     }
