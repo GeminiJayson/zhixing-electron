@@ -92,8 +92,15 @@ export function TagManager({ onNotice, onChanged, onClose }: Props) {
               className="text-btn text-btn--danger"
               disabled={picked.size === 0}
               onClick={() => {
-                if (!window.confirm(`删除选中的 ${picked.size} 个标签？关联会一并解除。`)) return
                 void (async () => {
+                  const confirmed = await dialog.confirm({
+                    title: '删除标签',
+                    message: `删除选中的 ${picked.size} 个标签？关联会一并解除。`,
+                    icon: <Trash2 size={15} />,
+                    danger: true,
+                    confirmText: '删除',
+                  })
+                  if (!confirmed) return
                   for (const id of picked) await window.zhixing.db.deleteTag(id)
                   setPicked(new Set())
                   await load()

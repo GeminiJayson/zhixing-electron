@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CalendarClock, CheckCircle2, CircleAlert, NotebookPen, Sparkles } from '@renderer/lib/icons'
+import { CalendarClock, CheckCircle2, CircleAlert, NotebookPen, Sparkles, Trash2 } from '@renderer/lib/icons'
+import { useDialog } from '../components/Dialogs'
 import { buildTaskTree, effectiveDoneMap, type TaskNode } from '@shared/task'
 import type { Note, Overview, TodayTasks } from '@shared/types'
 import { t } from '../i18n'
@@ -19,6 +20,7 @@ const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '�
 
 /** 今日页：日期问候 + 概览四卡 + 今日待办（含完整子树）+ 最近笔记。 */
 export function TodayPage({ overview, onChanged, onNotice, onOpenNote, onFocusTasks }: Props) {
+  const dialog = useDialog()
   const [today, setToday] = useState<TodayTasks | null>(null)
   const [recent, setRecent] = useState<Note[]>([])
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
@@ -155,7 +157,14 @@ export function TodayPage({ overview, onChanged, onNotice, onOpenNote, onFocusTa
           }}
           onEdit={(id) => setEditingId(id)}
           onDelete={async (id) => {
-            if (!window.confirm('删除该任务及其子任务？')) return
+            const confirmed = await dialog.confirm({
+              title: '删除任务',
+              message: '删除该任务及其子任务？软删除，可在回收站恢复。',
+              icon: <Trash2 size={15} />,
+              danger: true,
+              confirmText: '删除',
+            })
+            if (!confirmed) return
             await window.zhixing.db.deleteTask(id)
             await refresh()
           }}
@@ -268,7 +277,14 @@ export function TodayPage({ overview, onChanged, onNotice, onOpenNote, onFocusTa
               }}
               onDelete={async (id) => {
                 setEditingId(null)
-                if (!window.confirm('删除该任务及其子任务？')) return
+                const confirmed = await dialog.confirm({
+              title: '删除任务',
+              message: '删除该任务及其子任务？软删除，可在回收站恢复。',
+              icon: <Trash2 size={15} />,
+              danger: true,
+              confirmText: '删除',
+            })
+            if (!confirmed) return
                 await window.zhixing.db.deleteTask(id)
                 await refresh()
               }}

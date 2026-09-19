@@ -221,7 +221,14 @@ export function InboxPage({ onNotice, onChanged }: Props) {
   }
 
   const handleDeleteFlash = async (f: Flash): Promise<void> => {
-    if (!window.confirm('删除这条闪念？')) return
+    const confirmed = await dialog.confirm({
+      title: '删除闪念',
+      message: '删除这条闪念？软删除，可在回收站恢复。',
+      icon: <Trash2 size={15} />,
+      danger: true,
+      confirmText: '删除',
+    })
+    if (!confirmed) return
     await window.zhixing.db.deleteFlash(f.id)
     // I8：删除后给撤销槽（对齐 app_controller._on_flash_deleted → flash_service.restore）；
     // 之前只有 confirm + 软删，没有任何回退路径。
@@ -272,7 +279,14 @@ export function InboxPage({ onNotice, onChanged }: Props) {
           }}
           onEdit={() => onNotice('编辑请在任务页双击任务打开')}
           onDelete={async (id) => {
-            if (!window.confirm('删除该任务及其子任务？')) return
+            const confirmed = await dialog.confirm({
+      title: '删除任务',
+      message: '删除该任务及其子任务？软删除，可在回收站恢复。',
+      icon: <Trash2 size={15} />,
+      danger: true,
+      confirmText: '删除',
+    })
+    if (!confirmed) return
             await window.zhixing.db.deleteTask(id)
             await refresh()
           }}

@@ -20,7 +20,12 @@ export interface ConfirmOptions {
   title: string
   message: string
   confirmText?: string
+  cancelText?: string
   danger?: boolean
+  /** 弹框图标（一般取 @renderer/lib/icons 里的组件）。不传就没有图标 */
+  icon?: ReactNode
+  /** 图标底色语义；默认「危险操作跟着 danger，其余用强调色」 */
+  tone?: 'info' | 'warning' | 'danger'
 }
 
 interface DialogApi {
@@ -91,7 +96,9 @@ export function DialogProvider({ children }: { children: ReactNode }) {
 
   const isPrompt = current.kind === 'prompt'
   const opts = current.options
-  const dangerBtn = !isPrompt && (opts as ConfirmOptions).danger === true
+  const confirmOpts = isPrompt ? null : (opts as ConfirmOptions)
+  const dangerBtn = confirmOpts?.danger === true
+  const iconTone = confirmOpts?.tone ?? (confirmOpts?.danger ? 'danger' : 'info')
 
   return (
     <DialogContext.Provider value={api}>
@@ -104,6 +111,15 @@ export function DialogProvider({ children }: { children: ReactNode }) {
           onMouseDown={(e) => e.stopPropagation()}
         >
           <header className="modal__head">
+            {/* 图标是可选的：删除类操作用垃圾桶、回滚用撤销箭头 —— 一眼看出这条弹框在干什么 */}
+            {confirmOpts?.icon ? (
+              <span
+                className={'dialog__icon' + (iconTone === 'info' ? '' : ` dialog__icon--${iconTone}`)}
+                aria-hidden
+              >
+                {confirmOpts.icon}
+              </span>
+            ) : null}
             <h2>{opts.title}</h2>
           </header>
           {isPrompt ? (
@@ -129,7 +145,7 @@ export function DialogProvider({ children }: { children: ReactNode }) {
           <footer className="modal__foot">
             <span className="modal__spacer" />
             <button className="text-btn" onClick={() => settle(isPrompt ? null : false)}>
-              取消
+              {confirmOpts?.cancelText ?? '取消'}
             </button>
             <button
               className={dangerBtn ? 'text-btn text-btn--danger' : 'text-btn text-btn--accent'}

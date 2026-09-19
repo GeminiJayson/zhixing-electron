@@ -633,51 +633,7 @@
   gap: 4px;
 }
 
-/* 编辑弹窗 */
-.modal-mask {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-modal);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--overlay);
-  animation: toast-in var(--dur-fast) var(--ease-enter);
-}
-.modal {
-  width: min(560px, calc(100vw - 64px));
-  max-height: calc(100vh - 96px);
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--border);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-xl);
-  overflow: hidden;
-}
-.modal__head {
-  padding: var(--space-4) var(--space-4) var(--space-2);
-}
-.modal__head h2 {
-  margin: 0;
-  font-size: var(--text-lead);
-}
-.modal__body {
-  padding: 0 var(--space-4);
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-.modal__foot {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-4) var(--space-4);
-}
-.modal__spacer {
-  flex: 1;
-}
+/* 编辑弹窗的骨架样式已移到 global.css（浮窗也要用这套弹框） */
 .form-row {
   display: flex;
   flex-direction: column;

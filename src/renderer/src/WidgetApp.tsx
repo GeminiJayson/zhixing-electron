@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AppWindow, Plus, Undo2 } from '@renderer/lib/icons'
+import { AppWindow, Plus, Trash2, Undo2 } from '@renderer/lib/icons'
 import { buildTaskTree, effectiveDoneMap, type TaskNode } from '@shared/task'
 import { bindHostEvents, subscribeDomain } from '@shared/events'
 import { parseSettings } from '@shared/settings'
@@ -9,6 +9,7 @@ import { TaskRow } from './components/TaskRow'
 import { WidgetBall } from './components/WidgetBall'
 import { PriorityMenu } from './components/PriorityMenu'
 import { PopMenu, type PopMenuItem } from './components/PopMenu'
+import { useDialog } from './components/Dialogs'
 
 /**
  * 边缘缩放命中带（S17）。取 4px 与 .widget 的 padding 等宽：
@@ -26,6 +27,7 @@ const RESIZE_MARGIN = 4
  * 就地编辑、删除可撤销、hover 展示关联段落 snippet。
  */
 export function WidgetApp() {
+  const dialog = useDialog()
   const [tasks, setTasks] = useState<Awaited<ReturnType<typeof window.zhixing.db.todayTasks>> | null>(null)
   const [draft, setDraft] = useState('')
   /**
@@ -232,7 +234,14 @@ export function WidgetApp() {
 
   /** 删除走浮窗内撤销（对齐 desktop_widget：删除可撤销） */
   const removeTask = async (id: number, title: string): Promise<void> => {
-    if (!window.confirm('删除该任务及其子任务？')) return
+    const confirmed = await dialog.confirm({
+      title: '删除任务',
+      message: '删除该任务及其子任务？删除后 8 秒内可撤销。',
+      icon: <Trash2 size={15} />,
+      danger: true,
+      confirmText: '删除',
+    })
+    if (!confirmed) return
     await window.zhixing.db.deleteTask(id)
     setUndo({ id, title })
     window.setTimeout(() => setUndo((u) => (u?.id === id ? null : u)), 8000)

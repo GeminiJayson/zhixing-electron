@@ -67,6 +67,85 @@ textarea {
   border-radius: var(--radius-sm);
 }
 
+/* ---- 应用内对话框（components/Dialogs.tsx）----
+   放在 global 而不是 tasks.css：桌面浮窗只加载 tokens / global / widget 三份样式，
+   它同样要用这套弹框；留在 tasks.css 里的话，浮窗弹出来会是没有样式的裸框。 */
+.modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--overlay);
+  animation: toast-in var(--dur-fast) var(--ease-enter);
+}
+.modal {
+  width: min(560px, calc(100vw - 64px));
+  max-height: calc(100vh - 96px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl);
+  overflow: hidden;
+}
+.modal__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-4) var(--space-2);
+}
+.modal__head h2 {
+  margin: 0;
+  font-size: var(--text-lead);
+}
+.modal__body {
+  padding: 0 var(--space-4);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.modal__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+.modal__spacer {
+  flex: 1;
+}
+.modal--dialog {
+  width: min(420px, calc(100vw - 64px));
+}
+.dialog__message {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+/* 弹框图标：圆形底色 + 语义色。默认跟随强调色，danger / warning 各有一套 */
+.dialog__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.dialog__icon--warning {
+  background: color-mix(in srgb, var(--accent-warm) 18%, transparent);
+  color: var(--accent-warm);
+}
+.dialog__icon--danger {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+
 /* 输入框 / 下拉用「边框变色」表达焦点，不再叠加全局焦点环 —— 否则两层，且颜色不一致 */
 .field:focus-visible {
   outline: none;

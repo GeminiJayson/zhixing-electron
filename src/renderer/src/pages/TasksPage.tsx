@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Plus } from '@renderer/lib/icons'
+import { Plus, Trash2 } from '@renderer/lib/icons'
 import { STATUS_LABELS, buildTaskTree, effectiveDoneMap, type TaskNode } from '@shared/task'
 import { priorityLabel } from '@shared/priority'
 import type {
@@ -373,7 +373,14 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
       const n = await window.zhixing.db.batchSetDue(ids, null)
       onNotice(`已清除 ${n} 项的截止日期`)
     } else {
-      if (!window.confirm(`删除选中的 ${ids.length} 项及其子任务？`)) return
+      const confirmed = await dialog.confirm({
+        title: '批量删除',
+        message: `删除选中的 ${ids.length} 项及其子任务？\n软删除，可在回收站恢复。`,
+        icon: <Trash2 size={15} />,
+        danger: true,
+        confirmText: '删除',
+      })
+      if (!confirmed) return
       for (const id of ids) await window.zhixing.db.deleteTask(id)
       // 删除也可撤销（对齐 app_controller 的 delete→undo 链路；此前只有回收站一条退路）
       window.dispatchEvent(
@@ -453,7 +460,13 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
   const handleDelete = async (id: number): Promise<void> => {
     const node = tasks.find((t) => t.id === id)
     if (!node) return
-    const ok = window.confirm(`删除任务「${node.title}」及其子任务？\n（软删除，可在回收站恢复）`)
+    const ok = await dialog.confirm({
+      title: '删除任务',
+      message: `删除任务「${node.title}」及其子任务？\n软删除，可在回收站恢复。`,
+      icon: <Trash2 size={15} />,
+      danger: true,
+      confirmText: '删除',
+    })
     if (!ok) return
     const n = await window.zhixing.db.deleteTask(id)
     window.dispatchEvent(

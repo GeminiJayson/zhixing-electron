@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import { WidgetApp } from './WidgetApp'
+import { DialogProvider } from './components/Dialogs'
 import './styles/tokens.css'
 import './styles/global.css'
 import './styles/widget.css'
@@ -11,5 +12,14 @@ const isWidget = new URLSearchParams(window.location.search).get('widget') === '
 document.documentElement.dataset.surface = isWidget ? 'widget' : 'main'
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
-  <React.StrictMode>{isWidget ? <WidgetApp /> : <App />}</React.StrictMode>
+  // 浮窗与主窗口共用同一套应用内对话框（主窗口的 Provider 在 App 里，浮窗没有它）
+  <React.StrictMode>
+    {isWidget ? (
+      <DialogProvider>
+        <WidgetApp />
+      </DialogProvider>
+    ) : (
+      <App />
+    )}
+  </React.StrictMode>
 )

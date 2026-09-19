@@ -10,6 +10,8 @@ import {
   Pencil,
   Play,
   Plus,
+  Square,
+  TerminalSquare,
   Trash2,
   X,
 } from '@renderer/lib/icons'
@@ -418,7 +420,14 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
       onNotice('至少要保留一个步骤')
       return
     }
-    if (!window.confirm('删除选中的步骤？')) return
+    const confirmed = await dialog.confirm({
+      title: '删除步骤',
+      message: '删除选中的步骤？删除后按顺序重排其余步骤。',
+      icon: <Trash2 size={15} />,
+      danger: true,
+      confirmText: '删除',
+    })
+    if (!confirmed) return
     setSelected(null)
     await persistTemplate(rest)
   }
@@ -453,7 +462,14 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
 
   const handleDeleteTemplate = async (): Promise<void> => {
     if (!current) return
-    if (!window.confirm(`删除工作流「${current.name}」及其节点？`)) return
+    const confirmed = await dialog.confirm({
+      title: '删除工作流',
+      message: `删除工作流「${current.name}」及其全部节点？\n还有运行中的实例时会被拒绝。`,
+      icon: <Trash2 size={15} />,
+      danger: true,
+      confirmText: '删除',
+    })
+    if (!confirmed) return
     const removed = await window.zhixing.db.deleteWorkflowTemplate(current.id)
     if (!removed) {
       onNotice('该工作流还有运行中的实例，请先中断实例再删除')
@@ -554,7 +570,14 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
         n.action_runtime
       )
       const wait = isAutoActionKind(kind) ? '\n\n这一步会等进程结束并核对退出码。' : ''
-      if (!window.confirm(`即将在本机执行：\n\n${desc}${wait}\n\n确定执行？`)) return
+      const confirmed = await dialog.confirm({
+        title: '在本机执行',
+        message: `即将在本机执行：\n\n${desc}${wait}`,
+        icon: <TerminalSquare size={15} />,
+        danger: true,
+        confirmText: '执行',
+      })
+      if (!confirmed) return
     }
     const res = await window.zhixing.db.runWorkflowAction(
       kind,
@@ -601,7 +624,14 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
 
   const handleAbort = async (): Promise<void> => {
     if (!instance) return
-    if (!window.confirm('中止这个实例？已下发的步骤任务会保留。')) return
+    const confirmed = await dialog.confirm({
+      title: '中止实例',
+      message: '中止这个实例？已下发的步骤任务会保留。',
+      icon: <Square size={15} />,
+      tone: 'warning',
+      confirmText: '中止',
+    })
+    if (!confirmed) return
     await window.zhixing.db.abortWorkflowInstance(instance.id)
     await refresh()
   }

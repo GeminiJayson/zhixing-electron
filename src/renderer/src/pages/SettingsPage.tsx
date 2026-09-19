@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Database, Download, FileText, Info, Palette, SlidersHorizontal, Sparkles, Tag, Timer, Trash2 } from '@renderer/lib/icons'
+import { CircleAlert, Database, Download, FileText, Info, Palette, SlidersHorizontal, Sparkles, Tag, Timer, Trash2 } from '@renderer/lib/icons'
 import { parseSettings, type AppSettings } from '@shared/settings'
 import { AI_PROTOCOLS, DEFAULT_AI_PROMPT, normalizeAiProtocol } from '@shared/ai-note'
 import { THEME_PACK_NAMES } from '@shared/theme-packs'
@@ -218,12 +218,14 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
 
   /** 从自动备份恢复：主进程会先给当前库留一份 pre-restore 备份。 */
   const handleRestore = async (file: string): Promise<void> => {
-    if (
-      !window.confirm(
-        '将用该备份覆盖当前数据库（会先自动备份当前库）。\n恢复后需要重启应用。\n\n确定继续？'
-      )
-    )
-      return
+    const confirmed = await dialog.confirm({
+      title: '从备份恢复',
+      message: '将用该备份覆盖当前数据库（会先自动备份当前库）。\n恢复后需要重启应用。',
+      icon: <CircleAlert size={15} />,
+      tone: 'warning',
+      confirmText: '恢复',
+    })
+    if (!confirmed) return
     const res = await window.zhixing.db.restoreBackup(file)
     onNotice(res.message)
   }
@@ -631,13 +633,17 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
               <div className="set-actions">
                 <button
                   className="text-btn"
-                  onClick={() => {
-                    if (
-                      !window.confirm(
-                        '导入会用文件内容**覆盖**当前全部数据（任务/笔记/闪念/标签/设置）。\n\n导入前会自动把当前数据库备份到 backups/（与自动备份同一目录，保留最近 10 份）。\n\n确定继续？'
-                      )
-                    )
-                      return
+                  onClick={async () => {
+                    const confirmed = await dialog.confirm({
+                      title: '导入数据',
+                      message:
+                        '导入会用文件内容覆盖当前全部数据（任务 / 笔记 / 闪念 / 标签 / 设置）。\n' +
+                        '导入前会自动把当前数据库备份到 backups/（保留最近 10 份）。',
+                      icon: <CircleAlert size={15} />,
+                      tone: 'warning',
+                      confirmText: '导入',
+                    })
+                    if (!confirmed) return
                     void window.zhixing.db.importData().then((r) => {
                       onNotice(r.backup ? `${r.message}；备份：${r.backup}` : r.message)
                     })

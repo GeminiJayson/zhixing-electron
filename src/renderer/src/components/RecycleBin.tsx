@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { RotateCcw, Trash2 } from '@renderer/lib/icons'
 import { parseSettings } from '@shared/settings'
+import { useDialog } from './Dialogs'
 
 interface Props {
   onNotice: (message: string) => void
@@ -18,6 +19,7 @@ const TABS: { key: Kind; label: string }[] = [
 
 /** 回收站：三 Tab 展示软删除记录，可单条恢复/彻底删除，也可清空或按保留天数清理。 */
 export function RecycleBin({ onNotice, onChanged, onClose }: Props) {
+  const dialog = useDialog()
   const [tab, setTab] = useState<Kind>('task')
   const [items, setItems] = useState<{ id: number; label: string; deleted_at: string }[]>([])
   const [days, setDays] = useState(30)
@@ -93,8 +95,15 @@ export function RecycleBin({ onNotice, onChanged, onClose }: Props) {
                     title="彻底删除"
                     aria-label="彻底删除"
                     onClick={() => {
-                      if (!window.confirm('彻底删除后无法恢复，确定？')) return
                       void (async () => {
+                        const confirmed = await dialog.confirm({
+                          title: '彻底删除',
+                          message: '彻底删除后无法恢复，确定？',
+                          icon: <Trash2 size={15} />,
+                          danger: true,
+                          confirmText: '彻底删除',
+                        })
+                        if (!confirmed) return
                         await window.zhixing.db.purgeTrash(tab, it.id)
                         onNotice('已彻底删除')
                         await afterChange()
@@ -138,8 +147,15 @@ export function RecycleBin({ onNotice, onChanged, onClose }: Props) {
               disabled={items.length === 0}
               onClick={() => {
                 // 对齐 recycle_bin 的「清空」：任务/笔记/闪念三类一起清（此前只清当前 Tab）
-                if (!window.confirm('清空回收站全部三类（任务 / 笔记 / 闪念）？无法恢复。')) return
                 void (async () => {
+                  const confirmed = await dialog.confirm({
+                    title: '清空回收站',
+                    message: '清空全部三类（任务 / 笔记 / 闪念）？无法恢复。',
+                    icon: <Trash2 size={15} />,
+                    danger: true,
+                    confirmText: '清空',
+                  })
+                  if (!confirmed) return
                   let n = 0
                   for (const k of ['task', 'note', 'flash'] as const) {
                     n += await window.zhixing.db.emptyTrash(k)

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
+import { Undo2 } from '@renderer/lib/icons'
 import type { NoteRevision } from '@shared/types'
+import { useDialog } from './Dialogs'
 
 interface Props {
   noteId: number
@@ -123,6 +125,7 @@ export function unifiedDiff(oldText: string, newText: string, context = 3): Diff
 
 /** 版本历史：列出最近 20 版快照，选中版本与当前内容做 unified diff，回滚二次确认。 */
 export function NoteHistory({ noteId, onRestored, onClose }: Props) {
+  const dialog = useDialog()
   const [revs, setRevs] = useState<NoteRevision[]>([])
   const [preview, setPreview] = useState<NoteRevision | null>(null)
   /** 当前笔记正文：diff 的「新」侧（对齐 Python _current_note_content） */
@@ -221,10 +224,17 @@ export function NoteHistory({ noteId, onRestored, onClose }: Props) {
           <button
             className="text-btn text-btn--accent"
             disabled={!preview || busy}
-            onClick={() => {
+            onClick={async () => {
               if (!preview || busy) return
               // 回滚二次确认（W21）：误点即毁掉当前内容，必须先确认
-              if (!window.confirm('确定回滚到选中的历史版本吗？当前内容会先另存一份快照。')) return
+              const confirmed = await dialog.confirm({
+                title: '回滚到该版本',
+                message: '当前内容会先另存一份快照，然后被这个历史版本覆盖。确定回滚？',
+                icon: <Undo2 size={15} />,
+                tone: 'warning',
+                confirmText: '回滚',
+              })
+              if (!confirmed) return
               setBusy(true)
               void (async () => {
                 try {

@@ -297,17 +297,19 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
       onNotice('笔记库还是空的')
       return
     }
-    if (
-      !window.confirm(
+    const confirmed = await dialog.confirm({
+      title: '整理全库',
+      message:
         `将逐篇把 ${all.length} 篇笔记交给大模型整理，并直接改写原笔记。\n\n` +
-          '· Markdown/富文本：重排正文；Word/Excel：只归类；链接笔记：分配每条链接的去向\n' +
-          '· 每篇都会先过审计，不通过就不写库\n' +
-          '· 正文变更前会留一份版本快照，可在笔记历史里回滚\n' +
-          '· 篇数多时可能要跑很久，随时可以停止\n\n确定开始？'
-      )
-    ) {
-      return
-    }
+        '· Markdown/富文本：重排正文；Word/Excel：只归类；链接笔记：分配每条链接的去向\n' +
+        '· 每篇都会先过审计，不通过就不写库\n' +
+        '· 正文变更前会留一份版本快照，可在笔记历史里回滚\n' +
+        '· 篇数多时要跑一阵，随时可以停止',
+      icon: <Sparkles size={15} />,
+      tone: 'warning',
+      confirmText: '开始整理',
+    })
+    if (!confirmed) return
     const res = await window.zhixing.ai.organizeLibrary()
     if (!res.ok) onNotice(res.message)
     else if (res.failedTitles.length) {
@@ -634,7 +636,14 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
   const handleDelete = async (id: number): Promise<void> => {
     const note = notes.find((n) => n.id === id)
     if (!note) return
-    if (!window.confirm(`删除笔记「${note.title}」？\n（软删除，可在回收站恢复）`)) return
+    const confirmed = await dialog.confirm({
+      title: '删除笔记',
+      message: `删除笔记「${note.title}」？\n软删除，可在回收站恢复。`,
+      icon: <Trash2 size={15} />,
+      danger: true,
+      confirmText: '删除',
+    })
+    if (!confirmed) return
     await window.zhixing.db.deleteNote(id)
     if (selectedId === id) setSelectedId(null)
     await load()
