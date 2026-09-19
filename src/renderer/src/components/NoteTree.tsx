@@ -259,7 +259,7 @@ export function NoteTree({
       </div>
       {/* 树级动作：整库整理属于「整棵树」的操作，放在搜索框下面比塞进编辑器工具栏更顺手 */}
       {onOrganizeLibrary && (
-        <div className="ntree__actions">
+        <div className="ntree__topbar">
           <button
             className={libJob ? 'text-btn text-btn--danger' : 'text-btn'}
             title={
@@ -272,7 +272,7 @@ export function NoteTree({
             <Sparkles size={13} /> {libJob ? `停止整理（${libJob.done}/${libJob.total}）` : 'AI 整理全库'}
           </button>
           {libJob && (
-            <span className="u-aux ntree__actions-hint" title={libJob.currentTitle}>
+            <span className="u-aux ntree__topbar-hint" title={libJob.currentTitle}>
               {libJob.currentTitle || '准备中…'}
             </span>
           )}

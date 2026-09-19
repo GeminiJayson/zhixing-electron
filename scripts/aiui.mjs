@@ -162,7 +162,7 @@ await conn.evaluate("document.querySelector('[data-nav-item=notes]').click()")
 await sleep(1500)
 
 const treeActions = await conn.evaluate(
-  "[...document.querySelectorAll('.ntree__actions button')].map((b) => b.textContent.trim()).join(' | ')"
+  "[...document.querySelectorAll('.ntree__topbar button')].map((b) => b.textContent.trim()).join(' | ')"
 )
 check('「AI 整理全库」在笔记树里（搜索框下方）', String(treeActions).includes('AI 整理全库'), treeActions)
 const allLibButtons = await conn.evaluate(
