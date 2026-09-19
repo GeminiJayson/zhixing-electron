@@ -1,4 +1,28 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+
+/**
+ * 命令面板的「最近使用」（MRU）：记住最近跑过的命令 id，下次打开时它们排在前面。
+ * 放 localStorage 而不是库表：这是纯界面偏好，不该跟着数据一起被导出/同步。
+ */
+const CMD_MRU_KEY = 'zhixing.cmd.mru'
+
+function readCommandMru(): string[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(CMD_MRU_KEY) ?? '[]') as unknown
+    return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string').slice(0, 6) : []
+  } catch {
+    return []
+  }
+}
+
+function rememberCommand(id: string): void {
+  const next = [id, ...readCommandMru().filter((x) => x !== id)].slice(0, 6)
+  try {
+    localStorage.setItem(CMD_MRU_KEY, JSON.stringify(next))
+  } catch {
+    // 隐私模式 / 存储被禁用：MRU 失效不影响命令本身
+  }
+}
 import { Hash, Inbox, NotebookPen, Plus, Search, SquareCheck, TerminalSquare } from '@renderer/lib/icons'
 import { NAV_ITEMS, type PageKey } from '../nav'
 import { t } from '../i18n'
@@ -100,6 +124,7 @@ export function CommandPalette({ open, onClose, onNavigate, onOpenNote, onQuickA
 
   /** 命令 id → 渲染层动作（对齐 app_controller 的 7 条注册命令）。 */
   const runCommand = async (id: string): Promise<void> => {
+    rememberCommand(id)
     try {
       if (id === 'theme-dark' || id === 'theme-light') {
         // 走 settings 域写入：App 订阅 settings 域后会重铺外观
@@ -130,11 +155,22 @@ export function CommandPalette({ open, onClose, onNavigate, onOpenNote, onQuickA
     const out: Item[] = []
 
     // 1) 命令组（主进程注入，空查询即全部；对齐 SearchResult.groups 的「命令」在首位）
-    for (const c of hits?.command ?? []) {
+    //    最近用过的排在前面，并在副标题里标出来
+    const mru = readCommandMru()
+    const commands = [...(hits?.command ?? [])].sort((a, b) => {
+      const ia = mru.indexOf(a.id)
+      const ib = mru.indexOf(b.id)
+      if (ia === -1 && ib === -1) return 0
+      if (ia === -1) return 1
+      if (ib === -1) return -1
+      return ia - ib
+    })
+    for (const c of commands) {
+      const recent = mru.includes(c.id)
       out.push({
         key: 'cmd-' + c.id,
         label: c.title,
-        hint: c.subtitle || '命令',
+        hint: c.subtitle || (recent ? '命令 · 最近用过' : '命令'),
         icon: 'command',
         run: () => runCommand(c.id),
       })

@@ -86,6 +86,8 @@ const api = {
     backupDatabase: (dir: string): Promise<{ path: string; bytes: number } | null> =>
       ipcRenderer.invoke('db:backupDatabase', dir),
     listFolders: (): Promise<unknown[]> => ipcRenderer.invoke('db:listFolders'),
+  /** 用系统默认应用打开本地文件；Word / Excel 笔记的正文就是这个文件 */
+  openPath: (target: string): Promise<string> => ipcRenderer.invoke('shell:openPath', target),
     tasksByList: (listId: number | null): Promise<unknown[]> =>
       ipcRenderer.invoke('db:tasksByList', listId),
     createListFolder: (

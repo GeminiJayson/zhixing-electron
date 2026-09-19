@@ -2,7 +2,7 @@ import type { EditorView } from '@codemirror/view'
 import { sanitizeHtml } from '@shared/sanitize-html'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
-import { ExternalLink, Morph, IconData, Link2, Plus, Sparkles, Trash2, UserPlus } from '@renderer/lib/icons'
+import { ExternalLink, FileText, Morph, IconData, Link2, Plus, Sparkles, Trash2, UserPlus } from '@renderer/lib/icons'
 import { subscribeDomain } from '@shared/events'
 import { useDialog } from '../components/Dialogs'
 import type { Backlink, Note, NoteFolder, NoteLink } from '@shared/types'
@@ -1060,6 +1060,25 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
                       onCreateNote={(t) => void handleCreateFromLink(t)}
                     />
                   )}
+                </div>
+              ) : current.format === 'word' || current.format === 'excel' ? (
+                // Word / Excel 的正文在本地文件里：应用内不做预览，给一条明确的出口
+                <div className="editor__office">
+                  <FileText size={18} aria-hidden />
+                  <p className="u-aux">
+                    {current.format === 'word' ? 'Word' : 'Excel'} 笔记的正文在本地文件里，应用内只登记条目。
+                  </p>
+                  <button
+                    className="text-btn text-btn--accent"
+                    onClick={() => {
+                      void window.zhixing.db.openPath(content).then((err) => {
+                        if (err) onNotice('打开失败：' + err)
+                      })
+                    }}
+                  >
+                    用系统应用打开
+                  </button>
+                  <code className="u-aux editor__office-path">{content || '（没有记录文件路径）'}</code>
                 </div>
               ) : current.format === 'richtext' ? (
                 <RichTextEditor

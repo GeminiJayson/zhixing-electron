@@ -11,6 +11,7 @@ import {
   nativeTheme,
   screen,
   systemPreferences,
+  shell,
 } from 'electron'
 import { join } from 'node:path'
 import { release } from 'node:os'
@@ -1119,6 +1120,15 @@ function registerWindowFit(): void {
   })
 }
 
+/** 用系统默认应用打开本地文件（Word / Excel 笔记的正文就是这个文件）。 */
+function registerShellHandlers(): void {
+  ipcMain.handle('shell:openPath', async (_e, target: string) => {
+    const p = String(target ?? '').trim()
+    if (!p) return '路径为空'
+    return await shell.openPath(p)
+  })
+}
+
 function registerCaptureWindow(): void {
   // 应用内的入口（快捷键 n / 右下角浮条）：同样开独立窗口，不占主窗口
   ipcMain.handle('capture:open', (_e, mode: 'quick' | 'capture') => {
@@ -1342,6 +1352,7 @@ app.whenReady().then(() => {
   registerConditionAsk()
   registerTaskSyncHandlers()
   registerCaptureWindow()
+  registerShellHandlers()
   registerWindowFit()
   scheduleTaskSync()
   // 欢迎页要先于主窗出现（对齐 __main__.py：splash.show() 在 AppContext 构造之前）

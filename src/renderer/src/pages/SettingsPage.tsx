@@ -207,6 +207,19 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
   /** 外部任务同步：状态 + 手动触发。改完地址/开关/间隔后让主进程重排定时器。 */
   const [syncStatus, setSyncStatus] = useState<{ lastAt: string; lastResult: string } | null>(null)
   const [syncing, setSyncing] = useState(false)
+  /** 清单（list 类型的文件夹）—— 外部同步的落点候选 */
+  const [lists, setLists] = useState<{ id: number; name: string }[]>([])
+
+  useEffect(() => {
+    void window.zhixing.db
+      .listFolders()
+      .then((rows) =>
+        setLists(
+          (rows as { id: number; name: string; kind?: string }[]).filter((f) => f.kind === 'list')
+        )
+      )
+      .catch(() => setLists([]))
+  }, [])
   /** 字段映射草稿：改哪个就即时落库（空值会被剔除，全空则存空串 = 自动识别） */
   const [mapDraft, setMapDraft] = useState<Record<string, string>>({})
 
@@ -544,6 +557,22 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                 onChange={(e) => void updateApi('task_api_interval_min', e.target.value)}
               />
               <span className="u-aux">分钟（应用启动 30 秒后先跑一次）</span>
+            </label>
+            <label className="set-row">
+              <span>落到清单</span>
+              <select
+                className="field field--compact"
+                value={settings.task_api_list_id ?? ''}
+                onChange={(e) => void updateApi('task_api_list_id', e.target.value)}
+              >
+                <option value="">收件箱（默认）</option>
+                {lists.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+              <span className="u-aux">外部拉回来的任务进哪个清单</span>
             </label>
             <div className="set-row set-row--end">
               <span />
