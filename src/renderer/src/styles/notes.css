@@ -616,3 +616,107 @@
      免得别处的 border-* 规则漏过来） */
   border: none;
 }
+
+/* ---- 链接笔记：表格形态（标题 / 链接 / 操作）----
+   前两列按 --link-a / --link-b 的比例占满剩余宽度（拖分界手柄改比例），
+   操作列固定宽（只放「打开 / 删除」两个图标按钮）。列宽比例在组件里算好，
+   这里只负责把它套到 grid 上。 */
+.link-table {
+  display: flex;
+  flex-direction: column;
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--bg-layer-solid);
+}
+.link-table__head,
+.link-table__row {
+  display: grid;
+  /* 6px 是分界列、76px 是操作列 —— 三个数字都要与组件里的常量对齐 */
+  grid-template-columns: var(--link-a, 1fr) 6px var(--link-b, 1fr) 76px;
+  align-items: center;
+  padding: 0 var(--space-2);
+}
+.link-table__head {
+  min-height: var(--control-h-sm);
+  background: var(--bg-layer);
+  border-bottom: var(--border-w) solid var(--border);
+  color: var(--fg-secondary);
+  font-size: var(--text-aux);
+}
+.link-table__row {
+  border-bottom: var(--border-w) solid var(--border);
+}
+.link-table__row:last-child {
+  border-bottom: none;
+}
+.link-table__row:hover {
+  background: var(--bg-hover);
+}
+/* 单元格做成「无边框输入」：看着是表格，点进去就能改 */
+.link-table__cell {
+  width: 100%;
+  min-width: 0;
+  height: var(--control-h-sm);
+  padding: 0 var(--space-2);
+  border: 0;
+  background: transparent;
+  color: var(--fg-primary);
+  font: inherit;
+  border-radius: var(--radius-ctl);
+}
+.link-table__cell:focus-visible {
+  background: var(--bg-layer-solid);
+  box-shadow: inset 0 0 0 var(--border-w) var(--accent);
+  outline: none;
+}
+.link-table__cell--url {
+  color: var(--fg-secondary);
+}
+/* 分界手柄：贴在两列之间，hover 时亮起 */
+.link-table__grip,
+.link-table__gap {
+  position: relative;
+  align-self: stretch;
+}
+.link-table__grip {
+  cursor: col-resize;
+}
+/* 分界列画一条浅竖线贯穿表头与数据行 —— 「表格」的观感主要靠它 ;
+   表头那条是手柄，hover 时变强调色提示可拖。 */
+.link-table__grip::after,
+.link-table__gap::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 2px;
+  bottom: 2px;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--border);
+}
+.link-table__grip:hover::after,
+.link-table__grip:active::after {
+  background: var(--accent);
+}
+/* 表头文字与数据行文字对齐：两者都在自己那格里留同样的内边距
+   （数据行是 input 的 padding，表头是这里的 padding） */
+.link-table__head > span:not(.link-table__grip):not(.link-table__gap) {
+  padding: 0 var(--space-2);
+}
+.link-table__ops-head {
+  text-align: center;
+}
+.link-table__ops {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.link-table__ops .icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.link-table__empty {
+  padding: var(--space-3) var(--space-2);
+}

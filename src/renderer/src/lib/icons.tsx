@@ -24,6 +24,7 @@ import {
   Database as NDatabase,
   Diamond as NDiamond,
   Download as NDownload,
+  ExternalLink as NExternalLink,
   Eye as NEye,
   FilePlus2 as NFilePlus2,
   FileText as NFileText,
@@ -136,6 +137,7 @@ export const IconData = {
   Database: unpack(NDatabase),
   Diamond: unpack(NDiamond),
   Download: unpack(NDownload),
+  ExternalLink: unpack(NExternalLink),
   Eye: unpack(NEye),
   FilePlus2: unpack(NFilePlus2),
   FileText: unpack(NFileText),
@@ -206,6 +208,7 @@ export const Copy = make(NCopy)
 export const Database = make(NDatabase)
 export const Diamond = make(NDiamond)
 export const Download = make(NDownload)
+export const ExternalLink = make(NExternalLink)
 export const Eye = make(NEye)
 export const FilePlus2 = make(NFilePlus2)
 export const FileText = make(NFileText)

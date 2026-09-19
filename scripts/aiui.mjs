@@ -233,7 +233,52 @@ check(
   linkInfo.titleInputs >= 1 && linkInfo.targetInputs >= 1 && linkInfo.hasAdd,
   JSON.stringify(linkInfo)
 )
+
+// 表格形态：三列表头、操作列固定宽、列宽可拖
+const table = await conn.evaluate(`(() => {
+  const head = document.querySelector('.link-table__head')
+  const row = document.querySelector('.link-table__row')
+  if (!head || !row) return null
+  const headers = [...head.children]
+    .filter((c) => !c.classList.contains('link-table__grip'))
+    .map((c) => c.textContent.trim())
+  return {
+    headers,
+    titleW: Math.round(row.children[0].getBoundingClientRect().width),
+    opsW: Math.round(row.children[3].getBoundingClientRect().width),
+    opsButtons: row.querySelectorAll('.link-table__ops .icon-btn').length,
+  }
+})()`)
+check(
+  '链接表格：三列表头（标题 / 链接 / 操作）',
+  JSON.stringify(table?.headers) === JSON.stringify(['标题', '链接', '操作']),
+  JSON.stringify(table?.headers)
+)
+check('操作列固定宽 76px，放两个图标按钮', Math.abs((table?.opsW ?? 0) - 76) <= 2 && table?.opsButtons === 2, JSON.stringify(table))
 await shoot('ai-link-note.png')
+
+// 拖分界改列宽（真实鼠标事件）
+const grip = await conn.evaluate(`(() => {
+  const g = document.querySelector('.link-table__grip')
+  if (!g) return null
+  const r = g.getBoundingClientRect()
+  return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
+})()`)
+if (grip) {
+  await conn.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: grip.x, y: grip.y, button: 'left', clickCount: 1, buttons: 1 })
+  await conn.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: grip.x + 150, y: grip.y, button: 'left', buttons: 1 })
+  await conn.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: grip.x + 150, y: grip.y, button: 'left', clickCount: 1, buttons: 0 })
+}
+await sleep(400)
+const resized = await conn.evaluate(
+  "Math.round(document.querySelector('.link-table__row').children[0].getBoundingClientRect().width)"
+)
+check(
+  '拖分界能改变列宽',
+  typeof resized === 'number' && resized > (table?.titleW ?? 0) + 80,
+  `${table?.titleW}px → ${resized}px`
+)
+await shoot('ai-link-table-resized.png')
 await conn.evaluate("window.zhixing.db.deleteNote(" + linkNote.id + ").catch(() => 0)")
 
 // 改动 3：折叠从左边开始收 —— 「⋯」出现在已显示项的左侧，右侧那组原位不动

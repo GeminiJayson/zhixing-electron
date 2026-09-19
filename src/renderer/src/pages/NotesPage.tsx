@@ -1,7 +1,8 @@
 import type { EditorView } from '@codemirror/view'
 import { sanitizeHtml } from '@shared/sanitize-html'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Morph, IconData, Link2, Plus, Sparkles, Trash2, UserPlus } from '@renderer/lib/icons'
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
+import { ExternalLink, Morph, IconData, Link2, Plus, Sparkles, Trash2, UserPlus } from '@renderer/lib/icons'
 import { subscribeDomain } from '@shared/events'
 import { useDialog } from '../components/Dialogs'
 import type { Backlink, Note, NoteFolder, NoteLink } from '@shared/types'
@@ -23,6 +24,13 @@ interface Props {
 
 /** 自动保存防抖：与 markdown_editor 的自动保存节奏对齐，输入停顿后落库。 */
 const AUTOSAVE_MS = 800
+
+/** 链接表格的列宽（与 notes.css 里的 grid 定义保持一致）。 */
+const LINK_GAP_W = 6
+const LINK_OPS_W = 76
+/** 拖动分界时两端各留一成半，避免把某一列拖没 */
+const LINK_SPLIT_MIN = 0.15
+const LINK_SPLIT_MAX = 0.85
 
 /** 五种格式的展示名（对齐 NOTE_FORMAT_LABELS）。 */
 const FORMAT_LABELS: { value: string; label: string }[] = [
@@ -80,6 +88,15 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
    * 直接以 content 为唯一真相的话，「添加链接」后那一行会立刻消失。
    */
   const [linkDraft, setLinkDraft] = useState<NoteLinkItem[] | null>(null)
+  /** 链接表格里「标题 : 链接」的宽度比例（拖分界手柄调整，记在 localStorage） */
+  const [linkSplit, setLinkSplit] = useState<number>(() => {
+    try {
+      const v = Number(localStorage.getItem('notes.linkSplit'))
+      return Number.isFinite(v) && v >= LINK_SPLIT_MIN && v <= LINK_SPLIT_MAX ? v : 0.5
+    } catch {
+      return 0.5
+    }
+  })
   /** 同 id 重载计数器：AI 改写后标题/正文/文件夹都变了，得把加载流程再跑一遍 */
   const [reloadToken, setReloadToken] = useState(0)
   const officeTimer = useRef<number | null>(null)
@@ -224,6 +241,34 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
       off()
     }
   }, [load, onNotice])
+
+  /** 拖动链接表格的分界：按可用宽度（减去操作列与分界列）换算比例 */
+  const startColumnResize = (e: ReactPointerEvent<HTMLSpanElement>): void => {
+    const table = e.currentTarget.closest('.link-table') as HTMLElement | null
+    if (!table) return
+    const rect = table.getBoundingClientRect()
+    const avail = Math.max(1, rect.width - LINK_OPS_W - LINK_GAP_W)
+    const onMove = (ev: PointerEvent): void => {
+      const ratio = (ev.clientX - rect.left) / avail
+      setLinkSplit(Math.min(LINK_SPLIT_MAX, Math.max(LINK_SPLIT_MIN, ratio)))
+    }
+    const onUp = (): void => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      // 松手才落库：拖动过程中每帧写一次 localStorage 没必要
+      setLinkSplit((v) => {
+        try {
+          localStorage.setItem('notes.linkSplit', String(v))
+        } catch {
+          // 存不了就只在本次会话里生效
+        }
+        return v
+      })
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    e.preventDefault()
+  }
 
   /** 链接列表改动：草稿 + 正文一起更新（正文走既有的自动保存） */
   const updateLinkItems = (next: NoteLinkItem[]): void => {
@@ -850,47 +895,92 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
                         <Plus size={13} /> 添加链接
                       </button>
                     </div>
-                    {items.map((it, i) => (
-                      <div className="editor__link-row" key={i}>
-                        <input
-                          className="field field--compact"
-                          value={it.title}
-                          placeholder="标题"
-                          aria-label="链接标题"
-                          onChange={(e) =>
-                            updateLinkItems(
-                              items.map((x, j) => (j === i ? { ...x, title: e.target.value } : x))
-                            )
-                          }
+                    <div
+                      className="link-table"
+                      style={
+                        {
+                          '--link-a': `${linkSplit}fr`,
+                          '--link-b': `${1 - linkSplit}fr`,
+                        } as CSSProperties
+                      }
+                    >
+                      <div className="link-table__head">
+                        <span>标题</span>
+                        {/* 分界手柄：拖它调「标题 : 链接」的宽度比例 */}
+                        <span
+                          className="link-table__grip"
+                          role="separator"
+                          aria-label="调整列宽"
+                          aria-orientation="vertical"
+                          onPointerDown={startColumnResize}
                         />
-                        <input
-                          className="field"
-                          value={it.target}
-                          placeholder="https://… 或本地路径"
-                          aria-label="链接地址"
-                          onChange={(e) =>
-                            updateLinkItems(
-                              items.map((x, j) => (j === i ? { ...x, target: e.target.value } : x))
-                            )
-                          }
-                        />
-                        {/^https?:/i.test(it.target) && (
-                          <a className="text-btn" href={it.target} target="_blank" rel="noreferrer">
-                            打开
-                          </a>
-                        )}
-                        <button
-                          className="icon-btn"
-                          aria-label="删除这条链接"
-                          onClick={() => updateLinkItems(items.filter((_, j) => j !== i))}
-                        >
-                          <Trash2 size={13} />
-                        </button>
+                        <span>链接</span>
+                        <span className="link-table__ops-head">操作</span>
                       </div>
-                    ))}
-                    {!items.length && (
-                      <p className="u-aux">还没有链接。点「添加链接」，填上标题与地址。</p>
-                    )}
+                      {items.map((it, i) => (
+                        <div className="link-table__row" key={i}>
+                          <input
+                            className="link-table__cell"
+                            value={it.title}
+                            placeholder="标题"
+                            aria-label="链接标题"
+                            onChange={(e) =>
+                              updateLinkItems(
+                                items.map((x, j) => (j === i ? { ...x, title: e.target.value } : x))
+                              )
+                            }
+                          />
+                          <span className="link-table__gap" aria-hidden />
+                          <input
+                            className="link-table__cell link-table__cell--url"
+                            value={it.target}
+                            placeholder="https://… 或本地路径"
+                            aria-label="链接地址"
+                            onChange={(e) =>
+                              updateLinkItems(
+                                items.map((x, j) => (j === i ? { ...x, target: e.target.value } : x))
+                              )
+                            }
+                          />
+                          <span className="link-table__ops">
+                            {/^https?:/i.test(it.target) ? (
+                              <a
+                                className="icon-btn"
+                                href={it.target}
+                                target="_blank"
+                                rel="noreferrer"
+                                aria-label="打开链接"
+                                title="在浏览器打开"
+                              >
+                                <ExternalLink size={13} />
+                              </a>
+                            ) : (
+                              <button
+                                className="icon-btn"
+                                disabled
+                                aria-label="打开链接"
+                                title="只支持 http/https 链接"
+                              >
+                                <ExternalLink size={13} />
+                              </button>
+                            )}
+                            <button
+                              className="icon-btn"
+                              aria-label="删除这条链接"
+                              title="删除这条链接"
+                              onClick={() => updateLinkItems(items.filter((_, j) => j !== i))}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </span>
+                        </div>
+                      ))}
+                      {!items.length && (
+                        <p className="u-aux link-table__empty">
+                          还没有链接。点「添加链接」，填上标题与地址。
+                        </p>
+                      )}
+                    </div>
                   </div>
                 ))(linkDraft ?? parseLinkItems(content))
               ) : isOffice ? (
