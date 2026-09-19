@@ -108,6 +108,15 @@ export default function App() {
       // 首屏就绪 → 主进程关闭欢迎页并显示主窗（对齐 __main__.py 的 splash 流程：
       // 初始化全部完成后再显主窗，打开即可操作）
       void window.zhixing.app.ready()
+      // 主窗显示后再强制一次合成刷新：窗口刚显示时 Chromium 可能复用旧合成帧，
+      // 表现就是「首次启动外观不对，手动切一下主题才消除」。
+      window.setTimeout(() => {
+        const el = document.documentElement
+        el.style.transform = 'translateZ(0)'
+        requestAnimationFrame(() => {
+          el.style.transform = ''
+        })
+      }, 80)
     })()
   }, [loadAppearance])
 

@@ -9,22 +9,14 @@
    常驻必须有底，否则内容会从工具栏底下透出来 —— 底色取与卡片同源的实色：
    卡片用的是 --bg-layer（浅色 90% / 深色 85% 半透明），实色版在两套主题下都几乎无差，
    所以看不出「贴了一块别的颜色」。 */
-/* 常驻：页面级默认开（长内容页滚动时标题与工具条不跟着走），嵌在卡片内部的编辑区工具栏关掉 */
+/* 标题区与工具区**不要独立的背景块**（那是一块色），但标题仍要固定（layoutcheck 的硬要求）。
+   用背景模糊代替底色：滚动内容从后面经过时被糊掉，视觉上不再有"矩形背景"。 */
 .tb--sticky {
   position: sticky;
   top: 0;
   z-index: var(--z-float);
-  background: var(--bg-layer-solid);
   padding-top: var(--space-1);
-}
-/* 开了窗口材质时，内容底会降到 62% 透明（见 app.css）；工具栏若还保持实色，
-   在「内容不是铺满卡片」的页面（工作流 / 图谱 / 设置）就会显出一块更白的矩形。
-   这里让它与内容底同色，并用 backdrop-filter 在滚动时替它挡住下面的内容。 */
-:root[data-material='mica'] .tb--sticky,
-:root[data-material='acrylic'] .tb--sticky,
-:root[data-material='tabbed'] .tb--sticky {
-  background: color-mix(in srgb, var(--bg-layer-solid) 62%, transparent);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(10px);
 }
 /* 面板级（笔记树 / 编辑器格式条）：嵌在侧栏与卡片内部，不参与分区排版 */
 .tb--panel {
@@ -34,12 +26,14 @@
    panel（笔记树）与 page（今日页的快速添加）在这一点的诉求是一样的。 */
 .tb .tb__subright {
   flex: 1 1 auto;
-  /* flex 项默认 min-width:auto —— 没有它，这一组压不回容器里，就会连卡片一起撑破
-     （看起来是「工具栏溢出父布局」）。有了它才能真的被压缩，进而由溢出检测触发折叠。 */
+  /* 容器本身要能占位、也要能被压缩：默认 min-width:auto 会让它压不回容器里，
+     整组连卡片一起撑破。 */
   min-width: 0;
 }
-.tb .tb__subright input {
-  flex: 1 1 auto;
+/* 区里的控件一律**不伸缩**：保持自然宽度，放不下交给折叠逻辑逐个收。
+   之前让搜索框 flex:1 吃掉剩余宽度，等于把「该折叠」的空间拿去拉长控件了。 */
+.tb .tb__subright > * {
+  flex: 0 0 auto;
 }
 .tb__head {
   display: flex;
