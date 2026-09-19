@@ -3,6 +3,9 @@ import { setTaskTags } from './task-ops'
 import { getNote } from './notes'
 import { openExternalSafely } from '../security'
 import { spawn } from 'node:child_process'
+import { writeFileSync, unlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { app, dialog } from 'electron'
 import type {
   NodeRunResult,
@@ -26,13 +29,16 @@ import {
   TASK_KIND,
   isAutoActionKind,
   normalizeActionKind,
+  normalizeScriptRuntime,
   parseExpectCode,
+  scriptRuntimeLabel,
+  type ScriptRuntime,
 } from '../../shared/workflow-action'
 
 // ---------------------------------------------------------------- 工作流
 
 export const NODE_COLUMNS =
-  'id, template_id, title, detail, order_index, note_id, note_ids, action_kind, action_value, action_expect, condition, branch_node_id, pos_x, pos_y'
+  'id, template_id, title, detail, order_index, note_id, note_ids, action_kind, action_value, action_expect, action_runtime, condition, branch_node_id, pos_x, pos_y'
 
 /** workflow_node 的原始行（note_ids 是 JSON 文本，不是数组）。 */
 interface WorkflowNodeRow extends Omit<WorkflowNodePayload, 'note_ids'> {
@@ -64,7 +70,12 @@ export function parseNoteIds(raw: string | null | undefined, fallback: number | 
 /** 行 → payload：把 note_ids 从 JSON 文本解析成数组。 */
 export function rowToNode(r: WorkflowNodeRow): WorkflowNodePayload {
   const note_ids = parseNoteIds(r.note_ids, r.note_id)
-  return { ...r, note_ids, action_expect: r.action_expect ?? '' }
+  return {
+    ...r,
+    note_ids,
+    action_expect: r.action_expect ?? '',
+    action_runtime: r.action_runtime ?? '',
+  }
 }
 
 
@@ -155,7 +166,7 @@ export function saveWorkflowTemplate(tpl: {
   name: string
   description?: string
   start_policy?: string
-  nodes: { id?: number | null; title: string; detail?: string; order_index?: number; note_id?: number | null; note_ids?: number[]; action_kind?: string; action_value?: string; action_expect?: string; condition?: string; branch_node_id?: number | null; pos_x?: number | null; pos_y?: number | null }[]
+  nodes: { id?: number | null; title: string; detail?: string; order_index?: number; note_id?: number | null; note_ids?: number[]; action_kind?: string; action_value?: string; action_expect?: string; action_runtime?: string; condition?: string; branch_node_id?: number | null; pos_x?: number | null; pos_y?: number | null }[]
 }): { ok: boolean; problems: string[]; templateId?: number } {
   const draft: WorkflowNodePayload[] = tpl.nodes.map((n, i) => {
     // SOP 多绑定的唯一真相是 note_ids；note_id 只作为兼容列同步写出（Python 版仍按单值读）
@@ -174,6 +185,7 @@ export function saveWorkflowTemplate(tpl: {
       action_kind: n.action_kind ?? TASK_KIND,
       action_value: n.action_value ?? '',
       action_expect: n.action_expect ?? '',
+      action_runtime: n.action_runtime ?? '',
       condition: n.condition ?? '',
       branch_node_id: n.branch_node_id ?? null,
       pos_x: n.pos_x ?? null,
@@ -214,8 +226,8 @@ export function saveWorkflowTemplate(tpl: {
       const info = c
         .prepare(
           `INSERT INTO workflow_node (template_id, title, detail, order_index, note_id, note_ids, action_kind,
-                                     action_value, action_expect, condition, pos_x, pos_y, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                                     action_value, action_expect, action_runtime, condition, pos_x, pos_y, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           tid,
@@ -227,6 +239,7 @@ export function saveWorkflowTemplate(tpl: {
           n.action_kind,
           n.action_value,
           n.action_expect,
+          n.action_runtime,
           n.condition,
           n.pos_x,
           n.pos_y,
@@ -292,6 +305,7 @@ export function duplicateWorkflowTemplate(id: number): WorkflowTemplatePayload |
       action_kind: n.action_kind,
       action_value: n.action_value,
       action_expect: n.action_expect,
+      action_runtime: n.action_runtime,
       condition: n.condition,
       branch_node_id: n.branch_node_id,
     })),
@@ -731,6 +745,10 @@ interface ChildOutcome {
   output: string
   timedOut: boolean
   error: string
+  /** 实际启动成功的解释器（诊断用） */
+  file: string
+  /** 依次尝试过的解释器候选 */
+  tried: string[]
 }
 
 /**
@@ -739,8 +757,13 @@ interface ChildOutcome {
  * 与历史动作 run_command（detached + unref，发完即忘）的关键区别就在这里：
  * 自动步骤要拿退出码来判断「这一步成不成功」，所以必须等；
  * 同时必须有超时兜底，否则一个挂住的命令能让整个实例永远停在这一步。
+ *
+ * files 是解释器的**候选列表**：前一个不存在（ENOENT）才试下一个 ——
+ * Python 可能是 python / python3 / py，PowerShell 可能是系统自带的 powershell.exe
+ * 或跨平台的 pwsh，写死一个名字只会让「没装那一个」变成一句看不懂的失败。
+ * 超时从**第一次尝试**起算，换候选不重置计时。
  */
-function runChild(file: string, args: string[], stdin?: string): Promise<ChildOutcome> {
+function runChild(files: string[], args: string[], stdin?: string): Promise<ChildOutcome> {
   return new Promise((resolve) => {
     let out = ''
     const push = (buf: Buffer): void => {
@@ -748,15 +771,37 @@ function runChild(file: string, args: string[], stdin?: string): Promise<ChildOu
       if (out.length > OUTPUT_TAIL) out = out.slice(-OUTPUT_TAIL)
     }
     let settled = false
-    const done = (r: ChildOutcome): void => {
+    let index = 0
+    const tried: string[] = []
+    let child: ReturnType<typeof spawn> | null = null
+    const done = (r: Omit<ChildOutcome, 'file' | 'tried'>): void => {
       if (settled) return
       settled = true
       clearTimeout(timer)
-      resolve(r)
+      resolve({ ...r, file: files[index] ?? '', tried: [...tried] })
     }
-    const child = (() => {
+    const killTree = (): void => {
+      // Windows 上杀父进程不会带走它拉起的子进程：用 taskkill /T 整棵树一起收，
+      // 否则解释器里启动的命令会变成孤儿继续跑。
       try {
-        return spawn(file, args, {
+        if (process.platform === 'win32' && child?.pid) {
+          spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true })
+        } else {
+          child?.kill()
+        }
+      } catch {
+        // 进程已经退出就无所谓
+      }
+    }
+    const timer = setTimeout(() => {
+      killTree()
+      done({ code: null, output: out, timedOut: true, error: '' })
+    }, ACTION_TIMEOUT_MS)
+    const attempt = (): void => {
+      const file = files[index]
+      tried.push(file)
+      try {
+        child = spawn(file, args, {
           // 相对路径按用户主目录解析：脚本里写 `.out.log` 时不会落到应用的安装目录
           cwd: app.getPath('home'),
           windowsHide: true,
@@ -764,49 +809,91 @@ function runChild(file: string, args: string[], stdin?: string): Promise<ChildOu
           stdio: [stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
         })
       } catch (err) {
-        return null
+        done({
+          code: null,
+          output: out,
+          timedOut: false,
+          error: err instanceof Error ? err.message : String(err),
+        })
+        return
       }
-    })()
-    if (!child) {
-      resolve({ code: null, output: '', timedOut: false, error: `无法启动 ${file}` })
-      return
-    }
-    const timer = setTimeout(() => {
-      // Windows 上杀父进程不会带走它拉起的子进程：用 taskkill /T 整棵树一起收，
-      // 否则 powershell 里启动的命令会变成孤儿继续跑。
-      try {
-        if (process.platform === 'win32' && child.pid) {
-          spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true })
-        } else {
-          child.kill()
+      child.stdout?.on('data', push)
+      child.stderr?.on('data', push)
+      child.once('error', (err: NodeJS.ErrnoException) => {
+        // 只有「找不到这个可执行文件」才换下一个候选；权限 / 路径非法等错误直接报出来
+        if (err.code === 'ENOENT' && index + 1 < files.length && !settled) {
+          index += 1
+          attempt()
+          return
         }
-      } catch {
-        // 进程已经退出就无所谓
+        done({ code: null, output: out, timedOut: false, error: err.message })
+      })
+      child.once('close', (code) => done({ code, output: out, timedOut: false, error: '' }))
+      if (stdin !== undefined) {
+        // 进程提前退出时写 stdin 会 EPIPE，忽略即可（真正的结论看退出码）
+        child.stdin?.on('error', () => undefined)
+        child.stdin?.end(stdin)
       }
-      done({ code: null, output: out, timedOut: true, error: '' })
-    }, ACTION_TIMEOUT_MS)
-    child.stdout?.on('data', push)
-    child.stderr?.on('data', push)
-    child.once('error', (err) => done({ code: null, output: out, timedOut: false, error: err.message }))
-    child.once('close', (code) => done({ code, output: out, timedOut: false, error: '' }))
-    if (stdin !== undefined) {
-      // 进程提前退出时写 stdin 会 EPIPE，忽略即可（真正的结论看退出码）
-      child.stdin?.on('error', () => undefined)
-      child.stdin?.end(stdin)
     }
+    attempt()
   })
+}
+
+/**
+ * 某一类脚本运行环境的启动方式。
+ *
+ * 除 cmd 外都走「脚本从标准输入喂进去」：不用落地临时文件、不用拼引号，
+ * 而且 PowerShell 这种输入方式不受执行策略限制（`-File *.ps1` 会被 Restricted 拦住）。
+ * cmd 没有「从 stdin 读脚本」的正规做法（交互模式会把提示符混进输出、退出码也不可控），
+ * 所以它写一个临时 .cmd 再执行。
+ */
+function runtimeLaunch(runtime: ScriptRuntime): { files: string[]; args: string[]; ext?: string } {
+  const win = process.platform === 'win32'
+  if (runtime === 'cmd') {
+    return win
+      ? { files: ['cmd.exe', 'cmd'], args: ['/d', '/s', '/c'], ext: 'cmd' }
+      : { files: ['sh'], args: [], ext: 'sh' }
+  }
+  if (runtime === 'python') {
+    return { files: win ? ['python', 'python3', 'py'] : ['python3', 'python'], args: ['-'] }
+  }
+  if (runtime === 'node') {
+    return { files: ['node', 'node.exe'], args: ['-'] }
+  }
+  const psArgs = ['-NoProfile', '-NonInteractive', '-Command', '-']
+  return win
+    ? { files: ['powershell.exe', 'pwsh'], args: psArgs }
+    : { files: ['pwsh', 'powershell'], args: psArgs }
+}
+
+/** 跑一个脚本步骤：按运行环境选解释器；命令行 / Python / Node / PowerShell 走 stdin，cmd 走临时文件。 */
+async function runScript(runtime: ScriptRuntime, script: string): Promise<ChildOutcome> {
+  const launch = runtimeLaunch(runtime)
+  if (!launch.ext) return runChild(launch.files, launch.args, script)
+  // cmd 的临时脚本用 CRLF 写：这是它原生的换行，也免得某些构造被当成单行
+  const file = join(tmpdir(), `zhixing-wf-${process.pid}-${Date.now().toString(36)}.${launch.ext}`)
+  try {
+    writeFileSync(file, script.replace(/\r?\n/g, '\r\n'), 'utf8')
+    return await runChild(launch.files, [...launch.args, file])
+  } finally {
+    try {
+      unlinkSync(file)
+    } catch {
+      // 删不掉就算了：它在系统临时目录里，重启会被清理
+    }
+  }
 }
 
 /**
  * 执行一个自动节点，返回它的结果。
  *
  * 命令：按 shlex 规则拆 argv、不经 shell 直接 spawn；
- * 脚本：把脚本文本从 stdin 喂给解释器（Windows 用 `powershell -Command -`，其它平台 `sh -s`）——
- *       这样既不用拼引号也不用落地临时文件，脚本内容原样执行。
+ * 脚本：按 action_runtime 选解释器（PowerShell / cmd / Python / Node），
+ *       除 cmd 外都把脚本文本从 stdin 喂进去，cmd 落一个临时 .cmd 再执行。
  * 两者都以「退出码是否等于 action_expect（默认 0）」为成败判据。
  */
 async function executeNodeAction(
-  node: Pick<WorkflowNodePayload, 'action_kind' | 'action_value' | 'action_expect'>
+  node: Pick<WorkflowNodePayload, 'action_kind' | 'action_value' | 'action_expect' | 'action_runtime'>
 ): Promise<{
   state: NodeRunResult['state']
   code: number | null
@@ -816,17 +903,18 @@ async function executeNodeAction(
   const kind = normalizeActionKind(node.action_kind)
   const expect = parseExpectCode(node.action_expect)
   const raw = (node.action_value || '').trim()
-  const label = kind === SCRIPT_KIND ? '脚本' : '命令'
+  const runtime = normalizeScriptRuntime(node.action_runtime)
+  const label = kind === SCRIPT_KIND ? `脚本（${scriptRuntimeLabel(runtime)}）` : '命令'
 
-  let file = ''
+  // 命令只有「一个可执行文件」这一种候选；脚本按运行环境选解释器（见 runScript）
+  let candidates: string[] = []
   let args: string[] = []
-  let stdin: string | undefined
   if (kind === COMMAND_KIND) {
     if (!raw) return { state: 'failed', code: null, output: '', message: '没有填写要执行的命令' }
     try {
       const argv = splitCommand(raw)
       if (!argv.length) return { state: 'failed', code: null, output: '', message: '命令为空' }
-      file = argv[0]
+      candidates = [argv[0]]
       args = argv.slice(1)
     } catch (err) {
       return {
@@ -836,19 +924,11 @@ async function executeNodeAction(
         message: `命令解析失败：${err instanceof Error ? err.message : String(err)}`,
       }
     }
-  } else {
-    if (!raw) return { state: 'failed', code: null, output: '', message: '没有填写脚本内容' }
-    if (process.platform === 'win32') {
-      file = 'powershell.exe'
-      args = ['-NoProfile', '-NonInteractive', '-Command', '-']
-    } else {
-      file = 'sh'
-      args = ['-s']
-    }
-    stdin = raw
+  } else if (!raw) {
+    return { state: 'failed', code: null, output: '', message: `没有填写${label}的内容` }
   }
 
-  const r = await runChild(file, args, stdin)
+  const r = kind === SCRIPT_KIND ? await runScript(runtime, raw) : await runChild(candidates, args)
   if (r.timedOut) {
     return {
       state: 'timeout',
@@ -858,7 +938,14 @@ async function executeNodeAction(
     }
   }
   if (r.code === null) {
-    return { state: 'failed', code: null, output: r.output, message: `无法启动：${r.error || file}` }
+    // 把「试过哪些解释器」一并报出来：装了 pwsh 却没装 powershell.exe 这类情况一眼可辨
+    const tried = r.tried.length > 1 ? `（已尝试 ${r.tried.join(' / ')}）` : ''
+    return {
+      state: 'failed',
+      code: null,
+      output: r.output,
+      message: `无法启动${label}${tried}：${r.error || r.file}`,
+    }
   }
   const ok = r.code === expect
   return {
@@ -1085,7 +1172,8 @@ export async function resolveNextRunnable(
 export function describeWorkflowAction(
   actionKind: string,
   actionValue: string,
-  actionExpect?: string
+  actionExpect?: string,
+  actionRuntime?: string
 ): string {
   const kind = (actionKind || '').trim()
   // 自动步骤：把「要跑什么 + 什么算成功」一次说清，确认框里能看到判据
@@ -1093,9 +1181,10 @@ export function describeWorkflowAction(
     return `运行命令：${actionValue}（等待退出，期望退出码 ${parseExpectCode(actionExpect)}）`
   }
   if (kind === SCRIPT_KIND) {
+    // 确认框里要说清「用哪个解释器跑」——同一段内容在 PowerShell 和 Python 下完全不同
     const first = (actionValue || '').split('\n').find((l) => l.trim()) ?? ''
     const brief = first.trim().slice(0, 48)
-    return `运行脚本：${brief}${brief ? '…' : '（空）'}（等待退出，期望退出码 ${parseExpectCode(actionExpect)}）`
+    return `运行 ${scriptRuntimeLabel(actionRuntime)} 脚本：${brief}${brief ? '…' : '（空）'}（等待退出，期望退出码 ${parseExpectCode(actionExpect)}）`
   }
   if (kind === 'open_note') {
     // 对齐 Python 的 `(action_value or "").isdigit()` 判定
@@ -1118,7 +1207,8 @@ export function describeWorkflowAction(
 export async function runWorkflowAction(
   actionKind: string,
   actionValue: string,
-  actionExpect?: string
+  actionExpect?: string,
+  actionRuntime?: string
 ): Promise<{ ok: boolean; message: string; kind: string; code: number | null; output: string }> {
   const kind = actionKind || 'none'
   if (kind === 'none' || !kind) {
@@ -1138,6 +1228,7 @@ export async function runWorkflowAction(
       action_kind: kind,
       action_value: actionValue,
       action_expect: actionExpect ?? '',
+      action_runtime: actionRuntime ?? '',
     })
     return { ok: r.state === 'ok', message: r.message, kind, code: r.code, output: r.output }
   }

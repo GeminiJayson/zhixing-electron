@@ -138,6 +138,7 @@ function ensureAppExtensions(d: Database.Database): void {
   // 表可能不存在（更老的库早于工作流模块）——SCHEMA_SQL 已带 IF NOT EXISTS 补建，这里直接加列
   add('workflow_node', 'note_ids', 'note_ids TEXT')
   add('workflow_node', 'action_expect', 'action_expect TEXT')
+  add('workflow_node', 'action_runtime', 'action_runtime TEXT')
   add('workflow_instance', 'last_result', 'last_result TEXT')
 }
 

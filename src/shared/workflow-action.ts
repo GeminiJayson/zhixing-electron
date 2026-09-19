@@ -24,7 +24,7 @@ export type StepActionKind = 'task' | 'command' | 'script'
 export const STEP_ACTION_KINDS: { value: StepActionKind; label: string; hint: string }[] = [
   { value: TASK_KIND, label: '任务', hint: '实例化时生成一条待办任务，人工完成后自动推进' },
   { value: COMMAND_KIND, label: '命令', hint: '直接执行一条命令并等待退出，退出码正确才算完成' },
-  { value: SCRIPT_KIND, label: '脚本', hint: '执行一段脚本（Windows 走 PowerShell）并等待退出码' },
+  { value: SCRIPT_KIND, label: '脚本', hint: '执行一段脚本并等待退出码；运行环境在下面选（PowerShell / cmd / Python / Node）' },
 ]
 
 /**
@@ -64,6 +64,73 @@ export function normalizeActionKind(raw: string | null | undefined): StepActionK
 export function isAutoActionKind(raw: string | null | undefined): boolean {
   const k = normalizeActionKind(raw)
   return k === COMMAND_KIND || k === SCRIPT_KIND
+}
+
+// ---------------------------------------------------------------- 脚本的运行环境
+
+/**
+ * 脚本步骤的运行环境。四类各有自己的解释器与语法，必须显式选定 ——
+ * 同样是「一行 if」，PowerShell、cmd、Python、Node 的写法完全不同，
+ * 靠猜（比如一律喂给 PowerShell）只会得到一句看不懂的语法错误。
+ */
+export type ScriptRuntime = 'powershell' | 'cmd' | 'python' | 'node'
+
+export interface ScriptRuntimeSpec {
+  value: ScriptRuntime
+  label: string
+  hint: string
+  /** 脚本内容框的占位示例 */
+  placeholder: string
+}
+
+export const SCRIPT_RUNTIMES: ScriptRuntimeSpec[] = [
+  {
+    value: 'powershell',
+    label: 'PowerShell',
+    hint: '按 PowerShell 语法执行；脚本从标准输入喂给 powershell，不受执行策略（ExecutionPolicy）限制',
+    placeholder:
+      '例：\nif (-not (Test-Path .\\build\\app.exe)) { Write-Error "缺少产物"; exit 1 }\nexit 0',
+  },
+  {
+    value: 'cmd',
+    label: 'CMD 批处理',
+    hint: '按 .bat/.cmd 语法执行；写入临时脚本文件后由 cmd.exe 运行（用 exit /b N 明确退出码）',
+    placeholder: '例：\nif not exist build\\app.exe ( echo 缺少产物 & exit /b 1 )\nexit /b 0',
+  },
+  {
+    value: 'python',
+    label: 'Python',
+    hint: '按 Python 语法执行；脚本从标准输入喂给解释器（依次尝试 python / python3 / py）',
+    placeholder: '例：\nimport sys, pathlib\nsys.exit(0 if pathlib.Path("build/app.exe").exists() else 1)',
+  },
+  {
+    value: 'node',
+    label: 'JavaScript (Node)',
+    hint: '按 Node 脚本执行；脚本从标准输入喂给 node（标准输入是 CommonJS，用 require 而不是 import）',
+    placeholder: '例：\nconst fs = require("node:fs")\nprocess.exit(fs.existsSync("build/app.exe") ? 0 : 1)',
+  },
+]
+
+/** 没选运行环境时的默认值（也是旧数据的口径：早先的「脚本」就是 PowerShell）。 */
+export const DEFAULT_SCRIPT_RUNTIME: ScriptRuntime = 'powershell'
+
+/** 归一：空值 / 不认识的值一律回落到 PowerShell。 */
+export function normalizeScriptRuntime(raw: string | null | undefined): ScriptRuntime {
+  const k = (raw ?? '').trim()
+  const hit = SCRIPT_RUNTIMES.find((r) => r.value === k)
+  return hit ? hit.value : DEFAULT_SCRIPT_RUNTIME
+}
+
+/** 运行环境的中文名（描述文案、结果消息用）。 */
+export function scriptRuntimeLabel(raw: string | null | undefined): string {
+  const runtime = normalizeScriptRuntime(raw)
+  return SCRIPT_RUNTIMES.find((r) => r.value === runtime)?.label ?? 'PowerShell'
+}
+
+/** 运行时规格（编辑器的提示与占位都用它）。 */
+export function scriptRuntimeSpec(raw: string | null | undefined): ScriptRuntimeSpec {
+  const runtime = normalizeScriptRuntime(raw)
+  return SCRIPT_RUNTIMES.find((r) => r.value === runtime) ?? SCRIPT_RUNTIMES[0]
 }
 
 /** 期望退出码的默认值。 */

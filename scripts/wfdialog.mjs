@@ -187,6 +187,63 @@ const cmdPlaceholders = await conn.evaluate(
 check('选「命令」后出现命令输入框', String(cmdPlaceholders).includes('notepad.exe'), cmdPlaceholders)
 await shoot('wf-step-dialog-command.png')
 
+// 切到「脚本」：应出现运行环境下拉（四类），且示例随环境变化
+const switchAction = async (value) =>
+  conn.evaluate(`(() => {
+    const sel = [...document.querySelectorAll('.modal__body select')].find((s) =>
+      [...s.options].some((o) => o.value === 'script')
+    )
+    if (!sel) return false
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set
+    setter.call(sel, ${JSON.stringify(value)})
+    sel.dispatchEvent(new Event('change', { bubbles: true }))
+    return true
+  })()`)
+const readScriptForm = () =>
+  conn.evaluate(`(() => {
+    const body = document.querySelector('.modal__body')
+    const RT = ['PowerShell', 'CMD 批处理', 'Python', 'JavaScript (Node)']
+    return {
+      text: body.innerText,
+      runtimes: [...body.querySelectorAll('select')]
+        .flatMap((s) => [...s.options].map((o) => o.textContent))
+        .filter((t) => RT.includes(t)),
+      placeholder: [...body.querySelectorAll('textarea')].map((t) => t.placeholder).join('|'),
+    }
+  })()`)
+
+await switchAction('script')
+await sleep(300)
+const scriptForm = await readScriptForm()
+check(
+  '选「脚本」后出现运行环境下拉（四类）',
+  JSON.stringify(scriptForm?.runtimes) ===
+    JSON.stringify(['PowerShell', 'CMD 批处理', 'Python', 'JavaScript (Node)']),
+  JSON.stringify(scriptForm?.runtimes)
+)
+check('默认运行环境是 PowerShell（示例是 PowerShell 语法）', /Test-Path/.test(String(scriptForm?.placeholder)))
+await shoot('wf-step-dialog-script.png')
+
+// 换成 Python：示例必须跟着换（四类语法互不通用，示例错了等于误导）
+await conn.evaluate(`(() => {
+  const sel = [...document.querySelectorAll('.modal__body select')].find((s) =>
+    [...s.options].some((o) => o.value === 'python')
+  )
+  if (!sel) return false
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set
+  setter.call(sel, 'python')
+  sel.dispatchEvent(new Event('change', { bubbles: true }))
+  return true
+})()`)
+await sleep(300)
+const pyForm = await readScriptForm()
+check(
+  '换成 Python 后示例与说明同步变化',
+  /import sys/.test(String(pyForm?.placeholder)) && String(pyForm?.text).includes('Python'),
+  String(pyForm?.placeholder).slice(0, 60)
+)
+await shoot('wf-step-dialog-python.png')
+
 // 关闭步骤弹窗
 await conn.evaluate(`[...document.querySelectorAll('.modal__foot button')].find((b) => b.textContent.includes('取消'))?.click()`)
 await sleep(300)

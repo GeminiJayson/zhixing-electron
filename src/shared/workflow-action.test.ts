@@ -2,15 +2,20 @@ import { describe, expect, it } from 'vitest'
 import {
   COMMAND_KIND,
   DEFAULT_EXPECT_CODE,
+  DEFAULT_SCRIPT_RUNTIME,
   LEGACY_ACTION_LABELS,
   SCRIPT_KIND,
+  SCRIPT_RUNTIMES,
   STEP_ACTION_KINDS,
   TASK_KIND,
   actionKindLabel,
   isAutoActionKind,
   isLegacyActionKind,
   normalizeActionKind,
+  normalizeScriptRuntime,
   parseExpectCode,
+  scriptRuntimeLabel,
+  scriptRuntimeSpec,
 } from './workflow-action'
 
 describe('步骤动作 —— 三类 + 历史值归一', () => {
@@ -67,5 +72,39 @@ describe('步骤动作 —— 三类 + 历史值归一', () => {
   it('三类动作的清单与联合类型一一对应，且都有说明', () => {
     expect(STEP_ACTION_KINDS.map((a) => a.value)).toEqual(['task', 'command', 'script'])
     for (const a of STEP_ACTION_KINDS) expect(a.hint.length).toBeGreaterThan(0)
+  })
+})
+
+describe('脚本运行环境 —— 四类，必须有明确的解释器与示例', () => {
+  it('恰好四类：PowerShell / cmd / Python / Node', () => {
+    expect(SCRIPT_RUNTIMES.map((r) => r.value)).toEqual(['powershell', 'cmd', 'python', 'node'])
+    for (const r of SCRIPT_RUNTIMES) {
+      expect(r.label.length).toBeGreaterThan(0)
+      // 每类都要有「怎么执行」的说明与可照抄的示例 —— 四类语法互不通用
+      expect(r.hint.length).toBeGreaterThan(0)
+      expect(r.placeholder.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('归一：认识的照原样，空值 / 不认识的一律回落到 PowerShell', () => {
+    expect(normalizeScriptRuntime('cmd')).toBe('cmd')
+    expect(normalizeScriptRuntime('python')).toBe('python')
+    expect(normalizeScriptRuntime('node')).toBe('node')
+    for (const raw of ['', '   ', null, undefined, 'bash', 'PowerShell', 'NODE']) {
+      expect(normalizeScriptRuntime(raw)).toBe(DEFAULT_SCRIPT_RUNTIME)
+    }
+    expect(DEFAULT_SCRIPT_RUNTIME).toBe('powershell')
+  })
+
+  it('标签与规格查得到，非法值不抛', () => {
+    expect(scriptRuntimeLabel('cmd')).toBe('CMD 批处理')
+    expect(scriptRuntimeLabel('python')).toBe('Python')
+    expect(scriptRuntimeLabel('不认识')).toBe('PowerShell')
+    expect(scriptRuntimeSpec('node').value).toBe('node')
+    expect(scriptRuntimeSpec(null).value).toBe('powershell')
+  })
+
+  it('示例里带换行，说明是可多行的脚本而不是一行命令', () => {
+    for (const r of SCRIPT_RUNTIMES) expect(r.placeholder).toContain('\n')
   })
 })

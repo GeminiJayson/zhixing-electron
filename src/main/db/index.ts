@@ -259,11 +259,13 @@ export function registerDbHandlers(): void {
   handle('db:tags', () => listTags())
   handle('db:setTaskTags', (_e, id: number, names: string[]) => setTaskTags(id, names))
   handle('db:recentNotes', (_e, limit?: number) => recentNotes(limit))
-  handle('db:runWorkflowAction', (_e, kind: string, value: string, expect?: string) =>
-    runWorkflowAction(kind, value, expect ?? '')
+  handle(
+    'db:runWorkflowAction',
+    (_e, kind: string, value: string, expect?: string, runtime?: string) =>
+      runWorkflowAction(kind, value, expect ?? '', runtime ?? '')
   )
-  handle('db:describeWorkflowAction', (_e, kind: string, value: string, expect?: string) =>
-    describeWorkflowAction(kind, value, expect)
+  handle('db:describeWorkflowAction', (_e, kind: string, value: string, expect?: string, runtime?: string) =>
+    describeWorkflowAction(kind, value, expect, runtime)
   )
   handle(
     'db:recordPomodoro',

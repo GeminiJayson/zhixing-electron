@@ -985,4 +985,20 @@ notes（240px 树宽）→ ⋯ 1   （格式下拉常驻浮层）
 > 只是形状从「扁长矩形」变成「只围图标的正圆」。选中态仍是实线圆（`var(--accent)`），
 > 焦点态用虚线，两者可以区分。
 
+## 工作流：脚本支持四类运行环境（PowerShell / cmd / Python / Node）（2026-09-19，第二十八轮）
+
+| # | 需求 | 落地 | 实测 |
+| --- | --- | --- | --- |
+| 1 | 脚本步骤要能选 PowerShell / cmd / Python / JS 四类运行环境 | 新增私有列 `workflow_node.action_runtime`；`shared/workflow-action.ts` 里定义 `SCRIPT_RUNTIMES`（标签 / 说明 / 占位示例），编辑器多一个「运行环境」下拉，示例与说明随选择变化 | 弹窗下拉恰好四类；切成 Python 后示例与说明同步改变 |
+| 2 | 每类都要真的能在本机跑起来 | **PowerShell**：`powershell.exe -NoProfile -NonInteractive -Command -`（脚本走 stdin，不受执行策略限制）；**cmd**：写临时 `.cmd`（CRLF）后 `cmd /d /s /c <file>`，退出码即脚本的退出码；**Python**：`python -`；**Node**：`node -`（标准输入是 CommonJS，示例里用 `require`） | exit 码逐个核对：PowerShell 4、CMD 6、Node 9 全部吻合 |
+| 3 | 解释器不在 PATH 时要能说清楚 | 候选列表按序尝试，只有 **ENOENT** 才换下一个（权限等其他错误直接报出）；失败信息带上「已尝试 python / python3 / py」 | 本机没装 Python：报 `无法启动脚本（Python）（已尝试 python / python3 / py）：spawn py ENOENT`（**这一条是验证环境的真实限制，不是模拟**） |
+
+> 为什么要显式选而不是自动嗅探：同一行 `if (...) {...}` 在四类语法下含义不同，猜错只会得到一句
+> 看不懂的语法错误，而且错误信息还指向错误的方向。旧数据（`action_runtime` 为空）一律按
+> PowerShell 解释 —— 这正是上一轮「脚本」的行为，等于零迁移成本。
+>
+> cmd 的临时脚本以 UTF-8（无 BOM）写出：对纯 ASCII 脚本完全正确；含中文时受系统代码页影响，
+> 这是 cmd 自身的限制，不是这里能绕开的（PowerShell / Python / Node 都走 stdin，没有这个问题）。
+
+
 

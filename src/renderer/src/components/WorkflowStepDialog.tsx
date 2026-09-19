@@ -2,19 +2,19 @@ import { useState } from 'react'
 import type { Note, WorkflowNodePayload } from '@shared/types'
 import {
   DEFAULT_EXPECT_CODE,
+  DEFAULT_SCRIPT_RUNTIME,
   LEGACY_ACTION_LABELS,
+  SCRIPT_RUNTIMES,
   STEP_ACTION_KINDS,
   isLegacyActionKind,
   normalizeActionKind,
+  normalizeScriptRuntime,
+  scriptRuntimeSpec,
   type StepActionKind,
 } from '@shared/workflow-action'
 
-/** 动作参数的填写提示（对齐主进程执行器的解析口径）。 */
-const ACTION_VALUE_HINT: Record<StepActionKind, string> = {
-  task: '',
-  command: '例如：notepad.exe some-file.txt',
-  script: '例如：\n$ok = Test-Path .\build\app.exe\nif ($ok) { exit 0 } else { exit 1 }',
-}
+/** 「命令」类动作的填写提示（脚本类的示例随运行环境变化，见 scriptRuntimeSpec）。 */
+const COMMAND_HINT = '例如：notepad.exe some-file.txt'
 
 interface Props {
   /** 初始值（新增时是带负临时 id 的草稿） */
@@ -48,11 +48,17 @@ export function WorkflowStepDialog({
   onSave,
   onCancel,
 }: Props) {
-  const [draft, setDraft] = useState<WorkflowNodePayload>(node)
+  const [draft, setDraft] = useState<WorkflowNodePayload>({
+    ...node,
+    // 空值本来等价于 PowerShell，但让弹窗里显示成具体那一项更不容易误解
+    action_runtime: node.action_runtime || DEFAULT_SCRIPT_RUNTIME,
+  })
   const [asBranch, setAsBranch] = useState(false)
 
   const kind = normalizeActionKind(draft.action_kind)
   const legacy = isLegacyActionKind(draft.action_kind)
+  const runtime = normalizeScriptRuntime(draft.action_runtime)
+  const runtimeSpec = scriptRuntimeSpec(draft.action_runtime)
   const chosen = noteChoices.filter((n) => draft.note_ids.includes(n.id))
 
   /** 切换动作类型：旧参数（命令文本 / 脚本内容）留着会误导，一并清掉。 */
@@ -62,6 +68,8 @@ export function WorkflowStepDialog({
       action_kind: next,
       action_value: '',
       action_expect: next === 'task' ? '' : String(DEFAULT_EXPECT_CODE),
+      // 脚本要有个明确的运行环境；空值虽然等价于 PowerShell，但让用户看见更好
+      action_runtime: next === 'script' ? normalizeScriptRuntime(draft.action_runtime) : '',
     })
   }
 
@@ -205,22 +213,43 @@ export function WorkflowStepDialog({
               <input
                 className="field"
                 value={draft.action_value}
-                placeholder={ACTION_VALUE_HINT.command}
+                placeholder={COMMAND_HINT}
                 onChange={(e) => setDraft({ ...draft, action_value: e.target.value })}
               />
             </label>
           )}
           {kind === 'script' && (
-            <label className="form-row">
-              <span>脚本内容（Windows 走 PowerShell）</span>
-              <textarea
-                className="field field--area field--code"
-                rows={6}
-                value={draft.action_value}
-                placeholder={ACTION_VALUE_HINT.script}
-                onChange={(e) => setDraft({ ...draft, action_value: e.target.value })}
-              />
-            </label>
+            <>
+              {/* 运行环境必须显式选：同一段内容在 PowerShell / cmd / Python / Node 下含义完全不同 */}
+              <label className="form-row">
+                <span>运行环境</span>
+                <select
+                  className="field"
+                  value={runtime}
+                  onChange={(e) =>
+                    // 换语言等价于换脚本：旧内容留着多半是错的，直接清掉
+                    setDraft({ ...draft, action_runtime: e.target.value, action_value: '' })
+                  }
+                >
+                  {SCRIPT_RUNTIMES.map((r) => (
+                    <option key={r.value} value={r.value}>
+                      {r.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="u-aux">{runtimeSpec.hint}</p>
+              <label className="form-row">
+                <span>脚本内容</span>
+                <textarea
+                  className="field field--area field--code"
+                  rows={6}
+                  value={draft.action_value}
+                  placeholder={runtimeSpec.placeholder}
+                  onChange={(e) => setDraft({ ...draft, action_value: e.target.value })}
+                />
+              </label>
+            </>
           )}
           {kind === 'task' && (
             <p className="u-aux">任务型步骤会在实例跑到它时生成一条待办；你在任务页勾完它，流程才继续。</p>

@@ -78,6 +78,8 @@ export interface WorkflowNodePayload {
   action_value: string
   /** 命令 / 脚本的期望退出码（文本，空 = 0） */
   action_expect: string
+  /** 脚本步骤的运行环境：powershell / cmd / python / node（空 = powershell） */
+  action_runtime: string
   /** 遗留字段：步骤自带的「进入条件」文本（编辑器已不再提供） */
   condition: string
   branch_node_id: number | null

@@ -194,6 +194,8 @@ const api = {
         action_value?: string
         /** 命令 / 脚本的期望退出码（文本，空 = 0） */
         action_expect?: string
+        /** 脚本的运行环境：powershell / cmd / python / node（空 = powershell） */
+        action_runtime?: string
         condition?: string
         branch_node_id?: number | null
         pos_x?: number | null
@@ -274,11 +276,17 @@ const api = {
     runWorkflowAction: (
       kind: string,
       value: string,
-      expect?: string
+      expect?: string,
+      runtime?: string
     ): Promise<{ ok: boolean; message: string; kind: string; code: number | null; output: string }> =>
-      ipcRenderer.invoke('db:runWorkflowAction', kind, value, expect ?? ''),
-    describeWorkflowAction: (kind: string, value: string, expect?: string): Promise<string> =>
-      ipcRenderer.invoke('db:describeWorkflowAction', kind, value, expect),
+      ipcRenderer.invoke('db:runWorkflowAction', kind, value, expect ?? '', runtime ?? ''),
+    describeWorkflowAction: (
+      kind: string,
+      value: string,
+      expect?: string,
+      runtime?: string
+    ): Promise<string> =>
+      ipcRenderer.invoke('db:describeWorkflowAction', kind, value, expect, runtime),
     /** reason：手动中断专注时记录的中断原因（D18，对齐 PomodoroRepository.add 的第 5 参） */
     recordPomodoro: (
       taskId: number | null,

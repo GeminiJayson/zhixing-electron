@@ -11,7 +11,7 @@
  *
  * 用法：node scripts/workflowauto.mjs（需先 npm run build）
  */
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -335,11 +335,78 @@ const sopTask = await conn.evaluate(
 const links = (String(sopTask?.notes_md ?? '').match(/\[\[/g) ?? []).length
 check('多绑 SOP 全部写成任务备注链接', links === 2, `links=${links} md=${sopTask?.notes_md}`)
 
+// ---------------------------------------------------------------- 7) 四类脚本运行环境
+// PowerShell / cmd / Node 本机都有，逐类实测退出码；Python 视有无解释器分别验证。
+const runtimeInsts = []
+const runtimeTpls = []
+const runtimeCases = [
+  { runtime: 'powershell', label: 'PowerShell', script: 'exit 4', expect: '4' },
+  { runtime: 'cmd', label: 'CMD', script: 'exit /b 6', expect: '6' },
+  { runtime: 'node', label: 'Node', script: 'process.exit(9)', expect: '9' },
+]
+for (const c of runtimeCases) {
+  const tpl = await conn.evaluate(
+    `window.zhixing.db.saveWorkflowTemplate({ name: ${J('验证-运行时-' + c.label)}, start_policy: 'first', nodes: [
+        { title: '脚本', order_index: 0, action_kind: 'script', action_value: ${J(c.script)}, action_expect: ${J(c.expect)}, action_runtime: ${J(c.runtime)} },
+        { title: '人工步', order_index: 1 }
+      ] }).then(r => r.ok ? window.zhixing.db.workflowTemplate(r.templateId) : r)`
+  )
+  check(`${c.label} 运行环境已持久化`, tpl?.nodes?.[0]?.action_runtime === c.runtime, tpl?.nodes?.[0]?.action_runtime)
+  const inst = await conn.evaluate(`window.zhixing.db.instantiateWorkflow(${tpl.id}, null, null, 'first')`)
+  const settled = await waitFor(
+    `window.zhixing.db.workflowInstance(${inst.id})`,
+    (i) => i && i.last_result && i.last_result.state !== 'running',
+    30000
+  )
+  check(
+    `${c.label} 脚本执行并核对退出码`,
+    settled?.last_result?.state === 'ok' && settled?.last_result?.code === Number(c.expect),
+    `state=${settled?.last_result?.state} code=${settled?.last_result?.code} msg=${settled?.last_result?.message}`
+  )
+  runtimeInsts.push(inst)
+  runtimeTpls.push(tpl.id)
+}
+
+// Python：本机没装解释器时，必须报出「试过哪些候选」而不是一句干巴巴的失败
+const pyTpl = await conn.evaluate(
+  `window.zhixing.db.saveWorkflowTemplate({ name: '验证-运行时-Python', start_policy: 'first', nodes: [
+      { title: '脚本', order_index: 0, action_kind: 'script', action_value: 'import sys\\nsys.exit(0)', action_expect: '0', action_runtime: 'python' },
+      { title: '人工步', order_index: 1 }
+    ] }).then(r => r.ok ? window.zhixing.db.workflowTemplate(r.templateId) : r)`
+)
+const pyInst = await conn.evaluate(`window.zhixing.db.instantiateWorkflow(${pyTpl.id}, null, null, 'first')`)
+const pySettled = await waitFor(
+  `window.zhixing.db.workflowInstance(${pyInst.id})`,
+  (i) => i && i.last_result && i.last_result.state !== 'running',
+  30000
+)
+const pythonAvailable = !spawnSync('python', ['-c', 'pass'], {
+  env: { ...process.env, PATH: `${SYS_PATH};${process.env.PATH ?? ''}` },
+  windowsHide: true,
+}).error
+if (pythonAvailable) {
+  check(
+    'Python 脚本执行并核对退出码（本机装了 Python）',
+    pySettled?.last_result?.state === 'ok' && pySettled?.last_result?.code === 0,
+    `state=${pySettled?.last_result?.state} code=${pySettled?.last_result?.code}`
+  )
+} else {
+  // 这台机器没有 Python：重点验证「找不到解释器」时信息是否可操作
+  check(
+    'Python 不可用时给出「已尝试哪些解释器」的失败信息',
+    pySettled?.last_result?.state === 'failed' &&
+      /已尝试 python \/ python3 \/ py/.test(String(pySettled?.last_result?.message)),
+    pySettled?.last_result?.message
+  )
+}
+runtimeInsts.push(pyInst)
+runtimeTpls.push(pyTpl.id)
+
 // 清理：先中止这些实例（有 running 实例时模板拒绝删除），再删模板
-for (const id of [cmdInst, badInst, okInst, condInst, cond2Inst, scriptInst, sopInst]) {
+for (const id of [...[cmdInst, badInst, okInst, condInst, cond2Inst, scriptInst, sopInst], ...runtimeInsts]) {
   await conn.evaluate(`window.zhixing.db.abortWorkflowInstance(${id.id})`)
 }
-for (const id of [sop.id, cmdTpl.id, badTpl.id, okTpl.id, condTpl.id, condTpl2.id, scriptTpl.id]) {
+for (const id of [...[sop.id, cmdTpl.id, badTpl.id, okTpl.id, condTpl.id, condTpl2.id, scriptTpl.id], ...runtimeTpls]) {
   await conn.evaluate(`window.zhixing.db.deleteWorkflowTemplate(${id})`)
 }
 const leftovers = await conn.evaluate(

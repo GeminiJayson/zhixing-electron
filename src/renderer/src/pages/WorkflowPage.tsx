@@ -27,6 +27,7 @@ import {
   actionKindLabel,
   isAutoActionKind,
   normalizeActionKind,
+  scriptRuntimeLabel,
 } from '@shared/workflow-action'
 import { t } from '../i18n'
 import { Toolbar } from '../components/Toolbar'
@@ -347,6 +348,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
       action_kind: n.action_kind,
       action_value: n.action_value,
       action_expect: n.action_expect,
+      action_runtime: n.action_runtime,
       condition: n.condition,
       branch_node_id: n.branch_node_id,
       pos_x: pos.get(n.id)?.x ?? n.pos_x ?? null,
@@ -486,6 +488,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
       action_kind: isCondition ? CONDITION_KIND : TASK_KIND,
       action_value: isCondition ? serializeCondition({ kind: 'confirm' }) : '',
       action_expect: '',
+      action_runtime: '',
       condition: '',
       branch_node_id: null,
       pos_x: null,
@@ -544,11 +547,21 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     const kind = n.action_kind
     if (!kind || kind === 'none') return
     if (kind === 'run_command' || isAutoActionKind(kind)) {
-      const desc = await window.zhixing.db.describeWorkflowAction(kind, n.action_value, n.action_expect)
+      const desc = await window.zhixing.db.describeWorkflowAction(
+        kind,
+        n.action_value,
+        n.action_expect,
+        n.action_runtime
+      )
       const wait = isAutoActionKind(kind) ? '\n\n这一步会等进程结束并核对退出码。' : ''
       if (!window.confirm(`即将在本机执行：\n\n${desc}${wait}\n\n确定执行？`)) return
     }
-    const res = await window.zhixing.db.runWorkflowAction(kind, n.action_value, n.action_expect)
+    const res = await window.zhixing.db.runWorkflowAction(
+      kind,
+      n.action_value,
+      n.action_expect,
+      n.action_runtime
+    )
     onNotice(
       res.ok || !res.output
         ? res.message
@@ -1054,7 +1067,10 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                       )}
                       {isAutoActionKind(node.action_kind) && node.action_value && (
                         <p className="wf-card__detail">
-                          {normalizeActionKind(node.action_kind) === 'script' ? '脚本' : '命令'}：
+                          {normalizeActionKind(node.action_kind) === 'script'
+                            ? `脚本（${scriptRuntimeLabel(node.action_runtime)}）`
+                            : '命令'}
+                          ：
                           {node.action_value.length > 60
                             ? node.action_value.slice(0, 60).replace(/\n/g, ' ') + '…'
                             : node.action_value}
