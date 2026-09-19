@@ -1,4 +1,5 @@
 import { nextSortKey } from './tasks'
+import { setTaskTags } from './task-ops'
 import { getNote } from './notes'
 import { openExternalSafely } from '../security'
 import { spawn } from 'node:child_process'
@@ -277,6 +278,34 @@ export function updateWorkflowNodePos(nodeId: number, x: number, y: number): num
     .changes
 }
 
+/** 工作流实例的标记标签：父任务与各步骤都打上它，任务页一眼能认出「这是流程派生的」。 */
+export const WORKFLOW_TAG = '工作流'
+
+/**
+ * 给一个实例造「根任务」：把各步骤收在它下面，而不是让它们散在任务列表顶层。
+ * 从某个任务启动工作流时不走这里（那个任务本身就是根）。
+ */
+function createWorkflowParentTask(tplName: string, instanceTitle: string): number {
+  const c = conn()
+  const stamp = nowStamp()
+  const info = c
+    .prepare(
+      `INSERT INTO task (title, notes_md, status, priority, repeat_period, streak, sort_key, parent_id, created_at, updated_at)
+       VALUES (?, ?, 'todo', 0, 'none', 0, ?, NULL, ?, ?)`
+    )
+    .run(
+      `工作流：${tplName}`,
+      `由工作流实例「${instanceTitle}」自动创建，各步骤作为子任务派发。`,
+      nextSortKey(null),
+      stamp,
+      stamp
+    )
+  const taskId = Number(info.lastInsertRowid)
+  // 标签是任务页上「明显标记」的载体（TaskRow 会渲染成胶囊）
+  setTaskTags(taskId, [WORKFLOW_TAG])
+  return taskId
+}
+
 /** 把一步下发为真实任务并建立绑定（对齐 _spawn_step_task）。 */
 export function spawnStepTask(
   instanceId: number,
@@ -300,6 +329,8 @@ export function spawnStepTask(
     )
     .run(`${tplName}：${node.title}`, notesMd, nextSortKey(parentId), parentId, stamp, stamp)
   const taskId = Number(info.lastInsertRowid)
+  // 与父任务同一个标记：任务页上能一眼看出这一串是流程派生的
+  setTaskTags(taskId, [WORKFLOW_TAG])
   c.prepare('INSERT INTO workflow_step_task (instance_id, node_id, task_id, created_at) VALUES (?, ?, ?, ?)').run(
     instanceId,
     node.id,
@@ -334,12 +365,20 @@ export async function instantiateWorkflow(
     .run(templateId, instanceTitle, headId, originTaskId, stamp)
   const instanceId = Number(info.lastInsertRowid)
 
+  // 没有「启动它的那个任务」时（从工作流页直接点启动）就现造一个根任务：
+  // 各步骤挂在它下面形成一棵子树，而不是散落在任务列表顶层。
+  // 同时把它写回 origin_task_id —— spawnStepTask 取父级、以及「按任务查实例」都靠这一列。
+  const rootTaskId = originTaskId ?? createWorkflowParentTask(tpl.name, instanceTitle)
+  if (rootTaskId !== originTaskId) {
+    c.prepare('UPDATE workflow_instance SET origin_task_id = ? WHERE id = ?').run(rootTaskId, instanceId)
+  }
+
   // policy=first 只下发第一步，完成后自动推进；all 一次性下发全部。
   // 两种情况下条件节点都不建任务 —— 它是自动求值的关卡，不是待办。
   const toSpawn = usePolicy === 'all' ? ordered : start?.node ? [start.node] : []
   for (const n of toSpawn) {
     if (n.action_kind === CONDITION_KIND) continue
-    spawnStepTask(instanceId, n, tpl.name, originTaskId)
+    spawnStepTask(instanceId, n, tpl.name, rootTaskId)
   }
   return getWorkflowInstance(instanceId)
 }
@@ -415,6 +454,12 @@ export async function completeWorkflowStep(taskId: number): Promise<boolean> {
   const stamp = nowStamp()
   if (!nxt) {
     c.prepare("UPDATE workflow_instance SET status = 'done', finished_at = ? WHERE id = ?").run(stamp, inst.id)
+    // 根任务跟着收尾：否则任务页上会一直挂着一个已无子步骤的「工作流：xxx」。
+    // 直接写 SQL 而不是走任务模块的 setStatus —— 那个入口在 IPC 层还挂着「推进工作流」的钩子，
+    // 在这里调用会绕回去。
+    if (inst.origin_task_id) {
+      c.prepare("UPDATE task SET status = 'done', updated_at = ? WHERE id = ?").run(stamp, inst.origin_task_id)
+    }
     return true
   }
   const has = c
