@@ -6,6 +6,7 @@ import { parseSettings } from '@shared/settings'
 import type { TaskNoteContext } from '@shared/types'
 import { applyAppearance } from './theme'
 import { TaskRow } from './components/TaskRow'
+import { WidgetBall } from './components/WidgetBall'
 import { PriorityMenu } from './components/PriorityMenu'
 import { PopMenu, type PopMenuItem } from './components/PopMenu'
 
@@ -27,6 +28,11 @@ const RESIZE_MARGIN = 4
 export function WidgetApp() {
   const [tasks, setTasks] = useState<Awaited<ReturnType<typeof window.zhixing.db.todayTasks>> | null>(null)
   const [draft, setDraft] = useState('')
+  /**
+   * 浮窗形态：'full' 完整卡片 / 'ball' 贴边收缩后的悬浮球。
+   * 形态由主进程裁决（贴着屏幕边缘就收成球），渲染层只负责画。
+   */
+  const [mode, setMode] = useState<'full' | 'ball'>('full')
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const [notice, setNotice] = useState('')
   const [priorityMenu, setPriorityMenu] = useState<{ id: number; anchor: HTMLElement } | null>(null)
@@ -54,12 +60,23 @@ export function WidgetApp() {
   }, [])
 
   useEffect(() => {
+    // 球形态不查库：球不展示任务，展开回完整卡片时再拉一次最新数据
+    if (mode === 'ball') return
     void load()
     // 主窗口改了数据后，浮窗下一次轮询即同步（跨窗口没有共享状态，靠轮询最省心）；
     // 主窗隐藏时主进程会推一次 widget-refresh，避免先看到过期列表（S16）
     const timer = window.setInterval(() => void load(), 5000)
     return () => window.clearInterval(timer)
-  }, [load])
+  }, [load, mode])
+
+  /**
+   * 形态订阅：主进程在贴边收缩 / 展开时推 'widget:mode'，挂载时也主动问一次 ——
+   * 启动就停在屏幕边缘时，推送可能早于渲染层挂载。
+   */
+  useEffect(() => {
+    void window.zhixing.widget.getMode().then(setMode)
+    window.zhixing.widget.onMode(setMode)
+  }, [])
 
   // 主进程的显隐联动会推 widget-refresh（对齐 _on_main_hidden 里的 widget.reload_tasks）
   useEffect(() => {
@@ -68,19 +85,17 @@ export function WidgetApp() {
     })
   }, [load])
 
-  // 贴边交互：把手状态下鼠标进入即滑出；双击同样取消贴边；右键出菜单
+  // 贴边交互：球形态由 WidgetBall 自己处理点击展开，这里只管双击与右键。
+  // 刻意不再监听 mouseenter —— 球就贴在屏幕边缘，鼠标每次掠过都展开会非常烦人。
   useEffect(() => {
-    const onEnter = (): void => void window.zhixing.widget.undock()
     const onDouble = (): void => void window.zhixing.widget.undock()
     const onContext = (e: MouseEvent): void => {
       e.preventDefault()
       void window.zhixing.widget.contextMenu()
     }
-    document.body.addEventListener('mouseenter', onEnter)
     document.body.addEventListener('dblclick', onDouble)
     document.body.addEventListener('contextmenu', onContext)
     return () => {
-      document.body.removeEventListener('mouseenter', onEnter)
       document.body.removeEventListener('dblclick', onDouble)
       document.body.removeEventListener('contextmenu', onContext)
     }
@@ -92,6 +107,8 @@ export function WidgetApp() {
    * 用捕获阶段监听，确保先于卡片内部的交互拿到事件。
    */
   useEffect(() => {
+    // 球形态不参与缩放：球上没有「边缘」这个概念
+    if (mode === 'ball') return
     const edgesAt = (e: MouseEvent): string => {
       const w = window.innerWidth
       const h = window.innerHeight
@@ -139,7 +156,7 @@ export function WidgetApp() {
       window.removeEventListener('mousedown', onDown, true)
       window.removeEventListener('mouseup', onUp)
     }
-  }, [])
+  }, [mode])
 
   /**
    * 外观：浮窗是独立渲染进程，主窗口换主题 / 主题包只写 settings 表，
@@ -302,6 +319,11 @@ export function WidgetApp() {
         {!collapsed.has(node.id) && renderNodes(node.children, depth + 1)}
       </div>
     ))
+
+  // 贴边收缩态：整个窗口交给悬浮球（点击球自身即展开）
+  if (mode === 'ball') {
+    return <WidgetBall onRestore={() => void window.zhixing.widget.undock()} />
+  }
 
   return (
     <div className="widget">

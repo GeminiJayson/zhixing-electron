@@ -163,6 +163,39 @@ export function saveWidgetGeometry(x: number, y: number, w: number, h: number): 
   }
 }
 
+/**
+ * 悬浮球状态写入 ui_state.widget_ball：位置 / 球体边长 / 上次展开尺寸 / 当前是否球形态。
+ * 与 widget_geometry 分开存 —— 收成球时不能覆盖展开几何，否则展开就还原不回去了。
+ */
+export function saveWidgetBall(ball: {
+  x: number
+  y: number
+  size: number
+  active: boolean
+  expandedWidth: number
+  expandedHeight: number
+}): void {
+  try {
+    if (!open()) return
+    const c = conn()
+    const row = c.prepare("SELECT value FROM settings WHERE key = 'ui_state'").get() as
+      | { value: string }
+      | undefined
+    let state: Record<string, unknown> = {}
+    try {
+      state = JSON.parse(row?.value ?? '{}') as Record<string, unknown>
+    } catch {
+      state = {}
+    }
+    state.widget_ball = ball
+    c.prepare(
+      "INSERT INTO settings (key, value) VALUES ('ui_state', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+    ).run(JSON.stringify(state))
+  } catch (err) {
+    console.warn('[widget] 保存悬浮球状态失败', err)
+  }
+}
+
 
 // ---------------------------------------------------------------- 首次启动种子数据
 

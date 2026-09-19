@@ -6,6 +6,7 @@ import {
   Menu,
   Tray,
   globalShortcut,
+  type MenuItemConstructorOptions,
   nativeImage,
   nativeTheme,
   screen,
@@ -17,7 +18,7 @@ import { extractDeepLink, parseDeepLink, toAccelerator } from '../shared/deep-li
 import { resolveThemePack } from '../shared/theme-packs'
 import { initFileLog } from './log'
 import { hardenWindow } from './security'
-import { autoBackup, closeDb, currentSettings, dbPath, dbOpenError, dbReadonlyReason, ensureDefaultSettings, listTodayTasks, open, registerDbHandlers, saveWidgetGeometry, setDataChangedHook } from './db'
+import { autoBackup, closeDb, currentSettings, dbPath, dbOpenError, dbReadonlyReason, ensureDefaultSettings, listTodayTasks, open, registerDbHandlers, saveWidgetGeometry, saveWidgetBall, setDataChangedHook } from './db'
 
 const SCHEME = 'zhixing'
 
@@ -46,16 +47,55 @@ let splashWindow: BrowserWindow | null = null
 let mainReady = false
 /** 是否正在真正退出（托盘「退出」/before-quit）。用来放行关闭拦截。 */
 let quitting = false
-/** 浮窗贴边状态：缩为把手后记住原宽度与所在侧，鼠标进入时滑出。 */
-let widgetDock: { side: 'left' | 'right'; expandedWidth: number } | null = null
+/**
+ * 浮窗形态：'full' 完整卡片 / 'ball' 悬浮球。
+ * 与 Python 版「10px 把手」有意分歧：这里收成一颗会做表情的球（Emotion Ball 引擎），
+ * 而且球**可以拖动、可以改大小**，不再只是贴在边缘的一个把手。
+ * 形态与位置是解耦的：球的位置/边长独立存在 widget_ball，贴边只是它的一种停靠状态。
+ */
+let widgetMode: 'full' | 'ball' = 'full'
+/** 球形态几何：位置 + 球体边长 + 上次展开尺寸（展开时按它还原浮窗） */
+let widgetBall = {
+  x: 0,
+  y: 0,
+  size: 96,
+  expandedWidth: 290,
+  expandedHeight: 380,
+}
+/** 球拖动中的起点：渲染层按下后由主进程按屏幕光标位移重算位置（光标可能移出窗口） */
+let widgetBallDrag: {
+  startCursor: { x: number; y: number }
+  start: { x: number; y: number }
+} | null = null
 /** 浮窗边缘缩放进行中的状态（对齐 desktop_widget 的 _resize_dir/_resize_start_geom）。 */
 let widgetResize: {
   edges: string
   startCursor: { x: number; y: number }
   start: { x: number; y: number; width: number; height: number }
 } | null = null
-/** 贴边把手宽度（对齐 desktop_widget 的 10px 把手） */
-const DOCK_HANDLE_W = 10
+/** 悬浮球：球体边长下限（88px 起表情才清晰）/ 上限 / 默认值 / 窗口四周留白 */
+const BALL_SIZE_MIN = 88
+const BALL_SIZE_MAX = 160
+const BALL_SIZE_DEFAULT = 96
+const BALL_MARGIN = 8
+/** 贴边吸附阈值：球（或浮窗）边缘贴进工作区 8px 内即吸附 / 收成球 */
+const DOCK_EDGE = 8
+/** 球体边长 → 窗口边长（四周留 BALL_MARGIN：放 hover 放大与投影） */
+const ballWindowPx = (size: number): number => size + BALL_MARGIN * 2
+/** 钳住球体边长：下限 88px，再小表情就看不清了 */
+const clampBallSize = (size: number): number =>
+  Math.round(Math.max(BALL_SIZE_MIN, Math.min(BALL_SIZE_MAX, size || BALL_SIZE_DEFAULT)))
+/**
+ * 球形态窗口的最小边长（按最小球体算）。
+ * **固定不变**：最小尺寸一变，平台会异步重排窗口（保持左上角），把紧随其后的 setBounds
+ * 位置参数盖掉 —— 症状就是「球变大了、位置却没动」。所以缩放时不去动最小尺寸。
+ */
+const BALL_WIN_MIN = BALL_SIZE_MIN + BALL_MARGIN * 2
+/**
+ * 展开后距屏幕边缘的留白。必须大于 DOCK_EDGE —— 展开走的 setBounds 同样会触发
+ * `moved`，留白不够会被立刻重新判定为贴边，刚展开又收回去。
+ */
+const DOCK_RESTORE_INSET = 12
 /** 边缘缩放命中带宽度（对齐 desktop_widget 的 _RESIZE_MARGIN） */
 const WIDGET_RESIZE_MARGIN = 6
 /** 上一次托盘图标的配色，用于避免无谓的重着色 */
@@ -86,6 +126,44 @@ function readWidgetGeometry(): { x?: number; y?: number; width: number; height: 
     // 配置损坏时退回默认尺寸
   }
   return { width, height }
+}
+
+/**
+ * 读取悬浮球上次的位置 / 边长（ui_state.widget_ball）。
+ * `active` 表示上次退出时停在球形态 —— 启动要直接以球露面。
+ */
+function readWidgetBall(): {
+  x: number | null
+  y: number | null
+  size: number
+  active: boolean
+  expandedWidth: number
+  expandedHeight: number
+} {
+  const fallback = {
+    x: null as number | null,
+    y: null as number | null,
+    size: BALL_SIZE_DEFAULT,
+    active: false,
+    expandedWidth: WIDGET_SIZE[0],
+    expandedHeight: WIDGET_SIZE[1],
+  }
+  try {
+    const state = JSON.parse(currentSettings().ui_state) as { widget_ball?: Record<string, unknown> }
+    const b = state.widget_ball
+    if (!b || typeof b !== 'object') return fallback
+    const num = (v: unknown, d: number): number => (Number.isFinite(Number(v)) ? Number(v) : d)
+    return {
+      x: Number.isFinite(Number(b.x)) ? num(b.x, 0) : null,
+      y: Number.isFinite(Number(b.y)) ? num(b.y, 0) : null,
+      size: clampBallSize(num(b.size, BALL_SIZE_DEFAULT)),
+      active: b.active === true,
+      expandedWidth: Math.max(WIDGET_MIN[0], num(b.expandedWidth, WIDGET_SIZE[0])),
+      expandedHeight: Math.max(WIDGET_MIN[1], num(b.expandedHeight, WIDGET_SIZE[1])),
+    }
+  } catch {
+    return fallback
+  }
 }
 
 /**
@@ -131,45 +209,74 @@ function createWidgetWindow(): void {
   widgetWindow.setAlwaysOnTop(true, 'floating')
   widgetWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
 
-  // 几何写库（S19）：拖拽/缩放过程中 moved/resized 会连续触发，去抖到停手后只写一次；
-  // 贴边态不写 —— 与 desktop_widget 一致，贴边时保留「未贴边」的用户几何，
-  // 滑出/取消贴边时按原值还原。
+  // 几何写库（S19）：拖拽/缩放过程中 moved/resized 会连续触发，去抖到停手后只写一次。
+  // 球形态的几何写进 widget_ball，绝不覆盖 widget_geometry —— 展开时还要靠后者还原。
   let persistTimer: NodeJS.Timeout | null = null
   const persistNow = (): void => {
     if (persistTimer) {
       clearTimeout(persistTimer)
       persistTimer = null
     }
-    if (!widgetWindow || widgetWindow.isDestroyed() || widgetDock) return
+    if (!widgetWindow || widgetWindow.isDestroyed() || widgetMode === 'ball') return
     const [x, y] = widgetWindow.getPosition()
     const [w, h] = widgetWindow.getSize()
     saveWidgetGeometry(x, y, w, h)
   }
   const persistSoon = (): void => {
-    if (widgetDock) return
+    if (widgetMode === 'ball') return
     if (persistTimer) clearTimeout(persistTimer)
     persistTimer = setTimeout(() => {
       persistTimer = null
       persistNow()
     }, 400)
   }
-  // 贴边检测放在移动之后：拖动到屏幕边缘即缩成把手
+  /**
+   * 球的去抖收尾：停手后吸附到最近边缘并写库。
+   * 拖动过程中 moved 每帧都触发，逐帧吸附会让球「粘」在边缘拖不动。
+   */
+  const persistBallSoon = (): void => {
+    if (persistTimer) clearTimeout(persistTimer)
+    persistTimer = setTimeout(() => {
+      persistTimer = null
+      rememberBallPosition()
+      snapBallToNearestEdge()
+      persistBall()
+    }, 400)
+  }
   widgetWindow.on('moved', () => {
-    if (!widgetDock) maybeDockWidget()
+    // 球形态：窗口本身就是球，拖动只更新球位置（停手后再吸附 + 写库）
+    if (widgetMode === 'ball') {
+      rememberBallPosition()
+      persistBallSoon()
+      return
+    }
+    // 卡片形态：拖到屏幕边缘就收成球，否则按老规矩去抖写浮窗几何
+    if (maybeDockWidget()) return
+    persistSoon()
+  })
+  widgetWindow.on('resized', () => {
+    if (widgetMode === 'ball') persistBallSoon()
     else persistSoon()
   })
-  widgetWindow.on('resized', persistSoon)
   widgetWindow.on('ready-to-show', () => {
+    // 上次退出时就是球 → 直接按保存的位置与大小以球露面
+    const restored = readWidgetBall()
+    if (restored.active) restoreBall(restored)
+    // 否则：上次停在屏幕边缘的浮窗几何 → 第一次露面就收成球，别把整卡片挤进小窗口
+    else maybeDockWidget()
     // 启动阶段只创建不显示（对齐 app_controller.startup 末尾的 self.widget.hide()）：
     // 主窗显示→隐藏浮窗、主窗隐藏→显示浮窗，统一由 syncWidgetVisibility 裁决。
     syncWidgetVisibility()
-    // 恢复上次就贴在边缘的几何时也进入把手状态
-    maybeDockWidget()
   })
-  widgetWindow.on('hide', persistNow)
+  widgetWindow.on('hide', () => {
+    if (widgetMode === 'ball') persistBall()
+    else persistNow()
+  })
   widgetWindow.on('closed', () => {
-    persistNow()
+    if (widgetMode === 'ball') persistBall()
+    else persistNow()
     widgetResize = null
+    widgetBallDrag = null
     widgetWindow = null
   })
 
@@ -181,46 +288,218 @@ function createWidgetWindow(): void {
 }
 
 /**
- * 浮窗贴边：贴近屏幕左右边缘时缩成把手（对齐 desktop_widget 的贴边半隐）。
- * 只记录状态、不改变用户的几何持久化值 —— 滑出时按原宽度还原。
+ * 通知渲染层切换形态：'ball' 画悬浮球，'full' 画完整卡片。
+ * 渲染层挂载时也会主动问一次（`widget:mode`），这条推送负责后续切换。
  */
-function maybeDockWidget(): void {
+function sendWidgetMode(): void {
   if (!widgetWindow || widgetWindow.isDestroyed()) return
-  const b = widgetWindow.getBounds()
-  const wa = screen.getDisplayMatching(b).workArea
-  const nearLeft = b.x - wa.x <= 8
-  const nearRight = wa.x + wa.width - (b.x + b.width) <= 8
-  if (!nearLeft && !nearRight) {
-    widgetDock = null
-    return
+  widgetWindow.webContents.send('widget:mode', widgetMode)
+}
+
+/**
+ * 设置窗口几何：**先 setSize、后 setPosition**，并补落一次。
+ *
+ * 两个 API 在窗口隐藏/可见两种阶段各有一半不可靠，所以「先 setBounds 落地、再 setPosition
+ * 纠偏」：
+ *   - 隐藏时（restoreBall 走 ready-to-show）setPosition 落不下去，只能靠 setBounds；
+ *   - 可见时 Windows 会因尺寸变化按「保持左上角」异步重排一次，把 setBounds 的位置盖掉
+ *     （实测 setBounds(276,276,176,176) 落成 (300,300,176,176)），要等重排过去再只改位置。
+ */
+function applyWidgetBounds(bounds: {
+  x: number
+  y: number
+  width: number
+  height: number
+}): void {
+  if (!widgetWindow || widgetWindow.isDestroyed()) return
+  /** 只改位置、不改尺寸 —— 改尺寸会再触发一次重排，等于白改 */
+  const setPos = (): void => {
+    if (!widgetWindow || widgetWindow.isDestroyed()) return
+    widgetWindow.setPosition(bounds.x, bounds.y)
   }
-  const side: 'left' | 'right' = nearLeft ? 'left' : 'right'
-  if (widgetDock?.side === side) return
-  widgetDock = { side, expandedWidth: Math.max(b.width, WIDGET_MIN[0]) }
-  // 最小宽度会把 setBounds 钳回去，贴边前必须先放开
-  widgetWindow.setMinimumSize(DOCK_HANDLE_W, WIDGET_MIN[1])
-  widgetWindow.setBounds({
-    x: side === 'left' ? wa.x : wa.x + wa.width - DOCK_HANDLE_W,
-    y: b.y,
-    width: DOCK_HANDLE_W,
-    height: b.height,
+  // 第一步落地：隐藏窗口阶段只有 setBounds 能把位置一起带过去（setPosition 落不下去）
+  widgetWindow.setBounds(bounds)
+  // 第二步纠偏：可见窗口的尺寸重排是异步的，会按「保持左上角」把位置拉回原处，
+  // 等它发生之后再纠正位置。setImmediate 覆盖同帧重排，setTimeout 兜底更晚的重排。
+  setImmediate(setPos)
+  setTimeout(setPos, 120)
+}
+
+/** 从窗口当前位置刷新内存里的球坐标（拖动过程中会连续调用）。 */
+function rememberBallPosition(): void {
+  if (!widgetWindow || widgetWindow.isDestroyed() || widgetMode !== 'ball') return
+  const [x, y] = widgetWindow.getPosition()
+  widgetBall.x = x
+  widgetBall.y = y
+}
+
+/** 球状态写库：位置 / 边长 / 上次展开尺寸 / 当前是否就是球形态。 */
+function persistBall(active = true): void {
+  saveWidgetBall({
+    x: Math.round(widgetBall.x),
+    y: Math.round(widgetBall.y),
+    size: clampBallSize(widgetBall.size),
+    active,
+    expandedWidth: Math.round(widgetBall.expandedWidth),
+    expandedHeight: Math.round(widgetBall.expandedHeight),
   })
 }
 
-/** 滑出：从把手恢复原宽度（对齐桌面浮窗的悬停滑出 / 双击取消贴边）。 */
-function undockWidget(): void {
-  if (!widgetWindow || widgetWindow.isDestroyed() || !widgetDock) return
+/** 按保存的球几何以球形态露面（位置越界时钳回对应显示器的工作区）。 */
+function restoreBall(saved: ReturnType<typeof readWidgetBall>): void {
+  if (!widgetWindow || widgetWindow.isDestroyed()) return
+  const win = ballWindowPx(saved.size)
+  widgetBall.size = saved.size
+  widgetBall.expandedWidth = saved.expandedWidth
+  widgetBall.expandedHeight = saved.expandedHeight
+  const wa = screen.getDisplayMatching({
+    x: saved.x ?? 0,
+    y: saved.y ?? 0,
+    width: win,
+    height: win,
+  }).workArea
+  const x = saved.x === null ? wa.x : Math.max(wa.x, Math.min(saved.x, wa.x + wa.width - win))
+  const y =
+    saved.y === null ? wa.y + 120 : Math.max(wa.y, Math.min(saved.y, wa.y + wa.height - win))
+  widgetBall.x = x
+  widgetBall.y = y
+  widgetMode = 'ball'
+  widgetWindow.setMinimumSize(BALL_WIN_MIN, BALL_WIN_MIN)
+  sendWidgetMode()
+  applyWidgetBounds({ x, y, width: win, height: win })
+}
+
+/**
+ * 收起成球（「隐藏」按钮 / 拖到屏幕边缘 / 右键「贴边停靠」）。
+ * 记住当前浮窗尺寸以便展开还原；不指定侧时贴最近的一侧，竖直对齐浮窗中心。
+ */
+function collapseWidgetToBall(side?: 'left' | 'right'): void {
+  if (!widgetWindow || widgetWindow.isDestroyed() || widgetMode === 'ball') return
   const b = widgetWindow.getBounds()
   const wa = screen.getDisplayMatching(b).workArea
-  const width = widgetDock.expandedWidth
-  const x = widgetDock.side === 'left' ? wa.x : wa.x + wa.width - width
-  widgetDock = null
+  widgetBall.expandedWidth = Math.max(WIDGET_MIN[0], b.width)
+  widgetBall.expandedHeight = Math.max(WIDGET_MIN[1], b.height)
+  const win = ballWindowPx(widgetBall.size)
+  const target = side ?? (b.x + b.width / 2 <= wa.x + wa.width / 2 ? 'left' : 'right')
+  const x = target === 'left' ? wa.x : wa.x + wa.width - win
+  const centerY = b.y + Math.round(b.height / 2)
+  const y = Math.max(wa.y, Math.min(centerY - Math.round(win / 2), wa.y + wa.height - win))
+  widgetBall.x = x
+  widgetBall.y = y
+  widgetMode = 'ball'
+  // 最小尺寸会把 setBounds 钳回去，收球前必须先放开
+  widgetWindow.setMinimumSize(BALL_WIN_MIN, BALL_WIN_MIN)
+  sendWidgetMode()
+  applyWidgetBounds({ x, y, width: win, height: win })
+  persistBall()
+  // 「隐藏」按钮走的就是这条路：球必须露出来，否则用户再也找不回浮窗
+  widgetWindow.show()
+}
+
+/**
+ * 浮窗贴边：贴近屏幕左右边缘时收成悬浮球（对齐 desktop_widget 的贴边半隐语义）。
+ * 返回是否真的收成了球 —— 调用方据此决定要不要再写浮窗几何。
+ */
+function maybeDockWidget(): boolean {
+  if (!widgetWindow || widgetWindow.isDestroyed() || widgetMode === 'ball') return false
+  const b = widgetWindow.getBounds()
+  const wa = screen.getDisplayMatching(b).workArea
+  const nearLeft = b.x - wa.x <= DOCK_EDGE
+  const nearRight = wa.x + wa.width - (b.x + b.width) <= DOCK_EDGE
+  if (!nearLeft && !nearRight) return false
+  collapseWidgetToBall(nearLeft ? 'left' : 'right')
+  return true
+}
+
+/** 球松手后吸附：水平贴进边缘就吸平，竖直只钳进工作区（球可以停在任意高度）。 */
+function snapBallToNearestEdge(): void {
+  if (!widgetWindow || widgetWindow.isDestroyed() || widgetMode !== 'ball') return
+  const b = widgetWindow.getBounds()
+  const wa = screen.getDisplayMatching(b).workArea
+  let x = b.x
+  if (b.x - wa.x <= DOCK_EDGE) x = wa.x
+  else if (wa.x + wa.width - (b.x + b.width) <= DOCK_EDGE) x = wa.x + wa.width - b.width
+  const y = Math.max(wa.y, Math.min(b.y, wa.y + wa.height - b.height))
+  if (x !== b.x || y !== b.y) widgetWindow.setBounds({ x, y, width: b.width, height: b.height })
+}
+
+/** 改球的大小（滚轮 / 右键菜单）：以球心为锚点缩放，窗口跟着一起变。 */
+function setBallSize(size: number): void {
+  if (!widgetWindow || widgetWindow.isDestroyed() || widgetMode !== 'ball') return
+  const next = clampBallSize(size)
+  if (next === widgetBall.size) return
+  const b = widgetWindow.getBounds()
+  const cx = b.x + b.width / 2
+  const cy = b.y + b.height / 2
+  const win = ballWindowPx(next)
+  widgetBall.size = next
+  // 不动最小尺寸：球窗口的最小边长固定为 BALL_WIN_MIN，缩放不会触发平台重排
+  applyWidgetBounds({
+    x: Math.round(cx - win / 2),
+    y: Math.round(cy - win / 2),
+    width: win,
+    height: win,
+  })
+  rememberBallPosition()
+  persistBall()
+}
+
+/**
+ * 球的拖动：与边缘缩放同款做法 —— 渲染层只报告「正在拖」，主进程按屏幕光标位移重算
+ * 位置。**不能**改用 `-webkit-app-region: drag`：那个会把球上的 click 一起吞掉，
+ * 而球最主要的交互恰恰是「点一下展开浮窗」。
+ */
+function ballDragStart(): void {
+  if (!widgetWindow || widgetWindow.isDestroyed() || widgetMode !== 'ball') return
+  const [x, y] = widgetWindow.getPosition()
+  widgetBallDrag = { startCursor: screen.getCursorScreenPoint(), start: { x, y } }
+}
+
+function ballDragTo(): void {
+  const d = widgetBallDrag
+  if (!d || !widgetWindow || widgetWindow.isDestroyed()) return
+  const p = screen.getCursorScreenPoint()
+  widgetWindow.setPosition(d.start.x + (p.x - d.startCursor.x), d.start.y + (p.y - d.startCursor.y))
+}
+
+/** 结束拖动：只有真拖动过才吸附（纯点击不该把球吸到边缘），随后写库。 */
+function ballDragEnd(moved: boolean): void {
+  widgetBallDrag = null
+  if (!widgetWindow || widgetWindow.isDestroyed() || widgetMode !== 'ball') return
+  if (moved) snapBallToNearestEdge()
+  rememberBallPosition()
+  persistBall()
+}
+
+/**
+ * 展开：从球恢复上次的浮窗尺寸。
+ * 展开方向是**球所在侧的反方向** —— 球在左半屏就向右展开，在右半屏就向左展开，
+ * 这样球始终落在浮窗的外侧，不会被浮窗盖住。
+ */
+function expandWidget(): void {
+  if (!widgetWindow || widgetWindow.isDestroyed() || widgetMode !== 'ball') return
+  const ball = widgetWindow.getBounds()
+  const wa = screen.getDisplayMatching(ball).workArea
+  const width = Math.max(WIDGET_MIN[0], widgetBall.expandedWidth)
+  const height = Math.max(WIDGET_MIN[1], widgetBall.expandedHeight)
+  const goRight = ball.x + ball.width / 2 <= wa.x + wa.width / 2
+  // 贴边阈值是 DOCK_EDGE：两侧各留 DOCK_RESTORE_INSET 的间隙，免得这次 setBounds
+  // 触发的 `moved` 又把刚展开的浮窗收回去
+  const rawX = goRight ? ball.x : ball.x + ball.width - width
+  const x = Math.max(
+    wa.x + DOCK_RESTORE_INSET,
+    Math.min(rawX, wa.x + wa.width - width - DOCK_RESTORE_INSET)
+  )
+  const centerY = ball.y + Math.round(ball.height / 2)
+  const y = Math.max(wa.y, Math.min(centerY - Math.round(height / 2), wa.y + wa.height - height))
+  widgetMode = 'full'
   widgetWindow.setMinimumSize(WIDGET_MIN[0], WIDGET_MIN[1])
-  widgetWindow.setBounds({ x, y: b.y, width, height: b.height })
-  // 滑出后立即写库：此时已不是贴边态，几何就是用户最终看到的值
-  const [nx, ny] = widgetWindow.getPosition()
-  const [nw, nh] = widgetWindow.getSize()
-  saveWidgetGeometry(nx, ny, nw, nh)
+  sendWidgetMode()
+  applyWidgetBounds({ x, y, width, height })
+  // 展开后立即写库：此刻的几何就是用户最终看到的值
+  saveWidgetGeometry(x, y, width, height)
+  // 球的位置/边长留着（下次收球复用），但标记「当前不在球形态」，下次启动回到浮窗
+  persistBall(false)
 }
 
 /** 用户显式切过浮窗：该状态下不被主窗显隐联动覆盖，直到主窗再次显隐。 */
@@ -271,7 +550,8 @@ function syncWidgetVisibility(): void {
  * 之所以放主进程算：光标可能移出窗口，渲染层拿不到完整位移。
  */
 function widgetResizeStart(edges: string): void {
-  if (!widgetWindow || widgetWindow.isDestroyed() || widgetDock) return
+  // 球形态不参与边缘缩放：球上只有「拖动自己」和「缩放球体」
+  if (!widgetWindow || widgetWindow.isDestroyed() || widgetMode === 'ball') return
   const b = widgetWindow.getBounds()
   widgetResize = {
     edges: String(edges ?? ''),
@@ -310,7 +590,7 @@ function widgetResizeTo(): void {
 function widgetResizeEnd(): void {
   if (!widgetResize) return
   widgetResize = null
-  if (!widgetWindow || widgetWindow.isDestroyed() || widgetDock) return
+  if (!widgetWindow || widgetWindow.isDestroyed() || widgetMode === 'ball') return
   const [x, y] = widgetWindow.getPosition()
   const [w, h] = widgetWindow.getSize()
   saveWidgetGeometry(x, y, w, h)
@@ -818,19 +1098,54 @@ app.whenReady().then(() => {
     toggleWidget()
     return widgetWindow?.isVisible() ?? false
   })
-  ipcMain.handle('widget:close', () => widgetWindow?.hide())
+  // 浮窗上的「隐藏」= 收起成悬浮球（球留在桌面上，点它随时展开回来）
+  ipcMain.handle('widget:close', () => collapseWidgetToBall())
   ipcMain.handle('widget:setOpacity', (_e, value: number) => applyWidgetOpacity(value))
   ipcMain.handle('widget:setClickThrough', (_e, enabled: boolean) => applyWidgetClickThrough(enabled))
-  ipcMain.handle('widget:undock', () => undockWidget())
-  // 浮窗右键菜单（对齐 desktop_widget 的右键项：今日视图 / 取消贴边 / 隐藏浮窗）
+  ipcMain.handle('widget:undock', () => expandWidget())
+  /** 浮窗当前形态：'ball' 悬浮球 / 'full' 完整卡片（渲染层挂载时先问一次） */
+  ipcMain.handle('widget:mode', () => widgetMode)
+  // 悬浮球拖动：渲染层只报告「正在拖」，位移由主进程按屏幕光标重算（光标可能移出窗口）
+  ipcMain.handle('widget:dragStart', () => ballDragStart())
+  ipcMain.handle('widget:dragTo', () => ballDragTo())
+  ipcMain.handle('widget:dragEnd', (_e, moved: boolean) => ballDragEnd(moved === true))
+  // 悬浮球大小（滚轮 / 右键菜单），主进程钳在 BALL_SIZE_MIN~MAX
+  ipcMain.handle('widget:setBallSize', (_e, size: number) => setBallSize(Number(size)))
+  // 浮窗右键菜单（对齐 desktop_widget 的右键项：今日视图 / 贴边 / 隐藏浮窗）
   ipcMain.handle('widget:contextMenu', () => {
     if (!widgetWindow) return
-    Menu.buildFromTemplate([
-      { label: '今日视图', click: () => showMain() },
-      { label: '取消贴边', click: () => undockWidget() },
-      { type: 'separator' },
-      { label: '隐藏浮窗', click: () => widgetWindow?.hide() },
-    ]).popup({ window: widgetWindow })
+    const items: MenuItemConstructorOptions[] = [{ label: '今日视图', click: () => showMain() }]
+    if (widgetMode === 'ball') {
+      items.push({ label: '展开浮窗', click: () => expandWidget() })
+      items.push({
+        label: '悬浮球大小',
+        submenu: [
+          {
+            label: '小（88）',
+            type: 'radio',
+            checked: widgetBall.size <= 96,
+            click: () => setBallSize(BALL_SIZE_MIN),
+          },
+          {
+            label: '中（112）',
+            type: 'radio',
+            checked: widgetBall.size > 96 && widgetBall.size <= 128,
+            click: () => setBallSize(112),
+          },
+          {
+            label: '大（144）',
+            type: 'radio',
+            checked: widgetBall.size > 128,
+            click: () => setBallSize(144),
+          },
+        ],
+      })
+    } else {
+      items.push({ label: '贴边停靠', click: () => collapseWidgetToBall() })
+    }
+    items.push({ type: 'separator' })
+    items.push({ label: '隐藏浮窗', click: () => widgetWindow?.hide() })
+    Menu.buildFromTemplate(items).popup({ window: widgetWindow })
   })
   ipcMain.handle('widget:openMain', () => showMain())
 

@@ -487,6 +487,18 @@ const api = {
     setClickThrough: (enabled: boolean): Promise<void> =>
       ipcRenderer.invoke('widget:setClickThrough', enabled),
     undock: (): Promise<void> => ipcRenderer.invoke('widget:undock'),
+    /** 悬浮球拖动：只报告「正在拖」，位移由主进程按屏幕光标重算 */
+    dragStart: (): Promise<void> => ipcRenderer.invoke('widget:dragStart'),
+    dragTo: (): Promise<void> => ipcRenderer.invoke('widget:dragTo'),
+    dragEnd: (moved: boolean): Promise<void> => ipcRenderer.invoke('widget:dragEnd', moved),
+    /** 改悬浮球大小（球体边长，主进程钳在 88~160） */
+    setBallSize: (size: number): Promise<void> => ipcRenderer.invoke('widget:setBallSize', size),
+    /** 当前形态：'ball' 贴边收缩成悬浮球 / 'full' 完整卡片 */
+    getMode: (): Promise<'full' | 'ball'> => ipcRenderer.invoke('widget:mode'),
+    /** 主进程切换形态时推送（贴边收缩 / 展开 / 启动时恢复贴边态） */
+    onMode: (cb: (mode: 'full' | 'ball') => void): void => {
+      ipcRenderer.on('widget:mode', (_e, mode: 'full' | 'ball') => cb(mode))
+    },
     /** 边缘缩放（S17）：渲染层判定命中的边后交给主进程按屏幕光标重算尺寸 */
     resizeStart: (edges: string): Promise<void> => ipcRenderer.invoke('widget:resizeStart', edges),
     resizeTo: (): Promise<void> => ipcRenderer.invoke('widget:resizeTo'),
