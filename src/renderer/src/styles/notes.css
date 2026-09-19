@@ -110,14 +110,29 @@
   white-space: nowrap;
   font-size: var(--text-body);
 }
+/* 行内操作：不悬浮时**不占位**（否则会把右侧的笔记数挤到中间）。
+   与任务行 .trow__actions 同一套做法：0 宽 + 透明 + 不收指针事件。 */
 .ntree__actions {
   display: flex;
   gap: 2px;
+  flex: 0 0 auto;
+  max-width: 0;
   opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  transition: max-width var(--dur-fast) var(--ease-enter), opacity var(--dur-instant);
 }
 .ntree__note:hover .ntree__actions,
 .ntree__folder:hover .ntree__actions {
+  max-width: 76px;
   opacity: 1;
+  pointer-events: auto;
+}
+/* 文件夹的笔记数：主题强调色当次要指标 */
+.ntree__count {
+  font-size: var(--text-aux);
+  color: var(--accent-text);
+  font-variant-numeric: tabular-nums;
 }
 /* 文件夹行也要给操作区留出与笔记行同样的右内边距 */
 .ntree__folder {
@@ -139,10 +154,18 @@
   flex-direction: column;
   gap: var(--space-2);
 }
-.editor__bar {
-  display: flex;
+/* 编辑区工具栏（统一 Toolbar 的 page 形态、不常驻）：
+   标题分区里放的是可编辑的标题输入框，所以要让它占满、并改为垂直居中。 */
+.editor .tb__head {
   align-items: center;
-  gap: var(--space-2);
+}
+.editor .tb__lead {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.editor .tb__lead .editor__title {
+  flex: 1 1 auto;
+  min-width: 80px;
 }
 .editor__title {
   flex: 1;

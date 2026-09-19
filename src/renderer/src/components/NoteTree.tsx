@@ -195,7 +195,7 @@ export function NoteTree({
             <ChevronRight size={13} />
           </button>
           <span className="ntree__foldername">{f.name}</span>
-          <span className="u-aux">{own.length}</span>
+          <span className="ntree__count">{own.length}</span>
           <span className="ntree__actions">
             <button
               className="icon-btn"

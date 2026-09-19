@@ -10,6 +10,7 @@ import { MarkdownEditor, RichTextEditor, blockFingerprint, locateBlockInView } f
 import { MarkdownView } from '../components/MarkdownView'
 import { NoteHistory } from '../components/NoteHistory'
 import { NoteTree, type NoteFormat } from '../components/NoteTree'
+import { Toolbar } from '../components/Toolbar'
 import { PopMenu } from '../components/PopMenu'
 
 interface Props {
@@ -598,103 +599,107 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
         <div className="editor">
           {current ? (
             <>
-              <div className="editor__bar">
-                <input
-                  className="editor__title"
-                  value={title}
-                  onChange={(e) => {
-                    setTitle(e.target.value)
-                    setDirty(true)
-                  }}
-                  aria-label="笔记标题"
+                <Toolbar
+                  variant="page"
+                  sticky={false}
+                  titleNode={
+                    <>
+                      <input
+                        className="editor__title"
+                        value={title}
+                        onChange={(e) => {
+                          setTitle(e.target.value)
+                          setDirty(true)
+                        }}
+                        aria-label="笔记标题"
+                      />
+                      <span className="u-aux">{dirty ? '未保存…' : '已保存'}</span>
+                    </>
+                  }
+                  filters={[
+                    <select
+                      key="format"
+                      className="field field--compact"
+                      value={current.format}
+                      aria-label="笔记格式"
+                      title="笔记格式"
+                      onChange={(e) => void handleChangeFormat(e.target.value)}
+                    >
+                      {FORMAT_LABELS.map((f) => (
+                        <option key={f.value} value={f.value}>
+                          {f.label}
+                        </option>
+                      ))}
+                    </select>,
+                  ]}
+                  secondary={[
+                    <button key="preview" className="text-btn" aria-pressed={preview} onClick={() => setPreview((v) => !v)}>
+                      {preview ? <Pencil size={13} /> : <Eye size={13} />}
+                      {preview ? '编辑' : '预览'}
+                    </button>,
+                    <button key="links" className="text-btn" aria-pressed={linksOpen} onClick={() => setLinksOpen((v) => !v)}>
+                      <Link2 size={13} /> 链接
+                    </button>,
+                    <button key="ref" className="text-btn" title="添加指向其他笔记的引用" onClick={() => void handleAddReference()}>
+                      <Link2 size={13} /> 引用
+                    </button>,
+                    <button
+                      key="attach"
+                      className="text-btn"
+                      title="把本笔记归属到某任务或某文件夹"
+                      onClick={(e) => {
+                        const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                        setAttachMenu({ x: r.left, y: r.bottom + 4 })
+                      }}
+                    >
+                      <UserPlus size={13} /> 归属
+                    </button>,
+                    <button
+                      key="tpl"
+                      className="text-btn"
+                      onClick={(e) => {
+                        const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                        setTemplateMenu({ x: r.left, y: r.bottom + 4 })
+                      }}
+                    >
+                      <Plus size={13} /> 模板
+                    </button>,
+                    <button
+                      key="orphan"
+                      className="text-btn"
+                      onClick={(e) => {
+                        const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                        void (async () => {
+                          const rows = await window.zhixing.db.orphanNotes()
+                          setPanelItems(rows.map((n) => ({ key: `o-${n.id}`, label: n.title, id: n.id })))
+                          setPanel({ kind: 'orphan', x: r.left, y: r.bottom + 4 })
+                        })()
+                      }}
+                    >
+                      孤儿
+                    </button>,
+                    <button
+                      key="broken"
+                      className="text-btn"
+                      onClick={(e) => {
+                        const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                        void (async () => {
+                          const rows = await window.zhixing.db.brokenLinks()
+                          setPanelItems(
+                            rows.map((b, i) => ({
+                              key: `b-${i}`,
+                              label: `${b.src_title} → [[${b.dst_title}]]`,
+                              id: b.src_note_id,
+                            }))
+                          )
+                          setPanel({ kind: 'broken', x: r.left, y: r.bottom + 4 })
+                        })()
+                      }}
+                    >
+                      失效链接
+                    </button>,
+                  ]}
                 />
-                <span className="u-aux">{dirty ? '未保存…' : '已保存'}</span>
-                {/* N3：改格式入口（saveNote.format） */}
-                <select
-                  className="field field--compact"
-                  value={current.format}
-                  aria-label="笔记格式"
-                  title="笔记格式"
-                  onChange={(e) => void handleChangeFormat(e.target.value)}
-                >
-                  {FORMAT_LABELS.map((f) => (
-                    <option key={f.value} value={f.value}>
-                      {f.label}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  className="text-btn"
-                  aria-pressed={preview}
-                  onClick={() => setPreview((v) => !v)}
-                >
-                  {preview ? <Pencil size={13} /> : <Eye size={13} />}
-                  {preview ? '编辑' : '预览'}
-                </button>
-                <button
-                  className="text-btn"
-                  aria-pressed={linksOpen}
-                  onClick={() => setLinksOpen((v) => !v)}
-                >
-                  <Link2 size={13} /> 链接
-                </button>
-                {/* N-§1.3#7：主动添加引用链接 */}
-                <button className="text-btn" title="添加指向其他笔记的引用" onClick={() => void handleAddReference()}>
-                  <Link2 size={13} /> 引用
-                </button>
-                {/* N-§1.3#8：归属（关联任务 / 移动到文件夹） */}
-                <button
-                  className="text-btn"
-                  title="把本笔记归属到某任务或某文件夹"
-                  onClick={(e) => {
-                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                    setAttachMenu({ x: r.left, y: r.bottom + 4 })
-                  }}
-                >
-                  <UserPlus size={13} /> 归属
-                </button>
-                <button
-                  className="text-btn"
-                  onClick={(e) => {
-                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                    setTemplateMenu({ x: r.left, y: r.bottom + 4 })
-                  }}
-                >
-                  <Plus size={13} /> 模板
-                </button>
-                <button
-                  className="text-btn"
-                  onClick={(e) => {
-                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                    void (async () => {
-                      const rows = await window.zhixing.db.orphanNotes()
-                      setPanelItems(rows.map((n) => ({ key: `o-${n.id}`, label: n.title, id: n.id })))
-                      setPanel({ kind: 'orphan', x: r.left, y: r.bottom + 4 })
-                    })()
-                  }}
-                >
-                  孤儿 {''}
-                </button>
-                <button
-                  className="text-btn"
-                  onClick={(e) => {
-                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                    void (async () => {
-                      const rows = await window.zhixing.db.brokenLinks()
-                      setPanelItems(
-                        rows.map((b, i) => ({
-                          key: `b-${i}`,
-                          label: `${b.src_title} → [[${b.dst_title}]]`,
-                          id: b.src_note_id,
-                        }))
-                      )
-                      setPanel({ kind: 'broken', x: r.left, y: r.bottom + 4 })
-                    })()
-                  }}
-                >
-                  失效链接
-                </button>
-              </div>
 
               {current.format === 'link' ? (
                 // 链接笔记：content_md 存 URL，或存 Python 版写的 [{title,target}] JSON 数组。

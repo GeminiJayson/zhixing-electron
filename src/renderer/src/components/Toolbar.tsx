@@ -21,8 +21,10 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { MoreHorizontal, SlidersHorizontal } from 'lucide-react'
 
 export type ToolbarProps = {
-  /** 页面标题（panel 形态不用） */
+  /** 页面标题（panel 形态不用）。标题本身要放可编辑输入框之类的节点时改用 titleNode */
   title?: string
+  /** 自定义标题节点（优先于 title）：例如笔记编辑区那条可编辑的标题输入框 */
+  titleNode?: ReactNode
   subtitle?: string
   /** 视图 / 范围 / 分区切换（seg、tab 栏） */
   nav?: ReactNode
@@ -37,10 +39,13 @@ export type ToolbarProps = {
   /** 主操作：每页一个，位置固定 */
   primary?: ReactNode
   variant?: 'page' | 'panel'
+  /** 常驻（sticky）。默认 page 开、panel 关；嵌在卡片内部的编辑区工具栏可显式关掉 */
+  sticky?: boolean
 }
 
 export function Toolbar({
   title,
+  titleNode,
   subtitle,
   nav,
   meta,
@@ -49,6 +54,7 @@ export function Toolbar({
   secondary = [],
   primary,
   variant = 'page',
+  sticky = variant === 'page',
 }: ToolbarProps): JSX.Element {
   const rightRef = useRef<HTMLDivElement>(null)
   const [level, setLevel] = useState(0)
@@ -84,12 +90,12 @@ export function Toolbar({
   const overflowCount = hiddenFilters.length + hiddenSecondary.length
 
   return (
-    <div className={variant === 'panel' ? 'tb tb--panel' : 'tb tb--page'}>
+    <div className={'tb ' + (variant === 'page' ? 'tb--page' : 'tb--panel') + (sticky ? ' tb--sticky' : '')}>
       {variant === 'page' ? (
         // 标题分区：只放页面身份（标题 / 副标题），**不放任何操作**
         <div className="tb__head">
           <div className="tb__lead">
-            <h1 className="page__title">{title}</h1>
+            {titleNode ?? <h1 className="page__title">{title}</h1>}
             {subtitle ? <p className="page__subtitle">{subtitle}</p> : null}
           </div>
         </div>
