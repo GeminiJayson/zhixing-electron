@@ -3,6 +3,15 @@ import { parseSettings } from '@shared/settings'
 import { CapturePanel } from './components/CapturePanel'
 import { applyAppearance } from './theme'
 
+/** 读一次设置并应用外观；失败就用默认（不能因此卡住弹窗） */
+async function applyCurrentAppearance(): Promise<void> {
+  try {
+    applyAppearance(parseSettings(await window.zhixing.db.settings()))
+  } catch {
+    // 读不到设置就用默认
+  }
+}
+
 /**
  * 全局热键唤出的捕获面板 —— 跑在**自己的小窗口**里（`?capture=1`），不占主窗口。
  *
@@ -15,16 +24,20 @@ export function CaptureWindowApp(): JSX.Element | null {
     seed: { text: string; html: string }
   } | null>(null)
 
-  useEffect(() => window.zhixing.capture.onOpen(setPayload), [])
+  useEffect(
+    () =>
+      window.zhixing.capture.onOpen((payload) => {
+        setPayload(payload)
+        // 窗口是**复用**的：用户可能刚改过主题/字号，每次打开都重新应用一遍
+        void applyCurrentAppearance()
+      }),
+    []
+  )
 
   // 应用与主窗口一致的主题，完成后再让主进程显示窗口（避免先闪一下默认配色）
   useEffect(() => {
     void (async () => {
-      try {
-        applyAppearance(parseSettings(await window.zhixing.db.settings()))
-      } catch {
-        // 读不到设置就用默认
-      }
+      await applyCurrentAppearance()
       window.zhixing.capture.ready()
     })()
   }, [])

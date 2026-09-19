@@ -13,7 +13,21 @@ import { applyAppearance } from './theme'
 export function ConditionApp(): JSX.Element {
   const [ask, setAsk] = useState<{ id: string; prompt: string } | null>(null)
 
-  useEffect(() => window.zhixing.condition.onAsk(setAsk), [])
+  useEffect(
+    () =>
+      window.zhixing.condition.onAsk((ask) => {
+        setAsk(ask)
+        // 每次来问都重新应用一次外观（窗口是复用的，主题可能变了）
+        void (async () => {
+          try {
+            applyAppearance(parseSettings(await window.zhixing.db.settings()))
+          } catch {
+            // 读不到就用默认
+          }
+        })()
+      }),
+    []
+  )
 
   // 应用与主窗口一致的主题（含字号、动效级别），完成后再让主进程显示窗口
   useEffect(() => {
