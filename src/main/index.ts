@@ -195,6 +195,9 @@ function createWidgetWindow(): void {
     hasShadow: false,
     alwaysOnTop: true,
     skipTaskbar: true,
+    // 必须保持 resizable：Windows 上非 resizable 窗口的 setSize / setBounds 尺寸部分
+    // 会被忽略，而球的滚轮缩放、展开收起全靠程序化改尺寸（实测 resizable:false 会让
+    // setBallSize 完全失效）。卡片形态的边缘缩放另有自实现（widgetResizeStart/To/End）。
     resizable: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

@@ -96,6 +96,9 @@ html[data-surface='widget'] #root {
   /* 跟随窗口尺寸：主进程改窗口就是改球的大小，这里不必另算 */
   width: 100%;
   height: 100%;
+  /* 声明成圆：这样焦点环（box-shadow 跟随圆角）才是圆的。曾经这里用 outline
+     画焦点环 —— outline 不跟随 border-radius，会画出一个**方框**。 */
+  border-radius: 50%;
   /* 引擎首帧之前先缩着藏起来，免得看到一张空容器 */
   opacity: 0;
   transform: scale(0.88);
@@ -114,7 +117,6 @@ html[data-surface='widget'] #root {
   transform: scale(0.94);
 }
 .wball:focus-visible .wball__host {
-  outline: 2px solid var(--accent-text);
-  outline-offset: 2px;
-  border-radius: 50%;
+  /* 焦点环必须用 box-shadow：它跟随 border-radius（圆的），outline 会画成方框 */
+  box-shadow: 0 0 0 2px var(--accent-text);
 }
