@@ -57,7 +57,8 @@
   /* 行间距为 0：换行后两块之间的距离由 .section 自己的 margin-bottom 给，
      否则两处间距叠加会比页面其它区块宽一倍 */
   gap: 0 var(--space-5);
-  align-items: start;
+  /* 等高：并排的两张卡高度不齐会显得参差（热力图那栏内容多、标签分布可能很少） */
+  align-items: stretch;
 }
 .review-pair > .section {
   min-width: 0;

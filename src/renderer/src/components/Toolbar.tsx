@@ -39,8 +39,6 @@ export type ToolbarProps = {
   variant?: 'page' | 'panel'
   /** 常驻（sticky）。默认 page 开、panel 关；嵌在卡片内部的编辑区工具栏可显式关掉 */
   sticky?: boolean
-  /** 折叠阈值：第二层最多平铺几个「非搜索」控件（筛选 + 次要操作），默认 3；超出的直接进「更多」 */
-  collapseFrom?: number
 }
 
 export function Toolbar({
@@ -55,7 +53,6 @@ export function Toolbar({
   primary,
   variant = 'page',
   sticky = variant === 'page',
-  collapseFrom = 3,
 }: ToolbarProps): JSX.Element {
   const rightRef = useRef<HTMLDivElement>(null)
   /** 在阈值之外**额外**收起的控件数：只在溢出时递增 */
@@ -93,8 +90,9 @@ export function Toolbar({
     if (need > el.clientWidth + 1) setExtra((e) => (e < flatTotal ? e + 1 : e))
   })
 
-  // 平铺上限 = 阈值（默认 3）再减去溢出时额外收起的
-  const cap = Math.max(0, Math.min(collapseFrom, flatTotal) - extra)
+  // 平铺几个**完全由可用宽度决定**：默认全部平铺，放不下才逐个收（extra 由溢出递增）。
+  // 之前那个固定阈值是错的 —— 它会把「明明放得下」的控件也收进浮层。
+  const cap = Math.max(0, flatTotal - extra)
   const shownFilters = filters.slice(0, cap)
   const shownSecondary = secondary.slice(0, Math.max(0, cap - filters.length))
   const hiddenFilters = filters.slice(shownFilters.length)

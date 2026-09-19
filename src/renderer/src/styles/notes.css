@@ -158,7 +158,9 @@
   pointer-events: none;
 }
 .ntree__search-wrap .ntree__search-input {
+  /* 左侧要给图标留位，右侧对称留出同样的呼吸，否则看起来一边挤一边空 */
   padding-left: calc(var(--space-2) * 2 + 14px);
+  padding-right: var(--space-3);
 }
 /* 空树兜底入口：没有行可以 hover 时用 */
 .ntree__empty {
@@ -176,14 +178,29 @@
   flex-direction: column;
   gap: var(--space-2);
 }
-/* 编辑区工具栏（统一 Toolbar 的 page 形态、不常驻）：
-   标题分区里放的是可编辑的标题输入框，所以要让它占满、并改为垂直居中。 */
+/* 编辑区的标题与工具栏包在**同一张卡片**里：两者同属「笔记头部」，
+   中间不必再画分割线，分区靠留白表达就够。 */
+.editor .tb {
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.editor .tb__sub {
+  margin-top: var(--space-1);
+  padding-top: 0;
+  border-top: none;
+}
+/* 标题分区纵向排：标题在上，编辑状态挂在它下面（只在真的在编辑时出现） */
 .editor .tb__head {
-  align-items: center;
+  align-items: stretch;
 }
 .editor .tb__lead {
   flex: 1 1 auto;
   min-width: 0;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
 }
 .editor .tb__lead .editor__title {
   flex: 1 1 auto;
@@ -194,15 +211,17 @@
   min-width: 0;
   font-size: var(--text-lead);
   font-weight: 600;
-  /* 标题框也是控件：跟随「控件高度」，原来靠 padding 猜高度 */
   min-height: var(--control-h);
-  padding: 6px var(--space-3);
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--border);
-  border-radius: var(--radius-md);
+  /* 标题不画边框：它读起来是「这一页的名字」而不是一个输入控件；
+     没有边框也就不需要聚焦态变色 —— 编辑状态由下面的 .editor__status 表达 */
+  padding: 6px 0;
+  background: none;
+  border: none;
 }
-.editor__title:focus {
-  border-color: var(--accent);
+.editor__status {
+  padding-left: 1px;
+  color: var(--fg-tertiary);
+  font-size: var(--text-aux);
 }
 .editor__area {
   flex: 1;
@@ -480,7 +499,8 @@
   justify-content: space-between;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
-  border-bottom: var(--border-w) solid var(--border);
+  /* 与富文本格式条一致：Office 笔记的头部也不与内容区分隔 */
+  border: none;
 }
 .editor__office-body {
   flex: 1;
@@ -563,5 +583,7 @@
 }
 .rt-editor .tb--panel {
   padding: var(--space-2);
-  border-bottom: var(--border-w) solid var(--border);
+  /* 各类型笔记的编辑工具栏与内容区之间都不画分割线（显式写 border: none，
+     免得别处的 border-* 规则漏过来） */
+  border: none;
 }

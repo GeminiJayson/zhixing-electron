@@ -177,6 +177,14 @@
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius-lg);
 }
+/* 开了窗口材质时内容层要更透明：默认 --bg-layer 是 90%/85% 不透明，
+   只剩一成材质透出来，观感上就是「切了没反应」。降到 62% 让材质真正可见，
+   页内的卡片仍是实色，正文可读性不受影响。 */
+:root[data-material='mica'] .app__content,
+:root[data-material='acrylic'] .app__content,
+:root[data-material='tabbed'] .app__content {
+  background: color-mix(in srgb, var(--bg-layer-solid) 62%, transparent);
+}
 
 .page {
   display: flex;

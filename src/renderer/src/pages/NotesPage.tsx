@@ -613,7 +613,8 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
                         }}
                         aria-label="笔记标题"
                       />
-                      <span className="u-aux">{dirty ? '未保存…' : '已保存'}</span>
+                      {/* 编辑状态只在真的在编辑时出现；常驻在标题右侧会一直占着标题的宽度 */}
+                      {dirty ? <span className="editor__status">未保存…</span> : null}
                     </>
                   }
                   filters={[
