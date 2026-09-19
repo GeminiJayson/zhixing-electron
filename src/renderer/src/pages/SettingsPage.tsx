@@ -162,11 +162,16 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
   /** AI 整理：连接测试的进行态，以及提示词的本地草稿（大段文本不适合每敲一个字就写库）。 */
   const [aiTesting, setAiTesting] = useState(false)
   const [promptDraft, setPromptDraft] = useState('')
+  /** 整库整理提示词草稿（留空表示「与单篇那份相同」） */
+  const [libPromptDraft, setLibPromptDraft] = useState('')
 
   // 提示词：库里有就用库里的，没有则铺上默认提示词（用户可在此基础上改）
   useEffect(() => {
     setPromptDraft(settings.ai_prompt || DEFAULT_AI_PROMPT)
   }, [settings.ai_prompt])
+  useEffect(() => {
+    setLibPromptDraft(settings.ai_library_prompt)
+  }, [settings.ai_library_prompt])
 
   const handleTestAi = async (): Promise<void> => {
     setAiTesting(true)
@@ -734,10 +739,16 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
             <section className="set-card">
               <header className="set-card__head"><FileText size={15} /> 整理提示词</header>
               <p className="u-aux">
-                用下面这几个变量把数据带进提示词：{'{{FOLDERS}}'} 现有文件夹、{'{{TITLE}}'} 标题、
-                {'{{FORMAT}}'} 格式、{'{{ATTACHMENTS}}'} 图片/文件占位符清单、{'{{CONTENT}}'} 正文。
+                用下面这几个变量把数据带进提示词：{'{{FOLDERS}}'} 现有文件夹、{'{{NOTES}}'} 现有笔记标题、
+                {'{{TITLE}}'} 标题、{'{{FORMAT}}'} 格式、{'{{KIND}}'} 类型说明（Markdown / Word / 链接笔记…）、
+                {'{{ATTACHMENTS}}'} 图片/文件占位符清单、{'{{CONTENT}}'} 正文。
                 其中 <b>{'{{CONTENT}}'}</b> 必须保留，否则模型拿不到正文，整理会被直接拒绝。
                 正文里的图片与附件不会上传，只以 {'@@IMG1@@'}、{'@@FILE1@@'} 这类标记占位，返回后自动填回。
+              </p>
+              <p className="u-aux">
+                一份提示词要照顾三类笔记：<b>Markdown / 富文本</b>重排正文；
+                <b>Word / Excel</b> 库里只有标题，只做归类；
+                <b>链接笔记</b>的内容是一组「标题 + 链接」，要判断每条链接归到哪篇笔记（没有就新建）。
               </p>
               <textarea
                 className="field field--area field--code"
@@ -760,6 +771,40 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                 {promptDraft !== (settings.ai_prompt || DEFAULT_AI_PROMPT) && (
                   <span className="u-aux">未保存…</span>
                 )}
+              </div>
+            </section>
+
+            <section className="set-card">
+              <header className="set-card__head"><FileText size={15} /> 整理全库提示词</header>
+              <p className="u-aux">
+                整库整理默认用上面那份提示词。若批量时想说点不一样的话（比如更保守、只归类不改写），
+                可以在这里单独写一份；<b>留空即表示与单篇那份相同</b>。
+              </p>
+              <textarea
+                className="field field--area field--code"
+                rows={12}
+                value={libPromptDraft}
+                placeholder="留空 = 与「整理提示词」完全相同"
+                onChange={(e) => setLibPromptDraft(e.target.value)}
+                aria-label="全库整理提示词"
+              />
+              <div className="set-row">
+                <span />
+                <button className="text-btn" onClick={() => setLibPromptDraft('')}>
+                  清空（改用单篇那份）
+                </button>
+                <button
+                  className="text-btn text-btn--accent"
+                  disabled={libPromptDraft === settings.ai_library_prompt}
+                  onClick={() =>
+                    void update('ai_library_prompt', libPromptDraft).then(() =>
+                      onNotice(libPromptDraft.trim() ? '全库提示词已保存' : '全库提示词已清空（改用单篇那份）')
+                    )
+                  }
+                >
+                  保存
+                </button>
+                {libPromptDraft !== settings.ai_library_prompt && <span className="u-aux">未保存…</span>}
               </div>
             </section>
           </>

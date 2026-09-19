@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   AI_DEFAULT_TIMEOUT_SEC,
   AI_PROMPT_VARS,
+  auditLinkAssignment,
   DEFAULT_AI_PROMPT,
   auditOrganizedNote,
   describeFolders,
@@ -127,22 +128,82 @@ describe('模型输出解析与提示词渲染', () => {
     expect(r).toMatchObject({ folder: '技术', title: 'T', content: '# T' })
   })
 
-  it('坏 JSON / 缺 content 一律返回 null', () => {
+  it('坏 JSON / 什么都没给 → null；只有 folder 是合法的（Word 只归类）', () => {
     expect(parseAiResult('不是 JSON')).toBeNull()
-    expect(parseAiResult('{"folder":"a"}')).toBeNull()
     expect(parseAiResult('')).toBeNull()
+    expect(parseAiResult('{"summary":"只有摘要"}')).toBeNull()
+    expect(parseAiResult('{"folder":"a"}')).toMatchObject({ folder: 'a', content: '' })
+  })
+
+  it('链接笔记：links 会被解析出来，坏项被丢掉', () => {
+    const r = parseAiResult(
+      JSON.stringify({
+        folder: '资料',
+        content: '',
+        links: [
+          { title: '知乎', url: 'https://zhihu.com', into: '阅读' },
+          { title: '缺 url' },
+          { url: 'https://b.com' },
+        ],
+      })
+    )
+    expect(r?.links).toEqual([
+      { title: '知乎', url: 'https://zhihu.com', into: '阅读' },
+      { title: '', url: 'https://b.com', into: '' },
+    ])
+  })
+
+  it('链接审计：漏掉一条就拦下，多出来的只提醒', () => {
+    const original = [
+      { title: 'A', target: 'https://a.com' },
+      { title: 'B', target: 'https://b.com' },
+    ]
+    expect(
+      auditLinkAssignment({
+        original,
+        returned: [
+          { title: 'A', url: 'https://a.com', into: '' },
+          { title: 'B', url: 'https://b.com', into: '阅读' },
+        ],
+      }).ok
+    ).toBe(true)
+    const bad = auditLinkAssignment({
+      original,
+      returned: [{ title: 'A', url: 'https://a.com', into: '' }],
+    })
+    expect(bad.ok).toBe(false)
+    expect(bad.issues[0].message).toContain('B')
+    const extra = auditLinkAssignment({
+      original,
+      returned: [
+        { title: 'A', url: 'https://a.com', into: '' },
+        { title: 'B', url: 'https://b.com', into: '' },
+        { title: 'X', url: 'https://x.com', into: '' },
+      ],
+    })
+    expect(extra.ok).toBe(true)
+    expect(extra.issues.some((i) => i.level === 'warn')).toBe(true)
   })
 
   it('提示词渲染：变量被替换，缺 CONTENT 时判为不可用', () => {
     const tpl = '文件夹：{{FOLDERS}}\n标题：{{TITLE}}\n正文：\n{{CONTENT}}'
-    const r = renderAiPrompt(tpl, { folders: 'A/B', title: 'T', format: 'markdown', attachments: '', content: 'C' })
+    const r = renderAiPrompt(tpl, {
+      folders: 'A/B',
+      notes: '- 已有笔记',
+      title: 'T',
+      format: 'markdown',
+      kind: 'Markdown 笔记',
+      attachments: '',
+      content: 'C',
+    })
     expect(r.ok).toBe(true)
     expect(r.prompt).toContain('A/B')
     expect(r.prompt).toContain('C')
-    expect(renderAiPrompt('只有正文：{{CONTENT}}', { folders: '', title: '', format: '', attachments: '', content: 'x' }).ok).toBe(true)
-    expect(renderAiPrompt('没有正文变量', { folders: '', title: '', format: '', attachments: '', content: 'x' }).ok).toBe(false)
+    const vars = { folders: '', notes: '', title: '', format: '', kind: '', attachments: '', content: 'x' }
+    expect(renderAiPrompt('只有正文：{{CONTENT}}', vars).ok).toBe(true)
+    expect(renderAiPrompt('没有正文变量', vars).ok).toBe(false)
     // 模板为空时回落到默认提示词
-    const fallback = renderAiPrompt('', { folders: '', title: '', format: '', attachments: '', content: 'x' })
+    const fallback = renderAiPrompt('', vars)
     expect(fallback.prompt).toContain('x')
     expect(fallback.ok).toBe(true)
   })

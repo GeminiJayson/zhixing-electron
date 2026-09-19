@@ -49,8 +49,10 @@ export interface AppSettings {
   ai_api_key: string
   ai_protocol: AiProtocol
   ai_model: string
-  /** 提示词模板（可编辑）；为空时主进程回落到 DEFAULT_AI_PROMPT */
+  /** 单篇整理提示词模板（可编辑）；为空时主进程回落到 DEFAULT_AI_PROMPT */
   ai_prompt: string
+  /** 整库整理提示词；为空表示「跟单篇用同一份」 */
+  ai_library_prompt: string
   ai_timeout_sec: number
 }
 
@@ -115,6 +117,7 @@ export function parseSettings(raw: Record<string, string> = {}): AppSettings {
     ai_protocol: normalizeAiProtocol(raw.ai_protocol),
     ai_model: (raw.ai_model ?? '').trim(),
     ai_prompt: raw.ai_prompt ?? '',
+    ai_library_prompt: raw.ai_library_prompt ?? '',
     ai_timeout_sec: num(raw.ai_timeout_sec, AI_DEFAULT_TIMEOUT_SEC, 10, 600),
   }
 }

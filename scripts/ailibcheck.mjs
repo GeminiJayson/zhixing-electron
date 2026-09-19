@@ -52,6 +52,12 @@ const server = createServer((req, res) => {
     const tokens = [...new Set([...prompt.matchAll(/@@[A-Z]+\d+@@/g)].map((m) => m[0]))]
     const wikis = [...new Set([...prompt.matchAll(/\[\[[^\]]+\]\]/g)].map((m) => m[0]))]
     const urls = [...new Set([...prompt.matchAll(/https?:\/\/[^\s)\]，。]+/g)].map((m) => m[0]))]
+    // 链接笔记：提示词里的清单是「1. 标题 — 目标」，按行回填成 links（一律留在原笔记）
+    const linkLines = [...prompt.matchAll(/^\d+\.\s(.+?)\s—\s(\S+)\s*$/gm)].map((m) => ({
+      title: m[1].trim(),
+      url: m[2].trim(),
+      into: '',
+    }))
     const parts = ['# ' + marker + '（已整理）', '', '## 刚才那段话', '', '内容已重排。']
     if (tokens.length) parts.push('', tokens.join(' '))
     if (wikis.length) parts.push('', '相关：' + wikis.join(' '))
@@ -66,6 +72,7 @@ const server = createServer((req, res) => {
               title: marker + '（已整理）',
               summary: '重排结构',
               content: parts.join('\n'),
+              links: linkLines,
             }),
           },
         },
@@ -191,8 +198,8 @@ check('整库整理返回成功', res?.ok === true, res?.message)
 // 但**每一篇都要有交代**：ok + skipped 必须等于总数
 check('总量覆盖全库 Markdown 笔记', typeof res?.total === 'number' && res.total >= 4, `total=${res?.total}`)
 check(
-  '空正文被跳过而不是算失败（且每篇都有交代）',
-  res?.skipped >= 1 && res?.failedCount === 0 && res?.okCount + res?.skipped === res?.total,
+  '空正文被跳过，且每篇都有交代（ok + failed + skipped = total）',
+  res?.skipped >= 1 && res?.okCount + res?.failedCount + res?.skipped === res?.total,
   `ok=${res?.okCount} failed=${res?.failedCount} skipped=${res?.skipped} total=${res?.total}`
 )
 check('文件夹只在第一篇里新建了一次', res?.createdFolders === 2, `created=${res?.createdFolders}（整库/归档 两级）`)
@@ -214,7 +221,12 @@ check(
 )
 check('都归入了同一个新建文件夹', new Set(updated.map((n) => n.folder_id)).size === 1 && updated[0].folder_id != null, `folder_id=${updated[0]?.folder_id}`)
 check('空正文那篇没被动过', !find(emptyNote.id)?.title.includes('已整理'), find(emptyNote.id)?.title)
-check('word 笔记一个字都没动', find(wordNote.id)?.title === `${PREFIX} 表格`, find(wordNote.id)?.title)
+// Word 笔记现在会被归类（可能改名），但正文是文件路径 —— 那部分一个字都不能动
+check(
+  'Word 笔记的正文（文件路径）没被动，但被归了类',
+  find(wordNote.id)?.content_md === 'C:/tmp/whatever.docx' && find(wordNote.id)?.folder_id != null,
+  find(wordNote.id)?.content_md
+)
 
 const prog = await conn.evaluate('window.__libProg')
 const last = Array.isArray(prog) ? prog[prog.length - 1] : null

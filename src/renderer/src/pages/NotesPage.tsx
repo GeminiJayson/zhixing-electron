@@ -1,11 +1,12 @@
 import type { EditorView } from '@codemirror/view'
 import { sanitizeHtml } from '@shared/sanitize-html'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Morph, IconData, Link2, Plus, Sparkles, UserPlus } from '@renderer/lib/icons'
+import { Morph, IconData, Link2, Plus, Sparkles, Trash2, UserPlus } from '@renderer/lib/icons'
 import { subscribeDomain } from '@shared/events'
 import { useDialog } from '../components/Dialogs'
 import type { Backlink, Note, NoteFolder, NoteLink } from '@shared/types'
 import type { AiLibraryProgress } from '@shared/ai-note'
+import { parseLinkItems, type NoteLinkItem } from '@shared/note-links'
 import { t } from '../i18n'
 import { MarkdownEditor, RichTextEditor, blockFingerprint, locateBlockInView } from '../components/MarkdownEditor'
 import { MarkdownView } from '../components/MarkdownView'
@@ -74,6 +75,11 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
   const [aiBusy, setAiBusy] = useState(false)
   /** 整库整理任务：非空表示正在跑（进度由主进程推送） */
   const [libJob, setLibJob] = useState<AiLibraryProgress | null>(null)
+  /**
+   * 链接笔记的编辑草稿。为什么要单独存一份：序列化会丢掉 target 还没填的空行，
+   * 直接以 content 为唯一真相的话，「添加链接」后那一行会立刻消失。
+   */
+  const [linkDraft, setLinkDraft] = useState<NoteLinkItem[] | null>(null)
   /** 同 id 重载计数器：AI 改写后标题/正文/文件夹都变了，得把加载流程再跑一遍 */
   const [reloadToken, setReloadToken] = useState(0)
   const officeTimer = useRef<number | null>(null)
@@ -219,6 +225,18 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
     }
   }, [load, onNotice])
 
+  /** 链接列表改动：草稿 + 正文一起更新（正文走既有的自动保存） */
+  const updateLinkItems = (next: NoteLinkItem[]): void => {
+    setLinkDraft(next)
+    setContent(JSON.stringify(next))
+    setDirty(true)
+  }
+
+  /** 换笔记 / 重新载入时丢掉链接草稿，让编辑器重新跟随正文 */
+  useEffect(() => {
+    setLinkDraft(null)
+  }, [selectedId, reloadToken])
+
   /**
    * 整库整理：逐篇交给主进程（串行、每篇独立审计）。
    * 正在跑时这个按钮变成「停止」—— 停止只影响下一篇，已经发出的那篇会跑完入库。
@@ -230,14 +248,14 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
       return
     }
     const all = await window.zhixing.db.notes()
-    const target = all.filter((n) => n.format === 'markdown' || n.format === 'richtext')
-    if (!target.length) {
-      onNotice('没有可整理的 Markdown / 富文本笔记')
+    if (!all.length) {
+      onNotice('笔记库还是空的')
       return
     }
     if (
       !window.confirm(
-        `将逐篇把 ${target.length} 篇笔记交给大模型整理，并直接改写原笔记。\n\n` +
+        `将逐篇把 ${all.length} 篇笔记交给大模型整理，并直接改写原笔记。\n\n` +
+          '· Markdown/富文本：重排正文；Word/Excel：只归类；链接笔记：分配每条链接的去向\n' +
           '· 每篇都会先过审计，不通过就不写库\n' +
           '· 正文变更前会留一份版本快照，可在笔记历史里回滚\n' +
           '· 篇数多时可能要跑很久，随时可以停止\n\n确定开始？'
@@ -693,6 +711,8 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
           onRenameFolder={(id, name) => void handleRenameFolder(id, name)}
           onDeleteFolder={(id) => void handleDeleteFolder(id)}
           onMoveFolder={(id, parentId) => void handleMoveFolder(id, parentId)}
+          libJob={libJob}
+          onOrganizeLibrary={() => void handleLibraryOrganize()}
         />
 
         {/* 编辑区与链接面板纵向排列：链接面板从右侧栏挪到了编辑区下方 */}
@@ -742,23 +762,11 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
                     <button
                       key="ai"
                       className="text-btn"
-                      title="把这篇笔记交给大模型重新归类并优化排版（结果先过审计再入库）"
-                      disabled={aiBusy || current.format === 'word' || current.format === 'excel' || current.format === 'link'}
+                      title="把这篇笔记交给大模型：Markdown 重排正文、Word/Excel 只归类、链接笔记分配每条链接的去向（结果先过审计再入库）"
+                      disabled={aiBusy}
                       onClick={() => void handleAiOrganize()}
                     >
                       <Sparkles size={13} /> {aiBusy ? '整理中…' : 'AI 整理'}
-                    </button>,
-                    <button
-                      key="ailib"
-                      className={libJob ? 'text-btn text-btn--danger' : 'text-btn'}
-                      title={
-                        libJob
-                          ? `正在整理：${libJob.currentTitle || '…'}（成功后 ${libJob.ok} / 失败 ${libJob.failed}）；点此停止，当前这一篇会跑完`
-                          : '逐篇整理整个笔记库（只处理 Markdown / 富文本，可随时停止）'
-                      }
-                      onClick={() => void handleLibraryOrganize()}
-                    >
-                      {libJob ? `停止整理（${libJob.done}/${libJob.total}）` : '整理全库'}
                     </button>,
                     <button key="links" className="text-btn" aria-pressed={linksOpen} onClick={() => setLinksOpen((v) => !v)}>
                       <Link2 size={13} /> 链接
@@ -825,39 +833,66 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
                 />
 
               {current.format === 'link' ? (
-                // 链接笔记：content_md 存 URL，或存 Python 版写的 [{title,target}] JSON 数组。
-                <div className="editor__link">
-                  <p className="u-aux">链接笔记</p>
-                  {(() => {
-                    let items: { title: string; target: string }[] = []
-                    try {
-                      const parsed = JSON.parse(content)
-                      if (Array.isArray(parsed)) items = parsed
-                    } catch {
-                      // 不是 JSON：按单个 URL / 路径处理
-                    }
-                    if (!items.length) {
-                      items = [{ title: content.slice(0, 60) || '未命名链接', target: content }]
-                    }
-                    return items.map((it, i) => (
-                      <p key={i} className="editor__link-row">
-                        <a href={it.target} target="_blank" rel="noreferrer">
-                          {it.title || it.target}
-                        </a>
-                        <button
-                          className="text-btn"
-                          onClick={() =>
-                            void window.zhixing.db
-                              .openNoteFile(current.id)
-                              .then((r) => onNotice(r.message))
+                // 链接笔记：content_md 存 [{title,target}] JSON（兼容 Python 版写法与裸 URL）。
+                // 这里是**可编辑**的多链接列表 —— 「一条笔记多条链接、每条带标题」正是这个格式的用处，
+                // AI 整理会按标题把每条链接归纳到对应的链接笔记（没有就新建）。
+                ((items: NoteLinkItem[]) => (
+                  <div className="editor__link">
+                    <div className="editor__link-head">
+                      <span className="u-aux">
+                        链接笔记 · {items.length} 条
+                        {linkDraft ? '（编辑中）' : ''}
+                      </span>
+                      <button
+                        className="text-btn"
+                        onClick={() => updateLinkItems([...items, { title: '', target: '' }])}
+                      >
+                        <Plus size={13} /> 添加链接
+                      </button>
+                    </div>
+                    {items.map((it, i) => (
+                      <div className="editor__link-row" key={i}>
+                        <input
+                          className="field field--compact"
+                          value={it.title}
+                          placeholder="标题"
+                          aria-label="链接标题"
+                          onChange={(e) =>
+                            updateLinkItems(
+                              items.map((x, j) => (j === i ? { ...x, title: e.target.value } : x))
+                            )
                           }
+                        />
+                        <input
+                          className="field"
+                          value={it.target}
+                          placeholder="https://… 或本地路径"
+                          aria-label="链接地址"
+                          onChange={(e) =>
+                            updateLinkItems(
+                              items.map((x, j) => (j === i ? { ...x, target: e.target.value } : x))
+                            )
+                          }
+                        />
+                        {/^https?:/i.test(it.target) && (
+                          <a className="text-btn" href={it.target} target="_blank" rel="noreferrer">
+                            打开
+                          </a>
+                        )}
+                        <button
+                          className="icon-btn"
+                          aria-label="删除这条链接"
+                          onClick={() => updateLinkItems(items.filter((_, j) => j !== i))}
                         >
-                          用系统应用打开
+                          <Trash2 size={13} />
                         </button>
-                      </p>
-                    ))
-                  })()}
-                </div>
+                      </div>
+                    ))}
+                    {!items.length && (
+                      <p className="u-aux">还没有链接。点「添加链接」，填上标题与地址。</p>
+                    )}
+                  </div>
+                ))(linkDraft ?? parseLinkItems(content))
               ) : isOffice ? (
                 // N-§1.3#5：Word/Excel 直接可编辑并自动写回原文件
                 <div className="editor__office">

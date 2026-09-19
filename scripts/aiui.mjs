@@ -147,11 +147,28 @@ check(
   String(panelText).includes('测试连接') && String(panelText).includes('恢复默认提示词'),
   ''
 )
+const libPromptValue = await conn.evaluate(
+  "(document.querySelector(" + JSON.stringify("textarea[aria-label='全库整理提示词']") + ") || {}).value ?? null"
+)
+check('有单独的全库整理提示词框（默认为空 = 与单篇相同）', libPromptValue === '', String(libPromptValue).slice(0, 20))
 await shoot('ai-settings.png')
 
 // ---------------- 笔记页入口
+// 先用 API 造一篇链接笔记，稍后检查它的编辑器
+const linkNote = await conn.evaluate(
+  "window.zhixing.db.createNote('UI验证-链接笔记', null, JSON.stringify([{title:'知乎',target:'https://zhihu.com'}]), 'link')"
+)
 await conn.evaluate("document.querySelector('[data-nav-item=notes]').click()")
 await sleep(1500)
+
+const treeActions = await conn.evaluate(
+  "[...document.querySelectorAll('.ntree__actions button')].map((b) => b.textContent.trim()).join(' | ')"
+)
+check('「AI 整理全库」在笔记树里（搜索框下方）', String(treeActions).includes('AI 整理全库'), treeActions)
+const allLibButtons = await conn.evaluate(
+  "[...document.querySelectorAll('button')].filter((b) => b.textContent.includes('整理全库')).length"
+)
+check('全库入口只有树里这一个（编辑器工具栏已移除）', allLibButtons === 1, 'count=' + allLibButtons)
 const noteTitle = await conn.evaluate(
   "window.zhixing.db.notes(1).then((rows) => (rows[0] && rows[0].title) || '')"
 )
@@ -166,8 +183,28 @@ const toolbarText = await conn.evaluate(
   "[...document.querySelectorAll('button')].map((b) => b.textContent.trim()).join(' | ')"
 )
 check('笔记工具栏有「AI 整理」入口', String(toolbarText).includes('AI 整理'), '选中：' + noteTitle)
-check('笔记工具栏有「整理全库」入口', String(toolbarText).includes('整理全库'), '')
+const editorButtons = await conn.evaluate(
+  "[...document.querySelectorAll('.editor button')].map((b) => b.textContent.trim()).join(' | ')"
+)
+check('编辑器工具栏不再有全库入口', !String(editorButtons).includes('整理全库'), '')
 await shoot('ai-note-toolbar.png')
+
+// 链接笔记：多链接可编辑
+await conn.evaluate(
+  "[...document.querySelectorAll('.ntree__note')].filter((el) => el.innerText.includes('UI验证-链接笔记'))[0]?.click()"
+)
+await sleep(1200)
+const linkEditor = await conn.evaluate(
+  "JSON.stringify({ titleInputs: document.querySelectorAll('input[aria-label=\\'链接标题\\']').length, targetInputs: document.querySelectorAll('input[aria-label=\\'链接地址\\']').length, hasAdd: [...document.querySelectorAll('button')].some((b) => b.textContent.includes('添加链接')) })"
+)
+const linkInfo = JSON.parse(String(linkEditor))
+check(
+  '链接笔记可编辑多链接（标题 + 地址 + 添加）',
+  linkInfo.titleInputs >= 1 && linkInfo.targetInputs >= 1 && linkInfo.hasAdd,
+  JSON.stringify(linkInfo)
+)
+await shoot('ai-link-note.png')
+await conn.evaluate("window.zhixing.db.deleteNote(" + linkNote.id + ").catch(() => 0)")
 
 conn.ws.close()
 child.kill()

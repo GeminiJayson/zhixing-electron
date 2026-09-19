@@ -69,6 +69,8 @@ export const AI_SETTING_KEYS = {
   protocol: 'ai_protocol',
   model: 'ai_model',
   prompt: 'ai_prompt',
+  /** 整库整理专用提示词；留空则回落到单篇那份 */
+  libraryPrompt: 'ai_library_prompt',
   timeout: 'ai_timeout_sec',
 } as const
 
@@ -78,12 +80,35 @@ export interface AiSettings {
   protocol: AiProtocol
   model: string
   prompt: string
+  /** 整库整理提示词；空字符串表示「跟单篇用同一份」 */
+  libraryPrompt: string
   /** 单次请求的等待上限（秒） */
   timeoutSec: number
 }
 
 /** 提示词模板里可以用的变量。渲染后若缺 CONTENT，请求就没有意义，主进程会直接拒绝。 */
-export const AI_PROMPT_VARS = ['{{FOLDERS}}', '{{TITLE}}', '{{FORMAT}}', '{{ATTACHMENTS}}', '{{CONTENT}}'] as const
+export const AI_PROMPT_VARS = [
+  '{{FOLDERS}}',
+  '{{NOTES}}',
+  '{{TITLE}}',
+  '{{FORMAT}}',
+  '{{KIND}}',
+  '{{ATTACHMENTS}}',
+  '{{CONTENT}}',
+] as const
+
+/** 笔记类型 → 给模型看的说明（链接笔记与 Word/Excel 的处理方式完全不同）。 */
+export const NOTE_KIND_HINTS: Record<string, string> = {
+  markdown: 'Markdown 笔记（正文就在下面，需要整理排版）',
+  richtext: '富文本笔记（正文在下面，按 Markdown 处理即可）',
+  word: 'Word 文档（正文在本地 .docx 文件里，笔记库里只有标题 —— 只需归类）',
+  excel: 'Excel 表格（正文在本地 .xlsx 文件里，笔记库里只有标题 —— 只需归类）',
+  link: '链接笔记（内容是一组「标题 + 链接」，需要判断每条链接的去向）',
+}
+
+export function noteKindHint(format: string | null | undefined): string {
+  return NOTE_KIND_HINTS[format ?? ''] ?? '笔记'
+}
 
 export const AI_DEFAULT_TIMEOUT_SEC = 120
 
@@ -100,9 +125,13 @@ export const DEFAULT_AI_PROMPT = `你是「知行」笔记库的整理助手。�
 ## 现有文件夹（优先从这里选，不要造同义目录）
 {{FOLDERS}}
 
+## 现有笔记标题（整理链接笔记时从这里挑归档目标，不要重复建同义笔记）
+{{NOTES}}
+
 ## 待整理的笔记
 标题：{{TITLE}}
 格式：{{FORMAT}}
+类型：{{KIND}}
 
 附件占位符（代表文中的图片/文件，你只能移动它们的位置，不能删除、不能改写标记本身）：
 {{ATTACHMENTS}}
@@ -112,17 +141,26 @@ export const DEFAULT_AI_PROMPT = `你是「知行」笔记库的整理助手。�
 {{CONTENT}}
 NOTE
 
-## 你要做的两件事
+## 按类型办事
 
-**一、归类**：判断这篇笔记的语义主题，从上面「现有文件夹」里挑最贴切的一个，返回它的完整路径。只有当确实没有合适归属时，才新建一个：名称用简洁名词、2~6 个字、最多两级、用 / 分隔（例如 技术/数据库）。宁可新建，也不要把不相关的内容硬塞进现有目录。
+**Markdown / 富文本**：重排结构 —— 划分合理的标题层级、把并列要点改成列表、把重复啰嗦的句子收紧、修正错别字与中英文标点、统一术语；段落顺序可以调整得更连贯。笔记很短或本来就是零散想法时保持简洁即可，不要强行编造结构。完整返回整理后的正文到 content 字段。
 
-**二、排版优化**：重新组织 Markdown 结构 —— 划分合理的标题层级、把并列要点改成列表、把重复啰嗦的句子收紧、修正错别字与中英文标点、统一术语；段落顺序可以调整得更连贯。笔记很短或本来就是零散想法时，保持简洁即可，不要强行编造结构。
+**Word / Excel**：正文在本地文件里，笔记库里只有标题 —— 只需判断它该归入哪个文件夹。content 字段返回空字符串，不要凭空编写正文。
+
+**链接笔记**：内容是一组「标题 + 链接」。为**每一条链接**决定去向：
+- 留在本笔记：into 留空
+- 归到某篇已有的链接笔记：into 填那篇笔记的标题（必须来自上面的「现有笔记标题」）
+- 没有合适的就新建：into 填一个新的简洁标题（2~8 个字，不要与现有标题重复）
+把每一条链接都写进 links 数组，url 原样照抄，一条都不能少。content 字段返回空字符串。
+
+**三类都要做归类**：判断主题，从「现有文件夹」里挑最贴切的一个，返回它的完整路径；只有当确实没有合适归属时才新建（简洁名词、2~6 个字、最多两级、用 / 分隔，例如 技术/数据库）。宁可新建，也不要把不相关的内容硬塞进现有目录。
 
 ## 硬约束（违反即失败）
 
 - **不得删除任何信息**：原文里的每一个事实、数字、链接、代码片段都必须出现在结果里。
 - **不得新增原文没有的事实**：可以补过渡性小标题，但不能编造内容。
 - 所有 \`[[双链]]\`、所有 \`[文字](链接)\`、以及所有 \`@@……@@\` 占位符必须**原样保留**；位置可以随上下文移动，但一个都不能少、不能改写法。
+- 链接笔记的 links 数组必须覆盖内容里出现的**每一条**链接，url 一个字都不能改写。
 - 不要翻译，保持原文的中英混排习惯。
 - 输出**完整的 Markdown 正文**：不要写「以下是整理后的内容」这类前言后语，也不要用代码块把整篇包起来。
 
@@ -134,18 +172,31 @@ NOTE
   "folder": "文件夹完整路径，用 / 分隔；维持原样则填空字符串",
   "title": "优化后的标题；没有问题就原样返回",
   "summary": "一句话说明你做了什么，40 字以内",
-  "content": "整理后的完整 Markdown 正文"
+  "content": "整理后的完整 Markdown 正文；Word / Excel / 链接笔记返回空字符串",
+  "links": [
+    { "title": "链接标题", "url": "https://…", "into": "归档到的笔记标题；留在本笔记则留空" }
+  ]
 }`
 
 /** 渲染后的提示词最少要包含 CONTENT：否则模型拿不到正文，请求毫无意义。 */
 export function renderAiPrompt(
   template: string,
-  vars: { folders: string; title: string; format: string; attachments: string; content: string }
+  vars: {
+    folders: string
+    notes: string
+    title: string
+    format: string
+    kind: string
+    attachments: string
+    content: string
+  }
 ): { ok: boolean; prompt: string; missing: string[] } {
   const map: Record<string, string> = {
     '{{FOLDERS}}': vars.folders,
+    '{{NOTES}}': vars.notes,
     '{{TITLE}}': vars.title,
     '{{FORMAT}}': vars.format,
+    '{{KIND}}': vars.kind,
     '{{ATTACHMENTS}}': vars.attachments,
     '{{CONTENT}}': vars.content,
   }
@@ -412,11 +463,66 @@ function checkPlaceholders(
 
 // ---------------------------------------------------------------- 结果解析
 
+/** 链接笔记里一条链接的去向。 */
+export interface AiLinkAssignment {
+  title: string
+  url: string
+  /** 归档到的笔记标题；空字符串 = 留在本笔记 */
+  into: string
+}
+
 export interface AiOrganizeResult {
   folder: string
   title: string
   summary: string
   content: string
+  /** 只有链接笔记会用到；其它类型是空数组 */
+  links: AiLinkAssignment[]
+}
+
+/** 模型给的 links 可能是任何形状：逐项校验，坏项直接丢弃。 */
+export function parseLinkAssignments(raw: unknown): AiLinkAssignment[] {
+  if (!Array.isArray(raw)) return []
+  const out: AiLinkAssignment[] = []
+  for (const it of raw) {
+    const rec = it && typeof it === 'object' ? (it as Record<string, unknown>) : null
+    if (!rec) continue
+    const url = typeof rec.url === 'string' ? rec.url.trim() : typeof rec.target === 'string' ? rec.target.trim() : ''
+    if (!url) continue
+    out.push({
+      url,
+      title: typeof rec.title === 'string' ? rec.title.trim() : '',
+      into: typeof rec.into === 'string' ? rec.into.trim() : '',
+    })
+  }
+  return out
+}
+
+/**
+ * 链接笔记的审计：原文里**每一条链接**都必须有去向（留在本笔记，或归档到某处）。
+ * 模型漏掉一条就等于丢一条，直接拦下不写库。
+ */
+export function auditLinkAssignment(input: {
+  original: { title: string; target: string }[]
+  returned: AiLinkAssignment[]
+}): { ok: boolean; issues: AuditIssue[] } {
+  const issues: AuditIssue[] = []
+  const returnedUrls = new Set(input.returned.map((l) => l.url.trim()))
+  const originalUrls = new Set(input.original.map((l) => l.target.trim()))
+  for (const item of input.original) {
+    if (!returnedUrls.has(item.target.trim())) {
+      issues.push({
+        level: 'error',
+        message: `链接没有交代去向：${item.title || item.target}`,
+      })
+    }
+  }
+  for (const l of input.returned) {
+    if (!originalUrls.has(l.url.trim())) {
+      issues.push({ level: 'warn', message: `结果里多出了一条原文没有的链接：${l.url}` })
+    }
+  }
+  return { ok: !issues.some((i) => i.level === 'error'), issues }
 }
 
 /**
@@ -432,15 +538,17 @@ export function parseAiResult(raw: string): AiOrganizeResult | null {
   const end = candidate.lastIndexOf('}')
   if (start < 0 || end <= start) return null
   try {
-    const obj = JSON.parse(candidate.slice(start, end + 1)) as Partial<AiOrganizeResult>
+    const obj = JSON.parse(candidate.slice(start, end + 1)) as Record<string, unknown>
     if (!obj || typeof obj !== 'object') return null
-    if (typeof obj.content !== 'string' || !obj.content.trim()) return null
-    return {
-      folder: typeof obj.folder === 'string' ? obj.folder.trim() : '',
-      title: typeof obj.title === 'string' ? obj.title.trim() : '',
-      summary: typeof obj.summary === 'string' ? obj.summary.trim() : '',
-      content: obj.content,
-    }
+    const folder = typeof obj.folder === 'string' ? obj.folder.trim() : ''
+    const title = typeof obj.title === 'string' ? obj.title.trim() : ''
+    const summary = typeof obj.summary === 'string' ? obj.summary.trim() : ''
+    const content = typeof obj.content === 'string' ? obj.content : ''
+    const links = parseLinkAssignments(obj.links)
+    // Word / Excel / 链接笔记的 content 本来就是空的（正文不在库里），
+    // 所以「空 content」不能当成解析失败 —— 只要有一个有效字段就算数。
+    if (!content.trim() && !links.length && !folder && !title) return null
+    return { folder, title, summary, content, links }
   } catch {
     return null
   }
@@ -485,6 +593,24 @@ export function flattenFolders(folders: FlatFolder[]): Map<string, number> {
 export function describeFolders(paths: string[]): string {
   if (!paths.length) return '（当前还没有任何文件夹，可自行新建）'
   return paths.map((p) => `- ${p}`).join('\n')
+}
+
+/**
+ * 笔记标题清单 → 提示词里的可读列表（链接笔记归档时要靠它挑目标）。
+ * 标题可能上千条，按「链接笔记优先、其余按最近更新」取前 limit 条，
+ * 免得把一次请求的上下文全塞满。
+ */
+export function describeNotes(
+  notes: { title: string; format?: string | null }[],
+  limit = 300
+): string {
+  if (!notes.length) return '（笔记库还是空的）'
+  const links = notes.filter((n) => n.format === 'link')
+  const rest = notes.filter((n) => n.format !== 'link')
+  const picked = [...links, ...rest].slice(0, limit)
+  const lines = picked.map((n) => `- ${n.title}${n.format === 'link' ? '（链接笔记）' : ''}`)
+  if (notes.length > picked.length) lines.push(`（其余 ${notes.length - picked.length} 篇未列出）`)
+  return lines.join('\n')
 }
 
 /** 整库整理的实时进度（主进程推给渲染层）。 */

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronRight, FilePlus2, FolderPlus, Pin, Search, Trash2 } from '@renderer/lib/icons'
+import { ChevronRight, FilePlus2, FolderPlus, Pin, Search, Sparkles, Trash2 } from '@renderer/lib/icons'
 import type { Note, NoteFolder } from '@shared/types'
+import type { AiLibraryProgress } from '@shared/ai-note'
 import { PopMenu } from './PopMenu'
 
 /** 新建笔记时可选的类型：原先在工具栏里选，现在放到「新建」动作里选 */
@@ -29,6 +30,10 @@ interface Props {
   onRenameFolder: (id: number, currentName: string) => void
   onDeleteFolder: (id: number) => void
   onMoveFolder: (id: number, parentId: number | null) => void
+  /** 整库 AI 整理的进度；非空表示正在跑（按钮变成「停止」） */
+  libJob?: AiLibraryProgress | null
+  /** 触发 / 停止整库整理 */
+  onOrganizeLibrary?: () => void
 }
 
 /** 笔记树：文件夹层级 + 文件夹内笔记（对齐 note_page 的两栏左树）。 */
@@ -45,6 +50,8 @@ export function NoteTree({
   onRenameFolder,
   onDeleteFolder,
   onMoveFolder,
+  libJob = null,
+  onOrganizeLibrary,
 }: Props) {
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const [query, setQuery] = useState('')
@@ -250,6 +257,27 @@ export function NoteTree({
           aria-label="搜索笔记标题"
         />
       </div>
+      {/* 树级动作：整库整理属于「整棵树」的操作，放在搜索框下面比塞进编辑器工具栏更顺手 */}
+      {onOrganizeLibrary && (
+        <div className="ntree__actions">
+          <button
+            className={libJob ? 'text-btn text-btn--danger' : 'text-btn'}
+            title={
+              libJob
+                ? `正在整理：${libJob.currentTitle || '…'}（成功 ${libJob.ok} / 失败 ${libJob.failed}）；点此停止，当前这一篇会跑完`
+                : '逐篇整理整个笔记库（按类型分别处理，可随时停止）'
+            }
+            onClick={() => onOrganizeLibrary()}
+          >
+            <Sparkles size={13} /> {libJob ? `停止整理（${libJob.done}/${libJob.total}）` : 'AI 整理全库'}
+          </button>
+          {libJob && (
+            <span className="u-aux ntree__actions-hint" title={libJob.currentTitle}>
+              {libJob.currentTitle || '准备中…'}
+            </span>
+          )}
+        </div>
+      )}
       <div className="ntree__body">
         {rootNotes.map((n) => noteRow(n, 0, null))}
         {childrenOf(null).map((f) => folderNode(f, 0))}

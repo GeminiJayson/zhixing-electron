@@ -14,15 +14,26 @@
  * 宁可这次不写、告诉他哪里对不上，也不能悄悄丢一段。
  */
 import { conn } from './db/connection'
-import { createNoteFolder, getNote, listNoteFolders, saveNote } from './db/notes'
+import { createNote, createNoteFolder, getNote, listNoteFolders, resolveNoteTitle, saveNote } from './db/notes'
+import { repairNoteAssociations } from './db/note-assoc'
+import {
+  appendLinkItems,
+  describeLinkItems,
+  parseLinkItems,
+  serializeLinkItems,
+  type NoteLinkItem,
+} from '../shared/note-links'
 import { listSettings } from './db/settings'
 import { parseSettings } from '../shared/settings'
 import {
+  auditLinkAssignment,
   auditOrganizedNote,
   describeFolders,
+  describeNotes,
   describePlaceholders,
   extractNotePlaceholders,
   flattenFolders,
+  noteKindHint,
   parseAiResult,
   renderAiPrompt,
   restoreNotePlaceholders,
@@ -47,8 +58,37 @@ export function currentAiSettings(): AiSettings {
     protocol: s.ai_protocol,
     model: s.ai_model,
     prompt: s.ai_prompt,
+    libraryPrompt: s.ai_library_prompt,
     timeoutSec: s.ai_timeout_sec,
   }
+}
+
+/**
+ * 整理落库后的**关联修复**：标题引用（任务备注里的 [[标题]]）与段落锚（block_key 指纹）。
+ * 返回一句可拼进回执的说明；没有可修的就返回空串。
+ */
+function repairAfter(noteId: number, prev: { title: string; content_md: string }): string {
+  try {
+    const r = repairNoteAssociations(noteId, prev)
+    const parts: string[] = []
+    if (r.taskNotes) parts.push(`同步 ${r.taskNotes} 条任务关联`)
+    if (r.contexts) parts.push(`重算 ${r.contexts} 个段落锚`)
+    if (r.unresolved) parts.push(`${r.unresolved} 个段落锚因正文改动过大已失效`)
+    return parts.join('，')
+  } catch (err) {
+    console.error('[ai] 关联修复失败', err)
+    return ''
+  }
+}
+
+/** 现有笔记标题清单（链接归档时要靠它挑目标；只取最近 400 条，别把上下文塞满）。 */
+function noteListForPrompt(): { title: string; format: string | null }[] {
+  return conn()
+    .prepare(
+      `SELECT title, format FROM note WHERE deleted_at IS NULL
+        ORDER BY updated_at DESC, id DESC LIMIT 400`
+    )
+    .all() as { title: string; format: string | null }[]
 }
 
 export interface AiHttpRequest {
@@ -208,28 +248,195 @@ export function resolveFolderPath(path: string): {
 }
 
 /**
- * 整理一篇笔记。任何一步不放心都返回 ok:false 且**不写库**。
+ * Word / Excel：库里只有标题，正文在 .docx / .xlsx 文件里。
+ * 所以这一路**只做归类**（顺带接受模型给的新标题），绝不碰 content_md。
  */
-export async function organizeNoteWithAi(noteId: number): Promise<AiOrganizeOutcome> {
+async function organizeMetaNote(
+  note: { id: number; title: string; format: string; folder_id: number | null; content_md: string | null },
+  s: AiSettings,
+  template: string
+): Promise<AiOrganizeOutcome> {
+  const rendered = renderAiPrompt(template, {
+    folders: describeFolders([...flattenFolders(listNoteFolders()).keys()].sort()),
+    notes: describeNotes(noteListForPrompt()),
+    title: note.title,
+    format: note.format,
+    kind: noteKindHint(note.format),
+    attachments: '（无：正文在本地文件里）',
+    content: `（正文不在笔记库里；这是 ${note.format === 'word' ? 'Word 文档' : 'Excel 表格'}，只需要判断它该归入哪个文件夹）`,
+  })
+  if (!rendered.ok) return { ok: false, message: '提示词里缺少 {{CONTENT}} 变量：请到设置里补上或点「恢复默认」' }
+
+  let raw: string
+  try {
+    raw = await callAiModel(s, rendered.prompt)
+  } catch (err) {
+    return { ok: false, message: `调用大模型失败：${err instanceof Error ? err.message : String(err)}` }
+  }
+  const parsed = parseAiResult(raw)
+  if (!parsed) return { ok: false, message: `模型没有按要求返回 JSON（前 200 字）：${raw.slice(0, 200)}` }
+
+  const issues: AuditIssue[] = []
+  if (parsed.content.trim()) {
+    issues.push({ level: 'warn', message: '模型为 Office 笔记返回了正文，已忽略（正文在本地文件里）' })
+  }
+  const { folderId, folderPath, created } = resolveFolderPath(parsed.folder)
+  const fields: { title?: string; folder_id?: number | null } = {}
+  if (parsed.title && parsed.title !== note.title) fields.title = parsed.title
+  if (folderId != null && folderId !== note.folder_id) fields.folder_id = folderId
+  const saved = Object.keys(fields).length ? saveNote(note.id, fields) : getNote(note.id)
+  if (!saved) return { ok: false, message: '写入失败（笔记可能已被删除）', issues }
+  // 正文没动，但标题可能变了 —— 任务备注里的 [[旧标题]] 要跟着改
+  const repaired = repairAfter(note.id, {
+    title: note.title,
+    content_md: note.content_md ?? '',
+  })
+  return {
+    ok: true,
+    message: `${folderId != null ? `已归类到「${folderPath}」` : '已整理'}${repaired ? `（${repaired}）` : ''}`,
+    summary: parsed.summary,
+    folderPath: folderId != null ? folderPath : '',
+    createdFolders: created,
+    noteId: note.id,
+    title: saved.title,
+    issues,
+  }
+}
+
+/**
+ * 链接笔记：内容是一组「标题 + 链接」。
+ *
+ * 模型为每条链接给出 into（目标笔记标题）：
+ *   - 空 → 留在本笔记
+ *   - 已存在的链接笔记 → 追加进去（同 url 去重）
+ *   - 不存在 → 新建一篇链接笔记，放在与本笔记相同的文件夹
+ * 写库顺序刻意是「先目标、后本笔记」：中途失败时本笔记仍保有全部链接，不会丢东西。
+ */
+async function organizeLinkNote(
+  note: { id: number; title: string; folder_id: number | null; content_md: string | null },
+  s: AiSettings,
+  template: string
+): Promise<AiOrganizeOutcome> {
+  const original = parseLinkItems(note.content_md)
+  if (!original.length) return { ok: false, message: '这篇链接笔记里还没有链接' }
+
+  const rendered = renderAiPrompt(template, {
+    folders: describeFolders([...flattenFolders(listNoteFolders()).keys()].sort()),
+    notes: describeNotes(noteListForPrompt()),
+    title: note.title,
+    format: 'link',
+    kind: noteKindHint('link'),
+    attachments: '（无）',
+    content: describeLinkItems(original),
+  })
+  if (!rendered.ok) return { ok: false, message: '提示词里缺少 {{CONTENT}} 变量：请到设置里补上或点「恢复默认」' }
+
+  let raw: string
+  try {
+    raw = await callAiModel(s, rendered.prompt)
+  } catch (err) {
+    return { ok: false, message: `调用大模型失败：${err instanceof Error ? err.message : String(err)}` }
+  }
+  const parsed = parseAiResult(raw)
+  if (!parsed) return { ok: false, message: `模型没有按要求返回 JSON（前 200 字）：${raw.slice(0, 200)}` }
+  if (!parsed.links.length) return { ok: false, message: '模型没有返回 links 数组，无法判断每条链接的去向' }
+
+  const audit = auditLinkAssignment({ original, returned: parsed.links })
+  if (!audit.ok) return { ok: false, message: '整理结果没通过审计，已保持原笔记不变', issues: audit.issues }
+
+  // 分配：留下的 vs 要归档到某标题下的
+  const keep: NoteLinkItem[] = []
+  const moves = new Map<string, NoteLinkItem[]>()
+  for (const l of parsed.links) {
+    const item: NoteLinkItem = { title: l.title || l.url, target: l.url }
+    if (!l.into) {
+      keep.push(item)
+      continue
+    }
+    const arr = moves.get(l.into) ?? []
+    arr.push(item)
+    moves.set(l.into, arr)
+  }
+
+  const { folderId, folderPath, created } = resolveFolderPath(parsed.folder)
+  const targetFolder = folderId ?? note.folder_id
+  const notesCreated: string[] = []
+  let moved = 0
+  for (const [targetTitle, items] of moves) {
+    const existingId = resolveNoteTitle(targetTitle)
+    const existing = existingId == null ? null : getNote(existingId)
+    if (existing && existing.format === 'link') {
+      const merged = appendLinkItems(parseLinkItems(existing.content_md), items)
+      if (merged.added) saveNote(existing.id, { content_md: serializeLinkItems(merged.items) })
+      moved += merged.added
+      continue
+    }
+    const made = createNote(targetTitle, targetFolder, serializeLinkItems(items), 'link')
+    if (made) {
+      notesCreated.push(targetTitle)
+      moved += items.length
+    }
+  }
+
+  const fields: { title?: string; content_md: string; folder_id?: number | null } = {
+    content_md: serializeLinkItems(keep),
+  }
+  if (parsed.title && parsed.title !== note.title) fields.title = parsed.title
+  if (folderId != null && folderId !== note.folder_id) fields.folder_id = folderId
+  const saved = saveNote(note.id, fields)
+  if (!saved) return { ok: false, message: '写入失败（笔记可能已被删除）', issues: audit.issues }
+
+  const repaired = repairAfter(note.id, { title: note.title, content_md: note.content_md ?? '' })
+  const parts = [`保留了 ${keep.length} 条链接`]
+  if (moved) parts.push(`归档 ${moved} 条`)
+  if (notesCreated.length) parts.push(`新建笔记：${notesCreated.join('、')}`)
+  if (repaired) parts.push(repaired)
+  return {
+    ok: true,
+    message: parts.join('，'),
+    summary: parsed.summary,
+    folderPath: folderId != null ? folderPath : '',
+    createdFolders: created,
+    noteId: note.id,
+    title: saved.title,
+    issues: audit.issues,
+  }
+}
+
+/**
+ * 整理一篇笔记。任何一步不放心都返回 ok:false 且**不写库**。
+ *
+ * 按格式分派：Word / Excel 只归类（正文在文件里）、链接笔记做链接分发、
+ * Markdown / 富文本走正文整理。
+ */
+export async function organizeNoteWithAi(
+  noteId: number,
+  promptOverride?: string
+): Promise<AiOrganizeOutcome> {
   const s = currentAiSettings()
   if (!s.baseUrl.trim() || !s.model.trim()) {
     return { ok: false, message: '还没配置大模型：请到「设置 → 笔记 AI 整理」填好请求地址与模型' }
   }
   const note = getNote(noteId)
   if (!note) return { ok: false, message: '笔记不存在或已被删除' }
-  if (note.format !== 'markdown' && note.format !== 'richtext') {
-    return { ok: false, message: `「${note.format}」格式的笔记不支持整理（只支持 Markdown / 富文本）` }
-  }
+  // 整库整理可以带自己的提示词（为空则用单篇那份）
+  const template = promptOverride?.trim() ? promptOverride : s.prompt
+
+  // 按格式分派：Word / Excel 正文在文件里（只归类）、链接笔记做链接分发
+  if (note.format === 'word' || note.format === 'excel') return organizeMetaNote(note, s, template)
+  if (note.format === 'link') return organizeLinkNote(note, s, template)
 
   const original = note.content_md ?? ''
   if (!original.trim()) return { ok: false, message: '笔记正文是空的，没什么可整理的' }
 
   const folderPaths = [...flattenFolders(listNoteFolders()).keys()].sort()
   const { text: masked, items } = extractNotePlaceholders(original)
-  const rendered = renderAiPrompt(s.prompt, {
+  const rendered = renderAiPrompt(template, {
     folders: describeFolders(folderPaths),
+    notes: describeNotes(noteListForPrompt()),
     title: note.title,
     format: note.format,
+    kind: noteKindHint(note.format),
     attachments: describePlaceholders(items),
     content: masked,
   })
@@ -284,10 +491,11 @@ export async function organizeNoteWithAi(noteId: number): Promise<AiOrganizeOutc
 
   const saved = saveNote(noteId, fields)
   if (!saved) return { ok: false, message: '写入失败（笔记可能已被删除）', issues }
+  const repaired = repairAfter(noteId, { title: note.title, content_md: original })
 
   return {
     ok: true,
-    message: '已整理并保存',
+    message: repaired ? `已整理并保存（${repaired}）` : '已整理并保存',
     summary: parsed.summary,
     folderPath: folderId != null ? folderPath : '',
     createdFolders: created,
@@ -338,15 +546,27 @@ export function cancelOrganizeLibrary(): boolean {
   return true
 }
 
-/** 待整理的笔记：只取 Markdown / 富文本（Word/Excel/链接的正文是路径或 URL）。 */
-function notesToOrganize(): { id: number; title: string; content_md: string | null }[] {
+/** 待整理的笔记：Markdown / 富文本 / Word / Excel / 链接笔记都在范围内（各有各的处理方式）。 */
+function notesToOrganize(): { id: number; title: string; format: string; content_md: string | null }[] {
   return conn()
     .prepare(
-      `SELECT id, title, content_md FROM note
-        WHERE deleted_at IS NULL AND format IN ('markdown', 'richtext')
+      `SELECT id, title, format, content_md FROM note
+        WHERE deleted_at IS NULL
         ORDER BY updated_at DESC, id DESC`
     )
-    .all() as { id: number; title: string; content_md: string | null }[]
+    .all() as { id: number; title: string; format: string; content_md: string | null }[]
+}
+
+/**
+ * 这一篇值不值得花一次请求：
+ *   - Word / Excel：库里只有标题，照样能归类；
+ *   - 链接笔记：要有链接才有的可分配；
+ *   - 其余：正文为空就没得整理。
+ */
+function worthOrganizing(row: { format: string; content_md: string | null }): boolean {
+  if (row.format === 'word' || row.format === 'excel') return true
+  if (row.format === 'link') return parseLinkItems(row.content_md).length > 0
+  return !!(row.content_md ?? '').trim()
 }
 
 export async function organizeLibraryWithAi(): Promise<AiLibraryOutcome> {
@@ -398,8 +618,8 @@ export async function organizeLibraryWithAi(): Promise<AiLibraryOutcome> {
     currentTitle = row.title
     emitLibraryProgress(snapshot())
 
-    // 空正文没必要花一次请求：直接跳过（与前一篇的成败无关）
-    if (!(row.content_md ?? '').trim()) {
+    // 没内容的没必要花一次请求：直接跳过（与前一篇的成败无关）
+    if (!worthOrganizing(row)) {
       skipped += 1
       done += 1
       emitLibraryProgress(snapshot())
@@ -408,7 +628,8 @@ export async function organizeLibraryWithAi(): Promise<AiLibraryOutcome> {
 
     let res: AiOrganizeOutcome
     try {
-      res = await organizeNoteWithAi(row.id)
+      // 整库可以有自己的提示词（为空则用单篇那份）
+      res = await organizeNoteWithAi(row.id, s.libraryPrompt)
     } catch (err) {
       res = { ok: false, message: err instanceof Error ? err.message : String(err) }
     }

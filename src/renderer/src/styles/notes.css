@@ -144,6 +144,19 @@
   height: 22px;
 }
 /* 搜索图标放进输入框内部：不再单独占一格，输入框因此能吃满整行 */
+/* 树级动作行（整库整理）：紧贴搜索框下方，与树同宽 */
+.ntree__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 2px var(--space-3) 6px;
+}
+.ntree__actions-hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
 .ntree__search-wrap {
   position: relative;
   display: flex;
