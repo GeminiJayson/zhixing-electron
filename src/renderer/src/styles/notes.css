@@ -144,13 +144,20 @@
   height: 22px;
 }
 /* 搜索图标放进输入框内部：不再单独占一格，输入框因此能吃满整行 */
-/* 树级动作行（整库整理）：紧贴搜索框下方，与树同宽。
-   类名刻意避开 ntree__actions —— 那个名字已经被「每行的操作按钮组」占用了。 */
+/* 树级动作行（整库整理）：紧贴搜索框下方。
+   类名刻意避开 ntree__actions —— 那个名字已经被「每行的操作按钮组」占用了。
+   **不加水平内边距**：搜索框就是直接撑满 .ntree 内容宽的，这里多一层 padding 就会比它窄。 */
 .ntree__topbar {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: 2px var(--space-3) 6px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1);
+  padding: 0 0 var(--space-2);
+}
+/* 按钮与搜索框同宽：占满一行，文字居中（整宽按钮左对齐会显得偏） */
+.ntree__topbar .text-btn {
+  width: 100%;
+  justify-content: center;
 }
 .ntree__topbar-hint {
   overflow: hidden;

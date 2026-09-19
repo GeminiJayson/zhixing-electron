@@ -151,6 +151,27 @@ const libPromptValue = await conn.evaluate(
   "(document.querySelector(" + JSON.stringify("textarea[aria-label='全库整理提示词']") + ") || {}).value ?? null"
 )
 check('有单独的全库整理提示词框（默认为空 = 与单篇相同）', libPromptValue === '', String(libPromptValue).slice(0, 20))
+
+// 改动 2：提示词的两个动作行要靠右（按钮右边缘与上方 textarea 对齐）
+const actionsAlign = await conn.evaluate(`(() => {
+  const rows = [...document.querySelectorAll('.set-row--end')]
+  const areas = [...document.querySelectorAll('textarea[aria-label="整理提示词"], textarea[aria-label="全库整理提示词"]')]
+  return rows.map((row, i) => {
+    // 比的是按钮组的**右端**（最后一个按钮）—— margin-left:auto 把整组推到右边后，
+    // 贴住 textarea 右边缘的是最后一个按钮，不是第一个
+    const btn = [...row.querySelectorAll('button')].pop()
+    const area = areas[i]
+    if (!btn || !area) return null
+    const b = btn.getBoundingClientRect()
+    const a = area.getBoundingClientRect()
+    return Math.round(a.right - b.right)
+  })
+})()`)
+check(
+  '提示词动作行靠右（按钮右边缘与输入框对齐）',
+  Array.isArray(actionsAlign) && actionsAlign.length === 2 && actionsAlign.every((d) => d !== null && Math.abs(d) <= 18),
+  JSON.stringify(actionsAlign)
+)
 await shoot('ai-settings.png')
 
 // ---------------- 笔记页入口
@@ -165,6 +186,15 @@ const treeActions = await conn.evaluate(
   "[...document.querySelectorAll('.ntree__topbar button')].map((b) => b.textContent.trim()).join(' | ')"
 )
 check('「AI 整理全库」在笔记树里（搜索框下方）', String(treeActions).includes('AI 整理全库'), treeActions)
+
+// 改动 1：按钮与搜索框同宽
+const widthDelta = await conn.evaluate(`(() => {
+  const btn = document.querySelector('.ntree__topbar button')
+  const box = document.querySelector('.ntree__search-input')
+  if (!btn || !box) return null
+  return Math.round(Math.abs(btn.getBoundingClientRect().width - box.getBoundingClientRect().width))
+})()`)
+check('全库按钮与搜索框等宽（占满父布局）', widthDelta !== null && widthDelta <= 2, 'delta=' + widthDelta + 'px')
 const allLibButtons = await conn.evaluate(
   "[...document.querySelectorAll('button')].filter((b) => b.textContent.includes('整理全库')).length"
 )
@@ -205,6 +235,41 @@ check(
 )
 await shoot('ai-link-note.png')
 await conn.evaluate("window.zhixing.db.deleteNote(" + linkNote.id + ").catch(() => 0)")
+
+// 改动 3：折叠从左边开始收 —— 「⋯」出现在已显示项的左侧，右侧那组原位不动
+await conn.send('Emulation.setDeviceMetricsOverride', {
+  width: 760,
+  height: 900,
+  deviceScaleFactor: 1,
+  mobile: false,
+})
+await sleep(900)
+await conn.evaluate("document.querySelector('[data-nav-item=notes]').click()")
+await sleep(1200)
+await conn.evaluate(
+  "[...document.querySelectorAll('.ntree__note')].filter((el) => el.innerText.includes(" +
+    JSON.stringify(noteTitle) +
+    '))[0]?.click()'
+)
+await sleep(1200)
+const fold = await conn.evaluate(`(() => {
+  const right = document.querySelector('.tb__subright')
+  if (!right) return null
+  const kids = [...right.children]
+  const moreIdx = kids.findIndex((k) => k.classList.contains('tb__more'))
+  const after = moreIdx >= 0 ? kids.slice(moreIdx + 1).length : 0
+  const before = moreIdx >= 0 ? kids.slice(0, moreIdx).filter((k) => k.tagName !== 'INPUT').length : -1
+  const count = moreIdx >= 0 ? (right.querySelector('.tb-btn__n')?.textContent ?? '') : ''
+  return { moreIdx, before, after, count }
+})()`)
+check('窄窗口下确实发生了折叠', !!fold && fold.moreIdx >= 0 && Number(fold.count) > 0, JSON.stringify(fold))
+check(
+  '「⋯」排在已显示项左侧（从左边收起）',
+  !!fold && fold.before === 0 && fold.after >= 1,
+  JSON.stringify(fold)
+)
+await shoot('ui-toolbar-fold.png')
+await conn.send('Emulation.clearDeviceMetricsOverride')
 
 conn.ws.close()
 child.kill()

@@ -45,6 +45,10 @@
   flex: 1;
   min-width: 0;
 }
+/* 「长内容 + 动作行」：把动作推到右端，与上方 textarea 的右边缘对齐 */
+.set-row--end > button:first-of-type {
+  margin-left: auto;
+}
 .set-actions {
   display: flex;
   flex-wrap: wrap;

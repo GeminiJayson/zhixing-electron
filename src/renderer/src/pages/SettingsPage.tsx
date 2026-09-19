@@ -757,7 +757,7 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                 onChange={(e) => setPromptDraft(e.target.value)}
                 aria-label="整理提示词"
               />
-              <div className="set-row">
+              <div className="set-row set-row--end">
                 <span />
                 <button className="text-btn" onClick={() => setPromptDraft(DEFAULT_AI_PROMPT)}>
                   恢复默认提示词
@@ -788,7 +788,7 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                 onChange={(e) => setLibPromptDraft(e.target.value)}
                 aria-label="全库整理提示词"
               />
-              <div className="set-row">
+              <div className="set-row set-row--end">
                 <span />
                 <button className="text-btn" onClick={() => setLibPromptDraft('')}>
                   清空（改用单篇那份）
