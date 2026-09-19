@@ -36,9 +36,12 @@ describe('步骤动作 —— 三类 + 历史值归一', () => {
 
   it('历史值能被识别出来（编辑器据此显示只读项，不静默改数据）', () => {
     expect(isLegacyActionKind('open_url')).toBe(true)
+    expect(isLegacyActionKind('open_note')).toBe(true)
     expect(isLegacyActionKind('run_command')).toBe(true)
-    expect(isLegacyActionKind('none')).toBe(true)
+    // 'none' / 空值就是「任务」，不该被标成历史 —— 否则几乎每个旧步骤都会挂一条提示
+    expect(isLegacyActionKind('none')).toBe(false)
     expect(isLegacyActionKind('')).toBe(false)
+    expect(isLegacyActionKind('   ')).toBe(false)
     for (const k of [TASK_KIND, COMMAND_KIND, SCRIPT_KIND]) expect(isLegacyActionKind(k)).toBe(false)
   })
 

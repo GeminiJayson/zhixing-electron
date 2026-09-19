@@ -31,18 +31,20 @@ export const STEP_ACTION_KINDS: { value: StepActionKind; label: string; hint: st
  * 历史动作值 —— 编辑器不再提供，但旧模板里可能还存着，必须继续能跑、能看懂。
  * 它们此前都会生成待办（只有条件节点是例外），所以归一后一律并入 task，
  * 浮卡上的「执行动作」按钮也照旧可用。
+ *
+ * `none` / 空值**不算历史动作**：它们本来就等价于「任务」，是旧库里的默认值，
+ * 把它们也标成历史会让几乎每个旧步骤都挂一条莫名其妙的提示。
  */
 export const LEGACY_ACTION_LABELS: Record<string, string> = {
-  none: '无',
   open_url: '打开网址',
   open_note: '打开笔记',
   run_command: '执行命令（发完即忘，不等待）',
 }
 
-/** 判据：编辑器要不要把它当「历史值」另作提示。 */
+/** 判据：编辑器要不要把它当「历史值」另作提示（'none' / 空值不算，它们就是任务）。 */
 export function isLegacyActionKind(raw: string | null | undefined): boolean {
   const k = (raw ?? '').trim()
-  if (!k) return false
+  if (!k || k === 'none') return false
   return k !== TASK_KIND && k !== COMMAND_KIND && k !== SCRIPT_KIND
 }
 
