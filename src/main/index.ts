@@ -1050,9 +1050,16 @@ function openCaptureWindow(mode: 'quick' | 'capture', seed: { text: string; html
     width: 560,
     height,
     useContentSize: true,
+    // 与条件窗一致：无边框 + 透明，只显示卡片；高度随后由 window:fitHeight 贴合
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: false,
     minWidth: 420,
-    minHeight: 240,
-    resizable: true,
+    minHeight: 160,
+    // 透明窗口在 Windows 上对 resizable 支持很差（会出现不显示/闪烁），
+    // 尺寸反正已经跟着卡片高度自动贴合了，这里固定不可缩放。
+    resizable: false,
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
@@ -1093,6 +1100,21 @@ function openCaptureWindow(mode: 'quick' | 'capture', seed: { text: string; html
   } else {
     void win.loadFile(join(__dirname, '../renderer/index.html'), { query: { capture: '1' } })
   }
+}
+
+/**
+ * 独立弹窗的高度贴合：无边框窗口里多出来的空白很显眼，
+ * 让渲染层量完卡片后回报，窗口高度跟着卡片走（宽度保持不变）。
+ */
+function registerWindowFit(): void {
+  ipcMain.on('window:fitHeight', (e, height: number) => {
+    const win = BrowserWindow.fromWebContents(e.sender)
+    if (!win || win.isDestroyed()) return
+    const next = Math.max(120, Math.round(Number(height) || 0))
+    const [w, cur] = win.getContentSize()
+    if (Math.abs(cur - next) < 2) return
+    win.setContentSize(w, next)
+  })
 }
 
 function registerCaptureWindow(): void {
@@ -1139,6 +1161,12 @@ function showConditionWindow(prompt: string): Promise<boolean | null> {
       width: 420,
       height: 200,
       useContentSize: true,
+      // 无边框 + 透明：只显示那张卡片本身，不要原生标题栏和白色窗口底。
+      // 高度由渲染层量完卡片后回调 window:fitHeight 贴合。
+      frame: false,
+      transparent: true,
+      backgroundColor: '#00000000',
+      hasShadow: false,
       resizable: false,
       minimizable: false,
       maximizable: false,
@@ -1309,6 +1337,7 @@ app.whenReady().then(() => {
   registerConditionAsk()
   registerTaskSyncHandlers()
   registerCaptureWindow()
+  registerWindowFit()
   scheduleTaskSync()
   // 欢迎页要先于主窗出现（对齐 __main__.py：splash.show() 在 AppContext 构造之前）
   try {

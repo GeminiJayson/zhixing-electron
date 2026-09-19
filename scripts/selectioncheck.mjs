@@ -83,6 +83,12 @@ const connect = async (target) => {
   return { ws, send, evaluate }
 }
 
+// 收集主进程 stderr：窗口创建失败时会在这里留下痕迹
+child.stderr?.on('data', (b) => {
+  const s = String(b)
+  if (/error|Error|throw/.test(s)) console.error('[electron] ' + s.trim().slice(0, 300))
+})
+
 const pressHotkey = (keys) =>
   new Promise((resolve) => {
     const ps = spawn(PS, ['-NoProfile', '-NonInteractive', '-STA', '-Command', `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait("${keys}")`], { windowsHide: true, stdio: 'ignore' })
@@ -148,6 +154,26 @@ await pressHotkey('^%n')
 const captured = await waitCaptureWindow()
 check('热键开出了**独立窗口**（不是主窗口里的面板）', !!captured, captured ? 'capture=1' : '（没出现）')
 check('窗口里就是捕获卡片（复用弹框骨架）', (await captured?.cw.evaluate("!!document.querySelector('.modal--capture .modal__head')")) === true, '')
+// 无边框窗口的贴合度：窗口高度应当贴着卡片（下方不留空白）
+const fitted = await captured?.cw.evaluate(`(() => {
+  const card = document.querySelector('.modal')
+  if (!card) return null
+  return {
+    card: Math.round(card.getBoundingClientRect().height),
+    win: Math.round(window.innerHeight),
+    cardW: Math.round(card.getBoundingClientRect().width),
+    winW: Math.round(window.innerWidth),
+  }
+})()`)
+check(
+  '卡片贴合窗口（无边框窗口里没有多余空白）',
+  !!fitted &&
+    Math.abs(fitted.card - fitted.win) <= 2 &&
+    Math.abs(fitted.cardW - fitted.winW) <= 2 &&
+    // 内容只有一百多像素，窗口必须跟着缩下来（否则下方会留一大块白）
+    fitted.win < 280,
+  JSON.stringify(fitted)
+)
 check('内容 = 当前选中的文字', captured?.text?.trim() === SELECTED, J(captured?.text))
 const mainHasPanel = await conn.evaluate("!!document.querySelector('.capture-host')")
 check('主窗口里没有捕获面板', mainHasPanel === false, '')

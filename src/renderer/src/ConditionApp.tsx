@@ -27,6 +27,17 @@ export function ConditionApp(): JSX.Element {
     })()
   }, [])
 
+  // 无边框窗口要贴合卡片：量出卡片高度回报给主进程（内容换行时会重新量）
+  useEffect(() => {
+    const el = document.querySelector('.modal')
+    if (!el) return
+    const report = (): void => window.zhixing.app.fitHeight(Math.ceil(el.getBoundingClientRect().height))
+    report()
+    const ro = new ResizeObserver(report)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
   const answer = (ok: boolean): void => {
     if (!ask) return
     window.zhixing.condition.answer(ask.id, ok)

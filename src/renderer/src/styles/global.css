@@ -153,11 +153,12 @@ html[data-surface='condition'] body {
 }
 .cond-win {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100vh;
+  /* 卡片按内容自然高度排，窗口高度由 window:fitHeight 跟着它缩 ——
+     这样无边框窗口里既没有标题栏，也没有下方那块空白。 */
+  align-items: flex-start;
   box-sizing: border-box;
-  padding: var(--space-3);
+  /* 窗口就是那张卡片：不留内边距，否则会露出一圈透明底 */
+  padding: 0;
 }
 
 /* ---- 捕获面板（快速任务 / 划词捕获）----
@@ -165,11 +166,9 @@ html[data-surface='condition'] body {
    这里只补它特有的部分（多行输入 + 一排去向按钮）。 */
 .capture-host {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100vh;
+  align-items: flex-start;
   box-sizing: border-box;
-  padding: var(--space-3);
+  padding: 0;
 }
 .modal--capture {
   width: min(560px, calc(100vw - 48px));
@@ -197,10 +196,24 @@ html[data-surface='condition'] body {
   align-items: center;
   gap: var(--space-2);
 }
-/* 窗口里放的就是应用内弹框那张卡片本身（.modal--dialog），
-   这里只把它撑到窗口高度内可滚动，其余外观一律沿用弹框样式 */
-.cond-win .modal {
-  max-height: 100%;
+/* 窗口里放的就是应用内弹框那张卡片本身（.modal--dialog）：撑满窗口，
+   其余外观一律沿用弹框样式（圆角、边框、按钮、字号） */
+.cond-win .modal,
+.capture-host .modal {
+  width: 100%;
+  max-width: none;
+  max-height: none;
+  /* 高度交给内容，窗口随后贴合它（写成 100% 会与窗口互相追） */
+  height: auto;
+}
+/* 无边框窗口没有标题栏可拖：卡片头部当拖拽区（里面有按钮时要还原成可点） */
+html[data-surface='condition'] .modal__head,
+html[data-surface='capture'] .modal__head {
+  -webkit-app-region: drag;
+}
+html[data-surface='condition'] .modal__head button,
+html[data-surface='capture'] .modal__head button {
+  -webkit-app-region: no-drag;
 }
 
 /* 输入框 / 下拉用「边框变色」表达焦点，不再叠加全局焦点环 —— 否则两层，且颜色不一致 */

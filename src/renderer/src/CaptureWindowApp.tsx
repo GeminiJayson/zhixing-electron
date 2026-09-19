@@ -29,6 +29,21 @@ export function CaptureWindowApp(): JSX.Element | null {
     })()
   }, [])
 
+  // 无边框窗口要贴合卡片：payload 到了、卡片渲染出来之后再量，之后跟着内容变化重算
+  useEffect(() => {
+    if (!payload) return
+    const el = document.querySelector('.modal')
+    if (!el) return
+    const report = (): void => window.zhixing.app.fitHeight(Math.ceil(el.getBoundingClientRect().height))
+    const timer = window.setTimeout(report, 60)
+    const ro = new ResizeObserver(report)
+    ro.observe(el)
+    return () => {
+      window.clearTimeout(timer)
+      ro.disconnect()
+    }
+  }, [payload])
+
   if (!payload) return null
   return (
     <CapturePanel

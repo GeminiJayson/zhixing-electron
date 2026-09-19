@@ -575,6 +575,8 @@ const api = {
     onAction: (cb: (action: string, payload?: { text: string; html: string }) => void): void => {
       ipcRenderer.on('app:action', (_e, action, payload) => cb(action, payload || undefined))
     },
+    /** 独立弹窗（无边框）把窗口高度贴合卡片内容 */
+    fitHeight: (height: number): void => ipcRenderer.send('window:fitHeight', height),
   },
   widget: {
     toggle: (): Promise<boolean> => ipcRenderer.invoke('widget:toggle'),
