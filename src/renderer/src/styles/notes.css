@@ -148,8 +148,10 @@
   position: relative;
   display: flex;
   align-items: center;
-  /* 撑满树的宽度：它是表单行而不是工具项 */
-  flex: 1 1 auto;
+  /* 它是「一行」而不是「填充块」：.ntree 是纵向 flex 容器，
+     这里的 flex:1 拉伸的是**高度**，会把搜索框撑满整列。
+     撑满宽度靠下面的 width:100%，与 flex 无关。 */
+  flex: 0 0 auto;
   min-width: 0;
 }
 .ntree__search-wrap .ntree__search-input {
