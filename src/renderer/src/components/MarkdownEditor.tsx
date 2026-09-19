@@ -25,6 +25,11 @@ interface Props {
   titles: string[]
   /** 实例就绪后交回 EditorView，供外部做查找定位 */
   onReady?: (view: EditorView) => void
+  /**
+   * 选中一段文字后右键：「关联到任务」。
+   * 只把「选中的文字 + 它的指纹 + 鼠标位置」交上去，具体关联关系由上层决定。
+   */
+  onAttachTask?: (info: { text: string; blockKey: string; x: number; y: number }) => void
   placeholder?: string
   /** 查找词：正文里全部命中高亮（N19） */
   highlight?: string
@@ -210,11 +215,14 @@ export function MarkdownEditor({
   titles,
   placeholder,
   onReady,
+  onAttachTask,
   highlight = '',
   onCreateTask,
 }: Props) {
   const onReadyRef = useRef(onReady)
   onReadyRef.current = onReady
+  const onAttachTaskRef = useRef(onAttachTask)
+  onAttachTaskRef.current = onAttachTask
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const titlesRef = useRef<string[]>(titles)
@@ -270,7 +278,20 @@ export function MarkdownEditor({
     })
     viewRef.current = view
     onReadyRef.current?.(view)
+
+    // 选中文字后右键：把这一段交给上层去关联任务（没选中就不抢原生菜单）
+    const onContextMenu = (e: MouseEvent): void => {
+      const sel = view.state.selection.main
+      if (sel.empty) return
+      const text = view.state.sliceDoc(sel.from, sel.to).trim()
+      if (!text) return
+      e.preventDefault()
+      onAttachTaskRef.current?.({ text, blockKey: blockFingerprint(text), x: e.clientX, y: e.clientY })
+    }
+    view.dom.addEventListener('contextmenu', onContextMenu)
+
     return () => {
+      view.dom.removeEventListener('contextmenu', onContextMenu)
       view.destroy()
       viewRef.current = null
     }

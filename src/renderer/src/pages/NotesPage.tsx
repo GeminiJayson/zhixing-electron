@@ -99,6 +99,8 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
   })
   /** 同 id 重载计数器：AI 改写后标题/正文/文件夹都变了，得把加载流程再跑一遍 */
   const [reloadToken, setReloadToken] = useState(0)
+  /** 右键选中的那一段（等待选任务后建立关联） */
+  const [blockDraft, setBlockDraft] = useState<{ text: string; blockKey: string } | null>(null)
   const officeTimer = useRef<number | null>(null)
 
   const isOffice = current?.format === 'word' || current?.format === 'excel'
@@ -597,6 +599,43 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
     const added = await window.zhixing.db.attachTaskNote(taskId, selectedId)
     onNotice(added ? `已把本笔记关联到任务「${taskTitle}」` : `本笔记已关联任务「${taskTitle}」，未重复归属`)
     setAttachedTasks(await window.zhixing.db.noteAttachedTasks(selectedId))
+  }
+
+  /**
+   * 段落级关联（右键触发）：**只建立关联关系，不做任何状态回写**。
+   * 这段文字已经关联过任务 → 直接解除；否则打开任务选择器挑一个任务。
+   */
+  const handleBlockContext = async (info: {
+    text: string
+    blockKey: string
+    x: number
+    y: number
+  }): Promise<void> => {
+    if (selectedId == null) return
+    const links = await window.zhixing.db.contextsForNote(selectedId)
+    const hit = links.find((l) => l.block_key === info.blockKey)
+    if (hit) {
+      const n = await window.zhixing.db.detachBlock(hit.task_id, selectedId, info.blockKey)
+      onNotice(n ? '已解除这段文字与任务的关联' : '这段文字没有关联任务')
+      setReloadToken((t) => t + 1)
+      return
+    }
+    setBlockDraft({ text: info.text, blockKey: info.blockKey })
+    await openTaskPick(info.x, info.y)
+  }
+
+  /** 把右键选中的那一段挂到任务上（对齐 attachBlock）。 */
+  const handleAttachBlock = async (taskId: number, taskTitle: string): Promise<void> => {
+    if (selectedId == null || !blockDraft) return
+    const res = await window.zhixing.db.attachBlock(
+      taskId,
+      selectedId,
+      blockDraft.blockKey,
+      blockDraft.text.slice(0, 120)
+    )
+    setBlockDraft(null)
+    setReloadToken((t) => t + 1)
+    onNotice(res ? `已把这段文字关联到「${taskTitle}」` : '关联失败或已存在')
   }
 
   /** 打开任务候选选择器（对齐 TaskRepository.candidates）。 */
@@ -1117,6 +1156,7 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
               ) : (
                 <MarkdownEditor
                   value={content}
+                  onAttachTask={(info) => void handleBlockContext(info)}
                   onChange={(v) => {
                     setContent(v)
                     setDirty(true)
@@ -1355,7 +1395,8 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
               ? taskPick.items.map((t) => ({
                   key: `t-${t.id}`,
                   label: t.title,
-                  onPick: () => void handleAttachTask(t.id, t.title),
+                  onPick: () =>
+                    void (blockDraft ? handleAttachBlock(t.id, t.title) : handleAttachTask(t.id, t.title)),
                 }))
               : [
                   {
