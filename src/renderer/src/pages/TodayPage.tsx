@@ -223,7 +223,7 @@ export function TodayPage({ overview, onChanged, onNotice, onOpenNote, onFocusTa
           })}
         </section>
 
-        <section className="section section--grow" aria-label="今日待办">
+        <section className="section section--grow section--today-todo" aria-label="今日待办">
           <header className="section__head">
             <h2>今日待办</h2>
             <span className="u-aux">{today?.roots.length ?? 0} 项 · 未逾期</span>

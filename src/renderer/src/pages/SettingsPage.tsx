@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { CircleAlert, Database, Download, FileText, Info, Palette, SlidersHorizontal, Sparkles, Tag, Timer, Trash2 } from '@renderer/lib/icons'
+import { CircleAlert, Database, Download, FileText, Info, Palette, RefreshCw, SlidersHorizontal, Sparkles, Tag, Timer, Trash2 } from '@renderer/lib/icons'
 import { parseSettings, type AppSettings } from '@shared/settings'
-import { AI_PROTOCOLS, DEFAULT_AI_PROMPT, normalizeAiProtocol } from '@shared/ai-note'
+import {
+  AI_PROTOCOLS,
+  DEFAULT_AI_LIBRARY_PROMPT,
+  DEFAULT_AI_PROMPT,
+  normalizeAiProtocol,
+} from '@shared/ai-note'
 import { THEME_PACK_NAMES } from '@shared/theme-packs'
 import { t } from '../i18n'
 import { Toolbar } from '../components/Toolbar'
@@ -170,8 +175,33 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
     setPromptDraft(settings.ai_prompt || DEFAULT_AI_PROMPT)
   }, [settings.ai_prompt])
   useEffect(() => {
-    setLibPromptDraft(settings.ai_library_prompt)
+    // 没自定义过就铺上「整库专用」的默认提示词（比单篇更克制），而不是留空
+    setLibPromptDraft(settings.ai_library_prompt || DEFAULT_AI_LIBRARY_PROMPT)
   }, [settings.ai_library_prompt])
+
+  /** 外部任务同步：状态 + 手动触发。改完地址/开关/间隔后让主进程重排定时器。 */
+  const [syncStatus, setSyncStatus] = useState<{ lastAt: string; lastResult: string } | null>(null)
+  const [syncing, setSyncing] = useState(false)
+
+  useEffect(() => {
+    void window.zhixing.taskSync.status().then(setSyncStatus).catch(() => setSyncStatus(null))
+  }, [])
+
+  const updateApi = async (key: keyof AppSettings, value: string): Promise<void> => {
+    await update(key, value)
+    await window.zhixing.taskSync.reload()
+  }
+
+  const handleSyncNow = async (): Promise<void> => {
+    setSyncing(true)
+    try {
+      const res = await window.zhixing.taskSync.now()
+      onNotice(res.message)
+      setSyncStatus(await window.zhixing.taskSync.status())
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   const handleTestAi = async (): Promise<void> => {
     setAiTesting(true)
@@ -425,6 +455,76 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
               </label>
             </section>
           </>
+        )}
+
+        {tab === 'tasks' && (
+          <section className="set-card">
+            <header className="set-card__head"><RefreshCw size={15} /> 外部任务同步</header>
+            <p className="u-aux">
+              填一个返回 JSON 的 <b>GET</b> 接口，把外部任务拉成本地任务。按 id 认领所以重复同步
+              只会更新、不会重复创建；外部标完成会同步到本地，反向不会（避免外部系统抖动把你
+              已经做完的任务翻回去）。
+            </p>
+            <label className="set-row">
+              <span>自动同步</span>
+              <input
+                type="checkbox"
+                checked={settings.task_api_enabled}
+                onChange={(e) => void updateApi('task_api_enabled', e.target.checked ? '1' : '0')}
+              />
+              <span className="u-aux">按下面间隔自动跑；关掉只留「立即同步」</span>
+            </label>
+            <label className="set-row">
+              <span>接口地址</span>
+              <input
+                className="field field--grow"
+                value={settings.task_api_url}
+                placeholder="例如 https://example.com/api/tasks"
+                onChange={(e) => void update('task_api_url', e.target.value)}
+                onBlur={() => void updateApi('task_api_url', settings.task_api_url)}
+              />
+            </label>
+            <label className="set-row">
+              <span>API Key</span>
+              <input
+                className="field field--grow"
+                type="password"
+                value={settings.task_api_key}
+                placeholder="可留空；填了会以 Bearer 发送"
+                onChange={(e) => void update('task_api_key', e.target.value)}
+              />
+            </label>
+            <label className="set-row">
+              <span>同步间隔</span>
+              <input
+                type="number"
+                className="field field--num"
+                min={5}
+                max={1440}
+                value={settings.task_api_interval_min}
+                onChange={(e) => void updateApi('task_api_interval_min', e.target.value)}
+              />
+              <span className="u-aux">分钟（应用启动 30 秒后先跑一次）</span>
+            </label>
+            <div className="set-row set-row--end">
+              <span />
+              <span className="u-aux">
+                {syncStatus?.lastAt
+                  ? `上次：${syncStatus.lastAt.slice(5, 16)} · ${syncStatus.lastResult}`
+                  : '还没同步过'}
+              </span>
+              <button className="text-btn" onClick={() => void handleSyncNow()} disabled={syncing}>
+                {syncing ? '同步中…' : '立即同步'}
+              </button>
+            </div>
+            <p className="u-aux">
+              识别的字段名：<b>id</b> / <b>title</b> / <b>description</b>（也认 notes、body）、
+              <b>due_date</b>（也认 due、deadline）、<b>priority</b>（数字 0~8，或 high / medium / low）、
+              <b>done</b>（也认 completed、status）。响应可以直接是数组，也可以是
+              {' { items: [...] }'} / {'{ data: [...] }'} / {'{ tasks: [...] }'}；
+              缺 id 或缺标题的条目会被跳过。新任务默认进收件箱。
+            </p>
+          </section>
         )}
 
         {tab === 'tasks' && (
@@ -783,8 +883,10 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
             <section className="set-card">
               <header className="set-card__head"><FileText size={15} /> 整理全库提示词</header>
               <p className="u-aux">
-                整库整理默认用上面那份提示词。若批量时想说点不一样的话（比如更保守、只归类不改写），
-                可以在这里单独写一份；<b>留空即表示与单篇那份相同</b>。
+                整库整理用的是一份**为批量场景单独写的**默认提示词：它比单篇那份克制得多 ——
+                只规整排版、不重写句子；归类与链接归档都要求「只在明显成立时才做」，
+                免得一次过几十篇时替你改稿、或者造出一堆同义目录。可以随意改，改完保存；
+                点「恢复默认」回到内置版本。
               </p>
               <textarea
                 className="field field--area field--code"
@@ -796,21 +898,25 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
               />
               <div className="set-row set-row--end">
                 <span />
-                <button className="text-btn" onClick={() => setLibPromptDraft('')}>
-                  清空（改用单篇那份）
+                <button className="text-btn" onClick={() => setLibPromptDraft(DEFAULT_AI_LIBRARY_PROMPT)}>
+                  恢复默认提示词
                 </button>
                 <button
                   className="text-btn text-btn--accent"
-                  disabled={libPromptDraft === settings.ai_library_prompt}
-                  onClick={() =>
-                    void update('ai_library_prompt', libPromptDraft).then(() =>
-                      onNotice(libPromptDraft.trim() ? '全库提示词已保存' : '全库提示词已清空（改用单篇那份）')
+                  disabled={libPromptDraft === (settings.ai_library_prompt || DEFAULT_AI_LIBRARY_PROMPT)}
+                  onClick={() => {
+                    // 与内置默认一致就存空串 —— 表示「跟随默认」，将来默认更新也能跟上
+                    const next = libPromptDraft === DEFAULT_AI_LIBRARY_PROMPT ? '' : libPromptDraft
+                    void update('ai_library_prompt', next).then(() =>
+                      onNotice(next ? '全库提示词已保存' : '已恢复内置默认提示词')
                     )
-                  }
+                  }}
                 >
                   保存
                 </button>
-                {libPromptDraft !== settings.ai_library_prompt && <span className="u-aux">未保存…</span>}
+                {libPromptDraft !== (settings.ai_library_prompt || DEFAULT_AI_LIBRARY_PROMPT) && (
+                  <span className="u-aux">未保存…</span>
+                )}
               </div>
             </section>
           </>

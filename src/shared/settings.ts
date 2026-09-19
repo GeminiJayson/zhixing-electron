@@ -54,6 +54,17 @@ export interface AppSettings {
   /** 整库整理提示词；为空表示「跟单篇用同一份」 */
   ai_library_prompt: string
   ai_timeout_sec: number
+  /** 外部任务接口：GET 这个地址，把返回的 JSON 同步成本地任务 */
+  task_api_url: string
+  task_api_key: string
+  /** 开启后按间隔自动同步（关掉只留手动「立即同步」） */
+  task_api_enabled: boolean
+  task_api_interval_min: number
+  /** 拉回来的任务落到哪个清单；null = 收件箱 */
+  task_api_list_id: number | null
+  /** 上次同步时间 / 结果（运行时写入，用于设置页展示） */
+  task_api_last_at: string
+  task_api_last_result: string
 }
 
 const num = (raw: string | undefined, fallback: number, min: number, max: number): number => {
@@ -119,7 +130,21 @@ export function parseSettings(raw: Record<string, string> = {}): AppSettings {
     ai_prompt: raw.ai_prompt ?? '',
     ai_library_prompt: raw.ai_library_prompt ?? '',
     ai_timeout_sec: num(raw.ai_timeout_sec, AI_DEFAULT_TIMEOUT_SEC, 10, 600),
+    task_api_url: (raw.task_api_url ?? '').trim(),
+    task_api_key: (raw.task_api_key ?? '').trim(),
+    task_api_enabled: bool(raw.task_api_enabled, false),
+    task_api_interval_min: num(raw.task_api_interval_min, 30, 5, 1440),
+    task_api_list_id: numOrNull(raw.task_api_list_id),
+    task_api_last_at: raw.task_api_last_at ?? '',
+    task_api_last_result: raw.task_api_last_result ?? '',
   }
+}
+
+/** 可空数字：空串 / 非数字都当「没选」。 */
+function numOrNull(raw: string | undefined): number | null {
+  if (raw === undefined || raw.trim() === '') return null
+  const n = Number(raw)
+  return Number.isFinite(n) ? n : null
 }
 
 /**

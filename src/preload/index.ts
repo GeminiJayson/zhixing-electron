@@ -471,6 +471,17 @@ const api = {
     deleteTask: (id: number): Promise<number> => ipcRenderer.invoke('db:deleteTask', id),
   },
   /**
+   * 外部任务源：设置页手动同步 / 读状态 / 改完设置后重排定时器。
+   * 类型与主进程 src/main/task-sync.ts 对齐（preload 不便 import 主进程代码）。
+   */
+  taskSync: {
+    now: (): Promise<{ ok: boolean; message: string; total: number; created: number; updated: number; unchanged: number; skipped: number }> =>
+      ipcRenderer.invoke('taskSync:now'),
+    status: (): Promise<{ enabled: boolean; url: string; intervalMin: number; lastAt: string; lastResult: string }> =>
+      ipcRenderer.invoke('taskSync:status'),
+    reload: (): Promise<boolean> => ipcRenderer.invoke('taskSync:reload'),
+  },
+  /**
    * 工作流条件节点的人工确认（「提示确认」来源）：
    * 主进程发起询问 → 渲染层弹应用内对话框 → 回传成立 / 不成立。
    * 判定逻辑与原先一致，只是把原生模态换成了自绘弹框。

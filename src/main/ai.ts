@@ -26,6 +26,7 @@ import {
 import { listSettings } from './db/settings'
 import { parseSettings } from '../shared/settings'
 import {
+  DEFAULT_AI_LIBRARY_PROMPT,
   auditLinkAssignment,
   auditOrganizedNote,
   describeFolders,
@@ -628,8 +629,8 @@ export async function organizeLibraryWithAi(): Promise<AiLibraryOutcome> {
 
     let res: AiOrganizeOutcome
     try {
-      // 整库可以有自己的提示词（为空则用单篇那份）
-      res = await organizeNoteWithAi(row.id, s.libraryPrompt)
+      // 整库有自己的一份默认提示词（比单篇更克制）；用户填了就用用户的
+      res = await organizeNoteWithAi(row.id, s.libraryPrompt.trim() || DEFAULT_AI_LIBRARY_PROMPT)
     } catch (err) {
       res = { ok: false, message: err instanceof Error ? err.message : String(err) }
     }

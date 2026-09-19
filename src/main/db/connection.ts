@@ -140,6 +140,13 @@ function ensureAppExtensions(d: Database.Database): void {
   add('workflow_node', 'action_expect', 'action_expect TEXT')
   add('workflow_node', 'action_runtime', 'action_runtime TEXT')
   add('workflow_instance', 'last_result', 'last_result TEXT')
+  // 外部任务来源：靠 (source, id) 幂等认领，重复同步不会造出重复任务
+  add('task', 'external_source', 'external_source TEXT')
+  add('task', 'external_id', 'external_id TEXT')
+  d.exec(
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_task_external ' +
+      'ON task(external_source, external_id) WHERE external_id IS NOT NULL'
+  )
 }
 
 /** 建库失败时别把半成品留在数据目录，否则下次会被当成「已有库」直接用。 */

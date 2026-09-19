@@ -28,6 +28,7 @@ import {
   testAiConnection,
 } from './ai'
 import { setConditionAsker } from './db/workflow'
+import { syncExternalTasks, taskSyncStatus } from './task-sync'
 
 const SCHEME = 'zhixing'
 
@@ -1128,6 +1129,46 @@ function registerConditionAsk(): void {
   })
 }
 
+/** 外部任务同步的定时器（开关关掉或没配地址时不跑） */
+let taskSyncTimer: NodeJS.Timeout | null = null
+let taskSyncBootTimer: NodeJS.Timeout | null = null
+
+async function runTaskSync(): Promise<Awaited<ReturnType<typeof syncExternalTasks>>> {
+  const res = await syncExternalTasks()
+  if (res.ok && (res.created > 0 || res.updated > 0)) broadcastDataChanged('task')
+  return res
+}
+
+/**
+ * 按设置重排自动同步：关掉开关就不跑；间隔改了立刻生效。
+ * 启动后先等 30 秒再跑第一次（别和启动时的一堆初始化抢资源）。
+ */
+function scheduleTaskSync(): void {
+  if (taskSyncTimer) {
+    clearInterval(taskSyncTimer)
+    taskSyncTimer = null
+  }
+  if (taskSyncBootTimer) {
+    clearTimeout(taskSyncBootTimer)
+    taskSyncBootTimer = null
+  }
+  const s = currentSettings()
+  if (!s.task_api_enabled || !s.task_api_url.trim()) return
+  const every = Math.max(5, s.task_api_interval_min) * 60_000
+  taskSyncBootTimer = setTimeout(() => void runTaskSync(), 30_000)
+  taskSyncTimer = setInterval(() => void runTaskSync(), every)
+}
+
+function registerTaskSyncHandlers(): void {
+  ipcMain.handle('taskSync:now', () => runTaskSync())
+  ipcMain.handle('taskSync:status', () => taskSyncStatus())
+  // 设置页改完地址 / 开关 / 间隔后调一次，重排定时器
+  ipcMain.handle('taskSync:reload', () => {
+    scheduleTaskSync()
+    return true
+  })
+}
+
 function registerAiHandlers(): void {
   // 整库整理是长任务：进度用事件推给所有窗口，界面据此显示「第 n/m 篇」与停止按钮
   setAiLibraryNotifier((p) => {
@@ -1162,6 +1203,8 @@ app.whenReady().then(() => {
   registerDbHandlers()
   registerAiHandlers()
   registerConditionAsk()
+  registerTaskSyncHandlers()
+  scheduleTaskSync()
   // 欢迎页要先于主窗出现（对齐 __main__.py：splash.show() 在 AppContext 构造之前）
   try {
     createSplash()

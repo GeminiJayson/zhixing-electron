@@ -319,6 +319,12 @@
   min-height: 0;
   overflow-y: auto;
 }
+/* 今日待办比「最近笔记」高 100px：两块本来就是 flex: 1 1 0 等分剩余高度，
+   给前者一个 100px 的 flex-basis，差值正好等于 basis 之差（多余的 basis 会
+   从「剩余高度」里扣掉再按 grow 平分，所以两块的高差恒等于 100px）。 */
+.today-page .page__body > .section--today-todo {
+  flex-basis: 100px;
+}
 .section__head {
   display: flex;
   align-items: baseline;

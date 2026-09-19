@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   AI_DEFAULT_TIMEOUT_SEC,
   AI_PROMPT_VARS,
+  DEFAULT_AI_LIBRARY_PROMPT,
   auditLinkAssignment,
   DEFAULT_AI_PROMPT,
   auditOrganizedNote,
@@ -213,6 +214,16 @@ describe('模型输出解析与提示词渲染', () => {
     expect(normalizeAiProtocol('gemini')).toBe('gemini')
     expect(normalizeAiProtocol('')).toBe('openai')
     expect(normalizeAiProtocol('随便')).toBe('openai')
+  })
+
+  it('整库默认提示词：变量齐全，且写明批量场景要克制', () => {
+    for (const v of AI_PROMPT_VARS) expect(DEFAULT_AI_LIBRARY_PROMPT).toContain(v)
+    expect(DEFAULT_AI_LIBRARY_PROMPT).toContain('成批')
+    expect(DEFAULT_AI_LIBRARY_PROMPT).toContain('不确定就少动')
+    expect(DEFAULT_AI_LIBRARY_PROMPT).toContain('不要重写句子')
+    expect(DEFAULT_AI_LIBRARY_PROMPT).toContain('不得删除任何信息')
+    // 与单篇那份是两份不同的提示词
+    expect(DEFAULT_AI_LIBRARY_PROMPT).not.toBe(DEFAULT_AI_PROMPT)
   })
 
   it('默认提示词包含全部变量，且明确写了「链接不丢」与两件事', () => {

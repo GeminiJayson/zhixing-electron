@@ -150,7 +150,11 @@ check(
 const libPromptValue = await conn.evaluate(
   "(document.querySelector(" + JSON.stringify("textarea[aria-label='全库整理提示词']") + ") || {}).value ?? null"
 )
-check('有单独的全库整理提示词框（默认为空 = 与单篇相同）', libPromptValue === '', String(libPromptValue).slice(0, 20))
+check(
+  '全库提示词默认就是一份整库专用提示词（不是空）',
+  String(libPromptValue).length > 300 && String(libPromptValue).includes('成批'),
+  String(libPromptValue).length + ' 字'
+)
 
 // 工具栏左分隔：设置页左侧是 tab 组 → 50px；笔记编辑器工具栏左侧为空 → 不加
 const settingGap = await conn.evaluate(`(() => {
@@ -189,6 +193,46 @@ check(
   JSON.stringify(actionsAlign)
 )
 await shoot('ai-settings.png')
+
+// 外部任务同步卡片（在「任务与提醒」分区）
+await conn.evaluate(
+  "[...document.querySelectorAll('[role=tab]')].filter((b) => b.textContent.trim() === '任务与提醒')[0].click()"
+)
+await sleep(700)
+const syncCard = await conn.evaluate(`(() => {
+  const cards = [...document.querySelectorAll('.set-card')]
+  const card = cards.find((c) => c.innerText.includes('外部任务同步'))
+  if (!card) return null
+  return {
+    text: card.innerText.slice(0, 120),
+    hasUrl: !!card.querySelector('input[placeholder*="api/tasks"]'),
+    hasNow: [...card.querySelectorAll('button')].some((b) => b.textContent.includes('立即同步')),
+  }
+})()`)
+check(
+  '设置页有「外部任务同步」卡片（地址 + 立即同步）',
+  !!syncCard && syncCard.hasUrl && syncCard.hasNow,
+  syncCard ? syncCard.text.replace(/\n/g, ' / ') : '（没找到）'
+)
+
+// 今日页：今日待办比最近笔记高 100px
+await conn.evaluate("document.querySelector('[data-nav-item=today]').click()")
+await sleep(1500)
+const heights = await conn.evaluate(`(() => {
+  const todo = document.querySelector('.section--today-todo')
+  const recent = [...document.querySelectorAll('.section--grow')].find((s) => !s.classList.contains('section--today-todo'))
+  if (!todo || !recent) return null
+  return {
+    todo: Math.round(todo.getBoundingClientRect().height),
+    recent: Math.round(recent.getBoundingClientRect().height),
+  }
+})()`)
+check(
+  '今日待办比最近笔记高 100px',
+  !!heights && Math.abs(heights.todo - heights.recent - 100) <= 6,
+  JSON.stringify(heights)
+)
+await shoot('today-heights.png')
 
 // ---------------- 笔记页入口
 // 先用 API 造一篇链接笔记，稍后检查它的编辑器
