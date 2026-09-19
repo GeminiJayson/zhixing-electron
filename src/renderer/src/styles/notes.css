@@ -115,8 +115,21 @@
   gap: 2px;
   opacity: 0;
 }
-.ntree__note:hover .ntree__actions {
+.ntree__note:hover .ntree__actions,
+.ntree__folder:hover .ntree__actions {
   opacity: 1;
+}
+/* 文件夹行也要给操作区留出与笔记行同样的右内边距 */
+.ntree__folder {
+  padding-right: var(--space-1);
+}
+/* 空树兜底入口：没有行可以 hover 时用 */
+.ntree__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-1);
 }
 .editor {
   flex: 1;

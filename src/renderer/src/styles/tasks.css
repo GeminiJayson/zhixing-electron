@@ -768,14 +768,15 @@
   transform: rotate(45deg);
 }
 .popmenu__tick {
+  /* 只占位、不画框：用不到勾选态的菜单（新建笔记类型、文件夹操作）不该每项前面
+     都顶着一个空方块；选中态才画。占位保留，所以同一菜单里的文字仍然对齐。 */
   width: 12px;
   height: 12px;
   flex: 0 0 12px;
   border-radius: var(--radius-sm);
-  border: var(--border-w) solid var(--border-strong);
 }
 .popmenu__tick--on {
-  border-color: var(--accent);
+  border: var(--border-w) solid var(--accent);
   background: var(--accent);
 }
 .popmenu__item--danger {

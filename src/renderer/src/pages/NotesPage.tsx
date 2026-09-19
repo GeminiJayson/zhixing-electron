@@ -9,7 +9,7 @@ import { t } from '../i18n'
 import { MarkdownEditor, RichTextEditor, blockFingerprint, locateBlockInView } from '../components/MarkdownEditor'
 import { MarkdownView } from '../components/MarkdownView'
 import { NoteHistory } from '../components/NoteHistory'
-import { NoteTree } from '../components/NoteTree'
+import { NoteTree, type NoteFormat } from '../components/NoteTree'
 import { PopMenu } from '../components/PopMenu'
 
 interface Props {
@@ -44,7 +44,6 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
   const [linksOpen, setLinksOpen] = useState(true)
   const [dirty, setDirty] = useState(false)
   /** 新建笔记时使用的格式 */
-  const [createFormat, setCreateFormat] = useState<string>('markdown')
   const [historyId, setHistoryId] = useState<number | null>(null)
   const [ctxMenu, setCtxMenu] = useState<{ id: number; x: number; y: number } | null>(null)
   const [templateMenu, setTemplateMenu] = useState<{ x: number; y: number } | null>(null)
@@ -311,7 +310,7 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
    * Word/Excel 留空时自动生成空白文件（N3）。
    */
   const handleCreateNote = useCallback(
-    async (folderId: number | null): Promise<void> => {
+    async (folderId: number | null, createFormat: NoteFormat): Promise<void> => {
       await flushPending()
       const name = await dialog.prompt({ title: '新建笔记', label: '笔记名称', defaultValue: '未命名笔记' })
       if (name === null) return
@@ -345,12 +344,12 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
       await load()
       setSelectedId(n.id)
     },
-    [flushPending, createFormat, dialog, load, onNotice]
+    [flushPending, dialog, load, onNotice]
   )
 
   // 应用内快捷键由 App 统一监听，页面只负责自己的动作（对齐 note_page 的 toggle_preview / 查找）
   useEffect(() => {
-    const onNew = (): void => void handleCreateNote(null)
+    const onNew = (): void => void handleCreateNote(null, 'markdown')
     const onPreview = (): void => setPreview((p) => !p)
     const onFind = (): void => setFindOpen(true)
     window.addEventListener('zhixing:new-note', onNew)
@@ -421,10 +420,10 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
     await load()
   }
 
-  const handleCreateFolder = async (): Promise<void> => {
+  const handleCreateFolder = async (parentId: number | null): Promise<void> => {
     const name = await dialog.prompt({ title: '新建文件夹', label: '文件夹名称' })
     if (!name?.trim()) return
-    await window.zhixing.db.createNoteFolder(name, null)
+    await window.zhixing.db.createNoteFolder(name, parentId)
     await load()
   }
 
@@ -585,8 +584,6 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
           selectedId={selectedId}
           onSelect={(id) => void selectNote(id)}
           onCreateNote={handleCreateNote}
-          createFormat={createFormat}
-          onCreateFormatChange={setCreateFormat}
           onCreateFolder={handleCreateFolder}
           onTogglePin={(id, pinned) => void handleTogglePin(id, pinned)}
           onDeleteNote={(id) => void handleDelete(id)}

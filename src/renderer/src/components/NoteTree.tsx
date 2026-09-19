@@ -4,16 +4,25 @@ import type { Note, NoteFolder } from '@shared/types'
 import { PopMenu } from './PopMenu'
 import { Toolbar } from './Toolbar'
 
+/** 新建笔记时可选的类型：原先在工具栏里选，现在放到「新建」动作里选 */
+export type NoteFormat = 'markdown' | 'richtext' | 'word' | 'excel' | 'link'
+export const NOTE_FORMATS: { key: NoteFormat; label: string }[] = [
+  { key: 'markdown', label: 'Markdown 笔记' },
+  { key: 'richtext', label: '富文本笔记' },
+  { key: 'word', label: 'Word 笔记' },
+  { key: 'excel', label: 'Excel 笔记' },
+  { key: 'link', label: '链接笔记' },
+]
+
 interface Props {
   notes: Note[]
   folders: NoteFolder[]
   selectedId: number | null
   onSelect: (id: number) => void
-  onCreateNote: (folderId: number | null) => void
-  /** 新建笔记使用的格式（Markdown / 富文本 / Word / Excel / 链接） */
-  createFormat: string
-  onCreateFormatChange: (format: string) => void
-  onCreateFolder: () => void
+  /** 在指定父级（文件夹 / null = 全部笔记）下新建笔记，类型在点击时选 */
+  onCreateNote: (folderId: number | null, format: NoteFormat) => void
+  /** 在指定父级下新建子文件夹 */
+  onCreateFolder: (parentId: number | null) => void
   onTogglePin: (id: number, pinned: boolean) => void
   onDeleteNote: (id: number) => void
   onContextMenuNote: (id: number, x: number, y: number) => void
@@ -30,8 +39,6 @@ export function NoteTree({
   selectedId,
   onSelect,
   onCreateNote,
-  createFormat,
-  onCreateFormatChange,
   onCreateFolder,
   onTogglePin,
   onDeleteNote,
@@ -51,6 +58,14 @@ export function NoteTree({
   const [moveMenu, setMoveMenu] = useState<{ id: number; x: number; y: number } | null>(null)
   /** S22 文件夹深链目标：展开父链后高亮该文件夹并滚入视野，随后自动取消高亮 */
   const [folderFocus, setFolderFocus] = useState<number | null>(null)
+  /** 新建类型菜单：点行内「新建」时弹出，选完类型才创建（替代工具栏里的格式下拉） */
+  const [formatMenu, setFormatMenu] = useState<{ x: number; y: number; parentId: number | null } | null>(null)
+  /** 从某个行内按钮弹出类型菜单（阻止冒泡，免得顺带选中该行） */
+  const openFormatMenu = (e: React.MouseEvent, parentId: number | null): void => {
+    e.stopPropagation()
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    setFormatMenu({ x: r.left, y: r.bottom + 4, parentId })
+  }
 
   // S22：文件夹深链（图谱双击文件夹）——展开父链（折叠时目标不渲染），登记待定位 id
   useEffect(() => {
@@ -95,7 +110,7 @@ export function NoteTree({
     return new Set(notes.filter((n) => n.title.toLowerCase().includes(q)).map((n) => n.id))
   }, [notes, query])
 
-  const noteRow = (n: Note, depth: number): React.ReactNode => {
+  const noteRow = (n: Note, depth: number, folderId: number | null): React.ReactNode => {
     const hit = matched === null || matched.has(n.id)
     if (!hit) return null
     return (
@@ -114,6 +129,14 @@ export function NoteTree({
         {n.pinned ? <Pin size={12} className="ntree__pin" /> : <span className="ntree__dot" />}
         <span className="ntree__title">{n.title}</span>
         <span className="ntree__actions">
+          <button
+            className="icon-btn"
+            title="在此新建笔记"
+            aria-label="在此新建笔记"
+            onClick={(e) => openFormatMenu(e, folderId)}
+          >
+            <FilePlus2 size={12} />
+          </button>
           <button
             className="icon-btn"
             title={n.pinned ? '取消置顶' : '置顶'}
@@ -173,10 +196,31 @@ export function NoteTree({
           </button>
           <span className="ntree__foldername">{f.name}</span>
           <span className="u-aux">{own.length}</span>
+          <span className="ntree__actions">
+            <button
+              className="icon-btn"
+              title="在此新建笔记"
+              aria-label="在此新建笔记"
+              onClick={(e) => openFormatMenu(e, f.id)}
+            >
+              <FilePlus2 size={13} />
+            </button>
+            <button
+              className="icon-btn"
+              title="新建子文件夹"
+              aria-label="新建子文件夹"
+              onClick={(e) => {
+                e.stopPropagation()
+                onCreateFolder(f.id)
+              }}
+            >
+              <FolderPlus size={13} />
+            </button>
+          </span>
         </div>
         {isOpen && (
           <>
-            {own.map((n) => noteRow(n, depth + 1))}
+            {own.map((n) => noteRow(n, depth + 1, f.id))}
             {kids.map((k) => folderNode(k, depth + 1))}
           </>
         )}
@@ -210,35 +254,22 @@ export function NoteTree({
             />
           </>
         }
-        filters={[
-          <select
-            className="field field--compact ntree__format"
-            value={createFormat}
-            onChange={(e) => onCreateFormatChange(e.target.value)}
-            aria-label="新建笔记的格式"
-            title="新建笔记的格式"
-          >
-            <option value="markdown">Markdown</option>
-            <option value="richtext">富文本</option>
-            <option value="word">Word</option>
-            <option value="excel">Excel</option>
-            <option value="link">链接</option>
-          </select>,
-        ]}
-        primary={
-          <>
-            <button className="icon-btn" title="新建笔记" aria-label="新建笔记" onClick={() => onCreateNote(null)}>
-              <FilePlus2 size={15} />
-            </button>
-            <button className="icon-btn" title="新建文件夹" aria-label="新建文件夹" onClick={onCreateFolder}>
-              <FolderPlus size={15} />
-            </button>
-          </>
-        }
       />
       <div className="ntree__body">
-        {rootNotes.map((n) => noteRow(n, 0))}
+        {rootNotes.map((n) => noteRow(n, 0, null))}
         {childrenOf(null).map((f) => folderNode(f, 0))}
+        {/* 空树兜底：没有行可 hover，必须留一个入口 */}
+        {rootNotes.length === 0 && childrenOf(null).length === 0 && (
+          <div className="ntree__empty">
+            <p className="u-aux">还没有笔记。</p>
+            <button className="text-btn" onClick={(e) => openFormatMenu(e, null)}>
+              新建第一篇笔记
+            </button>
+            <button className="text-btn" onClick={() => onCreateFolder(null)}>
+              新建文件夹
+            </button>
+          </div>
+        )}
       </div>
       {/* 右边缘手柄：拖动调整树宽。宽度放在组件内，根元素内联 style 覆盖 CSS 里的默认值 */}
       <div
@@ -268,6 +299,22 @@ export function NoteTree({
         }}
       />
 
+      {formatMenu && (
+        <PopMenu
+          x={formatMenu.x}
+          y={formatMenu.y}
+          onClose={() => setFormatMenu(null)}
+          items={NOTE_FORMATS.map((f) => ({
+            key: f.key,
+            label: f.label,
+            onPick: () => {
+              onCreateNote(formatMenu.parentId, f.key)
+              setFormatMenu(null)
+            },
+          }))}
+        />
+      )}
+
       {folderMenu && menuFolder && (
         <PopMenu
           x={folderMenu.x}
@@ -276,8 +323,13 @@ export function NoteTree({
           items={[
             {
               key: 'new-sub',
-              label: '在此新建笔记',
-              onPick: () => onCreateNote(folderMenu.id),
+              label: '在此新建笔记…',
+              onPick: () => setFormatMenu({ x: folderMenu.x, y: folderMenu.y, parentId: folderMenu.id }),
+            },
+            {
+              key: 'new-folder',
+              label: '在此新建子文件夹',
+              onPick: () => onCreateFolder(folderMenu.id),
             },
             {
               key: 'rename',

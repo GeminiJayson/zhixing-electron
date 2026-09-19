@@ -489,6 +489,86 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   return (
     <div className="page page--workflow">
       <div className="page__body">
+  <Toolbar
+    title={t('page.workflow')}
+    subtitle={t('page.workflow.sub')}
+    meta={(
+      <span className="u-aux">{current ? `${current.name} · ${ordered.length} 步` : '未选择模板'}</span>
+    )}
+    filters={[
+      <label key="policy" className="wf-policy">
+        <span className="u-aux">启动策略</span>
+        <select
+          className="field field--mini"
+          value={current?.start_policy === 'all' ? 'all' : 'first'}
+          disabled={!current}
+          onChange={(e) => void handlePolicyChange(e.target.value)}
+          aria-label="启动策略"
+        >
+          <option value="first">只生成第一步待办</option>
+          <option value="all">一次性生成全部待办</option>
+        </select>
+      </label>,
+    ]}
+    primary={(
+      <button className="text-btn text-btn--accent" onClick={() => void handleInstantiate()} disabled={!current}>
+        <Play size={13} /> 启动实例
+      </button>
+    )}
+    secondary={[
+      <button key="add" className="text-btn" onClick={handleAddStep} disabled={!current}>
+        <Plus size={13} /> 加一步
+      </button>,
+      <button
+        key="edit"
+        className="text-btn"
+        onClick={() => {
+          const n = ordered.find((x) => x.id === selected)
+          if (n) openEditNode(n)
+        }}
+        disabled={selected == null}
+        title="编辑选中步骤（也可双击节点）"
+      >
+        <Pencil size={13} /> 编辑
+      </button>,
+      <button key="del" className="text-btn" onClick={() => void handleDeleteStep()} disabled={selected == null}>
+        <Trash2 size={13} /> 删除步骤
+      </button>,
+      <button key="up" className="text-btn" onClick={() => void handleMoveStep(-1)} disabled={selected == null} title="上移">
+        <ArrowUp size={13} /> 上移
+      </button>,
+      <button key="down" className="text-btn" onClick={() => void handleMoveStep(1)} disabled={selected == null} title="下移">
+        <ArrowDown size={13} /> 下移
+      </button>,
+      <button
+        key="align"
+        className="text-btn"
+        onClick={() => void handleAutoLayout()}
+        disabled={!current}
+        title="按执行顺序纵向对齐所有步骤"
+      >
+        <LayoutGrid size={13} /> 一键对齐
+      </button>,
+      <button key="reset" className="text-btn" onClick={pan.reset}>
+        <Maximize2 size={13} /> 重置视图
+      </button>,
+      <button key="rename" className="text-btn" onClick={() => void handleRenameTemplate()} disabled={!current}>
+        <Pencil size={13} /> 重命名
+      </button>,
+      <button key="dup" className="text-btn" onClick={() => void handleDuplicateTemplate()} disabled={!current}>
+        <Copy size={13} /> 复制
+      </button>,
+      <button
+        key="delTpl"
+        className="text-btn text-btn--danger"
+        onClick={() => void handleDeleteTemplate()}
+        disabled={!current}
+      >
+        <Trash2 size={13} /> 删除
+      </button>,
+    ]}
+  />
+
       <div className="wf-wrap">
         <aside className="wf-side" aria-label="模板与实例">
           <div className="wf-side__head">
@@ -527,85 +607,6 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
         </aside>
 
         <div className="wf-main">
-      <Toolbar
-        title={t('page.workflow')}
-        subtitle={t('page.workflow.sub')}
-        meta={(
-          <span className="u-aux">{current ? `${current.name} · ${ordered.length} 步` : '未选择模板'}</span>
-        )}
-        filters={[
-          <label key="policy" className="wf-policy">
-            <span className="u-aux">启动策略</span>
-            <select
-              className="field field--mini"
-              value={current?.start_policy === 'all' ? 'all' : 'first'}
-              disabled={!current}
-              onChange={(e) => void handlePolicyChange(e.target.value)}
-              aria-label="启动策略"
-            >
-              <option value="first">只生成第一步待办</option>
-              <option value="all">一次性生成全部待办</option>
-            </select>
-          </label>,
-        ]}
-        primary={(
-          <button className="text-btn text-btn--accent" onClick={() => void handleInstantiate()} disabled={!current}>
-            <Play size={13} /> 启动实例
-          </button>
-        )}
-        secondary={[
-          <button key="add" className="text-btn" onClick={handleAddStep} disabled={!current}>
-            <Plus size={13} /> 加一步
-          </button>,
-          <button
-            key="edit"
-            className="text-btn"
-            onClick={() => {
-              const n = ordered.find((x) => x.id === selected)
-              if (n) openEditNode(n)
-            }}
-            disabled={selected == null}
-            title="编辑选中步骤（也可双击节点）"
-          >
-            <Pencil size={13} /> 编辑
-          </button>,
-          <button key="del" className="text-btn" onClick={() => void handleDeleteStep()} disabled={selected == null}>
-            <Trash2 size={13} /> 删除步骤
-          </button>,
-          <button key="up" className="text-btn" onClick={() => void handleMoveStep(-1)} disabled={selected == null} title="上移">
-            <ArrowUp size={13} /> 上移
-          </button>,
-          <button key="down" className="text-btn" onClick={() => void handleMoveStep(1)} disabled={selected == null} title="下移">
-            <ArrowDown size={13} /> 下移
-          </button>,
-          <button
-            key="align"
-            className="text-btn"
-            onClick={() => void handleAutoLayout()}
-            disabled={!current}
-            title="按执行顺序纵向对齐所有步骤"
-          >
-            <LayoutGrid size={13} /> 一键对齐
-          </button>,
-          <button key="reset" className="text-btn" onClick={pan.reset}>
-            <Maximize2 size={13} /> 重置视图
-          </button>,
-          <button key="rename" className="text-btn" onClick={() => void handleRenameTemplate()} disabled={!current}>
-            <Pencil size={13} /> 重命名
-          </button>,
-          <button key="dup" className="text-btn" onClick={() => void handleDuplicateTemplate()} disabled={!current}>
-            <Copy size={13} /> 复制
-          </button>,
-          <button
-            key="delTpl"
-            className="text-btn text-btn--danger"
-            onClick={() => void handleDeleteTemplate()}
-            disabled={!current}
-          >
-            <Trash2 size={13} /> 删除
-          </button>,
-        ]}
-      />
 
           {instance && (
             <div className="wf-progress">
