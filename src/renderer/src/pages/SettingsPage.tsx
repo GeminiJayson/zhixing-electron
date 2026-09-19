@@ -677,6 +677,17 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
           <section className="set-card">
             <header className="set-card__head"><Timer size={15} /> 任务与提醒</header>
             <label className="set-row">
+              <span>到点发系统通知</span>
+              <input
+                type="checkbox"
+                checked={settings.reminder_notify}
+                onChange={(e) => void update('reminder_notify', e.target.checked ? '1' : '0')}
+              />
+              <span className="u-aux">
+                主窗口收进托盘时也能提醒（走 Windows 通知中心；关掉只剩窗口内的提醒卡片）
+              </span>
+            </label>
+            <label className="set-row">
               <span>番茄钟专注</span>
               <input
                 type="number"

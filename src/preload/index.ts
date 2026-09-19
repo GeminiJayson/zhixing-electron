@@ -88,6 +88,15 @@ const api = {
     listFolders: (): Promise<unknown[]> => ipcRenderer.invoke('db:listFolders'),
   /** 用系统默认应用打开本地文件；Word / Excel 笔记的正文就是这个文件 */
   openPath: (target: string): Promise<string> => ipcRenderer.invoke('shell:openPath', target),
+  /** 保存的查询（智能清单）：存的是「名称 + 表达式」，求值在渲染层 */
+  savedQueries: (): Promise<{ id: number; name: string; kind: string; expr: string }[]> =>
+    ipcRenderer.invoke('db:savedQueries'),
+  saveSavedQuery: (input: { id?: number; name: string; kind?: string; expr: string }): Promise<{
+    ok: boolean
+    id?: number
+    problems: string[]
+  }> => ipcRenderer.invoke('db:saveSavedQuery', input),
+  deleteSavedQuery: (id: number): Promise<boolean> => ipcRenderer.invoke('db:deleteSavedQuery', id),
   /** 附件：列表 / 统计 / 导入 / 删除 / 清理 */
   attachments: (): Promise<
     { id: number; note_id: number; note_title: string; path: string; kind: string; size: number; missing: boolean }[]
@@ -285,6 +294,8 @@ const api = {
         pinned?: boolean
         /** N3：改笔记格式（markdown/richtext/word/excel/link） */
         format?: string
+        /** 结构化属性（JSON 对象字符串：{ "来源": "书籍" }） */
+        props?: string | null
       }
     ): Promise<Note | null> => ipcRenderer.invoke('db:saveNote', id, fields),
     createNote: (

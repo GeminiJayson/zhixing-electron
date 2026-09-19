@@ -143,8 +143,22 @@ function ensureAppExtensions(d: Database.Database): void {
   // 外部任务来源：靠 (source, id) 幂等认领，重复同步不会造出重复任务
   add('task', 'external_source', 'external_source TEXT')
   add('task', 'external_id', 'external_id TEXT')
+  // 笔记的结构化属性（JSON 对象：{ "来源": "书籍", "评分": "5" }）
+  add('note', 'props', 'props TEXT')
   // 工作流模板分类（对齐笔记树的「文件夹 → 笔记」两层）
   add('workflow_template', 'group_id', 'group_id INTEGER')
+  // 保存的查询（智能清单）：把「我要看什么」固化成一条表达式
+  d.exec(
+    `CREATE TABLE IF NOT EXISTS saved_query (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       name TEXT NOT NULL,
+       kind TEXT NOT NULL DEFAULT 'task',
+       expr TEXT NOT NULL,
+       sort_key TEXT NOT NULL DEFAULT '',
+       created_at TEXT NOT NULL,
+       updated_at TEXT NOT NULL
+     )`
+  )
   d.exec(
     `CREATE TABLE IF NOT EXISTS workflow_group (
        id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -77,6 +77,8 @@ export function saveNote(
     folder_id?: number | null
     pinned?: boolean
     format?: string
+    /** 结构化属性（JSON 对象字符串） */
+    props?: string | null
   }
 ): Note | null {
   const c = conn()
@@ -90,6 +92,10 @@ export function saveNote(
     nextTitle = (fields.title ?? '').trim() || '未命名笔记'
     sets.push('title = ?')
     args.push(nextTitle)
+  }
+  if ('props' in fields) {
+    sets.push('props = ?')
+    args.push(fields.props ?? null)
   }
   if ('content_md' in fields) {
     const md = fields.content_md ?? ''

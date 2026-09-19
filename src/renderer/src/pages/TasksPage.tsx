@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Plus, Trash2 } from '@renderer/lib/icons'
 import { STATUS_LABELS, buildTaskTree, effectiveDoneMap, type TaskNode } from '@shared/task'
+import { filterTasks } from '@shared/query'
 import { priorityLabel } from '@shared/priority'
 import type {
   ListFolder,
@@ -164,6 +165,25 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     if (adding) addRef.current?.focus()
   }, [adding])
 
+  /** 智能清单：名称 + 表达式（表达式由 shared/query.ts 解析，在渲染层过滤） */
+  const [savedQueries, setSavedQueries] = useState<
+    { id: number; name: string; kind: string; expr: string }[]
+  >([])
+  const [activeQueryId, setActiveQueryId] = useState<number | null>(null)
+  const activeQuery = savedQueries.find((q) => q.id === activeQueryId) ?? null
+
+  const loadSavedQueries = useCallback(async (): Promise<void> => {
+    try {
+      setSavedQueries(await window.zhixing.db.savedQueries())
+    } catch {
+      setSavedQueries([])
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadSavedQueries()
+  }, [loadSavedQueries])
+
   const effective = useMemo(() => effectiveDoneMap(tasks), [tasks])
 
   /** 聚焦过滤：只筛根任务，子树仍由 buildTaskTree 自然挂回（与今日待办同口径）。 */
@@ -181,9 +201,22 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     return tasks.filter(match)
   }, [tasks, focus, effective])
 
+  /** 智能清单（保存的查询）：在聚焦过滤之后再套一层表达式过滤 */
+  const queriedTasks = useMemo(() => {
+    if (!activeQuery) return scopedTasks
+    const day = new Date().toLocaleDateString('sv-SE')
+    const listNames: Record<number, string> = {}
+    for (const f of folders) listNames[f.id] = f.name
+    return filterTasks(scopedTasks, activeQuery.expr, {
+      today: day,
+      listNames,
+      tagsOf: (t) => (tags.get(t.id) ?? []).map((x) => x.name),
+    })
+  }, [scopedTasks, activeQuery, folders, tags])
+
   const tree = useMemo(
-    () => buildTaskTree(scopedTasks, effective, counts, tags),
-    [scopedTasks, effective, counts, tags]
+    () => buildTaskTree(queriedTasks, effective, counts, tags),
+    [queriedTasks, effective, counts, tags]
   )
 
   const visible = useMemo(() => filterTree(tree, filter), [tree, filter])
@@ -749,8 +782,48 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
                 </option>
               ))}
           </select>,
+          <select
+            key="smart"
+            className="field field--compact"
+            value={activeQueryId === null ? '' : String(activeQueryId)}
+            onChange={(e) => setActiveQueryId(e.target.value ? Number(e.target.value) : null)}
+            aria-label="智能清单"
+            title="智能清单：把「我要看什么」固化成一条表达式"
+          >
+            <option value="">智能清单…</option>
+            {savedQueries.map((q) => (
+              <option key={q.id} value={String(q.id)}>
+                {q.name}
+              </option>
+            ))}
+          </select>,
         ]}
         secondary={[
+          <button
+            key="savesmart"
+            className="text-btn"
+            title="把当前筛选保存成智能清单。表达式支持 text:关键词 / tag:标签 / list:清单 / !done / priority>=3 / due<=today / due=overdue / due=none"
+            onClick={async () => {
+              const name = await dialog.prompt({ title: '保存为智能清单', label: '名称' })
+              if (!name?.trim()) return
+              const expr = await dialog.prompt({
+                title: '查询表达式',
+                label: '表达式（如 !done due<=today priority>=3）',
+                defaultValue: filter,
+              })
+              if (!expr?.trim()) return
+              const res = await window.zhixing.db.saveSavedQuery({ name: name.trim(), expr: expr.trim() })
+              if (!res.ok) {
+                onNotice('保存失败：' + res.problems.join('；'))
+                return
+              }
+              await loadSavedQueries()
+              if (res.id) setActiveQueryId(res.id)
+              onNotice('已保存智能清单「' + name.trim() + '」')
+            }}
+          >
+            存为智能清单
+          </button>,
           <button
             key="newlist"
             className="text-btn"

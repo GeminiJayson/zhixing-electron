@@ -32,6 +32,8 @@ export interface Task {
 
 export interface Note {
   id: number
+  /** 结构化属性（JSON 对象字符串）：{ "来源": "书籍", "评分": "5" } */
+  props?: string | null
   folder_id: number | null
   title: string
   content_md: string

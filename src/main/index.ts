@@ -12,6 +12,7 @@ import {
   screen,
   systemPreferences,
   dialog,
+  Notification,
   shell,
 } from 'electron'
 import { join } from 'node:path'
@@ -20,7 +21,7 @@ import { extractDeepLink, parseDeepLink, toAccelerator } from '../shared/deep-li
 import { resolveThemePack } from '../shared/theme-packs'
 import { initFileLog } from './log'
 import { hardenWindow } from './security'
-import { autoBackup, broadcastDataChanged, closeDb, currentSettings, dbPath, dbOpenError, dbReadonlyReason, ensureDefaultSettings, listTodayTasks, open, registerDbHandlers, saveWidgetGeometry, saveWidgetBall, setDataChangedHook } from './db'
+import { autoBackup, broadcastDataChanged, closeDb, currentSettings, dbPath, dbOpenError, dbReadonlyReason, dueReminders, ensureDefaultSettings, listTodayTasks, open, registerDbHandlers, saveWidgetGeometry, saveWidgetBall, setDataChangedHook } from './db'
 import {
   cancelOrganizeLibrary,
   currentLibraryProgress,
@@ -1122,6 +1123,45 @@ function registerWindowFit(): void {
   })
 }
 
+/**
+ * 系统级到点提醒。
+ *
+ * 渲染层那张提醒卡片只在主窗口活着时看得见 —— 窗口收进托盘或隐藏后，它等于没有。
+ * 所以主进程按同一节奏（30 秒）自己查一遍，用系统通知把提醒送进 Windows 通知中心。
+ *
+ * 与渲染层的分工：**这里只读，不清 reminder_at**；消费仍然由 db:dueReminders 完成。
+ * 两边都清会互相抢，用户反而少看到一条提醒。
+ */
+let notifiedReminders = new Set<string>()
+let reminderNotifyTimer: NodeJS.Timeout | null = null
+
+function startReminderNotifications(): void {
+  if (reminderNotifyTimer) clearInterval(reminderNotifyTimer)
+  reminderNotifyTimer = setInterval(() => {
+    try {
+      const s = currentSettings()
+      if (!s.reminder_enabled || !s.reminder_notify) return
+      if (!Notification.isSupported()) return
+      for (const t of dueReminders()) {
+        const key = String(t.id) + ':' + (t.reminder_at ?? '')
+        if (notifiedReminders.has(key)) continue
+        notifiedReminders.add(key)
+        const note = new Notification({
+          title: '待办提醒 · ' + t.title,
+          body: t.due_date ? '截止 ' + t.due_date : '到点了',
+        })
+        note.on('click', () => showMain())
+        note.show()
+      }
+      if (notifiedReminders.size > 200) {
+        notifiedReminders = new Set([...notifiedReminders].slice(-100))
+      }
+    } catch (err) {
+      console.error('[reminder] 系统通知失败', err)
+    }
+  }, 30_000)
+}
+
 /** 附件：选文件 → 复制进数据目录 → 落库，返回归档后的路径给渲染层写进正文。 */
 function registerAttachmentHandlers(): void {
   ipcMain.handle('attachment:pick', async (e, noteId: number) => {
@@ -1384,6 +1424,7 @@ app.whenReady().then(() => {
   registerShellHandlers()
   registerAttachmentHandlers()
   registerWindowFit()
+  startReminderNotifications()
   scheduleTaskSync()
   // 欢迎页要先于主窗出现（对齐 __main__.py：splash.show() 在 AppContext 构造之前）
   try {

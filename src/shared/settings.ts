@@ -24,6 +24,8 @@ export interface AppSettings {
   pomodoro_break_min: number
   pomodoro_auto_break: boolean
   reminder_enabled: boolean
+  /** 到点时是否发**系统通知**（主窗口收进托盘时也能提醒） */
+  reminder_notify: boolean
   calendar_show_done: boolean
   recycle_retention_days: number
   widget_enabled: boolean
@@ -113,6 +115,7 @@ export function parseSettings(raw: Record<string, string> = {}): AppSettings {
     pomodoro_break_min: num(raw.pomodoro_break_min, 5, 1, 30),
     pomodoro_auto_break: bool(raw.pomodoro_auto_break, false),
     reminder_enabled: bool(raw.reminder_enabled, true),
+    reminder_notify: bool(raw.reminder_notify, true),
     calendar_show_done: bool(raw.calendar_show_done, false),
     recycle_retention_days: num(raw.recycle_retention_days, 30, 1, 365),
     widget_enabled: bool(raw.widget_enabled, true),

@@ -474,6 +474,21 @@
   gap: var(--space-2);
 }
 /* 链接笔记：与 .editor__external 同构的卡片；一条链接一行，标题与「打开」按钮分居两端 */
+/* 笔记属性：结构化键值对，每行一条 key: value */
+.note-props {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.note-props__editor {
+  width: 100%;
+  min-height: 64px;
+  resize: vertical;
+  font-size: var(--text-aux);
+  line-height: 1.5;
+}
+
 /* Word / Excel 笔记：正文在本地文件里，这里只给出口 */
 .editor__office {
   flex: 1;

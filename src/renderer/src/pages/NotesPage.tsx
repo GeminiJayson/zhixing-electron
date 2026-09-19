@@ -101,6 +101,48 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
   const [reloadToken, setReloadToken] = useState(0)
   /** 右键选中的那一段（等待选任务后建立关联） */
   const [blockDraft, setBlockDraft] = useState<{ text: string; blockKey: string } | null>(null)
+
+  /** 笔记属性（每行一条 key: value），落库为 JSON 对象 */
+  const [propDraft, setPropDraft] = useState('')
+
+  const propsToText = (raw?: string | null): string => {
+    if (!raw) return ''
+    try {
+      const obj = JSON.parse(raw) as Record<string, unknown>
+      return Object.entries(obj)
+        .map(([k, v]) => k + ': ' + String(v))
+        .join('\n')
+    } catch {
+      return ''
+    }
+  }
+
+  const parsePropsText = (text: string): string => {
+    const obj: Record<string, string> = {}
+    for (const line of text.split('\n')) {
+      const i = line.indexOf(':')
+      if (i <= 0) continue
+      const k = line.slice(0, i).trim()
+      const v = line.slice(i + 1).trim()
+      if (k) obj[k] = v
+    }
+    return JSON.stringify(obj)
+  }
+
+  const saveProps = async (): Promise<void> => {
+    if (selectedId == null) return
+    const next = parsePropsText(propDraft)
+    if (next === (current?.props ?? '{}')) return
+    await window.zhixing.db.saveNote(selectedId, { props: next })
+    await load()
+    onNotice('已保存属性')
+  }
+
+  // 切笔记时把属性铺进编辑框
+  useEffect(() => {
+    setPropDraft(propsToText(current?.props))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current?.id, current?.props])
   const officeTimer = useRef<number | null>(null)
 
   const isOffice = current?.format === 'word' || current?.format === 'excel'
@@ -1214,7 +1256,21 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
         {linksOpen && current && (
           <aside className="links" aria-label="链接面板">
             <section className="links__card">
-              <header className="links__head">反向链接 · {backlinks.length}</header>
+              <div className="note-props">
+                  <header className="links__head">
+                    属性 · {propDraft.split('\n').filter((l) => l.trim()).length}
+                  </header>
+                  <textarea
+                    className="field note-props__editor"
+                    rows={3}
+                    value={propDraft}
+                    aria-label="笔记属性"
+                    placeholder={'每行一条，例如\n来源: 书籍\n评分: 5'}
+                    onChange={(e) => setPropDraft(e.target.value)}
+                    onBlur={() => void saveProps()}
+                  />
+                </div>
+                <header className="links__head">反向链接 · {backlinks.length}</header>
               {backlinks.length === 0 ? (
                 <p className="u-aux">还没有其他笔记引用它。</p>
               ) : (

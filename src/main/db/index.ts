@@ -44,6 +44,7 @@ import { siblingsOf, isDescendantOf, reorderTask, moveTaskRelative, reparentTask
 import { listTasks, listTodayTasks, recentNotes, noteCountMap, tagMap, listNotes, overview, toggleTask, cloneTaskTree, setPriority, setTitle, setStatus, setDueDate, nextSortKey, createTask, EDITABLE_FIELDS, updateTask, softDelete, syncTaskNoteLinks, attachTaskNote, detachTaskNote, listLinkedNotes, pauseTask, resumeTask, attachBlock, detachBlock, listLinkedContexts, contextsForNote, noteContextMap, writeNoteAfterDone, taskCandidates } from './tasks'
 import { trashItems, restoreTrash, purgeTrash, emptyTrash, purgeTrashOlderThan, tagsWithUsage, createTag, renameTag, deleteTag, mergeTags } from './trash'
 import { attachmentStats, deleteAttachment, importAttachment, listAttachments, pruneAttachments } from './attachments'
+import { deleteSavedQuery, listSavedQueries, saveSavedQuery } from './queries'
 import { NODE_COLUMNS, orderedNodes, nextWorkflowNode, validateWorkflowTemplate, listWorkflowTemplates, getWorkflowTemplate, saveWorkflowTemplate, deleteWorkflowTemplate, duplicateWorkflowTemplate, autoLayoutWorkflowNodes, updateWorkflowNodePos, setWorkflowBranch, spawnStepTask, instantiateWorkflow, getWorkflowInstance, listWorkflowInstances, listWorkflowInstancesByTask, completeWorkflowStep, abortWorkflowInstance, retryWorkflowStep, setWorkflowNotifier, splitCommand, describeWorkflowAction, runWorkflowAction, listWorkflowGroups, workflowTemplateGroups, saveWorkflowGroup, deleteWorkflowGroup, moveWorkflowTemplate, renameWorkflowInstance } from './workflow'
 import type { EditableField } from './tasks'
 import type { TrashItem } from './trash'
@@ -118,6 +119,8 @@ const WRITE_DOMAINS: Record<string, DataDomain | DataDomain[]> = {
   'db:deleteWorkflowGroup': 'workflow',
   'db:moveWorkflowTemplate': 'workflow',
   'db:renameWorkflowInstance': 'workflow',
+  'db:saveSavedQuery': 'settings',
+  'db:deleteSavedQuery': 'settings',
   'db:importAttachment': 'note',
   'db:deleteAttachment': 'note',
   'db:pruneAttachments': 'note',
@@ -501,6 +504,9 @@ export function registerDbHandlers(): void {
     (_e, templateId: number, title: string | null, originTaskId: number | null, policy?: string) =>
       instantiateWorkflow(templateId, title, originTaskId, policy)
   )
+  handle('db:savedQueries', () => listSavedQueries())
+  handle('db:saveSavedQuery', (_e, input: Parameters<typeof saveSavedQuery>[0]) => saveSavedQuery(input))
+  handle('db:deleteSavedQuery', (_e, id: number) => deleteSavedQuery(id))
   handle('db:attachments', () => listAttachments())
   handle('db:attachmentStats', () => attachmentStats())
   handle('db:importAttachment', (_e, noteId: number, srcPath: string) =>
