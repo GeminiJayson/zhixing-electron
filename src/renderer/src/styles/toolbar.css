@@ -181,7 +181,9 @@
   align-items: center;
   gap: var(--space-1);
   flex: 0 0 64px;
-  padding-top: 8px;
+  /* 与同组控件**同高**：控件都是 --control-h，标签也取这个高度才能真正对齐。
+     原来用 padding-top: 8px 猜偏移，控件换行后就错位了。 */
+  height: var(--control-h);
   color: var(--fg-secondary);
   font-size: var(--text-aux);
 }

@@ -197,16 +197,16 @@
   padding-top: 0;
   border-top: none;
 }
-/* 标题分区纵向排：标题在上，编辑状态挂在它下面（只在真的在编辑时出现） */
+/* 标题分区：标题与编辑状态**同一行**。此前把状态放在标题下面，会把标题行整体撑高，
+   与页面的其它标题行不协调。 */
 .editor .tb__head {
-  align-items: stretch;
+  align-items: center;
 }
 .editor .tb__lead {
   flex: 1 1 auto;
   min-width: 0;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 2px;
+  align-items: center;
+  gap: var(--space-2);
 }
 .editor .tb__lead .editor__title {
   flex: 1 1 auto;
@@ -225,9 +225,11 @@
   border: none;
 }
 .editor__status {
-  padding-left: 1px;
-  color: var(--fg-tertiary);
+  flex: 0 0 auto;
+  /* 用主题强调色（--accent-text 是按背景校正过对比度的变体），与主题包联动 */
+  color: var(--accent-text);
   font-size: var(--text-aux);
+  white-space: nowrap;
 }
 .editor__area {
   flex: 1;
