@@ -29,3 +29,5 @@ credentials*.txt
 AGENTS.md
 AGENTS.md.backup.*
 memory/
+
+dist-portable/

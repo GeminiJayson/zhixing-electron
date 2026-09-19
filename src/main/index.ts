@@ -19,7 +19,14 @@ import { resolveThemePack } from '../shared/theme-packs'
 import { initFileLog } from './log'
 import { hardenWindow } from './security'
 import { autoBackup, broadcastDataChanged, closeDb, currentSettings, dbPath, dbOpenError, dbReadonlyReason, ensureDefaultSettings, listTodayTasks, open, registerDbHandlers, saveWidgetGeometry, saveWidgetBall, setDataChangedHook } from './db'
-import { organizeNoteWithAi, testAiConnection } from './ai'
+import {
+  cancelOrganizeLibrary,
+  currentLibraryProgress,
+  organizeLibraryWithAi,
+  organizeNoteWithAi,
+  setAiLibraryNotifier,
+  testAiConnection,
+} from './ai'
 
 const SCHEME = 'zhixing'
 
@@ -1000,6 +1007,14 @@ if (!gotTheLock) {
  * 它不是数据库操作，而是一次外部网络请求 + 审计 + 可能的写库。
  */
 function registerAiHandlers(): void {
+  // 整库整理是长任务：进度用事件推给所有窗口，界面据此显示「第 n/m 篇」与停止按钮
+  setAiLibraryNotifier((p) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('ai:libraryProgress', p)
+    }
+    // 每处理完一篇就刷新一次：笔记树（新文件夹）、图谱、任务引用都会跟着变
+    if (p.done > 0) broadcastDataChanged('note')
+  })
   ipcMain.handle('ai:organizeNote', async (_e, noteId: number) => {
     const outcome = await organizeNoteWithAi(Number(noteId))
     // 整理会改标题 / 文件夹 / 正文：笔记、任务（引用）与图谱都可能受影响
@@ -1010,6 +1025,13 @@ function registerAiHandlers(): void {
     return outcome
   })
   ipcMain.handle('ai:testConnection', () => testAiConnection())
+  ipcMain.handle('ai:organizeLibrary', async () => {
+    const outcome = await organizeLibraryWithAi()
+    broadcastDataChanged('note')
+    return outcome
+  })
+  ipcMain.handle('ai:cancelLibrary', () => cancelOrganizeLibrary())
+  ipcMain.handle('ai:libraryProgress', () => currentLibraryProgress())
 }
 
 app.whenReady().then(() => {

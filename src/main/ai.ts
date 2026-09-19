@@ -28,6 +28,8 @@ import {
   restoreNotePlaceholders,
   splitFolderPath,
   type AuditIssue,
+  type AiLibraryOutcome,
+  type AiLibraryProgress,
   type AiOrganizeOutcome,
   type AiProtocol,
   type AiSettings,
@@ -292,6 +294,157 @@ export async function organizeNoteWithAi(noteId: number): Promise<AiOrganizeOutc
     noteId,
     title: saved.title,
     issues,
+  }
+}
+
+// ---------------------------------------------------------------- 整库整理
+
+/**
+ * 逐篇整理整个笔记库。
+ *
+ * 几个刻意的选择：
+ *   - **串行**：一批请求并发打出去最容易撞限流，而整理本来就是慢活；一篇好了再下一篇。
+ *   - **每篇独立审计**：某一篇没过审计只记它失败，不影响其余；失败清单会带回去。
+ *   - **文件夹每篇现读**：前一篇新建的目录，后一篇就能复用 —— 否则整库会造出一堆同义目录。
+ *   - **可停止**：停止只影响「下一篇」，已经发出的那一篇会跑完并入库（请求已经花掉了）。
+ */
+let libraryProgress: AiLibraryProgress | null = null
+let libraryCancel = false
+let libraryNotifier: ((p: AiLibraryProgress) => void) | null = null
+
+/** 进度回调由 IPC 层注入（ai.ts 不该直接碰 BrowserWindow）。 */
+export function setAiLibraryNotifier(fn: ((p: AiLibraryProgress) => void) | null): void {
+  libraryNotifier = fn
+}
+
+function emitLibraryProgress(p: AiLibraryProgress): void {
+  libraryProgress = p
+  try {
+    libraryNotifier?.({ ...p })
+  } catch (err) {
+    console.error('[ai] 进度通知失败', err)
+  }
+}
+
+/** 当前整库任务的进度（渲染层挂载时问一次，用来恢复进度显示）。 */
+export function currentLibraryProgress(): AiLibraryProgress | null {
+  return libraryProgress
+}
+
+/** 请求停止整库整理。返回 false 表示当前并没有任务在跑。 */
+export function cancelOrganizeLibrary(): boolean {
+  if (!libraryProgress?.running) return false
+  libraryCancel = true
+  return true
+}
+
+/** 待整理的笔记：只取 Markdown / 富文本（Word/Excel/链接的正文是路径或 URL）。 */
+function notesToOrganize(): { id: number; title: string; content_md: string | null }[] {
+  return conn()
+    .prepare(
+      `SELECT id, title, content_md FROM note
+        WHERE deleted_at IS NULL AND format IN ('markdown', 'richtext')
+        ORDER BY updated_at DESC, id DESC`
+    )
+    .all() as { id: number; title: string; content_md: string | null }[]
+}
+
+export async function organizeLibraryWithAi(): Promise<AiLibraryOutcome> {
+  const empty = (message: string): AiLibraryOutcome => ({
+    ok: false,
+    message,
+    total: 0,
+    done: 0,
+    okCount: 0,
+    failedCount: 0,
+    skipped: 0,
+    createdFolders: 0,
+    stopped: false,
+    failedTitles: [],
+  })
+  if (libraryProgress?.running) return empty('已经有一个整库整理在进行中')
+  const s = currentAiSettings()
+  if (!s.baseUrl.trim() || !s.model.trim()) {
+    return empty('还没配置大模型：请到「设置 → 笔记 AI 整理」填好请求地址与模型')
+  }
+
+  const rows = notesToOrganize()
+  if (!rows.length) return empty('没有可整理的 Markdown / 富文本笔记')
+
+  libraryCancel = false
+  let done = 0
+  let okCount = 0
+  let failedCount = 0
+  let skipped = 0
+  let createdFolders = 0
+  let currentTitle = ''
+  const failedTitles: string[] = []
+  const snapshot = (patch: Partial<AiLibraryProgress> = {}): AiLibraryProgress => ({
+    running: true,
+    total: rows.length,
+    done,
+    ok: okCount,
+    failed: failedCount,
+    skipped,
+    createdFolders,
+    currentTitle,
+    stopped: libraryCancel,
+    ...patch,
+  })
+
+  emitLibraryProgress(snapshot())
+  for (const row of rows) {
+    if (libraryCancel) break
+    currentTitle = row.title
+    emitLibraryProgress(snapshot())
+
+    // 空正文没必要花一次请求：直接跳过（与前一篇的成败无关）
+    if (!(row.content_md ?? '').trim()) {
+      skipped += 1
+      done += 1
+      emitLibraryProgress(snapshot())
+      continue
+    }
+
+    let res: AiOrganizeOutcome
+    try {
+      res = await organizeNoteWithAi(row.id)
+    } catch (err) {
+      res = { ok: false, message: err instanceof Error ? err.message : String(err) }
+    }
+    if (res.ok) {
+      okCount += 1
+      createdFolders += res.createdFolders?.length ?? 0
+    } else {
+      failedCount += 1
+      if (failedTitles.length < 5) failedTitles.push(row.title)
+    }
+    done += 1
+    emitLibraryProgress(snapshot())
+  }
+
+  const stopped = libraryCancel
+  // 收尾事件：running=false，界面据此收起进度条
+  emitLibraryProgress({ ...snapshot(), running: false, currentTitle: '', stopped })
+  libraryProgress = null
+  libraryCancel = false
+
+  const parts = [stopped ? `已停止：处理了 ${done}/${rows.length} 篇` : `整库整理完成：共 ${rows.length} 篇`]
+  parts.push(`成功 ${okCount}`)
+  if (failedCount) parts.push(`失败 ${failedCount}`)
+  if (skipped) parts.push(`跳过 ${skipped}（正文为空）`)
+  if (createdFolders) parts.push(`新建文件夹 ${createdFolders} 个`)
+  return {
+    ok: true,
+    message: parts.join('，'),
+    total: rows.length,
+    done,
+    okCount,
+    failedCount,
+    skipped,
+    createdFolders,
+    stopped,
+    failedTitles,
   }
 }
 

@@ -5,6 +5,7 @@ import { Morph, IconData, Link2, Plus, Sparkles, UserPlus } from '@renderer/lib/
 import { subscribeDomain } from '@shared/events'
 import { useDialog } from '../components/Dialogs'
 import type { Backlink, Note, NoteFolder, NoteLink } from '@shared/types'
+import type { AiLibraryProgress } from '@shared/ai-note'
 import { t } from '../i18n'
 import { MarkdownEditor, RichTextEditor, blockFingerprint, locateBlockInView } from '../components/MarkdownEditor'
 import { MarkdownView } from '../components/MarkdownView'
@@ -71,6 +72,8 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
   const [excelRows, setExcelRows] = useState<string[][]>([])
   /** AI 整理进行中（请求可能跑几十秒，期间按钮要禁用并给出文案） */
   const [aiBusy, setAiBusy] = useState(false)
+  /** 整库整理任务：非空表示正在跑（进度由主进程推送） */
+  const [libJob, setLibJob] = useState<AiLibraryProgress | null>(null)
   /** 同 id 重载计数器：AI 改写后标题/正文/文件夹都变了，得把加载流程再跑一遍 */
   const [reloadToken, setReloadToken] = useState(0)
   const officeTimer = useRef<number | null>(null)
@@ -192,6 +195,62 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
     }
     await persist(current.id, { title, content_md: content })
   }, [current, dirty, persist, title, content])
+
+  // 整库整理的进度订阅：主进程逐篇推进时会推过来，最后一帧 running=false 用于收尾
+  useEffect(() => {
+    let alive = true
+    void window.zhixing.ai.libraryProgress().then((p) => {
+      if (alive && p?.running) setLibJob(p)
+    })
+    const off = window.zhixing.ai.onLibraryProgress((p) => {
+      setLibJob(p.running ? p : null)
+      if (!p.running) {
+        onNotice(
+          `整库整理结束：成功 ${p.ok} 篇${p.failed ? `，失败 ${p.failed} 篇` : ''}${
+            p.skipped ? `，跳过 ${p.skipped} 篇` : ''
+          }`
+        )
+        void load()
+      }
+    })
+    return () => {
+      alive = false
+      off()
+    }
+  }, [load, onNotice])
+
+  /**
+   * 整库整理：逐篇交给主进程（串行、每篇独立审计）。
+   * 正在跑时这个按钮变成「停止」—— 停止只影响下一篇，已经发出的那篇会跑完入库。
+   */
+  const handleLibraryOrganize = async (): Promise<void> => {
+    if (libJob) {
+      await window.zhixing.ai.cancelLibrary()
+      onNotice('已请求停止：当前这一篇会跑完再停')
+      return
+    }
+    const all = await window.zhixing.db.notes()
+    const target = all.filter((n) => n.format === 'markdown' || n.format === 'richtext')
+    if (!target.length) {
+      onNotice('没有可整理的 Markdown / 富文本笔记')
+      return
+    }
+    if (
+      !window.confirm(
+        `将逐篇把 ${target.length} 篇笔记交给大模型整理，并直接改写原笔记。\n\n` +
+          '· 每篇都会先过审计，不通过就不写库\n' +
+          '· 正文变更前会留一份版本快照，可在笔记历史里回滚\n' +
+          '· 篇数多时可能要跑很久，随时可以停止\n\n确定开始？'
+      )
+    ) {
+      return
+    }
+    const res = await window.zhixing.ai.organizeLibrary()
+    if (!res.ok) onNotice(res.message)
+    else if (res.failedTitles.length) {
+      onNotice(`${res.message}；失败：${res.failedTitles.join('、')}`)
+    }
+  }
 
   /**
    * AI 整理当前笔记：先把未落盘的编辑冲出去（否则整理的是旧内容），
@@ -688,6 +747,18 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
                       onClick={() => void handleAiOrganize()}
                     >
                       <Sparkles size={13} /> {aiBusy ? '整理中…' : 'AI 整理'}
+                    </button>,
+                    <button
+                      key="ailib"
+                      className={libJob ? 'text-btn text-btn--danger' : 'text-btn'}
+                      title={
+                        libJob
+                          ? `正在整理：${libJob.currentTitle || '…'}（成功后 ${libJob.ok} / 失败 ${libJob.failed}）；点此停止，当前这一篇会跑完`
+                          : '逐篇整理整个笔记库（只处理 Markdown / 富文本，可随时停止）'
+                      }
+                      onClick={() => void handleLibraryOrganize()}
+                    >
+                      {libJob ? `停止整理（${libJob.done}/${libJob.total}）` : '整理全库'}
                     </button>,
                     <button key="links" className="text-btn" aria-pressed={linksOpen} onClick={() => setLinksOpen((v) => !v)}>
                       <Link2 size={13} /> 链接

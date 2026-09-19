@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { DeepLink } from '../shared/deep-link'
-import type { AiOrganizeOutcome } from '../shared/ai-note'
+import type { AiLibraryOutcome, AiLibraryProgress, AiOrganizeOutcome } from '../shared/ai-note'
 import type {
   AppInfo,
   Backlink,
@@ -479,6 +479,17 @@ const api = {
       ipcRenderer.invoke('ai:organizeNote', noteId),
     testConnection: (): Promise<{ ok: boolean; message: string }> =>
       ipcRenderer.invoke('ai:testConnection'),
+    /** 逐篇整理整个笔记库（串行，可停止；只处理 Markdown / 富文本） */
+    organizeLibrary: (): Promise<AiLibraryOutcome> => ipcRenderer.invoke('ai:organizeLibrary'),
+    cancelLibrary: (): Promise<boolean> => ipcRenderer.invoke('ai:cancelLibrary'),
+    /** 挂载时问一次当前进度（比如切页回来时任务还在跑） */
+    libraryProgress: (): Promise<AiLibraryProgress | null> => ipcRenderer.invoke('ai:libraryProgress'),
+    /** 整库整理的进度推送；返回值是取消订阅 */
+    onLibraryProgress: (cb: (p: AiLibraryProgress) => void): (() => void) => {
+      const handler = (_e: unknown, p: AiLibraryProgress): void => cb(p)
+      ipcRenderer.on('ai:libraryProgress', handler)
+      return () => ipcRenderer.removeListener('ai:libraryProgress', handler)
+    },
   },
   app: {
     info: (): Promise<AppInfo> => ipcRenderer.invoke('app:info'),

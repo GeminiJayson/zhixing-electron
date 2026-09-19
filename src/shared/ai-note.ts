@@ -487,6 +487,37 @@ export function describeFolders(paths: string[]): string {
   return paths.map((p) => `- ${p}`).join('\n')
 }
 
+/** 整库整理的实时进度（主进程推给渲染层）。 */
+export interface AiLibraryProgress {
+  running: boolean
+  total: number
+  done: number
+  ok: number
+  failed: number
+  /** 正文为空被跳过的篇数 */
+  skipped: number
+  createdFolders: number
+  /** 正在处理的笔记标题 */
+  currentTitle: string
+  /** 用户点了停止（当前这一篇会跑完再停） */
+  stopped: boolean
+}
+
+/** 整库整理的最终结果。 */
+export interface AiLibraryOutcome {
+  ok: boolean
+  message: string
+  total: number
+  done: number
+  okCount: number
+  failedCount: number
+  skipped: number
+  createdFolders: number
+  stopped: boolean
+  /** 失败的笔记标题（最多列前 5 个） */
+  failedTitles: string[]
+}
+
 /** 主进程返回给界面的整理结果。 */
 export interface AiOrganizeOutcome {
   ok: boolean

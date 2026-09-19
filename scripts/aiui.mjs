@@ -162,10 +162,11 @@ await conn.evaluate(
     '))[0]?.click()'
 )
 await sleep(1500)
-const hasAiButton = await conn.evaluate(
-  "[...document.querySelectorAll('button')].some((b) => b.textContent.includes('AI 整理'))"
+const toolbarText = await conn.evaluate(
+  "[...document.querySelectorAll('button')].map((b) => b.textContent.trim()).join(' | ')"
 )
-check('笔记工具栏有「AI 整理」入口', hasAiButton === true, '选中：' + noteTitle)
+check('笔记工具栏有「AI 整理」入口', String(toolbarText).includes('AI 整理'), '选中：' + noteTitle)
+check('笔记工具栏有「整理全库」入口', String(toolbarText).includes('整理全库'), '')
 await shoot('ai-note-toolbar.png')
 
 conn.ws.close()
