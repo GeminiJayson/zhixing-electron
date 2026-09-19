@@ -283,6 +283,24 @@
 .section {
   margin-bottom: var(--space-5);
 }
+/* 今日页：滚动分别交给「今日待办」与「最近笔记」两块，
+   page__body 自身不再整页滚动 —— 标题、快速添加与概览卡始终可见。 */
+.today-page .page__body {
+  overflow: hidden;
+}
+/* 两块各自撑满剩余高度并平分（flex: 1 1 0），内部再由 .section__scroll 滚动 */
+.today-page .page__body > .section--grow {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  margin-bottom: var(--space-4);
+}
+.today-page .section__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
 .section__head {
   display: flex;
   align-items: baseline;

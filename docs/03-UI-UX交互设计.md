@@ -188,7 +188,8 @@
 
 - 树形缩进 + 折叠；行高由 `--row-h` 决定（`TasksPage.tsx:65-71`）。
 - **虚拟滚动**：`VirtualList` 固定行高、按 `count × rowHeight` 绝对定位，`overscan = 8`，容器高度用 `ResizeObserver` 实测（`components/VirtualList.tsx:21-65`）。
-- 行内容（`components/TaskRow.tsx`）：勾选框（`aria-label` 随状态变化，`:101`）→ 优先级色点（`aria-label`/`title` 给出文字等级，`:109`）→ 标题 → 标签 chip → `⇄N` 笔记数 chip（`:169`）→ 截止 chip（逾期转 danger 色）→ 行内动作：开始专注（`:172-179`）、加子任务、编辑。
+- 行内容（`components/TaskRow.tsx`）：勾选框（`aria-label` 随状态变化，`:101`）→ 优先级色点（`aria-label`/`title` 给出文字等级，`:109`）→ 标题 → **胶囊容器 `.trow__chips`**（循环 / `🔥N` 连续 / 日期区间 / 标签 `:157-170` / `⇄N` 笔记数 `:171`，逾期区间转 danger 色）→ **行内动作组 `.trow__actions`**（`:174-197`，开始专注 / 加子任务 / 编辑 / 删除）。
+- 动作组**不是浮层**：未悬浮时收拢为 0 宽 + 透明且不接收指针事件，悬浮（或选中）时展开为内容宽度（实测 110px），胶囊容器作为普通 flex 兄弟项随之被推到它左侧 —— 即「悬浮时胶囊移到按钮组左边」。按钮与胶囊同款：20px 高、`0 6px` 内边距、`--radius-sm` 圆角、`--fg-secondary` 文字色。
 - 添加行计入行数，否则虚拟列表的绝对定位会错位（`TasksPage.tsx:146` 注释）。
 
 ### 4.2 四象限

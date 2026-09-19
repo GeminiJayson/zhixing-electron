@@ -145,28 +145,31 @@ export function TaskRow(props: Props) {
         </span>
       )}
 
-      {node.repeat_period !== 'none' && (
-        <span className="chip" title={`循环：${node.repeat_period}`}>
-          {node.repeat_period === 'daily' ? '每日' : node.repeat_period === 'weekly' ? '每周' : node.repeat_period === 'monthly' ? '每月' : '自定义'}
-        </span>
-      )}
-      {node.streak > 0 && <span className="chip chip--streak">🔥{node.streak}</span>}
-      {range && <span className={`chip${due.tone === 'overdue' ? ' chip--danger' : ''}`}>{range}</span>}
-      {node.tags.map((tag) => (
-        <button
-          key={tag.id}
-          className="chip chip--tag"
-          style={{ color: tag.color, borderColor: tag.color }}
-          title="点击增删标签"
-          onClick={(e) => {
-            e.stopPropagation()
-            props.onOpenTags(node.id, e.currentTarget)
-          }}
-        >
-          {tag.name}
-        </button>
-      ))}
-      {node.noteCount > 0 && <span className="chip">⇄{node.noteCount}</span>}
+      {/* 胶囊统一包在一个容器里：悬浮时按钮组浮现，容器整体左移让位（见 tasks.css） */}
+      <span className="trow__chips">
+        {node.repeat_period !== 'none' && (
+          <span className="chip" title={`循环：${node.repeat_period}`}>
+            {node.repeat_period === 'daily' ? '每日' : node.repeat_period === 'weekly' ? '每周' : node.repeat_period === 'monthly' ? '每月' : '自定义'}
+          </span>
+        )}
+        {node.streak > 0 && <span className="chip chip--streak">🔥{node.streak}</span>}
+        {range && <span className={`chip${due.tone === 'overdue' ? ' chip--danger' : ''}`}>{range}</span>}
+        {node.tags.map((tag) => (
+          <button
+            key={tag.id}
+            className="chip chip--tag"
+            style={{ color: tag.color, borderColor: tag.color }}
+            title="点击增删标签"
+            onClick={(e) => {
+              e.stopPropagation()
+              props.onOpenTags(node.id, e.currentTarget)
+            }}
+          >
+            {tag.name}
+          </button>
+        ))}
+        {node.noteCount > 0 && <span className="chip">⇄{node.noteCount}</span>}
+      </span>
 
       <span className="trow__actions">
         <button

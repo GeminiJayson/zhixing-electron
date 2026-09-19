@@ -514,3 +514,32 @@ touch targets, safe areas, and platform gesture conventions that **don't apply 1
 3. **`setPointerCapture` 抛错会挡住后续逻辑**：图谱节点与工作流节点的 `onPointerDown` 里，
    捕获失败（指针已失效 / 合成事件）会直接中断，**`setSelected` 不执行** —— 表现为节点点不中、
    连线模式进不去。已加 try/catch 并保证选中照常执行（与 panzoom 的处理一致）。
+
+---
+
+## 今日页交互调整（2026-09-19，第八轮）
+
+用户报了 3 项，都在今日页：
+
+| # | 需求 | 处理 |
+| --- | --- | --- |
+| 1 | 滚动只出现在「今日待办」「最近笔记」两块上 | 原实现是整页 body 滚动。给今日页加 `.today-page` 作用域：`.page__body { overflow: hidden }`，两块 `<section>` 改 `section--grow`（`flex: 1 1 0; min-height: 0`）各自分出剩余高度，滚动交给新增的内层 `.section__scroll`（`overflow-y: auto`）。标题行、快速添加、四张概览卡因此**始终可见**，两块内容各滚各的 |
+| 2 | 任务项的编辑按钮与胶囊样式一致；悬浮时胶囊移到按钮组左侧 | 按钮组从**绝对定位浮层**改回**行内 flex 项**（推翻第六轮 #5 的结论，见下）：`.trow__actions` 未悬浮时 `max-width: 0` + 透明 + `pointer-events: none`，悬浮/选中时展开为内容宽度；`.trow__chips` 作为普通兄弟项自然排到它左侧。按钮对齐胶囊规格：20px 高、`0 6px` 内边距、`--radius-sm`、`--fg-secondary` |
+| 3 | 今日页任务项也能直接编辑 | 复用任务页同一个 `components/TaskEditor.tsx`：`editingId` 命中 `today.subtree` 即弹出，保存走 `updateTask` + `refresh()`，删除前 `confirm`。原先的 `onEdit` 只是弹提示「在任务页双击 #id 可编辑」，已删 |
+
+**推翻第六轮 #5 的原因**：#5 当时的诉求是「未悬浮时按钮组不占位」，绝对定位能满足这一点，但代价是**按钮组浮在内容之上**：悬浮时只能给标题补 `padding-right: 78px` 让位，胶囊仍会被压住（标签越多越明显）。现在改成「0 宽 ↔ 内容宽」的展开式行内项，**既满足不占位，又天然把胶囊推到左边**，还省掉了那 78px 的魔法数。
+
+### 验证（CDP 强制伪类，不依赖真人鼠标位置）
+
+鼠标真实位置会随窗口启动时的系统光标而变，直接 `Input.dispatchMouseEvent` 复现不出稳定的 `:hover`，所以改用 `CSS.forcePseudoState` 强制 `:hover` 后实测几何：
+
+```
+base      : chips.right=1221  acts.x=1229 w=0   opacity=0  max-width=0px
+hovered   : chips.right=1111  acts.x=1119 w=110 opacity=1  max-width=220px   row.matches(':hover')=true
+推入宽度 = 按钮组宽度 = 110   胶囊右缘 <= 按钮组左缘 OK   按钮组右缘 <= 行右缘(1229) OK   按钮高 20 = 胶囊高 20 OK
+取消强制后复位 OK   注入 6 个胶囊（377px）后按钮组仍完整 110px、不重叠、不溢出 OK
+```
+
+同时验证：`.page__body` 计算样式 `overflow-y: hidden`；今日页恰有 **2 个** `.section__scroll`（`overflow-y: auto`，今日待办 `scrollHeight 407 > clientHeight 221` 可滚、最近笔记内容不足不滚）；点击行内「编辑」→ `.modal` 弹出、标题输入框**预填该行标题**、10 个字段与「删除 / 写复盘笔记 / 取消 / 保存」按钮齐全。
+
+**回归**：`typecheck` 0 error、`vitest` 86/86（14 个文件）。产物重新出包：`dist/Zhixing-0.1.7-x64-setup.exe`（86.89 MB）、`dist/Zhixing-0.1.7-x64-portable.exe`（86.67 MB），`postdist:win` 已自动恢复本机 ABI。

@@ -199,31 +199,44 @@
   border: var(--border-w) solid var(--accent);
   border-radius: var(--radius-sm);
 }
+/* 行内胶囊：循环 / streak / 区间 / 标签 / 笔记数。
+   它们是普通 flex 项，因此按钮组浮现时会自然排到按钮组左侧，不会被压住。 */
+.trow__chips {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 0 0 auto;
+  min-width: 0;
+}
+/* 悬浮操作按钮组：**不再绝对定位** —— 作为行内 flex 项排在胶囊之后。
+   未悬浮时收拢为 0 宽且透明，不占位；悬浮/选中时展开，胶囊遂被推到它左侧。 */
 .trow__actions {
-  /* 绝对定位：未悬浮时完全不占位，标题可以用满整行宽度 */
-  position: absolute;
-  right: var(--space-1);
-  top: 50%;
-  transform: translateY(-50%);
   display: flex;
   gap: 2px;
-  padding: 2px;
-  border-radius: var(--radius-sm);
-  /* 按钮浮在内容之上，需要自己的底色，否则会与文字叠在一起看不清 */
-  background: var(--bg-layer-solid);
+  flex: 0 0 auto;
+  max-width: 0;
   opacity: 0;
+  overflow: hidden;
   pointer-events: none;
-  transition: opacity var(--dur-instant);
+  transition: max-width var(--dur-fast) var(--ease-enter), opacity var(--dur-instant);
 }
 .trow:hover .trow__actions,
 .trow--selected .trow__actions {
+  max-width: 220px;
   opacity: 1;
   pointer-events: auto;
 }
-/* 悬浮时给标题让位，避免绝对定位的按钮组压住文字尾部 */
-.trow:hover .trow__title,
-.trow--selected .trow__title {
-  padding-right: 78px;
+/* 操作按钮与胶囊同款：同高（20px，与 .chip 一致）、同内边距、同圆角，属于同一套胶囊语言 */
+.trow__actions .icon-btn {
+  width: auto;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  color: var(--fg-secondary);
+}
+.trow__actions .icon-btn:hover {
+  background: var(--bg-pressed);
+  color: var(--fg-primary);
 }
 .trow--adding {
   background: var(--bg-hover);

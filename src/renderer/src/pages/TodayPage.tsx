@@ -5,6 +5,7 @@ import type { Note, Overview, TodayTasks } from '@shared/types'
 import { t } from '../i18n'
 import { PriorityMenu } from '../components/PriorityMenu'
 import { TaskRow } from '../components/TaskRow'
+import { TaskEditor } from '../components/TaskEditor'
 
 interface Props {
   overview: Overview | null
@@ -24,6 +25,8 @@ export function TodayPage({ overview, onChanged, onNotice, onOpenNote, onFocusTa
   const [selected, setSelected] = useState<number | null>(null)
   const [menu, setMenu] = useState<{ id: number; anchor: HTMLElement } | null>(null)
   const [draft, setDraft] = useState('')
+  // 今日页直接编辑：与任务页共用同一个 TaskEditor
+  const [editingId, setEditingId] = useState<number | null>(null)
 
   const load = useCallback(async () => {
     const [t, r] = await Promise.all([
@@ -150,7 +153,7 @@ export function TodayPage({ overview, onChanged, onNotice, onOpenNote, onFocusTa
             await window.zhixing.db.createTask('新子任务', id)
             await refresh()
           }}
-          onEdit={(id) => onNotice(`在任务页双击 #${id} 可编辑`) }
+          onEdit={(id) => setEditingId(id)}
           onDelete={async (id) => {
             if (!window.confirm('删除该任务及其子任务？')) return
             await window.zhixing.db.deleteTask(id)
@@ -162,7 +165,7 @@ export function TodayPage({ overview, onChanged, onNotice, onOpenNote, onFocusTa
     ))
 
   return (
-    <div className="page">
+    <div className="page today-page">
       <div className="page__head">
         <h1 className="page__title">{t('page.today')}</h1>
         <p className="page__subtitle">{greeting}</p>
@@ -209,40 +212,68 @@ export function TodayPage({ overview, onChanged, onNotice, onOpenNote, onFocusTa
           })}
         </section>
 
-        <section className="section" aria-label="今日待办">
+        <section className="section section--grow" aria-label="今日待办">
           <header className="section__head">
             <h2>今日待办</h2>
             <span className="u-aux">{today?.roots.length ?? 0} 项 · 未逾期</span>
           </header>
-          {tree.length === 0 ? (
-            <p className="empty-hint">今天没有待办。逾期的任务在任务页的「已逾期」里。</p>
-          ) : (
-            <div className="task-tree">{renderNodes(tree)}</div>
-          )}
+          {/* 滚动只在这一块内发生：标题与概览卡始终可见 */}
+          <div className="section__scroll">
+            {tree.length === 0 ? (
+              <p className="empty-hint">今天没有待办。逾期的任务在任务页的「已逾期」里。</p>
+            ) : (
+              <div className="task-tree">{renderNodes(tree)}</div>
+            )}
+          </div>
         </section>
 
-        <section className="section" aria-label="最近笔记">
+        <section className="section section--grow" aria-label="最近笔记">
           <header className="section__head">
             <h2>最近笔记</h2>
             <span className="u-aux">{recent.length} 篇</span>
           </header>
-          {recent.length === 0 ? (
-            <p className="empty-hint">还没有笔记。</p>
-          ) : (
-            <ul className="recent-notes">
-              {recent.map((n) => (
-                <li key={n.id}>
-                  <button className="recent-notes__row" onClick={() => onOpenNote(n.id)}>
-                    <NotebookPen size={14} aria-hidden />
-                    <span className="recent-notes__title">{n.title}</span>
-                    <span className="u-aux">{n.updated_at.slice(5, 16)}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+          <div className="section__scroll">
+            {recent.length === 0 ? (
+              <p className="empty-hint">还没有笔记。</p>
+            ) : (
+              <ul className="recent-notes">
+                {recent.map((n) => (
+                  <li key={n.id}>
+                    <button className="recent-notes__row" onClick={() => onOpenNote(n.id)}>
+                      <NotebookPen size={14} aria-hidden />
+                      <span className="recent-notes__title">{n.title}</span>
+                      <span className="u-aux">{n.updated_at.slice(5, 16)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </section>
       </div>
+
+      {/* 今日页可编辑：与任务页共用 TaskEditor，字段与保存路径完全一致 */}
+      {editingId != null &&
+        (() => {
+          const task = today?.subtree.find((x) => x.id === editingId)
+          if (!task) return null
+          return (
+            <TaskEditor
+              task={task}
+              onSave={async (id, fields) => {
+                await window.zhixing.db.updateTask(id, fields)
+                await refresh()
+              }}
+              onDelete={async (id) => {
+                setEditingId(null)
+                if (!window.confirm('删除该任务及其子任务？')) return
+                await window.zhixing.db.deleteTask(id)
+                await refresh()
+              }}
+              onClose={() => setEditingId(null)}
+            />
+          )
+        })()}
 
       {menu && (
         <PriorityMenu
