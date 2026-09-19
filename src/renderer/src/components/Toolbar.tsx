@@ -1,9 +1,9 @@
 /**
  * 统一工具栏：B 骨架（两层）+ 空间不足时按 C 的方案逐级折叠。
  *
- * 结构：
- *   第一层  [标题 · 副标题] …………………………… [主操作]
- *   第二层  [视图 / 范围 导航 · 统计] ………… [搜索 · 筛选 · 次要操作]
+ * 结构（标题分区与工具栏分区**各自独立、明确分隔**）：
+ *   标题分区  [标题 · 副标题]                        —— 只放页面身份，不放任何操作
+ *   工具栏分区 [视图 / 范围 导航 · 统计] ……… [搜索 · 筛选 · 次要操作 · 主操作]
  *
  * 折叠（判据是**第二层右侧组的真实溢出**，不是猜宽度）：
  *   level 0  全部平铺
@@ -86,12 +86,12 @@ export function Toolbar({
   return (
     <div className={variant === 'panel' ? 'tb tb--panel' : 'tb'}>
       {variant === 'page' ? (
+        // 标题分区：只放页面身份（标题 / 副标题），**不放任何操作**
         <div className="tb__head">
           <div className="tb__lead">
             <h1 className="page__title">{title}</h1>
             {subtitle ? <p className="page__subtitle">{subtitle}</p> : null}
           </div>
-          {primary ? <div className="tb__headtail">{primary}</div> : null}
         </div>
       ) : null}
 
@@ -107,7 +107,8 @@ export function Toolbar({
           {overflowCount > 0 ? (
             <MoreMenu filters={hiddenFilters} secondary={hiddenSecondary} count={overflowCount} />
           ) : null}
-          {variant === 'panel' ? primary : null}
+          {/* 主操作永远在工具栏行最右端，两种形态一致 */}
+          {primary}
         </div>
       </div>
     </div>

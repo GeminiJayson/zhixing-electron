@@ -28,12 +28,9 @@
   margin: 0;
   white-space: nowrap;
 }
-.tb__headtail {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex: 0 0 auto;
+/* 标题分区：行内不再有任何操作，与工具栏分区由 .tb__sub 的上边框分隔 */
+.tb__head {
+  padding-bottom: var(--space-1);
 }
 
 .tb__sub {
