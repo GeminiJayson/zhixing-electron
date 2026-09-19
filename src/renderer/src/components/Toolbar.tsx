@@ -15,7 +15,7 @@
  *
  * 约定：样式里控件高度一律取 --control-h 家族（见 docs/03 §2.7、npm run check:ctlheight）。
  */
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { MoreHorizontal, SlidersHorizontal } from 'lucide-react'
 
 export type ToolbarProps = {
@@ -66,43 +66,50 @@ export function Toolbar({
     setExtra(0)
   }, [flatTotal])
 
-  // 容器宽度变了就重新评估（回到阈值内的平铺）。
-  // 注意：这里**只升不降**是刻意的 —— 早先按「有富余就降级」写，会在
-  // 「升级后不溢出、降级后又溢出」之间来回震荡，触发 React 的无限更新（白屏）。
-  // 收敛靠两点：溢出时递增到放得下为止；宽度变化时重置。
-  useLayoutEffect(() => {
+  /**
+   * 检测一次：当前渲染出的子项放不下就多收一个。
+   * 不用 scrollWidth —— 对 overflow:visible 的元素它等于 padding box 宽，量不出溢出；
+   * 直接求子项布局宽度和（子项都是 flex: 0 0 auto，宽度即真实需求）。
+   */
+  const detect = useCallback((): void => {
     const el = rightRef.current
     if (!el) return
-    // 首次回调只记录宽度：effect 运行时布局未必稳定，拿一个未稳定的值当基准，
-    // 之后真正的宽度变化会被判成「没变」，重置就永远不触发（反复缩放窗口时最明显）。
-    let last = -1
-    const ro = new ResizeObserver(() => {
-      const w = el.clientWidth
-      if (last < 0) {
-        last = w
-        return
-      }
-      if (w !== last) {
-        last = w
-        setExtra(0)
-      }
-    })
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-
-  useLayoutEffect(() => {
-    const el = rightRef.current
-    if (!el) return
-    // 不用 scrollWidth：对 overflow:visible 的元素它等于 padding box 宽，量不出溢出。
-    // 直接求子项的布局宽度和（子项都是 flex: 0 0 auto，宽度即真实需求）。
     const style = getComputedStyle(el)
     const gap = parseFloat(style.columnGap || style.gap || '0') || 0
     const kids = Array.from(el.children) as HTMLElement[]
     const need =
       kids.reduce((n, k) => n + k.getBoundingClientRect().width, 0) + gap * Math.max(0, kids.length - 1)
     if (need > el.clientWidth + 1) setExtra((e) => (e < flatTotal ? e + 1 : e))
+  }, [flatTotal])
+
+  // 渲染后检测一次：每收一个就重渲染，再检测，直到放得下（收敛在这里）
+  useLayoutEffect(() => {
+    detect()
   })
+
+  // 容器尺寸变化：重置收起数量，并**立刻再检测一次**。
+  // 只重置是不够的 —— extra 本来就是 0 时 setExtra(0) 是个 no-op，React 不会重渲染，
+  // 上面那条检测 effect 就永远不跑，窗口缩放后折叠会彻底失效（笔记编辑区正是如此）。
+  useLayoutEffect(() => {
+    const el = rightRef.current
+    if (!el) return
+    // 首次回调只记录宽度：effect 运行时布局未必稳定，拿未稳定的值当基准会误判
+    let last = -1
+    const ro = new ResizeObserver(() => {
+      const w = el.clientWidth
+      if (last < 0) {
+        last = w
+        detect()
+        return
+      }
+      if (w === last) return
+      last = w
+      setExtra(0)
+      detect()
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [detect])
 
   // 平铺几个**完全由可用宽度决定**：默认全部平铺，放不下才逐个收（extra 由溢出递增）。
   // 之前那个固定阈值是错的 —— 它会把「明明放得下」的控件也收进浮层。
