@@ -423,9 +423,8 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     >
       <button className="wf-node__label" onClick={() => void openTemplate(t.id)}>
         <strong>{t.name}</strong>
-        <span className="u-aux">
-          {t.node_count} 步 · {t.start_policy === 'all' ? '一次全下发' : '逐步下发'}
-        </span>
+        {/* 策略在顶部工具栏已经写着，这里只留步数，把宽度让给名称 */}
+        <span className="u-aux">{t.node_count} 步</span>
       </button>
       <div className="wf-node__ops">
         <button

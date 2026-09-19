@@ -58,6 +58,9 @@
   overflow: hidden;
 }
 .wf-node__label strong {
+  /* 名称吃掉剩余宽度并在必要时省略号；右边那串统计不许把它挤没 */
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
