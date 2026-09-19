@@ -148,8 +148,15 @@ textarea {
 
 /* ---- 工作流条件的独立确认窗口（?condition=1）----
    窗口本身就是那个框，所以这里不做遮罩，只排一张卡片。 */
-html[data-surface='condition'] body {
-  background: var(--bg-layer-solid);
+/* 无边框透明窗口：**连页面底色也要透明**，否则卡片圆角外面会露出一圈方角 ——
+   body 默认的 --bg-canvas 会铺满整个窗口，把「无边框」的观感彻底抵消掉。 */
+html[data-surface='condition'],
+html[data-surface='condition'] body,
+html[data-surface='condition'] #root,
+html[data-surface='capture'],
+html[data-surface='capture'] body,
+html[data-surface='capture'] #root {
+  background: transparent;
 }
 .cond-win {
   display: flex;

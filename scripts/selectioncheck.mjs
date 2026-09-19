@@ -89,12 +89,22 @@ child.stderr?.on('data', (b) => {
   if (/error|Error|throw/.test(s)) console.error('[electron] ' + s.trim().slice(0, 300))
 })
 
-const pressHotkey = (keys) =>
-  new Promise((resolve) => {
+/**
+ * SendKeys 是发给「当前前台窗口」的 —— 如果 Electron 不在前台，按键就打到别的应用上了。
+ * 先在主窗口左侧空白处点一下，把焦点拿回来（点的是导航栏空白，不会触发任何控件）。
+ */
+const focusWindow = async (c) => {
+  await c.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: 30, y: 320, button: 'left', clickCount: 1, buttons: 1 })
+  await c.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 30, y: 320, button: 'left', clickCount: 1, buttons: 0 })
+  await sleep(250)
+}
+const pressHotkey = (keys) => {
+  return new Promise((resolve) => {
     const ps = spawn(PS, ['-NoProfile', '-NonInteractive', '-STA', '-Command', `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait("${keys}")`], { windowsHide: true, stdio: 'ignore' })
     ps.once('close', resolve)
     ps.once('error', resolve)
   })
+}
 
 let mainTarget = null
 for (let i = 0; i < 60 && !mainTarget; i++) {
@@ -134,9 +144,10 @@ const waitCaptureWindow = async (timeout = 15000) => {
   return null
 }
 
-// 主窗口：切到笔记页，选中搜索框里的一段文字
+// 主窗口：切到笔记页。**先夺回焦点、再选中文字** —— 反过来点一下会把选区取消掉
 await conn.evaluate("document.querySelector('[data-nav-item=notes]').click()")
 await sleep(1500)
+await focusWindow(conn)
 const SELECTED = 'SELECTED-TEXT-FOR-CHECK'
 const selected = await conn.evaluate(`(() => {
   const el = document.querySelector('.ntree__search-input')
@@ -177,6 +188,16 @@ check(
 check('内容 = 当前选中的文字', captured?.text?.trim() === SELECTED, J(captured?.text))
 const mainHasPanel = await conn.evaluate("!!document.querySelector('.capture-host')")
 check('主窗口里没有捕获面板', mainHasPanel === false, '')
+// 圆角窗口：页面底色必须透明，否则卡片圆角外会露一圈方角
+const bg = await captured?.cw.evaluate(`(() => ({
+  body: getComputedStyle(document.body).backgroundColor,
+  html: getComputedStyle(document.documentElement).backgroundColor,
+}))()`)
+check(
+  '页面底色透明（圆角外不露方角）',
+  bg?.body === 'rgba(0, 0, 0, 0)' && bg?.html === 'rgba(0, 0, 0, 0)',
+  JSON.stringify(bg)
+)
 if (captured) {
   const shot = await captured.cw.send('Page.captureScreenshot', { format: 'png' })
   if (shot.result?.data) writeFileSync(join(shotDir, 'capture-window.png'), Buffer.from(shot.result.data, 'base64'))
@@ -190,6 +211,7 @@ check('Esc 关闭后窗口消失', gone, '')
 captured?.cw.ws.close()
 
 // ---------------- 场景 2：没有选区 + 剪贴板有旧内容 → 空
+await focusWindow(conn)
 await conn.evaluate("navigator.clipboard.writeText('OLD-CLIP-CONTENT').catch(() => 0)")
 await sleep(300)
 await conn.evaluate(`(() => {
