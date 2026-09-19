@@ -457,7 +457,9 @@ const api = {
     setTheme: (theme: 'light' | 'dark' | 'system'): Promise<void> =>
       ipcRenderer.invoke('theme:set', theme),
     /** 云母材质开关（仅 win32 生效，其他平台为空操作） */
-    setMica: (enabled: boolean): Promise<void> => ipcRenderer.invoke('app:setMica', enabled),
+    // 载荷放宽为「布尔或材质枚举」：主进程按值分派（true→mica / false→none / 字符串走枚举），
+    // 渲染层因此可以在切换材质的当下立即下发，不必等数据变更钩子绕一圈
+    setMica: (value: boolean | string): Promise<void> => ipcRenderer.invoke('app:setMica', value),
     /** 首屏数据就绪：主进程据此关闭欢迎页并显示主窗（splash 流程） */
     ready: (): Promise<void> => ipcRenderer.invoke('app:ready'),
     /** 托盘图标按当前主题重建 */

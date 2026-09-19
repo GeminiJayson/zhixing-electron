@@ -182,6 +182,9 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
       }
       try {
         if (key === 'material') {
+          // 先走 IPC 立即下发材质：数据变更钩子虽然也会兜底，但那是「写库 → 广播 → 主进程」
+          // 的一整圈往返，切材质要的是当下可见。
+          await window.zhixing.app.setMica(value)
           // 同时回写旧键 mica_enabled：Python 版与旧版 Electron 只认它，
           // 只写新键会让两个客户端对「材质开没开」的记忆分叉。
           // 材质本身由主进程的「数据变更钩子」即时下发（对齐 K_MICA 分支），不必再单独 invoke。
