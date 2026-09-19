@@ -288,8 +288,10 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
    */
   const handleLibraryOrganize = async (): Promise<void> => {
     if (libJob) {
-      await window.zhixing.ai.cancelLibrary()
-      onNotice('已请求停止：当前这一篇会跑完再停')
+      // 取消现在会回一句人话：没在跑时说「当前没有正在运行的整库整理」，
+      // 而不是把 false 静默吞掉
+      const res = await window.zhixing.ai.cancelLibrary()
+      onNotice(res.message)
       return
     }
     const all = await window.zhixing.db.notes()

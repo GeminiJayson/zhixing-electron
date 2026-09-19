@@ -294,7 +294,7 @@ async function organizeMetaNote(
   })
   return {
     ok: true,
-    message: `${folderId != null ? `已归类到「${folderPath}」` : '已整理'}${repaired ? `（${repaired}）` : ''}`,
+    message: `${folderId != null ? `已归类到「${folderPath}」` : '已整理'}${repaired ? `（${repaired}）` : ''}${duplicateTitleHint(note.id)}`,
     summary: parsed.summary,
     folderPath: folderId != null ? folderPath : '',
     createdFolders: created,
@@ -392,6 +392,8 @@ async function organizeLinkNote(
   if (moved) parts.push(`归档 ${moved} 条`)
   if (notesCreated.length) parts.push(`新建笔记：${notesCreated.join('、')}`)
   if (repaired) parts.push(repaired)
+  const dupHint = duplicateTitleHint(note.id)
+  if (dupHint) parts.push(dupHint.replace(/^；/, ''))
   return {
     ok: true,
     message: parts.join('，'),
@@ -496,7 +498,7 @@ export async function organizeNoteWithAi(
 
   return {
     ok: true,
-    message: repaired ? `已整理并保存（${repaired}）` : '已整理并保存',
+    message: (repaired ? `已整理并保存（${repaired}）` : '已整理并保存') + duplicateTitleHint(noteId),
     summary: parsed.summary,
     folderPath: folderId != null ? folderPath : '',
     createdFolders: created,
@@ -540,11 +542,32 @@ export function currentLibraryProgress(): AiLibraryProgress | null {
   return libraryProgress
 }
 
-/** 请求停止整库整理。返回 false 表示当前并没有任务在跑。 */
-export function cancelOrganizeLibrary(): boolean {
-  if (!libraryProgress?.running) return false
+/**
+ * 请求停止整库整理。
+ * 返回说明而不是裸 boolean —— 之前调用方分不清「没任务在跑」和「取消失败」，
+ * 只能把 false 当成功静默吞掉（冒烟脚本就被这个语义坑过）。
+ */
+export function cancelOrganizeLibrary(): { ok: boolean; message: string } {
+  if (!libraryProgress?.running) {
+    return { ok: false, message: '当前没有正在运行的整库整理' }
+  }
   libraryCancel = true
-  return true
+  return { ok: true, message: '已请求停止，当前这篇处理完就停下' }
+}
+
+/**
+ * 标题被改后与别的笔记撞名了吗？撞了就在回执里提示（**不擅自改名**——
+ * 两篇的取舍只有用户知道）。整库整理用同一个假模型时特别容易出现这种情况。
+ */
+function duplicateTitleHint(noteId: number): string {
+  const row = conn().prepare('SELECT title FROM note WHERE id = ? AND deleted_at IS NULL').get(noteId) as
+    | { title: string }
+    | undefined
+  if (!row) return ''
+  const dup = conn()
+    .prepare('SELECT COUNT(*) AS n FROM note WHERE title = ? AND id != ? AND deleted_at IS NULL')
+    .get(row.title, noteId) as { n: number } | undefined
+  return dup && dup.n > 0 ? `；标题「${row.title}」与另外 ${dup.n} 篇重复，建议改名` : ''
 }
 
 /** 待整理的笔记：Markdown / 富文本 / Word / Excel / 链接笔记都在范围内（各有各的处理方式）。 */

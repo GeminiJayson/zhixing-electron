@@ -31,6 +31,8 @@ type Tab = 'tasks' | 'flash'
 export function InboxPage({ onNotice, onChanged }: Props) {
   const dialog = useDialog()
   const [tab, setTab] = useState<Tab>('tasks')
+  /** 首次数据到位后只自动跳一次 tab（用户之后手动切换不再干预） */
+  const [initialTabSettled, setInitialTabSettled] = useState(false)
   /** 闪念多选（合并用） */
   const [picked, setPicked] = useState<Set<number>>(new Set())
   const [tasks, setTasks] = useState<Task[]>([])
@@ -63,6 +65,15 @@ export function InboxPage({ onNotice, onChanged }: Props) {
   useEffect(() => {
     void loadFlashes()
   }, [loadFlashes])
+
+  // 有闪念、而任务收件箱是空的时，默认落到「闪念」——
+  // 否则闪念躺在另一个 tab 里，用户会以为丢掉了一条。
+  useEffect(() => {
+    if (initialTabSettled) return
+    if (flashes.length === 0 && tasks.length === 0) return
+    setInitialTabSettled(true)
+    if (flashes.length > 0 && tasks.length === 0) setTab('flash')
+  }, [flashes, tasks, initialTabSettled])
 
   // 转笔记的目录候选（对齐 flash_service.to_note 的 folder_id）
   useEffect(() => {

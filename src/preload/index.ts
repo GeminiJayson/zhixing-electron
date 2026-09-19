@@ -550,7 +550,9 @@ const api = {
       ipcRenderer.invoke('ai:testConnection'),
     /** 逐篇整理整个笔记库（串行，可停止；只处理 Markdown / 富文本） */
     organizeLibrary: (): Promise<AiLibraryOutcome> => ipcRenderer.invoke('ai:organizeLibrary'),
-    cancelLibrary: (): Promise<boolean> => ipcRenderer.invoke('ai:cancelLibrary'),
+    /** 停止整库整理；返回可读说明，便于区分「没任务在跑」与「已请求停止」 */
+    cancelLibrary: (): Promise<{ ok: boolean; message: string }> =>
+      ipcRenderer.invoke('ai:cancelLibrary'),
     /** 挂载时问一次当前进度（比如切页回来时任务还在跑） */
     libraryProgress: (): Promise<AiLibraryProgress | null> => ipcRenderer.invoke('ai:libraryProgress'),
     /** 整库整理的进度推送；返回值是取消订阅 */
