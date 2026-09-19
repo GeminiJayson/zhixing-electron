@@ -10,6 +10,8 @@
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.json",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
+    "release": "node scripts/release.mjs",
+    "release:dry": "node scripts/release.mjs --dry-run",
     "dist:win": "node scripts/ensure-jieba-win-binding.mjs && electron-vite build && electron-builder --win --x64",
     "dist:dir": "node scripts/ensure-jieba-win-binding.mjs && electron-vite build && electron-builder --win --x64 --dir",
     "postdist:win": "npm run rebuild",
