@@ -1,6 +1,6 @@
 {
   "name": "zhixing-electron",
-  "version": "0.1.7",
+  "version": "1.0.0",
   "description": "知行 ZhiXing — Electron 重构版（本地优先待办 + 知识图谱）",
   "main": "./out/main/index.js",
   "private": true,

@@ -1004,7 +1004,9 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
             <header className="set-card__head"><Info size={15} /> 关于</header>
             <dl className="kv">
               <dt>应用</dt>
-              <dd>知行 ZhiXing（Electron 重构版）{info ? ` v${info.version}` : ''}</dd>
+              <dd>知行 ZhiXing</dd>
+              <dt>版本</dt>
+              <dd>{info ? `v${info.version}` : '—'}</dd>
               <dt>Electron</dt>
               <dd>{info?.electron ?? '—'}</dd>
               <dt>Chromium</dt>
@@ -1015,7 +1017,14 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
               <dd>{info?.dbPath ?? '—'}</dd>
             </dl>
             <p className="u-aux">
-              与原 Python 版共用同一份 SQLite（schema v12）与同一张 settings 表，切换客户端时数据与偏好保持一致。
+              知行是一款<b>本地优先</b>的个人待办与知识管理桌面应用：任务支持多层子任务、清单、标签、
+              重复规则与日历 / 四象限 / 看板多视图；笔记支持 Markdown、富文本、Word / Excel 与链接笔记，
+              可以建双链、归类到文件夹；工作流把「做事的顺序」固化成可复用模板，实例里的每一步都会
+              自动落成待办；图谱把任务与笔记之间的关联画出来，回顾页按周期帮你复盘。
+            </p>
+            <p className="u-aux">
+              所有数据只存在本机的一只 SQLite 文件里：无需注册账号、不联网也能完整使用；
+              可选接入大模型整理笔记，或从外部接口同步任务。
             </p>
           </section>
         )}
