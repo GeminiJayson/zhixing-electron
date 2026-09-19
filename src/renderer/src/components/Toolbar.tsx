@@ -73,10 +73,17 @@ export function Toolbar({
   useLayoutEffect(() => {
     const el = rightRef.current
     if (!el) return
-    let last = el.clientWidth
+    // 首次回调只记录宽度：effect 运行时布局未必稳定，拿一个未稳定的值当基准，
+    // 之后真正的宽度变化会被判成「没变」，重置就永远不触发（反复缩放窗口时最明显）。
+    let last = -1
     const ro = new ResizeObserver(() => {
-      if (el.clientWidth !== last) {
-        last = el.clientWidth
+      const w = el.clientWidth
+      if (last < 0) {
+        last = w
+        return
+      }
+      if (w !== last) {
+        last = w
         setExtra(0)
       }
     })

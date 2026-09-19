@@ -36,6 +36,12 @@
 .tb .tb__subright > * {
   flex: 0 0 auto;
 }
+/* 搜索框例外：允许**收缩**但不拉伸。次要操作全收进 ⋯ 之后，
+   200px 的输入框 + 主操作 + ⋯ 仍可能比窄窗口宽 —— 那正是「父布局包不住工具栏」。 */
+.tb .tb__subright input {
+  flex: 0 1 200px;
+  min-width: 84px;
+}
 .tb__head {
   display: flex;
   align-items: baseline;
