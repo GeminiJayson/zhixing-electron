@@ -31,3 +31,6 @@ AGENTS.md.backup.*
 memory/
 
 dist-portable/
+
+dist-full/
+
