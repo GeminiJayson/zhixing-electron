@@ -60,6 +60,30 @@ export function edgePath(ends: EdgeEnds): string {
 }
 
 /**
+ * 正交折线（H-V-H / V-H-V）：从起点沿主方向走、在中间拐两次、直角进入目标。
+ *
+ * 工作流画布用它代替流体弧 —— 流程图（F6 的 Dagre 示例也是这种）更像工程图：
+ * 「谁连到谁、从哪条边出入」一眼可辨，而贝塞尔弧线在节点密集时会糊成一片。
+ * 知识图谱仍用 edgePath 的流体弧（那边追求的是「网络感」，不是流程感）。
+ */
+export function elbowPath(ends: EdgeEnds): string {
+  const { x1, y1, x2, y2 } = ends
+  const dx = x2 - x1
+  const dy = y2 - y1
+  // 几乎正对时直接一条直线，别为 1px 的错位拐两次
+  if (Math.abs(dx) < 1) return `M${x1},${y1} L${x2},${y2}`
+  if (Math.abs(dy) < 1) return `M${x1},${y1} L${x2},${y2}`
+  if (Math.abs(dy) >= Math.abs(dx)) {
+    // 纵向为主：先竖到中线，横过去，再竖到目标
+    const my = y1 + dy / 2
+    return `M${x1},${y1} L${x1},${my} L${x2},${my} L${x2},${y2}`
+  }
+  // 横向为主：先横到中线，竖过去，再横到目标
+  const mx = x1 + dx / 2
+  return `M${x1},${y1} L${mx},${y1} L${mx},${y2} L${x2},${y2}`
+}
+
+/**
  * 沿连线方向、从起点前进 dist 的点 —— 给「贴着起点的边标签」用。
  *
  * 为什么不用中点：边的中段很可能正好穿过另一个节点（纵向分层布局里很常见），

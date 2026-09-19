@@ -165,7 +165,7 @@
   background: var(--bg-layer-solid);
   border: var(--border-w) solid var(--border-strong);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  /* 不投影：在浅色底上那圈阴影看起来像「第二层边框」，只保留圆角边框本身 */
   overflow: hidden;
 }
 .wf-card__head {
@@ -196,6 +196,35 @@
   align-items: center;
   gap: var(--space-1);
 }
+/* 条件节点的配置区：嵌在步骤编辑弹窗里，紧跟「动作」下拉 */
+.wf-cond {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  background: var(--accent-soft);
+  border-radius: var(--radius-ctl);
+}
+.wf-cond .field {
+  min-height: var(--control-h-sm);
+}
+/* 条件节点在画布上画成菱形：与普通步骤一眼可分（流程图惯例） */
+.wf-node__diamond {
+  fill: color-mix(in srgb, var(--accent-warm) 14%, var(--bg-layer));
+  stroke: color-mix(in srgb, var(--accent-warm) 70%, var(--border-strong));
+  stroke-width: 1.5;
+}
+.wf-node__diamond--on {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.wf-node__title--center {
+  text-anchor: middle;
+}
+.wf-node__idx--center {
+  text-anchor: middle;
+}
+
 /* 启动策略（policy_combo）：工具栏里的「文字 + 下拉」一行排开，改完立即保存 */
 .wf-policy {
   display: flex;

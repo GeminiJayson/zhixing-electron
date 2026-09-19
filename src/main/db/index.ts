@@ -191,9 +191,10 @@ function broadcastGraphDelta(): void {
  * 放在 IPC 层而不是仓储层：workflow.ts 已经依赖 tasks.ts，反向引用会形成循环。
  * 推进失败只记录 —— 流程不该把任务本身的操作拖失败。
  */
-function advanceWorkflowForTask(taskId: number): void {
+async function advanceWorkflowForTask(taskId: number): Promise<void> {
   try {
-    if (completeWorkflowStep(taskId)) broadcastDataChanged('workflow')
+    // 推进可能要求值条件节点（人工确认 / 脚本退出码），所以是异步的
+    if (await completeWorkflowStep(taskId)) broadcastDataChanged('workflow')
   } catch (err) {
     console.error('[workflow] 推进实例失败', err)
   }
@@ -246,7 +247,7 @@ export function registerDbHandlers(): void {
   )
   handle('db:batchComplete', (_e, ids: number[]) => {
     const n = batchComplete(ids)
-    for (const id of ids) advanceWorkflowForTask(id)
+    for (const id of ids) void advanceWorkflowForTask(id)
     return n
   })
   handle('db:batchMove', (_e, ids: number[], listId: number | null) => batchMove(ids, listId))
@@ -581,14 +582,14 @@ export function registerDbHandlers(): void {
 
   handle('db:toggleTask', (_e, id: number) => {
     const t = toggleTask(id)
-    if (t?.status === 'done') advanceWorkflowForTask(id)
+    if (t?.status === 'done') void advanceWorkflowForTask(id)
     return t
   })
   handle('db:setPriority', (_e, id: number, priority: number) => setPriority(id, priority))
   handle('db:setTitle', (_e, id: number, title: string) => setTitle(id, title))
   handle('db:setStatus', (_e, id: number, status: TaskStatus) => {
     const t = setStatus(id, status)
-    if (t?.status === 'done') advanceWorkflowForTask(id)
+    if (t?.status === 'done') void advanceWorkflowForTask(id)
     return t
   })
   handle('db:setDueDate', (_e, id: number, due: string | null) => setDueDate(id, due))
@@ -598,7 +599,7 @@ export function registerDbHandlers(): void {
   handle('db:updateTask', (_e, id: number, fields: Record<string, string | number | null>) => {
     const t = updateTask(id, fields)
     // 编辑面板把状态改成「已完成」同样要推进流程
-    if (t?.status === 'done' && 'status' in fields) advanceWorkflowForTask(id)
+    if (t?.status === 'done' && 'status' in fields) void advanceWorkflowForTask(id)
     return t
   })
   handle('db:deleteTask', (_e, id: number) => softDelete(id))

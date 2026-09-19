@@ -2,6 +2,7 @@ import { nextSortKey } from './tasks'
 import { getNote } from './notes'
 import { openExternalSafely } from '../security'
 import { spawn } from 'node:child_process'
+import { dialog } from 'electron'
 import type {
   WorkflowInstancePayload,
   WorkflowNodePayload,
@@ -10,6 +11,12 @@ import type {
   WorkflowTemplateSummary,
 } from '../../shared/types'
 import { conn, nowStamp } from './connection'
+import {
+  CONDITION_KIND,
+  describeCondition,
+  parseCondition,
+  type ConditionConfig,
+} from '../../shared/workflow-condition'
 
 // ---------------------------------------------------------------- 工作流
 
@@ -302,31 +309,38 @@ export function spawnStepTask(
   return taskId
 }
 
-export function instantiateWorkflow(
+export async function instantiateWorkflow(
   templateId: number,
   title: string | null,
   originTaskId: number | null,
   policy?: string
-): WorkflowInstancePayload | null {
+): Promise<WorkflowInstancePayload | null> {
   const tpl = getWorkflowTemplate(templateId)
   if (!tpl || tpl.nodes.length === 0) return null
   const usePolicy = policy || tpl.start_policy || 'first'
   const c = conn()
   const stamp = nowStamp()
   const ordered = orderedNodes(tpl.nodes)
-  const first = ordered[0] ?? null
+  // 首节点可能就是个条件节点：它不建任务，先自动求值算出真正该下发的步骤。
+  // policy=all 时不需要（下面会一次性下发全部非条件节点）。
+  const start = usePolicy === 'all' ? null : await resolveNextRunnable(tpl, null)
+  const headId = usePolicy === 'all' ? ordered[0]?.id ?? null : start?.node?.id ?? null
   const instanceTitle = title || `${tpl.name} · ${stamp.slice(5, 16)}`
   const info = c
     .prepare(
       `INSERT INTO workflow_instance (template_id, title, status, current_node_id, origin_task_id, created_at)
        VALUES (?, ?, 'running', ?, ?, ?)`
     )
-    .run(templateId, instanceTitle, first?.id ?? null, originTaskId, stamp)
+    .run(templateId, instanceTitle, headId, originTaskId, stamp)
   const instanceId = Number(info.lastInsertRowid)
 
-  // policy=first 只下发第一步，完成后自动推进；all 一次性下发全部
-  const toSpawn = usePolicy === 'all' ? ordered : first ? [first] : []
-  for (const n of toSpawn) spawnStepTask(instanceId, n, tpl.name, originTaskId)
+  // policy=first 只下发第一步，完成后自动推进；all 一次性下发全部。
+  // 两种情况下条件节点都不建任务 —— 它是自动求值的关卡，不是待办。
+  const toSpawn = usePolicy === 'all' ? ordered : start?.node ? [start.node] : []
+  for (const n of toSpawn) {
+    if (n.action_kind === CONDITION_KIND) continue
+    spawnStepTask(instanceId, n, tpl.name, originTaskId)
+  }
   return getWorkflowInstance(instanceId)
 }
 
@@ -381,7 +395,7 @@ export function listWorkflowInstances(status?: string | null): WorkflowInstanceP
  * 某步骤任务完成时推进实例（对齐 complete_step_task）：
  * 有下一步则生成其任务并前移 current_node_id，最后一步则完结实例。
  */
-export function completeWorkflowStep(taskId: number): boolean {
+export async function completeWorkflowStep(taskId: number): Promise<boolean> {
   const c = conn()
   const bind = c
     .prepare('SELECT instance_id, node_id FROM workflow_step_task WHERE task_id = ?')
@@ -396,7 +410,8 @@ export function completeWorkflowStep(taskId: number): boolean {
   const tpl = getWorkflowTemplate(inst.template_id)
   if (!tpl) return false
 
-  const nxt = nextWorkflowNode(tpl.nodes, bind.node_id)
+  // 条件节点在这一步被自动消费掉：成立走分支、不成立走顺序下一个
+  const { node: nxt } = await resolveNextRunnable(tpl, bind.node_id)
   const stamp = nowStamp()
   if (!nxt) {
     c.prepare("UPDATE workflow_instance SET status = 'done', finished_at = ? WHERE id = ?").run(stamp, inst.id)
@@ -492,6 +507,126 @@ export function splitCommand(cmd: string): string[] {
  * 绑定笔记能查到标题时给「打开笔记「标题」」，否则退回「打开关联笔记」；
  * 无动作给「无动作」而不是空串。
  */
+// ---------------------------------------------------------------- 条件节点
+
+/** 脚本条件的等待上限：跑飞了不能把推进卡死。 */
+const CONDITION_TIMEOUT_MS = 15_000
+
+/**
+ * 求值一个条件节点。返回 ok=true 表示「条件成立」。
+ *
+ * 三种来源：
+ *   - confirm：弹出模态确认框（主进程 dialog，阻塞直到用户选择）——「提示确认」
+ *   - task：查目标任务的状态是否与期望一致
+ *   - script：以独立进程运行命令并比较**退出码**（不是只看有没有启动）
+ */
+export async function evaluateCondition(raw: string | null | undefined): Promise<{
+  ok: boolean
+  message: string
+}> {
+  const cfg = parseCondition(raw)
+  if (!cfg) return { ok: false, message: '条件未配置或格式错误' }
+
+  if (cfg.kind === 'confirm') {
+    const answer = dialog.showMessageBoxSync({
+      type: 'question',
+      buttons: ['否', '是'],
+      defaultId: 1,
+      cancelId: 0,
+      title: '工作流条件',
+      message: cfg.prompt?.trim() || '这个条件成立吗？',
+      detail: '这是工作流里的人工确认条件节点：选「是」走条件分支，选「否」走顺序下一步。',
+    })
+    return { ok: answer === 1, message: answer === 1 ? '人工确认：是' : '人工确认：否' }
+  }
+
+  if (cfg.kind === 'task') {
+    if (!cfg.taskId) return { ok: false, message: '未选择要判定的任务' }
+    const row = conn().prepare('SELECT title, status FROM task WHERE id = ?').get(cfg.taskId) as
+      | { title: string; status: string }
+      | undefined
+    if (!row) return { ok: false, message: `任务 #${cfg.taskId} 不存在` }
+    const done = row.status === 'done'
+    const expectDone = cfg.expectDone !== false
+    return {
+      ok: done === expectDone,
+      message: `任务「${row.title}」${done ? '已完成' : '未完成'}（期望${expectDone ? '已完成' : '未完成'}）`,
+    }
+  }
+
+  const cmd = (cfg.command || '').trim()
+  if (!cmd) return { ok: false, message: '未填写要运行的脚本' }
+  let argv: string[] = []
+  try {
+    argv = splitCommand(cmd)
+  } catch (err) {
+    return { ok: false, message: `脚本解析失败：${err instanceof Error ? err.message : String(err)}` }
+  }
+  if (!argv.length) return { ok: false, message: '脚本为空' }
+
+  const expect = Number.isFinite(cfg.expectCode) ? Number(cfg.expectCode) : 0
+  const code = await new Promise<number | null>((resolve) => {
+    let settled = false
+    const done = (v: number | null): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(v)
+    }
+    const child = spawn(argv[0], argv.slice(1), {
+      stdio: 'ignore',
+      shell: false,
+      windowsHide: true,
+    })
+    // 超时兜底：条件求值必须能收敛，否则实例永远卡在这一步
+    const timer = setTimeout(() => {
+      try {
+        child.kill()
+      } catch {
+        // 已经退出就无所谓
+      }
+      done(null)
+    }, CONDITION_TIMEOUT_MS)
+    child.once('error', () => done(null))
+    child.once('close', (c) => done(c))
+  })
+  if (code === null) return { ok: false, message: '脚本启动失败或超时' }
+  return { ok: code === expect, message: `脚本退出码 ${code}（期望 ${expect}）` }
+}
+
+/**
+ * 从 fromId 之后找出下一个**可运行**的节点。
+ * fromId 传 null 表示「从头开始」（实例化时用）。
+ *
+ * 条件节点在这里就被消费掉：逐个求值，成立走它的 branch_node_id、不成立走顺序下一个，
+ * 直到落到普通步骤或流程结束。guard 是防呆 —— 条件互相指向时不会转死。
+ */
+export async function resolveNextRunnable(
+  tpl: WorkflowTemplatePayload,
+  fromId: number | null
+): Promise<{ node: WorkflowNodePayload | null; log: string[] }> {
+  // 必须用 orderedNodes 排过序的数组：getWorkflowTemplate 返回的 nodes 没有 ORDER BY，
+  // 直接拿原始数组取「下一个」会按插入顺序乱走（分支路径看不出来，顺序路径就错）。
+  const ordered = orderedNodes(tpl.nodes)
+  const at = fromId == null ? -1 : ordered.findIndex((n) => n.id === fromId)
+  let cur = at < 0 ? (fromId == null ? ordered[0] ?? null : null) : ordered[at + 1] ?? null
+  const log: string[] = []
+  for (let guard = 0; cur && guard < 50; guard++) {
+    // 取局部常量：await 之后 TS 不再保留 cur 的非空收窄
+    const node: WorkflowNodePayload = cur
+    if (node.action_kind !== CONDITION_KIND) return { node, log }
+    const r = await evaluateCondition(node.action_value)
+    log.push(`条件「${node.title}」：${r.message} → ${r.ok ? '成立' : '不成立'}`)
+    const branch =
+      r.ok && node.branch_node_id
+        ? tpl.nodes.find((n) => n.id === node.branch_node_id) ?? null
+        : null
+    const idx = ordered.findIndex((n) => n.id === node.id)
+    cur = branch ?? (idx >= 0 ? ordered[idx + 1] ?? null : null)
+  }
+  return { node: null, log }
+}
+
 export function describeWorkflowAction(actionKind: string, actionValue: string): string {
   const kind = actionKind || 'none'
   if (kind === 'open_note') {
@@ -516,6 +651,12 @@ export async function runWorkflowAction(
 ): Promise<{ ok: boolean; message: string; kind: string }> {
   const kind = actionKind || 'none'
   if (kind === 'none' || !kind) return { ok: false, message: '该步骤没有配置动作', kind }
+
+  // 条件节点不是「动作」：它由推进逻辑自动求值，浮卡上的按钮只是手动试跑一次
+  if (kind === CONDITION_KIND) {
+    const r = await evaluateCondition(actionValue)
+    return { ok: r.ok, message: r.message, kind }
+  }
 
   if (kind === 'open_note') {
     const id = Number(actionValue)

@@ -6,6 +6,7 @@ import {
   edgeMidpoint,
   edgePath,
   edgePointFrom,
+  elbowPath,
   trimEnd,
   type EdgeEnds
 } from './edge-path'
@@ -62,6 +63,26 @@ describe('连线贝塞尔几何（对齐 Obsidian 的流体弧）', () => {
   it('过短的边不收，避免退化成零长甚至反向', () => {
     const ends = { x1: 0, y1: 0, x2: 12, y2: 0 }
     expect(trimEnd(ends, 10)).toEqual(ends)
+  })
+
+  it('正交折线：纵向为主时先竖-再横-再竖（三个 L）', () => {
+    const d = elbowPath({ x1: 0, y1: 0, x2: 100, y2: 200 })
+    expect(d).toBe('M0,0 L0,100 L100,100 L100,200')
+  })
+
+  it('正交折线：横向为主时先横-再竖-再横', () => {
+    const d = elbowPath({ x1: 0, y1: 0, x2: 200, y2: 100 })
+    expect(d).toBe('M0,0 L100,0 L100,100 L200,100')
+  })
+
+  it('正交折线：正对时退化成一条直线（不为 1px 错位拐两次）', () => {
+    expect(elbowPath({ x1: 0, y1: 0, x2: 0, y2: 100 })).toBe('M0,0 L0,100')
+    expect(elbowPath({ x1: 0, y1: 0, x2: 100, y2: 0 })).toBe('M0,0 L100,0')
+  })
+
+  it('正交折线：只用直线段，不含任何曲线命令', () => {
+    const d = elbowPath({ x1: 10, y1: 20, x2: 130, y2: 260 })
+    expect(/[CQAST]/.test(d)).toBe(false)
   })
 
   it('贴起点的标签位置：沿单位方向前进，不是按分量', () => {

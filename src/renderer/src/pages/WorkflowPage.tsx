@@ -20,11 +20,13 @@ import type {
   WorkflowTemplateSummary,
 } from '@shared/types'
 import { subscribeDomain } from '@shared/events'
+import { CONDITION_KIND, describeCondition } from '@shared/workflow-condition'
 import { t } from '../i18n'
 import { Toolbar } from '../components/Toolbar'
+import { WorkflowConditionEditor } from '../components/WorkflowConditionEditor'
 import { useDialog } from '../components/Dialogs'
 import { usePanZoom } from '../lib/usePanZoom'
-import { edgePath, edgePointFrom } from '../lib/edge-path'
+import { edgePointFrom, elbowPath } from '../lib/edge-path'
 import {
   edgeAnchors,
   layoutBounds,
@@ -66,6 +68,21 @@ function layoutOf(
   return map
 }
 
+/**
+ * 画布基准尺寸：节点包围盒之外还要给右侧的详情浮卡留出空间。
+ *
+ * 少留这一块会出很隐蔽的问题 —— 浮卡「右边放不下就往左翻」的判断用的是画布基准，
+ * 基准比「节点 + 浮卡」还小时它会误判成放不下，于是把浮卡塞到左上角、正好压住节点，
+ * 两个边框叠在一起，看起来像「预览框有两层边框」。
+ */
+function canvasBoundsOf(layout: Map<number, { x: number; y: number }>): {
+  width: number
+  height: number
+} {
+  const b = layoutBounds(layout, NODE_W, NODE_H)
+  return { width: b.width + CARD_W + 20, height: b.height + CARD_H }
+}
+
 export function WorkflowPage({ onNotice, onChanged }: Props) {
   const dialog = useDialog()
   const [templates, setTemplates] = useState<WorkflowTemplateSummary[]>([])
@@ -103,6 +120,11 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   /** 鼠标悬浮的步骤：与它相连的连线高亮、其余淡到几乎隐形（与知识图谱同一套交互） */
   const [hoverStep, setHoverStep] = useState<number | null>(null)
   const [branchDrag, setBranchDrag] = useState<{ fromId: number; x: number; y: number } | null>(null)
+  /**
+   * 正在拖动节点。拖动期间不渲染详情浮卡 —— 浮卡画在 foreignObject 里，
+   * 节点移动时它的坐标更新了但不会重绘，会在原地留下一张「拖影」。
+   */
+  const [dragging, setDragging] = useState(false)
   // 画布视图（平移 / 缩放）。startDrag 定义在 hook 之前，用这个 ref 桥接。
   const panRef = useRef<ReturnType<typeof usePanZoom> | null>(null)
 
@@ -121,7 +143,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     setCurrent(tpl)
     const layout = tpl ? layoutOf(tpl.nodes, rankdir) : new Map()
     setPos(layout)
-    setCanvasSize(layoutBounds(layout, NODE_W, NODE_H))
+    setCanvasSize(canvasBoundsOf(layout))
     setSelected(null)
   }, [rankdir])
 
@@ -198,6 +220,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     }
     // 偏移量在世界坐标系里算：画布缩放后，同样的像素位移对应的世界位移不同
     dragRef.current = { id: n.id, dx: world.x - p.x, dy: world.y - p.y }
+    setDragging(true)
     setSelected(n.id)
   }
 
@@ -255,6 +278,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     }
     const drag = dragRef.current
     dragRef.current = null
+    setDragging(false)
     if (!drag) return
     const p = pos.get(drag.id)
     if (p) await window.zhixing.db.updateWorkflowNodePos(drag.id, Math.round(p.x), Math.round(p.y))
@@ -404,7 +428,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     await refresh()
     setPos(next)
     // 只改基准：适配视图由上面那个 effect 统一做（它等得到新基准）
-    setCanvasSize(layoutBounds(next, NODE_W, NODE_H))
+    setCanvasSize(canvasBoundsOf(next))
     onNotice(dir === 'TB' ? '已按依赖关系纵向分层排布' : '已按依赖关系横向分层排布')
   }
 
@@ -726,7 +750,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
               return (
                 <g key={`seq-${n.id}`} className={'wf-edge-group' + (dim ? ' is-dimmed' : '')}>
                   <path
-                    d={edgePath(edgeAnchors(a, b, NODE_W, NODE_H))}
+                    d={elbowPath(edgeAnchors(a, b, NODE_W, NODE_H))}
                     markerEnd={related ? 'url(#wf-arrow-on)' : 'url(#wf-arrow)'}
                     className={'wf-edge' + (related ? ' wf-edge--on' : '')}
                   />
@@ -739,7 +763,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
               const b = pos.get(n.branch_node_id)
               if (!a || !b) return null
               const anchors = edgeAnchors(a, b, NODE_W, NODE_H)
-              const d = edgePath(anchors)
+              const d = elbowPath(anchors)
               const related = hoverStep != null && (n.id === hoverStep || n.branch_node_id === hoverStep)
               const dim = stepFocusSet != null && !related
               return (
@@ -788,21 +812,44 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                   aria-label={`步骤 ${i + 1}：${n.title}`}
                   tabIndex={0}
                 >
-                  <rect
-                    width={NODE_W}
-                    height={NODE_H}
-                    rx={8}
+                  {n.action_kind === CONDITION_KIND ? (
+                    /* 条件节点用菱形（流程图惯例）：它是个「关卡」而不是待办步骤 */
+                    <polygon
+                      points={`${NODE_W / 2},2 ${NODE_W - 2},${NODE_H / 2} ${NODE_W / 2},${NODE_H - 2} 2,${NODE_H / 2}`}
+                      className={
+                        'wf-node__diamond' + (selected === n.id ? ' wf-node__diamond--on' : '')
+                      }
+                    />
+                  ) : (
+                    <rect
+                      width={NODE_W}
+                      height={NODE_H}
+                      rx={8}
+                      className={
+                        'wf-node__box' +
+                        (selected === n.id ? ' wf-node__box--on' : '') +
+                        (done ? ' wf-node__box--done' : '') +
+                        (isCurrent ? ' wf-node__box--current' : '')
+                      }
+                    />
+                  )}
+                  <text
+                    x={n.action_kind === CONDITION_KIND ? NODE_W / 2 : 10}
+                    y={20}
                     className={
-                      'wf-node__box' +
-                      (selected === n.id ? ' wf-node__box--on' : '') +
-                      (done ? ' wf-node__box--done' : '') +
-                      (isCurrent ? ' wf-node__box--current' : '')
+                      'wf-node__idx' + (n.action_kind === CONDITION_KIND ? ' wf-node__idx--center' : '')
                     }
-                  />
-                  <text x={10} y={20} className="wf-node__idx">
-                    第 {i + 1} 步
+                  >
+                    {n.action_kind === CONDITION_KIND ? '条件' : `第 ${i + 1} 步`}
                   </text>
-                  <text x={10} y={40} className="wf-node__title">
+                  <text
+                    x={n.action_kind === CONDITION_KIND ? NODE_W / 2 : 10}
+                    y={40}
+                    className={
+                      'wf-node__title' +
+                      (n.action_kind === CONDITION_KIND ? ' wf-node__title--center' : '')
+                    }
+                  >
                     {n.title.length > 10 ? n.title.slice(0, 10) + '…' : n.title}
                   </text>
                 </g>
@@ -890,13 +937,15 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                 展开方向由它在视图里的位置决定 —— 右边放不下就往左翻，下边放不下就上移，
                 保证卡片始终留在画布内。 */}
             {selected != null &&
+              !dragging &&
               (() => {
                 const node = ordered.find((x) => x.id === selected)
                 const p = node ? pos.get(node.id) : undefined
                 if (!node || !p) return null
                 const gap = 10
-                const flipX = p.x + NODE_W + gap + CARD_W > CANVAS_W
-                const flipY = p.y + CARD_H > CANVAS_H
+                // 用当前画布基准而不是写死的常量：布局会撑大基准，常量早就过时了
+                const flipX = p.x + NODE_W + gap + CARD_W > canvasSize.width
+                const flipY = p.y + CARD_H > canvasSize.height
                 const cx = flipX ? Math.max(0, p.x - gap - CARD_W) : p.x + NODE_W + gap
                 const cy = flipY ? Math.max(0, p.y + NODE_H - CARD_H) : p.y
                 const idx = ordered.findIndex((x) => x.id === node.id)
@@ -915,8 +964,15 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                       </header>
                       <strong className="wf-card__title">{node.title}</strong>
                       {node.detail && <p className="wf-card__detail">{node.detail}</p>}
+                      {node.action_kind === CONDITION_KIND && (
+                        <p className="wf-card__detail">{describeCondition(node.action_value)}</p>
+                      )}
                       <div className="wf-card__meta">
-                        {node.action_kind && node.action_kind !== 'none' ? (
+                        {node.action_kind === CONDITION_KIND ? (
+                          <button className="text-btn" onClick={() => void runNodeAction(node)} title="立即求值这个条件（试跑）">
+                            试跑条件
+                          </button>
+                        ) : node.action_kind && node.action_kind !== 'none' ? (
                           <button
                             className={
                               node.action_kind === 'run_command' ? 'text-btn text-btn--danger' : 'text-btn'
@@ -1016,20 +1072,29 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                     onChange={(e) => setEditing({ ...editing, action_kind: e.target.value })}
                   >
                     <option value="none">无</option>
+                    <option value={CONDITION_KIND}>条件判断（自动求值，不建任务）</option>
                     <option value="open_url">打开网址</option>
                     <option value="run_command">执行命令</option>
                     <option value="open_note">打开笔记</option>
                   </select>
                 </label>
-                <label className="form-row">
-                  <span>动作值</span>
-                  <input
-                    className="field"
-                    value={editing.action_value}
-                    onChange={(e) => setEditing({ ...editing, action_value: e.target.value })}
-                  />
-                </label>
+                {editing.action_kind !== CONDITION_KIND && (
+                  <label className="form-row">
+                    <span>动作值</span>
+                    <input
+                      className="field"
+                      value={editing.action_value}
+                      onChange={(e) => setEditing({ ...editing, action_value: e.target.value })}
+                    />
+                  </label>
+                )}
               </div>
+              {editing.action_kind === CONDITION_KIND && (
+                <WorkflowConditionEditor
+                  value={editing.action_value}
+                  onChange={(next) => setEditing({ ...editing, action_value: next })}
+                />
+              )}
               <label className="form-row">
                 <span>进入条件（自由文本，供人工判断）</span>
                 <input
