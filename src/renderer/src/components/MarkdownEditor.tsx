@@ -16,6 +16,7 @@ import { autocompletion, closeBrackets, completionKeymap } from '@codemirror/aut
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { tags } from '@lezer/highlight'
 import { useDialog } from './Dialogs'
+import { Toolbar } from './Toolbar'
 
 interface Props {
   value: string
@@ -442,68 +443,75 @@ export function RichTextEditor({ html, onChange, readOnly = false, placeholder, 
   return (
     <div className="rt-editor">
       {!readOnly && (
-        <div className="rt-editor__bar">
-          <button className="text-btn" title="加粗" onClick={() => exec('bold')}>
-            B
-          </button>
-          <button className="text-btn" title="斜体" onClick={() => exec('italic')}>
-            I
-          </button>
-          <button className="text-btn" title="下划线" onClick={() => exec('underline')}>
-            U
-          </button>
-          {[1, 2, 3].map((lv) => (
-            <button key={lv} className="text-btn" title={`${lv} 级标题`} onClick={() => exec('formatBlock', `h${lv}`)}>
-              H{lv}
-            </button>
-          ))}
-          <button className="text-btn" title="无序列表" onClick={() => exec('insertUnorderedList')}>
-            • 列表
-          </button>
-          <button className="text-btn" title="有序列表" onClick={() => exec('insertOrderedList')}>
-            1. 列表
-          </button>
-          <button className="text-btn" title="左对齐" onClick={() => exec('justifyLeft')}>
-            左
-          </button>
-          <button className="text-btn" title="居中" onClick={() => exec('justifyCenter')}>
-            中
-          </button>
-          <button className="text-btn" title="右对齐" onClick={() => exec('justifyRight')}>
-            右
-          </button>
-          <button className="text-btn" title="插入链接" onClick={() => void insertLink()}>
-            链接
-          </button>
-          <button className="text-btn" title="插入图片" onClick={insertImage}>
-            图片
-          </button>
-          <button className="text-btn" title="插入文件附件" onClick={insertFile}>
-            文件
-          </button>
-          <select
-            className="field field--compact"
-            title="字号"
-            defaultValue=""
-            onChange={(e) => {
-              if (e.target.value) exec('fontSize', e.target.value)
-              e.target.value = ''
-            }}
-          >
-            <option value="">字号</option>
-            {[12, 14, 16, 18, 20, 24, 28].map((sz) => (
-              <option key={sz} value={String(sz / 12)}>
-                {sz}
-              </option>
-            ))}
-          </select>
-          <input
-            type="color"
-            title="文字颜色"
-            aria-label="文字颜色"
-            onChange={(e) => exec('foreColor', e.target.value)}
-          />
-        </div>
+        <Toolbar
+          variant="panel"
+          filters={[
+            <select
+              key="size"
+              className="field field--compact"
+              title="字号"
+              defaultValue=""
+              onChange={(e) => {
+                if (e.target.value) exec('fontSize', e.target.value)
+                e.target.value = ''
+              }}
+            >
+              <option value="">字号</option>
+              {[12, 14, 16, 18, 20, 24, 28].map((sz) => (
+                <option key={sz} value={String(sz / 12)}>
+                  {sz}
+                </option>
+              ))}
+            </select>,
+            <input
+              key="color"
+              type="color"
+              title="文字颜色"
+              aria-label="文字颜色"
+              onChange={(e) => exec('foreColor', e.target.value)}
+            />,
+          ]}
+          secondary={[
+            <button key="b" className="text-btn" title="加粗" onClick={() => exec('bold')}>
+              B
+            </button>,
+            <button key="i" className="text-btn" title="斜体" onClick={() => exec('italic')}>
+              I
+            </button>,
+            <button key="u" className="text-btn" title="下划线" onClick={() => exec('underline')}>
+              U
+            </button>,
+            ...[1, 2, 3].map((lv) => (
+              <button key={'h' + lv} className="text-btn" title={lv + ' 级标题'} onClick={() => exec('formatBlock', 'h' + lv)}>
+                H{lv}
+              </button>
+            )),
+            <button key="ul" className="text-btn" title="无序列表" onClick={() => exec('insertUnorderedList')}>
+              • 列表
+            </button>,
+            <button key="ol" className="text-btn" title="有序列表" onClick={() => exec('insertOrderedList')}>
+              1. 列表
+            </button>,
+            <button key="jl" className="text-btn" title="左对齐" onClick={() => exec('justifyLeft')}>
+              左
+            </button>,
+            <button key="jc" className="text-btn" title="居中" onClick={() => exec('justifyCenter')}>
+              中
+            </button>,
+            <button key="jr" className="text-btn" title="右对齐" onClick={() => exec('justifyRight')}>
+              右
+            </button>,
+            <button key="link" className="text-btn" title="插入链接" onClick={() => void insertLink()}>
+              链接
+            </button>,
+            <button key="img" className="text-btn" title="插入图片" onClick={insertImage}>
+              图片
+            </button>,
+            <button key="file" className="text-btn" title="插入文件附件" onClick={insertFile}>
+              文件
+            </button>,
+          ]}
+        />
       )}
       <div
         ref={hostRef}

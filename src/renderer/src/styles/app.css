@@ -314,7 +314,6 @@
   font-weight: 600;
 }
 
-
 /* 勾选圆圈：命中区 ≥32px，圆圈本体 18px */
 .check {
   width: 18px;
@@ -496,15 +495,7 @@
 .infobar__close:hover {
   color: var(--fg-primary);
 }
-.quick-add {
-  display: flex;
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
-}
-.quick-add .field {
-  flex: 1;
-  min-width: 0;
-}
+
 .stat-card--clickable {
   cursor: pointer;
   text-align: left;

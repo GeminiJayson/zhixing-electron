@@ -1,0 +1,145 @@
+/* 统一工具栏（components/Toolbar.tsx）：两层骨架 + 溢出逐级折叠。
+   控件高度一律用 --control-h 家族，见 docs/03 §2.7。 */
+
+.tb {
+  /* 常驻：长内容页滚动时标题与工具条不跟着走（layoutcheck 的「标题固定」断言） */
+  position: sticky;
+  top: 0;
+  z-index: var(--z-float);
+  background: var(--bg-canvas);
+  padding-top: var(--space-2);
+  margin-bottom: var(--space-3);
+  min-width: 0;
+}
+.tb__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.tb__lead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+/* 标题是身份，不参与压缩 */
+.tb__lead .page__title {
+  margin: 0;
+  white-space: nowrap;
+}
+.tb__headtail {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+}
+
+.tb__sub {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: var(--border-w) solid var(--border);
+}
+.tb__subleft {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  min-width: 0;
+}
+.tb__subright {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  min-width: 0;
+}
+/* 除搜索框外一律不缩：缩了就看不出「放不下」，折叠逻辑也就失去判据 */
+.tb__subright > * {
+  flex: 0 0 auto;
+}
+.tb__subright input {
+  flex: 1 1 140px;
+  width: auto;
+  min-width: 96px;
+}
+.tb__meta {
+  color: var(--fg-tertiary);
+  font-size: var(--text-aux);
+  white-space: nowrap;
+}
+
+/* panel 形态：没有页面标题，工具行即全部 */
+.tb--panel .tb__sub {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+/* 工具栏里的按钮：与控件同高，视觉上属于同一套语言 */
+.tb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--control-h);
+  padding: 0 var(--space-2);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-ctl);
+  background: var(--bg-layer-solid);
+  color: var(--fg-primary);
+  white-space: nowrap;
+}
+.tb-btn:hover {
+  background: var(--bg-hover);
+}
+.tb-btn__n {
+  font-size: var(--text-aux);
+  color: var(--fg-secondary);
+}
+
+.tb__more {
+  position: relative;
+  flex: 0 0 auto;
+}
+.tb-sheet {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  z-index: var(--z-menu);
+  min-width: 320px;
+  max-width: 520px;
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+.tb-sheet__group {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+.tb-sheet__k {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 0 0 64px;
+  padding-top: 8px;
+  color: var(--fg-secondary);
+  font-size: var(--text-aux);
+}
+.tb-sheet__v {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}

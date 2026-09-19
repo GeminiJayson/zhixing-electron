@@ -18,7 +18,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const styleDir = join(root, 'src', 'renderer', 'src', 'styles')
 
 /** 控件选择器：高度必须用 var(--control-h) / var(--control-h-sm) */
-const CONTROL = /(^|[\s.,>])(field|icon-btn|text-btn|seg|popmenu__item|palette__item|ntree__search|editor__title|kcol__add|palette__input)([\s:.,>[]|$)/
+const CONTROL = /(^|[\s.,>])(field|icon-btn|text-btn|seg|popmenu__item|palette__item|ntree__search|editor__title|kcol__add|palette__input|tb-btn)([\s:.,>[]|$)/
 /** 豁免：行内尺度 / 独立尺度，理由见 docs/03 §2.7 */
 const ALLOW = [
   ['.field--area', '多行文本域最小高度'],

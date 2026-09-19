@@ -21,6 +21,7 @@ import { KanbanBoard } from '../components/KanbanBoard'
 import { QuadrantBoard, quadrantAssignment, type QuadrantKey } from '../components/QuadrantBoard'
 import { TaskEditor } from '../components/TaskEditor'
 import { TaskRow } from '../components/TaskRow'
+import { Toolbar } from '../components/Toolbar'
 import { dueLabel } from '../lib/date'
 
 interface Props {
@@ -688,31 +689,38 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
 
   return (
     <div className="page page--tasks">
-      <div className="page__head">
-        <h1 className="page__title">{t('page.tasks')}</h1>
-        <p className="page__subtitle">{t('page.tasks.sub')}</p>
-      </div>
       <div className="page__body">
 
-      <div className="tasks-toolbar">
-        <div className="seg" role="group" aria-label="视图切换">
-          {VIEWS.map((v) => (
-            <button key={v.key} aria-pressed={view === v.key} onClick={() => setView(v.key)}>
-              {v.label}
-            </button>
-          ))}
-        </div>
-        <span className="u-aux">
-          共 {tree.length} 项
-          {focus ? ` · 聚焦「${focus === 'today' ? '今日待办' : focus === 'done' ? '今日已完成' : '已逾期'}」` : ''}
-        </span>
-        {focus && onClearFocus && (
-          <button className="text-btn" onClick={onClearFocus}>
-            清除聚焦
-          </button>
+      <Toolbar
+        title={t('page.tasks')}
+        subtitle={t('page.tasks.sub')}
+        nav={(
+          <div className="seg" role="group" aria-label="视图切换">
+            {VIEWS.map((v) => (
+              <button key={v.key} aria-pressed={view === v.key} onClick={() => setView(v.key)}>
+                {v.label}
+              </button>
+            ))}
+          </div>
         )}
-        <div className="tasks-toolbar__right">
+        meta={(
+          <span className="u-aux">
+            共 {tree.length} 项
+            {focus ? ` · 聚焦「${focus === 'today' ? '今日待办' : focus === 'done' ? '今日已完成' : '已逾期'}」` : ''}
+          </span>
+        )}
+        search={(
+          <input
+            className="field field--compact"
+            placeholder="过滤当前视图…"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            aria-label="过滤任务"
+          />
+        )}
+        filters={[
           <select
+            key="list"
             className="field field--compact"
             value={listKey}
             onChange={(e) => setListKey(e.target.value)}
@@ -727,8 +735,11 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
                   {f.name}
                 </option>
               ))}
-          </select>
+          </select>,
+        ]}
+        secondary={[
           <button
+            key="newlist"
             className="text-btn"
             onClick={async () => {
               const name = await dialog.prompt({ title: '新建清单', label: '清单名称' })
@@ -739,15 +750,9 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
             }}
           >
             新建清单
-          </button>
-          <input
-            className="field field--compact"
-            placeholder="过滤当前视图…"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            aria-label="过滤任务"
-          />
+          </button>,
           <button
+            key="batch"
             className="text-btn"
             disabled={selectedIds.size === 0}
             onClick={(e) => {
@@ -756,10 +761,19 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
             }}
           >
             批量{selectedIds.size > 0 ? ` · ${selectedIds.size}` : ''}
-          </button>
-          <button className="text-btn" aria-pressed={inspector} onClick={() => setInspector((v) => !v)}>
+          </button>,
+          <button key="insp" className="text-btn" aria-pressed={inspector} onClick={() => setInspector((v) => !v)}>
             速览
-          </button>
+          </button>,
+          ...(focus && onClearFocus
+            ? [
+                <button key="clear" className="text-btn" onClick={onClearFocus}>
+                  清除聚焦
+                </button>,
+              ]
+            : []),
+        ]}
+        primary={(
           <button
             className="text-btn text-btn--accent"
             onClick={() => {
@@ -769,8 +783,8 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
           >
             <Plus size={14} /> 新建任务
           </button>
-        </div>
-      </div>
+        )}
+      />
 
       <div className="tasks-work">
         <div className="tasks-main">

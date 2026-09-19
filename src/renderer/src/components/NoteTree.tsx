@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight, FilePlus2, FolderPlus, Pin, Search, Trash2 } from 'lucide-react'
 import type { Note, NoteFolder } from '@shared/types'
 import { PopMenu } from './PopMenu'
+import { Toolbar } from './Toolbar'
 
 interface Props {
   notes: Note[]
@@ -195,36 +196,46 @@ export function NoteTree({
       aria-label="笔记树"
       style={{ width: treeWidth, flexBasis: treeWidth }}
     >
-      <div className="ntree__tools">
-        <div className="ntree__search">
-          <Search size={13} />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索标题…"
-            aria-label="搜索笔记标题"
-          />
-        </div>
-        <select
-          className="field field--compact ntree__format"
-          value={createFormat}
-          onChange={(e) => onCreateFormatChange(e.target.value)}
-          aria-label="新建笔记的格式"
-          title="新建笔记的格式"
-        >
-          <option value="markdown">Markdown</option>
-          <option value="richtext">富文本</option>
-          <option value="word">Word</option>
-          <option value="excel">Excel</option>
-          <option value="link">链接</option>
-        </select>
-        <button className="icon-btn" title="新建笔记" aria-label="新建笔记" onClick={() => onCreateNote(null)}>
-          <FilePlus2 size={15} />
-        </button>
-        <button className="icon-btn" title="新建文件夹" aria-label="新建文件夹" onClick={onCreateFolder}>
-          <FolderPlus size={15} />
-        </button>
-      </div>
+      <Toolbar
+        variant="panel"
+        search={
+          <>
+            <Search size={13} />
+            <input
+              className="field ntree__search-input"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="搜索标题…"
+              aria-label="搜索笔记标题"
+            />
+          </>
+        }
+        filters={[
+          <select
+            className="field field--compact ntree__format"
+            value={createFormat}
+            onChange={(e) => onCreateFormatChange(e.target.value)}
+            aria-label="新建笔记的格式"
+            title="新建笔记的格式"
+          >
+            <option value="markdown">Markdown</option>
+            <option value="richtext">富文本</option>
+            <option value="word">Word</option>
+            <option value="excel">Excel</option>
+            <option value="link">链接</option>
+          </select>,
+        ]}
+        primary={
+          <>
+            <button className="icon-btn" title="新建笔记" aria-label="新建笔记" onClick={() => onCreateNote(null)}>
+              <FilePlus2 size={15} />
+            </button>
+            <button className="icon-btn" title="新建文件夹" aria-label="新建文件夹" onClick={onCreateFolder}>
+              <FolderPlus size={15} />
+            </button>
+          </>
+        }
+      />
       <div className="ntree__body">
         {rootNotes.map((n) => noteRow(n, 0))}
         {childrenOf(null).map((f) => folderNode(f, 0))}

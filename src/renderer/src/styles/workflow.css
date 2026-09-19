@@ -186,7 +186,7 @@
   align-items: center;
   gap: var(--space-1);
 }
-/* 工具栏内的紧凑下拉：比控件基准矮一档，避免在 .tasks-toolbar 里把整行撑高 */
+/* 工具栏内的紧凑下拉：比控件基准矮一档，避免在工具栏里把整行撑高 */
 .field--mini {
   min-height: var(--control-h-sm);
   padding: 0 var(--space-2);

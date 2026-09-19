@@ -10,16 +10,7 @@
   gap: var(--space-2);
   overflow: auto;
 }
-.flash-new {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-2);
-}
-.flash-new .field {
-  flex: 1;
-  min-width: 0;
-}
+
 .flash-list {
   list-style: none;
   margin: 0;
@@ -68,11 +59,7 @@
   cursor: not-allowed;
 }
 /* 合并工具栏：选中 ≥2 条闪念后「合并选中 / 清空选择」才可用 */
-.flash-toolbar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
+
 /* 选择框：贴卡片右上角，不占用正文首行的行宽 */
 .flash-card__pick {
   align-self: flex-end;

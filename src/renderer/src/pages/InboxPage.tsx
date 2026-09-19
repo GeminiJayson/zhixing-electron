@@ -14,6 +14,7 @@ import {
 import { buildTaskTree, effectiveDoneMap, type TaskNode } from '@shared/task'
 import type { Flash, NoteFolder, Task } from '@shared/types'
 import { t } from '../i18n'
+import { Toolbar } from '../components/Toolbar'
 import { useDialog } from '../components/Dialogs'
 import { TaskRow } from '../components/TaskRow'
 import { TargetSelector } from '../components/TargetSelector'
@@ -282,20 +283,77 @@ export function InboxPage({ onNotice, onChanged }: Props) {
 
   return (
     <div className="page page--inbox">
-      <div className="page__head">
-        <h1 className="page__title">{t('page.inbox')}</h1>
-        <p className="page__subtitle">{t('page.inbox.sub')}</p>
-      </div>
       <div className="page__body">
 
-      <div className="seg inbox-tabs" role="tablist">
-        <button role="tab" aria-selected={tab === 'tasks'} onClick={() => setTab('tasks')}>
-          任务收件箱 · {undone}
-        </button>
-        <button role="tab" aria-selected={tab === 'flash'} onClick={() => setTab('flash')}>
-          闪念 · {flashes.length}
-        </button>
-      </div>
+      <Toolbar
+        title={t('page.inbox')}
+        subtitle={t('page.inbox.sub')}
+        nav={(
+          <div className="seg" role="tablist" aria-label="收件箱分区">
+            <button role="tab" aria-selected={tab === 'tasks'} onClick={() => setTab('tasks')}>
+              任务收件箱 · {undone}
+            </button>
+            <button role="tab" aria-selected={tab === 'flash'} onClick={() => setTab('flash')}>
+              闪念 · {flashes.length}
+            </button>
+          </div>
+        )}
+        search={
+          tab === 'flash' ? (
+            <input
+              className="field field--compact"
+              value={draft}
+              placeholder="记一条闪念，回车收进收件箱"
+              aria-label="新建闪念"
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void handleAddFlash()
+              }}
+            />
+          ) : undefined
+        }
+        primary={
+          tab === 'flash' ? (
+            <button className="text-btn text-btn--accent" onClick={() => void handleAddFlash()}>
+              <Plus size={14} /> 收进收件箱
+            </button>
+          ) : undefined
+        }
+        secondary={
+          tab === 'flash'
+            ? [
+                <button
+                  key="arch"
+                  className="text-btn"
+                  aria-pressed={showArchived}
+                  onClick={() => setShowArchived((v) => !v)}
+                >
+                  {showArchived ? '看收件箱' : '看归档'}
+                </button>,
+                <button key="merge" className="text-btn" onClick={() => void handleMerge()} disabled={picked.size < 2}>
+                  合并选中{picked.size > 0 ? ` · ${picked.size}` : ''}
+                </button>,
+                ...(picked.size > 0
+                  ? [
+                      <button key="clear" className="text-btn" onClick={() => setPicked(new Set())}>
+                        清空选择
+                      </button>,
+                    ]
+                  : []),
+                ...(undoFlash
+                  ? [
+                      <span key="undo" className="u-aux">
+                        已删除闪念「{undoFlash.label}」
+                        <button className="text-btn" onClick={() => void handleUndoDeleteFlash()}>
+                          <Undo2 size={13} /> 撤销
+                        </button>
+                      </span>,
+                    ]
+                  : []),
+              ]
+            : []
+        }
+      />
 
       {tab === 'tasks' ? (
         <section className="inbox-panel" aria-label="任务收件箱">
@@ -307,43 +365,6 @@ export function InboxPage({ onNotice, onChanged }: Props) {
         </section>
       ) : (
         <section className="inbox-panel" aria-label="闪念">
-          <div className="flash-new">
-            <input
-              className="field"
-              value={draft}
-              placeholder="记一条闪念，回车收进收件箱"
-              aria-label="新建闪念"
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void handleAddFlash()
-              }}
-            />
-            <button className="text-btn text-btn--accent" onClick={() => void handleAddFlash()}>
-              <Plus size={14} /> 收进收件箱
-            </button>
-            <button className="text-btn" aria-pressed={showArchived} onClick={() => setShowArchived((v) => !v)}>
-              {showArchived ? '看收件箱' : '看归档'}
-            </button>
-          </div>
-
-          <div className="flash-toolbar">
-            <button className="text-btn" onClick={() => void handleMerge()} disabled={picked.size < 2}>
-              合并选中{picked.size > 0 ? ` · ${picked.size}` : ''}
-            </button>
-            {picked.size > 0 && (
-              <button className="text-btn" onClick={() => setPicked(new Set())}>
-                清空选择
-              </button>
-            )}
-            {undoFlash && (
-              <span className="u-aux">
-                已删除闪念「{undoFlash.label}」
-                <button className="text-btn" onClick={() => void handleUndoDeleteFlash()}>
-                  <Undo2 size={13} /> 撤销
-                </button>
-              </span>
-            )}
-          </div>
           {flashes.length === 0 ? (
             <p className="empty-hint">
               {showArchived ? '还没有归档的闪念。' : '收件箱是空的。划词捕获或在这里输入都会进收件箱。'}

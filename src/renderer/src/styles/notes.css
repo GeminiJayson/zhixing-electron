@@ -34,40 +34,13 @@
   background: color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
-.ntree__tools {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-}
 /* 树总宽 240px：格式选择器若沿用 .field--compact 的 200px，再加上搜索框与两个
    图标按钮必然顶破卡片。这里收窄成固定小宽，剩余空间交给搜索框。 */
 .ntree__format {
   width: 72px;
   flex: 0 0 auto;
 }
-.ntree__search {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 var(--space-2);
-  /* 搜索框是控件：跟随「控件高度」，高度由外层容器承担（内层 input 去壳后不参与） */
-  min-height: var(--control-h);
-  background: var(--bg-hover);
-  border-radius: var(--radius-ctl);
-  color: var(--fg-secondary);
-}
-.ntree__search input {
-  flex: 1;
-  min-width: 0;
-  /* 行内去壳输入：高度交给外层 .ntree__search，豁免全局兜底 */
-  min-height: 0;
-  border: none;
-  background: transparent;
-  outline: none;
-  font-size: var(--text-aux);
-}
+
 .ntree__body {
   flex: 1;
   overflow: auto;
@@ -507,26 +480,7 @@
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius-lg);
 }
-.rt-editor__bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-2);
-  border-bottom: var(--border-w) solid var(--border);
-}
-.rt-editor__bar .field--compact {
-  width: auto;
-}
-.rt-editor__bar input[type='color'] {
-  width: 28px;
-  /* 与工具条里的 .text-btn / 下拉同高，否则一排按钮里会凹下去一块 */
-  height: var(--control-h);
-  padding: 0;
-  border: var(--border-w) solid var(--border);
-  border-radius: var(--radius-sm);
-  background: none;
-}
+
 .rt-editor__body {
   flex: 1;
   min-height: 0;

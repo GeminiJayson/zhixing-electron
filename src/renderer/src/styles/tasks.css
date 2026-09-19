@@ -1,25 +1,6 @@
 /* 任务页：工具栏、任务树、速览栏。 */
 
-.tasks-toolbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  margin-bottom: var(--space-3);
-}
 /* 宽度不够时整组换行，绝不压缩按钮 —— 压扁会把按钮挤出可视区，看起来像「点了没反应」 */
-.tasks-toolbar__right {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: var(--space-2);
-}
-.tasks-toolbar .text-btn {
-  flex: 0 0 auto;
-  white-space: nowrap;
-}
 
 /* 分段控件（视图切换） */
 .seg {

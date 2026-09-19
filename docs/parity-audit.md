@@ -590,3 +590,38 @@ hovered   : chips.right=1111  acts.x=1119 w=110 opacity=1  max-width=220px   row
 > **环境说明**：`themecheck` / `interactioncheck` / `todaycheck` / `notecheck` 等 13+ 个脚本依赖备份库
 > `D:\Development\backups\electron-migration\zhixing-before-electron-write.db`，该文件在本机不存在（且无 `sqlite3` CLI），
 > 拆分仓库时未被带上，**与本轮改动无关**。本轮改用不依赖它的 `layoutcheck` + 自制 CDP 审计完成验证。
+
+---
+
+## 工具栏统一（2026-09-19，第十轮）
+
+接第九轮：用户看过原型（`prototype/toolbars` 分支的三变体）后定案 —— **按 B 骨架，空间不够按 C 折叠，全部工具栏都这样设计**。
+
+### 落地
+
+| # | 动作 |
+| --- | --- |
+| 1 | 新增生产组件 `components/Toolbar.tsx` + `styles/toolbar.css`：两层骨架 + 逐级折叠（`page` / `panel` 两种形态） |
+| 2 | 六个页面级工具区改用 `<Toolbar>`：今日 / 任务 / 收件箱 / 工作流 / 图谱 / 设置；各页原有的 `page__head` 删除（标题进第一层） |
+| 3 | 两个面板级工具区改用 `<Toolbar variant="panel">`：笔记树 `.ntree__tools`、富文本格式条 `.rt-editor__bar` |
+| 4 | 收件箱的闪念区合并：`.flash-new` + `.flash-toolbar` 的内容成为同一条工具栏的 `search` / `primary` / `secondary`，**一页三条工具条 → 一条** |
+| 5 | 删除旧样式：`.tasks-toolbar`、`.flash-new`、`.flash-toolbar`、`.ntree__tools`、`.ntree__search`、`.rt-editor__bar`、`.quick-add`（共 14 个规则块） |
+| 6 | 删除原型目录、切换栏与 `prototype:toolbars` 脚本（原型留在 `prototype/toolbars` 分支） |
+
+### 折叠判据踩的坑（值得记）
+
+第一版用 `el.scrollWidth > el.clientWidth` 检测溢出 —— **永远返回 0**。原因：`scrollWidth` 对 `overflow: visible` 的元素等于 padding box 宽，根本不含溢出内容；Chromium 只在滚动容器上才给出内容宽度。改成**累加子项 `getBoundingClientRect().width` + gap** 后正常（子项都是 `flex: 0 0 auto`，宽度即真实需求）。
+
+### 实测（CDP，三种视口宽度）
+
+```
+1280px  tasks   → 不折叠（need 565 = avail 565）
+1280px  workflow→ ⋯ 10      （次要操作整组收起）
+1280px  graph   → ⋯ 3
+820px   tasks   → ⋯ 4       （第二层只剩搜索框 + ⋯）
+820px   workflow→ ⋯ 11      （筛选也一并收起）
+notes（240px 树宽）→ ⋯ 1   （格式下拉常驻浮层）
+浮层展开：分组「筛选 / 操作」正常
+```
+
+各页 `.tb` 高度 69px（页面级两层）、24px（面板级一行）；`typecheck` 0 error、`check:ctlheight` 通过（新按钮类 `tb-btn` 已纳入检查正则）。
