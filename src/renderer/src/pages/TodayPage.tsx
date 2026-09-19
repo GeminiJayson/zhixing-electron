@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CalendarClock, CheckCircle2, CircleAlert, NotebookPen, Sparkles } from 'lucide-react'
+import { CalendarClock, CheckCircle2, CircleAlert, NotebookPen, Sparkles } from '@renderer/lib/icons'
 import { buildTaskTree, effectiveDoneMap, type TaskNode } from '@shared/task'
 import type { Note, Overview, TodayTasks } from '@shared/types'
 import { t } from '../i18n'

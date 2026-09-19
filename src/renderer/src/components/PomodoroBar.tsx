@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Pause, Play, Square } from 'lucide-react'
+import { Morph, IconData, Square } from '@renderer/lib/icons'
 
 interface Props {
   focusMinutes: number
@@ -135,7 +135,7 @@ export function PomodoroBar({ focusMinutes, breakMinutes, autoBreak, onNotice }:
           title={session.running ? '暂停' : '继续'}
           onClick={() => setSession((cur) => (cur ? { ...cur, running: !cur.running } : cur))}
         >
-          {session.running ? <Pause size={14} /> : <Play size={14} />}
+          <Morph icon={session.running ? IconData.Pause : IconData.Play} size={14} />
         </button>
         <button
           className="icon-btn icon-btn--danger"

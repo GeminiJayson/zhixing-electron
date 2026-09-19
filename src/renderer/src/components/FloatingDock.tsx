@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { NotebookPen, Plus, Sparkles, SquareCheck } from 'lucide-react'
+import { NotebookPen, Plus, Sparkles, SquareCheck } from '@renderer/lib/icons'
 import type { PageKey } from '../nav'
 
 interface Props {

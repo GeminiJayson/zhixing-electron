@@ -11,7 +11,7 @@ import {
   Plus,
   Trash2,
   X,
-} from 'lucide-react'
+} from '@renderer/lib/icons'
 import type {
   Note,
   WorkflowInstancePayload,

@@ -1,7 +1,7 @@
 import type { EditorView } from '@codemirror/view'
 import { sanitizeHtml } from '@shared/sanitize-html'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Eye, Link2, Pencil, Plus, UserPlus } from 'lucide-react'
+import { Morph, IconData, Link2, Plus, UserPlus } from '@renderer/lib/icons'
 import { subscribeDomain } from '@shared/events'
 import { useDialog } from '../components/Dialogs'
 import type { Backlink, Note, NoteFolder, NoteLink } from '@shared/types'
@@ -635,7 +635,7 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
                   ]}
                   secondary={[
                     <button key="preview" className="text-btn" aria-pressed={preview} onClick={() => setPreview((v) => !v)}>
-                      {preview ? <Pencil size={13} /> : <Eye size={13} />}
+                      <Morph icon={preview ? IconData.Pencil : IconData.Eye} size={13} />
                       {preview ? '编辑' : '预览'}
                     </button>,
                     <button key="links" className="text-btn" aria-pressed={linksOpen} onClick={() => setLinksOpen((v) => !v)}>

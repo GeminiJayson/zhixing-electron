@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AppWindow, Plus, Undo2 } from 'lucide-react'
+import { AppWindow, Plus, Undo2 } from '@renderer/lib/icons'
 import { buildTaskTree, effectiveDoneMap, type TaskNode } from '@shared/task'
 import { bindHostEvents, subscribeDomain } from '@shared/events'
 import { parseSettings } from '@shared/settings'

@@ -1,4 +1,4 @@
-import { Moon, Square, Sun, X } from 'lucide-react'
+import { Morph, IconData, Square, X } from '@renderer/lib/icons'
 
 interface Props {
   title: string
@@ -24,7 +24,7 @@ export function TitleBar({ title, theme, onToggleTheme, signature }: Props) {
           aria-label={theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'}
           title={theme === 'dark' ? '浅色主题' : '深色主题'}
         >
-          {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+          <Morph icon={theme === 'dark' ? IconData.Sun : IconData.Moon} size={16} />
         </button>
         {!isMac && (
           <>

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronRight, Pencil, Play, Plus, Trash2 } from 'lucide-react'
+import { Morph, IconData, Pencil, Play, Plus, Trash2 } from '@renderer/lib/icons'
 import { priorityColor, priorityLabel } from '@shared/priority'
 import type { TaskNode } from '@shared/task'
 import { dueLabel, rangeLabel } from '../lib/date'
@@ -92,7 +92,9 @@ export function TaskRow(props: Props) {
         aria-expanded={hasChildren ? !collapsed : undefined}
         tabIndex={hasChildren ? 0 : -1}
       >
-        {hasChildren && <ChevronRight size={14} className={collapsed ? '' : 'trow__caret--open'} />}
+        {hasChildren && (
+          <Morph icon={collapsed ? IconData.ChevronRight : IconData.ChevronDown} size={14} />
+        )}
       </button>
 
       <button

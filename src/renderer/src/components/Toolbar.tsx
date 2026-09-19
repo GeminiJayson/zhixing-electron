@@ -16,7 +16,7 @@
  * 约定：样式里控件高度一律取 --control-h 家族（见 docs/03 §2.7、npm run check:ctlheight）。
  */
 import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { MoreHorizontal, SlidersHorizontal } from 'lucide-react'
+import { MoreHorizontal, SlidersHorizontal } from '@renderer/lib/icons'
 
 export type ToolbarProps = {
   /** 页面标题（panel 形态不用）。标题本身要放可编辑输入框之类的节点时改用 titleNode */

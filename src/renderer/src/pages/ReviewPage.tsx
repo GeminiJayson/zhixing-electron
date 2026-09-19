@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Award } from 'lucide-react'
+import { Award } from '@renderer/lib/icons'
 import type { ReviewStats } from '@shared/types'
 import { t } from '../i18n'
 

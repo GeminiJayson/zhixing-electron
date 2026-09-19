@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { FileText, FolderPlus, Inbox, ListPlus, Pin } from 'lucide-react'
+import { FileText, FolderPlus, Inbox, ListPlus, Pin } from '@renderer/lib/icons'
 import type { Task } from '@shared/types'
 import { TargetSelector } from './TargetSelector'
 

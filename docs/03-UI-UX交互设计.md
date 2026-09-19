@@ -181,6 +181,22 @@
 
 ---
 
+### 2.11 图标系统
+
+图标**形状数据**来自 lucide（**数据包**，与已退役的 lucide-react 对齐在 0.468），**渲染与形变**由
+morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通用形变 + 弹簧物理）。
+
+| 能力 | 做法 | 证据 |
+| --- | --- | --- |
+| 统一入口 | `src/renderer/src/lib/icons.tsx`（由 `npm run gen:icons` 生成）：63 个与 lucide-react **同签名**的组件，业务侧只换 import 源；另导出 `Morph` 与 `IconData` 供形变 | `scripts/gen-icons.mjs` |
+| 为什么要这层 | lucide 主入口导出 `[svg, attrs, children]` 包装，而 morphicons 的输入契约是 `[tag, attrs][]` 且只认 path/line/circle/… —— 直接传会报 `unsupported tag <svg>`，入口统一解包 | 实测报错后加解包 |
+| 形变 | 同一位置换图标即带弹簧飞过去：`<Morph icon={IconData.A} />` → `icon={IconData.B}`；已接入侧栏折叠/展开、标题栏日/夜、番茄钟播放/暂停、笔记预览/编辑、任务行子树 caret | 采样到 10~11 个中间帧，飞行中是 M/L 折线、静止才回落到曲线 |
+| 动效策略 | 与 §2.9 一致：应用关闭动效（`html[data-motion='none']`）时图标直接切换，否则跟随系统的「减少动态效果」。morphicons 默认 `never`（无视系统设置），**不用**它的默认值 | `icons.tsx` 的 `motionPolicy()` |
+| 无障碍 | 图标默认 `aria-hidden`；传 `label` 时才 `role="img"` + `<title>`。图标按钮仍一律自带 `aria-label` | 与 §5 的 a11y 表一致 |
+
+> caret 的「展开」不再靠 CSS 旋转 90°：`ChevronRight ↔ ChevronDown` 的形变本身就是旋转，
+> 于是 `.trow__caret--open` 与 svg 的 `transition: transform` 都已删除。
+
 ## 3. 布局框架
 
 
@@ -275,7 +291,7 @@
 - 结构标注为 `nav aria-label="主导航"`，当前项 `aria-current="page"`（`Sidebar.tsx:24`、`:39`）。
 - 收件箱徽标只在未折叠且计数 > 0 时渲染（`:31-33`）。
 - 折叠态 48px，只留图标并以 `title` 补文字（`:25`）；折叠仍保留 `aria-label`（`:46`）。
-- 图标全部来自 lucide-react，20px/stroke 2（`:28`）。
+- 图标经 `lib/icons.tsx` 由 morphicons 渲染（形状数据来自 lucide 数据包），20px / stroke 2（`:28`）。
 
 ### 5.2 标题栏（`components/TitleBar.tsx`）
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronRight, FilePlus2, FolderPlus, Pin, Search, Trash2 } from 'lucide-react'
+import { ChevronRight, FilePlus2, FolderPlus, Pin, Search, Trash2 } from '@renderer/lib/icons'
 import type { Note, NoteFolder } from '@shared/types'
 import { PopMenu } from './PopMenu'
 

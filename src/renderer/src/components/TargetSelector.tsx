@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, FolderTree, List } from 'lucide-react'
+import { ArrowLeft, FolderTree, List } from '@renderer/lib/icons'
 import type { ListFolder, Task } from '@shared/types'
 
 /**

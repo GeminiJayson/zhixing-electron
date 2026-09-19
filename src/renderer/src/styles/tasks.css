@@ -161,12 +161,8 @@
 .trow__caret--empty {
   cursor: default;
 }
-.trow__caret svg {
-  transition: transform var(--dur-fast) var(--ease-enter);
-}
-.trow__caret--open {
-  transform: rotate(90deg);
-}
+/* caret 的「展开」不再靠 CSS 旋转 90°：改由 morphicons 在 ChevronRight ↔ ChevronDown
+   之间形变（数学上就是旋转过去），所以这里既不需要 transition 也不需要 --open 类。 */
 .trow__title {
   flex: 1;
   min-width: 0;

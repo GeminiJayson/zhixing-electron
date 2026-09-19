@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Database, Download, Info, Palette, SlidersHorizontal, Tag, Timer, Trash2 } from 'lucide-react'
+import { Database, Download, Info, Palette, SlidersHorizontal, Tag, Timer, Trash2 } from '@renderer/lib/icons'
 import { parseSettings, type AppSettings } from '@shared/settings'
 import { THEME_PACK_NAMES } from '@shared/theme-packs'
 import { t } from '../i18n'

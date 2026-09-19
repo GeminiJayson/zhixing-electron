@@ -21,3 +21,27 @@
 > **若将来涉及商业分发，必须先移除该球形角色视觉形象，或取得上游商业授权。**
 >
 > 引入方式、文件清单与集成要点见 `src/renderer/src/vendor/emotion-ball/UPSTREAM.md`。
+
+## morphicons（图标形变引擎）
+
+| 项 | 内容 |
+| --- | --- |
+| 来源 | https://www.morphicons.com · https://github.com/guillermolg00/morphicons |
+| 版本 | `morphicons@1.7.1`（npm 依赖，非 vendored） |
+| 使用处 | `src/renderer/src/lib/icons.tsx` —— 应用全部图标的渲染与形变 |
+| 许可 | **MIT** |
+
+无商用限制；零运行时依赖；它的 `react` / `vue` / `svelte` / `react-native` peer 全部标记为
+optional，因此安装它不会把其它框架拖进依赖树（已核对 `node_modules`）。
+
+## lucide（图标形状数据）
+
+| 项 | 内容 |
+| --- | --- |
+| 来源 | https://lucide.dev · https://github.com/lucide-icons/lucide |
+| 版本 | `lucide@0.468.0`（npm 依赖） |
+| 使用处 | 仅作为**形状数据**来源，被 `lib/icons.tsx` 消费；渲染不经过它 |
+| 许可 | **ISC** |
+
+> 注意区分：`lucide` 是**数据包**（每个图标是 `[svg, attrs, children]`），`lucide-react` 是组件包。
+> morphicons 只能消费前者，所以本项目的组件包 `lucide-react` 已退役并从依赖中移除。

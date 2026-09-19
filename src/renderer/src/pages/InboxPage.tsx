@@ -10,7 +10,7 @@ import {
   Tag as TagIcon,
   Trash2,
   Undo2,
-} from 'lucide-react'
+} from '@renderer/lib/icons'
 import { buildTaskTree, effectiveDoneMap, type TaskNode } from '@shared/task'
 import type { Flash, NoteFolder, Task } from '@shared/types'
 import { t } from '../i18n'

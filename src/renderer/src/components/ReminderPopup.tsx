@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Bell } from 'lucide-react'
+import { Bell } from '@renderer/lib/icons'
 import type { Task } from '@shared/types'
 
 interface Props {

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus } from 'lucide-react'
+import { Plus } from '@renderer/lib/icons'
 import { priorityColor, priorityLabel } from '@shared/priority'
 import { STATUS_CHOICES } from '@shared/task'
 import type { Task, TaskStatus } from '@shared/types'

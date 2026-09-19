@@ -7,8 +7,8 @@ import {
   Inbox,
   Sparkles,
   Waypoints,
-} from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
+} from '@renderer/lib/icons'
+import type { LucideIcon } from '@renderer/lib/icons'
 import type { MessageKey } from './i18n'
 
 export type PageKey =

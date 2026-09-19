@@ -1,4 +1,4 @@
-import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { Morph, IconData } from '@renderer/lib/icons'
 import { NAV_ITEMS, type PageKey } from '../nav'
 import { t } from '../i18n'
 
@@ -47,7 +47,8 @@ export function Sidebar({ page, collapsed, inboxCount, onSelect, onToggleCollaps
           title={collapsed ? '展开侧栏' : '折叠侧栏'}
         >
           <span className="nav-item__icon">
-            {collapsed ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}
+            {/* 同一位置换图标 → morphicons 带弹簧形变 */}
+            <Morph icon={collapsed ? IconData.PanelLeftOpen : IconData.PanelLeftClose} size={20} />
           </span>
           {!collapsed && <span className="nav-item__label">折叠</span>}
         </button>

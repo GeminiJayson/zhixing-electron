@@ -806,3 +806,24 @@ notes（240px 树宽）→ ⋯ 1   （格式下拉常驻浮层）
 > 第 1 条的替代方案（app-region 拖动）看起来更省事，但会让球彻底点不动 —— 这个「简单方案」被实测否掉了。
 > 第 6 条是本轮最费时间的一处：它没有任何报错，只是「尺寸对了、位置没动」，且**隐藏/可见两种阶段结论相反**，
 > 所以验证必须在真实窗口生命周期的两个阶段各测一遍（启动恢复 vs 运行时缩放）。
+
+---
+
+## 图标系统换成 morphicons（2026-09-19，第十八轮）
+
+| # | 需求 | 落地 | 实测 |
+| --- | --- | --- | --- |
+| 1 | 引进 morphicons 图标系统 | `morphicons@1.7.1`：MIT、零运行时依赖、约 8KB gzip、stroke-based 通用形变 + 弹簧物理；它的 react/vue/svelte/react-native peer **全部 optional** | 安装后核对 `node_modules`：未拖入 react-native / vue / svelte |
+| 2 | 替换原先的应用内图标 | 原 `lucide-react` 全面退役：63 个图标改由 `lib/icons.tsx` 里的 MorphIcon 渲染，**25 个文件只换 import 源**、用法一行没改；随后卸载 `lucide-react` | typecheck / vitest 86-86 / 构建全绿 |
+| 3 | 形状数据从哪来 | 装 lucide **数据包**（与 lucide-react 同版本 0.468 对齐）而不是组件包 —— morphicons 只吃数据 | — |
+| 4 | 接口不匹配（踩坑） | lucide 主入口导出 `[svg, attrs, children]`，而 morphicons 的输入契约是 `[tag, attrs][]` 且只认 path/line/circle/…；入口必须解包，否则报 `morphicons: unsupported tag <svg>` | 直接传/解包后各测一次：前者抛错、后者 `canonicalD` 正常 |
+| 5 | 真正用上形变能力 | 5 处「同一位置换图标」：侧栏折叠/展开、标题栏日/夜、番茄钟播放/暂停、笔记预览/编辑、任务行子树 caret | 三处采样：每处 10~11 个中间帧，且**飞行中是 M/L 折线、静止才回落到曲线**（形变确实在飞，不是瞬间切换） |
+| 6 | 动效策略与 §2.9 一致 | 应用关动效（`html[data-motion='none']`）→ `reducedMotion='always'`；否则 `'user'`（跟随系统）。**不用** morphicons 默认的 `never`（那会无视系统设置） | `icons.tsx` 的 `motionPolicy()` |
+| 7 | caret 的 CSS 旋转退役 | 删掉 `.trow__caret--open`（rotate 90°）与 svg 的 `transition: transform`：`ChevronRight ↔ ChevronDown` 的形变本身就是旋转 | 死 CSS 已清 |
+| 8 | 可维护性 | 入口文件由 `scripts/gen-icons.mjs`（`npm run gen:icons`）生成：扫描源码里用到的图标名（含形变用的 `IconData.X`），新增图标后重跑即可 | 生成器同时处理 `Tag as TagIcon` 这类别名 |
+
+> 第 4 条是这次唯一的接口坑，而且**文档与实测相反**：README 说 `import { Menu } from "lucide"` 直接可用，
+> 实测主入口给的是带 svg 包装的三元组。所以不能图省事在业务代码里直接 import lucide —— 统一入口的解包
+> 不是形式主义，是必需的。
+> 第 5 条的判据取自 morphicons 自己的不变式（飞行中是 M/L 折线），因此「有没有真的形变」这件事可以
+> 编程验证，不必靠眼睛看动画。

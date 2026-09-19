@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { RotateCcw, Trash2 } from 'lucide-react'
+import { RotateCcw, Trash2 } from '@renderer/lib/icons'
 import { parseSettings } from '@shared/settings'
 
 interface Props {

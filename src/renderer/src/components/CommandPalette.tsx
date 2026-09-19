@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Hash, Inbox, NotebookPen, Plus, Search, SquareCheck, TerminalSquare } from 'lucide-react'
+import { Hash, Inbox, NotebookPen, Plus, Search, SquareCheck, TerminalSquare } from '@renderer/lib/icons'
 import { NAV_ITEMS, type PageKey } from '../nav'
 import { t } from '../i18n'
 

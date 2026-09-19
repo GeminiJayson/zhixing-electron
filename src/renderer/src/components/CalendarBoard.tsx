@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight } from '@renderer/lib/icons'
 import { priorityColor } from '@shared/priority'
 import type { Task } from '@shared/types'
 import { dueLabel } from '../lib/date'
