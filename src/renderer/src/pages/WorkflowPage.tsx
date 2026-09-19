@@ -3,6 +3,7 @@ import {
   ArrowDown,
   ArrowUp,
   Copy,
+  Diamond,
   GitBranch,
   LayoutGrid,
   Maximize2,
@@ -20,7 +21,7 @@ import type {
   WorkflowTemplateSummary,
 } from '@shared/types'
 import { subscribeDomain } from '@shared/events'
-import { CONDITION_KIND, describeCondition } from '@shared/workflow-condition'
+import { CONDITION_KIND, describeCondition, serializeCondition } from '@shared/workflow-condition'
 import { t } from '../i18n'
 import { Toolbar } from '../components/Toolbar'
 import { WorkflowConditionEditor } from '../components/WorkflowConditionEditor'
@@ -448,21 +449,25 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   }
 
   /**
-   * I18 加一步：先弹步骤编辑窗，保存时**插到选中节点之后**（未选中则追加末尾），
+   * I18 加一步 / 加条件：先弹步骤编辑窗，保存时**插到选中节点之后**（未选中则追加末尾），
    * 并可勾选「作为选中节点的条件分支」（对齐 _add_step 的 dlg + as_branch）。
    * 新节点用负临时 id，保存时经 id_map 重映射成真实 id，分支引用才不会悬空。
+   *
+   * 条件节点与普通步骤走同一个弹窗，只是预置好 action_kind 与一份「提示确认」草稿 ——
+   * 于是从工具栏点「加条件」进去就能直接填条件，不用先选动作类型。
    */
-  const handleAddStep = (): void => {
+  const openNewNodeDialog = (kind: 'step' | 'condition'): void => {
     if (!current) return
+    const isCondition = kind === 'condition'
     setEditing({
       id: -(ordered.length + 1),
       template_id: current.id,
-      title: '',
+      title: isCondition ? '条件判断' : '',
       detail: '',
       order_index: ordered.length,
       note_id: null,
-      action_kind: 'none',
-      action_value: '',
+      action_kind: isCondition ? CONDITION_KIND : 'none',
+      action_value: isCondition ? serializeCondition({ kind: 'confirm' }) : '',
       condition: '',
       branch_node_id: null,
       pos_x: null,
@@ -581,8 +586,23 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
       </button>
     )}
     secondary={[
-      <button key="add" className="text-btn" onClick={handleAddStep} disabled={!current}>
+      <button
+        key="add"
+        className="text-btn"
+        onClick={() => openNewNodeDialog('step')}
+        disabled={!current}
+      >
         <Plus size={13} /> 加一步
+      </button>,
+      <button
+        key="addCond"
+        className="text-btn"
+        onClick={() => openNewNodeDialog('condition')}
+        disabled={!current}
+        title="新增条件节点：到点自动求值（不建任务），成立走条件分支、不成立走下一步"
+      >
+        {/* 用菱形：与画布上条件节点的形状一致，一眼对应得上 */}
+        <Diamond size={13} /> 加条件
       </button>,
       <button
         key="edit"

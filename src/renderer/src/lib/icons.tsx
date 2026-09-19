@@ -22,6 +22,7 @@ import {
   ClipboardList as NClipboardList,
   Copy as NCopy,
   Database as NDatabase,
+  Diamond as NDiamond,
   Download as NDownload,
   Eye as NEye,
   FilePlus2 as NFilePlus2,
@@ -133,6 +134,7 @@ export const IconData = {
   ClipboardList: unpack(NClipboardList),
   Copy: unpack(NCopy),
   Database: unpack(NDatabase),
+  Diamond: unpack(NDiamond),
   Download: unpack(NDownload),
   Eye: unpack(NEye),
   FilePlus2: unpack(NFilePlus2),
@@ -202,6 +204,7 @@ export const CircleUser = make(NCircleUser)
 export const ClipboardList = make(NClipboardList)
 export const Copy = make(NCopy)
 export const Database = make(NDatabase)
+export const Diamond = make(NDiamond)
 export const Download = make(NDownload)
 export const Eye = make(NEye)
 export const FilePlus2 = make(NFilePlus2)
