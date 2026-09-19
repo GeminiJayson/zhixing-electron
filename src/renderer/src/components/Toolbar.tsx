@@ -84,7 +84,7 @@ export function Toolbar({
   const overflowCount = hiddenFilters.length + hiddenSecondary.length
 
   return (
-    <div className={variant === 'panel' ? 'tb tb--panel' : 'tb'}>
+    <div className={variant === 'panel' ? 'tb tb--panel' : 'tb tb--page'}>
       {variant === 'page' ? (
         // 标题分区：只放页面身份（标题 / 副标题），**不放任何操作**
         <div className="tb__head">

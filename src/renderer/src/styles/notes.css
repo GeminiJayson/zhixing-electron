@@ -496,3 +496,14 @@
 .rt-editor__body img {
   max-width: 100%;
 }
+
+/* 统一工具栏的面板形态在两处宿主里各自需要原有的呼吸与分隔：
+   笔记树工具区原来有自己的内边距；编辑器格式条原来是「内边距 + 下边框」，
+   换成通用工具栏后要补回来，否则格式条会与正文粘在一起。 */
+.ntree .tb--panel {
+  padding: var(--space-1) 0 var(--space-2);
+}
+.rt-editor .tb--panel {
+  padding: var(--space-2);
+  border-bottom: var(--border-w) solid var(--border);
+}
