@@ -15,7 +15,7 @@
  *
  * 约定：样式里控件高度一律取 --control-h 家族（见 docs/03 §2.7、npm run check:ctlheight）。
  */
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { MoreHorizontal, SlidersHorizontal } from 'lucide-react'
 
 export type ToolbarProps = {
@@ -58,6 +58,13 @@ export function Toolbar({
   /** 在阈值之外**额外**收起的控件数：只在溢出时递增 */
   const [extra, setExtra] = useState(0)
   const flatTotal = filters.length + secondary.length
+
+  // 控件数量变了（收件箱切 tab、条件项出现/消失）就重新评估收起数量。
+  // 只靠宽度变化重置是不够的：容器宽度没变但内容变了时，会沿用上一次的收起数，
+  // 该收的没收（溢出）或不该收的收了（白收）。
+  useEffect(() => {
+    setExtra(0)
+  }, [flatTotal])
 
   // 容器宽度变了就重新评估（回到阈值内的平铺）。
   // 注意：这里**只升不降**是刻意的 —— 早先按「有富余就降级」写，会在

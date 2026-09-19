@@ -17,6 +17,15 @@
   background: var(--bg-layer-solid);
   padding-top: var(--space-1);
 }
+/* 开了窗口材质时，内容底会降到 62% 透明（见 app.css）；工具栏若还保持实色，
+   在「内容不是铺满卡片」的页面（工作流 / 图谱 / 设置）就会显出一块更白的矩形。
+   这里让它与内容底同色，并用 backdrop-filter 在滚动时替它挡住下面的内容。 */
+:root[data-material='mica'] .tb--sticky,
+:root[data-material='acrylic'] .tb--sticky,
+:root[data-material='tabbed'] .tb--sticky {
+  background: color-mix(in srgb, var(--bg-layer-solid) 62%, transparent);
+  backdrop-filter: blur(12px);
+}
 /* 面板级（笔记树 / 编辑器格式条）：嵌在侧栏与卡片内部，不参与分区排版 */
 .tb--panel {
   background: none;
