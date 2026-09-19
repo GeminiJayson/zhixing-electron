@@ -297,10 +297,9 @@ function sendWidgetMode(): void {
 }
 
 /**
- * 设置窗口几何：**先 setSize、后 setPosition**，并补落一次。
+ * 设置窗口几何：**先用 setBounds 原子落地，再只改位置纠偏一次**。
  *
- * 两个 API 在窗口隐藏/可见两种阶段各有一半不可靠，所以「先 setBounds 落地、再 setPosition
- * 纠偏」：
+ * 两个 API 在窗口隐藏/可见两种阶段各有一半不可靠，所以必须两者都用：
  *   - 隐藏时（restoreBall 走 ready-to-show）setPosition 落不下去，只能靠 setBounds；
  *   - 可见时 Windows 会因尺寸变化按「保持左上角」异步重排一次，把 setBounds 的位置盖掉
  *     （实测 setBounds(276,276,176,176) 落成 (300,300,176,176)），要等重排过去再只改位置。
