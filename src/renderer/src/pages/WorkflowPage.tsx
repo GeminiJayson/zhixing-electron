@@ -24,7 +24,8 @@ import { subscribeDomain } from '@shared/events'
 import { CONDITION_KIND, describeCondition, serializeCondition } from '@shared/workflow-condition'
 import { t } from '../i18n'
 import { Toolbar } from '../components/Toolbar'
-import { WorkflowConditionEditor } from '../components/WorkflowConditionEditor'
+import { WorkflowStepDialog } from '../components/WorkflowStepDialog'
+import { WorkflowConditionDialog } from '../components/WorkflowConditionDialog'
 import { useDialog } from '../components/Dialogs'
 import { usePanZoom } from '../lib/usePanZoom'
 import { edgePointFrom, elbowPath } from '../lib/edge-path'
@@ -112,7 +113,8 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   /** editing 是否为「新增步骤」（决定保存时插到选中节点之后，而不是原位替换） */
   const [editingNew, setEditingNew] = useState(false)
   /** 新增步骤时是否设为选中节点的条件分支（对齐 _StepEditDialog 的 branch_check） */
-  const [asBranch, setAsBranch] = useState(false)
+  /** 正在编辑的是条件节点还是普通步骤 —— 渲染哪个编辑弹窗由它决定 */
+  const editingIsCondition = editing?.action_kind === CONDITION_KIND
   /** 步骤可绑定的 SOP 笔记（对齐 note_choices：recent(200) 的 id/标题） */
   const [noteChoices, setNoteChoices] = useState<Note[]>([])
   const dragRef = useRef<{ id: number; dx: number; dy: number } | null>(null)
@@ -474,17 +476,21 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
       pos_y: null,
     })
     setEditingNew(true)
-    setAsBranch(false)
   }
 
   /** 打开已有步骤的编辑弹窗（双击节点 / 卡片「编辑」）。 */
   const openEditNode = (node: WorkflowNodePayload): void => {
     setEditing(node)
     setEditingNew(false)
-    setAsBranch(false)
   }
 
-  const handleSaveNode = async (node: WorkflowNodePayload): Promise<void> => {
+  /** 关闭节点编辑弹窗（取消 / 点遮罩）。 */
+  const closeNodeDialog = (): void => {
+    setEditing(null)
+    setEditingNew(false)
+  }
+
+  const handleSaveNode = async (node: WorkflowNodePayload, asBranch: boolean): Promise<void> => {
     if (!current) return
     if (!node.title.trim()) {
       onNotice('请填写步骤标题')
@@ -510,7 +516,6 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     }
     setEditing(null)
     setEditingNew(false)
-    setAsBranch(false)
     onNotice('步骤已保存')
   }
 
@@ -1020,151 +1025,30 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
         </div>
       </div>
 
-      {editing && (
-        <div
-          className="modal-mask"
-          onMouseDown={() => {
-            setEditing(null)
-            setEditingNew(false)
-            setAsBranch(false)
-          }}
-        >
-          <div className="modal" role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()}>
-            <header className="modal__head">
-              <h2>{editingNew ? '新增步骤' : `编辑步骤 #${editing.id}`}</h2>
-            </header>
-            <div className="modal__body">
-              <label className="form-row">
-                <span>标题</span>
-                <input
-                  className="field"
-                  value={editing.title}
-                  onChange={(e) => setEditing({ ...editing, title: e.target.value })}
-                />
-              </label>
-              <label className="form-row">
-                <span>详情</span>
-                <textarea
-                  className="field field--area"
-                  rows={4}
-                  value={editing.detail}
-                  onChange={(e) => setEditing({ ...editing, detail: e.target.value })}
-                />
-              </label>
-              {/* I19 绑定 SOP 文档（对齐 note_combo → note_id）：下发步骤时会写成任务备注的 [[链接]] */}
-              <label className="form-row">
-                <span>SOP 文档</span>
-                <select
-                  className="field"
-                  value={editing.note_id ?? ''}
-                  onChange={(e) =>
-                    setEditing({ ...editing, note_id: e.target.value ? Number(e.target.value) : null })
-                  }
-                >
-                  <option value="">（不绑定）</option>
-                  {noteChoices.map((n) => (
-                    <option key={n.id} value={n.id}>
-                      {n.title || '（无标题）'}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {editingNew && selected != null && (
-                <label className="form-row">
-                  <span>分支</span>
-                  <label className="check-row">
-                    <input
-                      type="checkbox"
-                      checked={asBranch}
-                      onChange={(e) => setAsBranch(e.target.checked)}
-                    />
-                    作为「{ordered.find((x) => x.id === selected)?.title ?? ''}」的条件分支
-                    （条件满足时从其跳到此步）
-                  </label>
-                </label>
-              )}
-              <div className="form-grid">
-                <label className="form-row">
-                  <span>动作</span>
-                  <select
-                    className="field"
-                    value={editing.action_kind}
-                    onChange={(e) => setEditing({ ...editing, action_kind: e.target.value })}
-                  >
-                    <option value="none">无</option>
-                    <option value={CONDITION_KIND}>条件判断（自动求值，不建任务）</option>
-                    <option value="open_url">打开网址</option>
-                    <option value="run_command">执行命令</option>
-                    <option value="open_note">打开笔记</option>
-                  </select>
-                </label>
-                {editing.action_kind !== CONDITION_KIND && (
-                  <label className="form-row">
-                    <span>动作值</span>
-                    <input
-                      className="field"
-                      value={editing.action_value}
-                      onChange={(e) => setEditing({ ...editing, action_value: e.target.value })}
-                    />
-                  </label>
-                )}
-              </div>
-              {editing.action_kind === CONDITION_KIND && (
-                <WorkflowConditionEditor
-                  value={editing.action_value}
-                  onChange={(next) => setEditing({ ...editing, action_value: next })}
-                />
-              )}
-              <label className="form-row">
-                <span>进入条件（自由文本，供人工判断）</span>
-                <input
-                  className="field"
-                  value={editing.condition}
-                  onChange={(e) => setEditing({ ...editing, condition: e.target.value })}
-                />
-              </label>
-              <label className="form-row">
-                <span>条件分支到</span>
-                <select
-                  className="field"
-                  value={editing.branch_node_id ?? ''}
-                  onChange={(e) =>
-                    setEditing({
-                      ...editing,
-                      branch_node_id: e.target.value ? Number(e.target.value) : null,
-                    })
-                  }
-                >
-                  <option value="">不分支（按顺序走下一步）</option>
-                  {ordered
-                    .filter((n) => n.id !== editing.id)
-                    .map((n) => (
-                      <option key={n.id} value={n.id}>
-                        {n.title}
-                      </option>
-                    ))}
-                </select>
-              </label>
-            </div>
-            <footer className="modal__foot">
-              <span className="modal__spacer" />
-              <button
-                className="text-btn"
-                onClick={() => {
-                  setEditing(null)
-                  setEditingNew(false)
-                  setAsBranch(false)
-                }}
-              >
-                取消
-              </button>
-              <button className="text-btn text-btn--accent" onClick={() => void handleSaveNode(editing)}>
-                保存
-              </button>
-            </footer>
-          </div>
-        </div>
-      )}
+      {editing &&
+        (editingIsCondition ? (
+          <WorkflowConditionDialog
+            node={editing}
+            isNew={editingNew}
+            siblings={ordered
+              .filter((n) => n.id !== editing.id)
+              .map((n) => ({ id: n.id, title: n.title }))}
+            onSave={(node) => void handleSaveNode(node, false)}
+            onCancel={closeNodeDialog}
+          />
+        ) : (
+          <WorkflowStepDialog
+            node={editing}
+            isNew={editingNew}
+            siblings={ordered
+              .filter((n) => n.id !== editing.id)
+              .map((n) => ({ id: n.id, title: n.title }))}
+            selectedTitle={ordered.find((n) => n.id === selected)?.title ?? null}
+            noteChoices={noteChoices}
+            onSave={(node, asBranch) => void handleSaveNode(node, asBranch)}
+            onCancel={closeNodeDialog}
+          />
+        ))}
       </div>
     </div>
   )
