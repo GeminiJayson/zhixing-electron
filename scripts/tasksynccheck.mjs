@@ -37,7 +37,14 @@ let payload = []
 let mode = 'array'
 const server = createServer((req, res) => {
   res.writeHead(200, { 'content-type': 'application/json' })
-  const body = mode === 'array' ? payload : mode === 'wrapped' ? { items: payload } : { message: 'ok' }
+  const body =
+    mode === 'array'
+      ? payload
+      : mode === 'wrapped'
+        ? { items: payload }
+        : mode === 'wrapped-deep'
+          ? { data: { rows: payload } }
+          : { message: 'ok' }
   res.end(JSON.stringify(body))
 })
 await new Promise((r) => server.listen(API_PORT, '127.0.0.1', r))
@@ -172,7 +179,55 @@ payload = [
 const fourth = await conn.evaluate('window.zhixing.taskSync.now()')
 check('缺 id / 缺标题的条目被跳过并计数', fourth?.skipped === 2 && fourth.created === 1, J(fourth))
 
-// 6) 非数组响应
+// 6) 字段映射（JSON 路径）+ 列表路径
+payload = [
+  {
+    key: { id: STAMP + '-M1' },
+    attributes: { name: STAMP + ' 映射标题', desc: '映射备注' },
+    when: { due: '2026-11-05' },
+  },
+]
+mode = 'wrapped-deep'
+await conn.evaluate(
+  `window.zhixing.db.setSettings({
+     task_api_rows_path: 'data.rows',
+     task_api_map: ${J(JSON.stringify({ id: 'key.id', title: 'attributes.name', notes: 'attributes.desc', due: 'when.due' }))}
+   })`
+)
+const mapped = await conn.evaluate('window.zhixing.taskSync.now()')
+check('字段映射生效（按 JSON 路径取值）', mapped?.ok === true && mapped.created === 1, J(mapped))
+const mappedTask = (await conn.evaluate('window.zhixing.db.tasks(200)')).find(
+  (t) => t.title === STAMP + ' 映射标题'
+)
+check(
+  '映射到的标题 / 备注 / 截止都落库了',
+  mappedTask?.notes_md === '映射备注' && mappedTask?.due_date === '2026-11-05',
+  J({ notes: mappedTask?.notes_md, due: mappedTask?.due_date })
+)
+await conn.evaluate("window.zhixing.db.setSettings({ task_api_rows_path: '', task_api_map: '' })")
+mode = 'array'
+
+// 7) 去重：本地已有同名任务 → 认领而不是新建
+const LOCAL_TITLE = STAMP + ' 本地已有的任务'
+await conn.evaluate(`window.zhixing.db.createTask(${J(LOCAL_TITLE)}, null, null)`)
+const beforeCount = (await conn.evaluate('window.zhixing.db.tasks(300)')).filter(
+  (t) => t.title === LOCAL_TITLE
+).length
+payload = [{ id: STAMP + '-D1', title: LOCAL_TITLE, description: '来自外部' }]
+const deduped = await conn.evaluate('window.zhixing.taskSync.now()')
+check('同名任务被认领（不是新建）', deduped?.ok === true && deduped.linked === 1 && deduped.created === 0, J(deduped))
+const afterList = (await conn.evaluate('window.zhixing.db.tasks(300)')).filter((t) => t.title === LOCAL_TITLE)
+check('本地那条没有被复制成两条', beforeCount === 1 && afterList.length === 1, `${beforeCount} → ${afterList.length}`)
+const again = await conn.evaluate('window.zhixing.taskSync.now()')
+// 认领后再同步走的是 id 匹配：不会再新建、也不会再认领一次
+// （这次 updated=1 是正常的 —— 认领只建立身份映射，外部字段从这一刻起开始同步）
+check(
+  '认领后按 id 匹配（不再新建、也不再认领）',
+  again?.created === 0 && again.linked === 0,
+  J(again)
+)
+
+// 8) 非数组响应
 mode = 'other'
 const bad = await conn.evaluate('window.zhixing.taskSync.now()')
 check('响应不是数组时给出可操作的提示', bad?.ok === false && /items/.test(bad.message), bad?.message)

@@ -14,6 +14,7 @@ import { conn, nowStamp } from './db/connection'
 import { nextSortKey } from './db/tasks'
 import { listSettings, setSettings } from './db/settings'
 import { parseSettings } from '../shared/settings'
+import { getByPath } from '../shared/json-path'
 
 /** 外部来源标识（将来接第二种来源时用它区分） */
 export const EXTERNAL_SOURCE = 'api'
@@ -25,7 +26,25 @@ export interface TaskSyncResult {
   created: number
   updated: number
   unchanged: number
+  /** 与本地已有任务同名、直接认领（不新建）的条数 */
+  linked: number
   skipped: number
+}
+
+/** 字段映射：`{ id: 'data.id', title: 'attributes.name' }`；坏 JSON 当没配。 */
+export function parseApiMap(raw: string | null | undefined): Record<string, string> {
+  if (!raw) return {}
+  try {
+    const v: unknown = JSON.parse(raw)
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return {}
+    const out: Record<string, string> = {}
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      if (typeof val === 'string' && val.trim()) out[k] = val.trim()
+    }
+    return out
+  } catch {
+    return {}
+  }
 }
 
 export interface TaskSyncStatus {
@@ -60,8 +79,19 @@ function pick(row: Record<string, unknown>, keys: readonly string[]): unknown {
   return undefined
 }
 
-/** 接口返回的数组：直接给数组，或者包在 items / data / tasks / list 里 */
-export function extractRows(payload: unknown): Record<string, unknown>[] | null {
+/**
+ * 接口返回的数组。
+ * 配了行路径就按它取（如 `data.rows`）；没配才按 items / data / tasks / list 猜，或直接用顶层数组。
+ */
+export function extractRows(
+  payload: unknown,
+  rowsPath?: string | null
+): Record<string, unknown>[] | null {
+  if (rowsPath && rowsPath.trim()) {
+    const picked = getByPath(payload, rowsPath)
+    if (!Array.isArray(picked)) return null
+    return picked.map(asRecord).filter((r): r is Record<string, unknown> => !!r)
+  }
   if (Array.isArray(payload)) return payload.map(asRecord).filter((r): r is Record<string, unknown> => !!r)
   const root = asRecord(payload)
   if (!root) return null
@@ -95,14 +125,20 @@ export function toPriority(v: unknown): number {
   return Number.isFinite(n) ? Math.min(8, Math.max(0, Math.round(n))) : 0
 }
 
-function toDone(row: Record<string, unknown>): boolean {
-  const d = pick(row, FIELD_KEYS.done)
+function toDone(
+  row: Record<string, unknown>,
+  map: Record<string, string>,
+  val: (field: keyof typeof FIELD_KEYS) => unknown
+): boolean {
+  const d = map.done ? val('done') : pick(row, FIELD_KEYS.done)
   if (d !== undefined) {
     if (d === true) return true
     if (d === false) return false
     return ['1', 'true', 'yes', 'done', 'completed'].includes(String(d).trim().toLowerCase())
   }
-  const st = String(pick(row, FIELD_KEYS.status) ?? '').trim().toLowerCase()
+  const st = String(map.status ? val('status') : pick(row, FIELD_KEYS.status) ?? '')
+    .trim()
+    .toLowerCase()
   return ['done', 'completed', 'finished', 'closed'].includes(st)
 }
 
@@ -121,17 +157,25 @@ export function taskSyncStatus(): TaskSyncStatus {
   }
 }
 
-type UpsertOutcome = 'created' | 'updated' | 'unchanged'
+type UpsertOutcome = 'created' | 'updated' | 'unchanged' | 'linked'
 
-function upsertOne(row: Record<string, unknown>, listId: number | null): UpsertOutcome | 'skipped' {
+function upsertOne(
+  row: Record<string, unknown>,
+  listId: number | null,
+  map: Record<string, string>,
+  dedupe: boolean
+): UpsertOutcome | 'skipped' {
   const c = conn()
-  const extId = String(pick(row, FIELD_KEYS.id) ?? '').trim()
-  const title = String(pick(row, FIELD_KEYS.title) ?? '').trim()
+  /** 配了映射就按 JSON 路径取，否则按候选字段名自动识别 */
+  const val = (field: keyof typeof FIELD_KEYS): unknown =>
+    map[field] ? getByPath(row, map[field]) : pick(row, FIELD_KEYS[field])
+  const extId = String(val('id') ?? '').trim()
+  const title = String(val('title') ?? '').trim()
   if (!extId || !title) return 'skipped'
-  const notes = String(pick(row, FIELD_KEYS.notes) ?? '')
-  const due = toDueDate(pick(row, FIELD_KEYS.due))
-  const priority = toPriority(pick(row, FIELD_KEYS.priority))
-  const done = toDone(row)
+  const notes = String(val('notes') ?? '')
+  const due = toDueDate(val('due'))
+  const priority = toPriority(val('priority'))
+  const done = toDone(row, map, val)
   const stamp = nowStamp()
 
   const existing = c
@@ -174,6 +218,22 @@ function upsertOne(row: Record<string, unknown>, listId: number | null): UpsertO
     return 'updated'
   }
 
+  // 按标题去重（默认开）：本地已有同名任务、且它还没被别的外部条目认领 → **认领**它。
+  // 只建立 (source, id) 映射、不改它的内容 —— 那条任务很可能是用户自己写的。
+  if (dedupe) {
+    const twin = c
+      .prepare(
+        'SELECT id FROM task WHERE title = ? AND deleted_at IS NULL AND external_id IS NULL ORDER BY id LIMIT 1'
+      )
+      .get(title) as { id: number } | undefined
+    if (twin) {
+      c.prepare(
+        'UPDATE task SET external_source = ?, external_id = ?, updated_at = ? WHERE id = ?'
+      ).run(EXTERNAL_SOURCE, extId, stamp, twin.id)
+      return 'linked'
+    }
+  }
+
   c.prepare(
     `INSERT INTO task (title, notes_md, status, priority, due_date, repeat_period, streak,
                        sort_key, list_id, parent_id, completed_at, created_at, updated_at,
@@ -204,6 +264,7 @@ export async function syncExternalTasks(): Promise<TaskSyncResult> {
     created: 0,
     updated: 0,
     unchanged: 0,
+    linked: 0,
     skipped: 0,
   })
   const s = parseSettings(listSettings())
@@ -241,9 +302,12 @@ export async function syncExternalTasks(): Promise<TaskSyncResult> {
     return empty(message)
   }
 
-  const rows = extractRows(payload)
+  const map = parseApiMap(s.task_api_map)
+  const rows = extractRows(payload, s.task_api_rows_path)
   if (!rows) {
-    const message = '接口返回的不是任务数组（可以是 [...]，或 { items: [...] } / { data: [...] }）'
+    const message = s.task_api_rows_path
+      ? `列表路径「${s.task_api_rows_path}」没取到数组`
+      : '接口返回的不是任务数组（可以是 [...]，或 { items: [...] } / { data: [...] }）'
     remember(message)
     return empty(message)
   }
@@ -251,19 +315,22 @@ export async function syncExternalTasks(): Promise<TaskSyncResult> {
   let created = 0
   let updated = 0
   let unchanged = 0
+  let linked = 0
   let skipped = 0
   for (const row of rows) {
-    const outcome = upsertOne(row, s.task_api_list_id)
+    const outcome = upsertOne(row, s.task_api_list_id, map, s.task_api_dedupe)
     if (outcome === 'created') created += 1
     else if (outcome === 'updated') updated += 1
     else if (outcome === 'unchanged') unchanged += 1
+    else if (outcome === 'linked') linked += 1
     else skipped += 1
   }
 
   const parts = [`拉到 ${rows.length} 条`, `新增 ${created}`, `更新 ${updated}`]
+  if (linked) parts.push(`认领 ${linked}（与本地同名任务合并）`)
   if (unchanged) parts.push(`未变 ${unchanged}`)
   if (skipped) parts.push(`跳过 ${skipped}（缺 id 或标题）`)
   const message = parts.join('，')
   remember(message)
-  return { ok: true, message, total: rows.length, created, updated, unchanged, skipped }
+  return { ok: true, message, total: rows.length, created, updated, unchanged, linked, skipped }
 }

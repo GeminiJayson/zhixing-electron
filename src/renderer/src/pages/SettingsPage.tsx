@@ -25,6 +25,31 @@ type Tab = 'appearance' | 'tasks' | 'data' | 'ai' | 'about'
 
 const ACCENTS = ['#0D9488', '#2563EB', '#7C3AED', '#DB2777', '#EA580C', '#16A34A', '#D97706', '#0891B2']
 
+/** 外部任务同步的字段映射项：留空 = 按候选字段名自动识别 */
+const API_MAP_FIELDS: { key: string; label: string; placeholder: string }[] = [
+  { key: 'id', label: 'ID', placeholder: '如 data.id（必填）' },
+  { key: 'title', label: '标题', placeholder: '如 attributes.name（必填）' },
+  { key: 'notes', label: '备注', placeholder: '如 description' },
+  { key: 'due', label: '截止', placeholder: '如 due_date' },
+  { key: 'priority', label: '优先级', placeholder: '如 priority' },
+  { key: 'done', label: '是否完成', placeholder: '如 completed' },
+]
+
+/** 解析字段映射的设置值；坏 JSON 当没配 */
+function parseMapDraft(raw: string): Record<string, string> {
+  try {
+    const v = JSON.parse(raw || '{}') as unknown
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return {}
+    const out: Record<string, string> = {}
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      if (typeof val === 'string') out[k] = val
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
 /**
  * 可改键的四项全局热键（对齐 Python settings_page._build_capture 的四行）。
  * hint 是改键失败时的降级说明 —— 注册不上的热键一律回到托盘菜单。
@@ -182,6 +207,20 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
   /** 外部任务同步：状态 + 手动触发。改完地址/开关/间隔后让主进程重排定时器。 */
   const [syncStatus, setSyncStatus] = useState<{ lastAt: string; lastResult: string } | null>(null)
   const [syncing, setSyncing] = useState(false)
+  /** 字段映射草稿：改哪个就即时落库（空值会被剔除，全空则存空串 = 自动识别） */
+  const [mapDraft, setMapDraft] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    setMapDraft(parseMapDraft(settings.task_api_map))
+  }, [settings.task_api_map])
+
+  const updateMapField = (key: string, value: string): void => {
+    const next = { ...mapDraft, [key]: value }
+    setMapDraft(next)
+    const clean: Record<string, string> = {}
+    for (const [k, v] of Object.entries(next)) if (v.trim()) clean[k] = v.trim()
+    void update('task_api_map', Object.keys(clean).length ? JSON.stringify(clean) : '')
+  }
 
   useEffect(() => {
     void window.zhixing.taskSync.status().then(setSyncStatus).catch(() => setSyncStatus(null))
@@ -517,13 +556,51 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                 {syncing ? '同步中…' : '立即同步'}
               </button>
             </div>
+            <label className="set-row">
+              <span>按标题去重</span>
+              <input
+                type="checkbox"
+                checked={settings.task_api_dedupe}
+                onChange={(e) => void updateApi('task_api_dedupe', e.target.checked ? '1' : '0')}
+              />
+              <span className="u-aux">
+                本地已有同名任务时「认领」它（只建立映射、不改它的内容），不再新建一条
+              </span>
+            </label>
+
             <p className="u-aux">
-              识别的字段名：<b>id</b> / <b>title</b> / <b>description</b>（也认 notes、body）、
-              <b>due_date</b>（也认 due、deadline）、<b>priority</b>（数字 0~8，或 high / medium / low）、
-              <b>done</b>（也认 completed、status）。响应可以直接是数组，也可以是
-              {' { items: [...] }'} / {'{ data: [...] }'} / {'{ tasks: [...] }'}；
-              缺 id 或缺标题的条目会被跳过。新任务默认进收件箱。
+              <b>字段映射</b>：接口的字段藏在包装里时，用 JSON 路径告诉同步器去哪儿取
+              （支持 <code>data.rows[0].attributes.name</code> 这种点号 + 下标写法）。
+              <b>留空 = 按候选字段名自动识别</b>（id / title / description / due_date / priority / done
+              及其常见别名）。
             </p>
+            <label className="set-row">
+              <span>列表路径</span>
+              <input
+                className="field field--grow"
+                value={settings.task_api_rows_path}
+                placeholder="留空 = 自动（顶层数组，或 items / data / tasks）"
+                onChange={(e) => void update('task_api_rows_path', e.target.value)}
+                onBlur={() => void updateApi('task_api_rows_path', settings.task_api_rows_path)}
+              />
+            </label>
+            <div className="set-grid-2">
+              {API_MAP_FIELDS.map((f) => (
+                <label className="form-row" key={f.key}>
+                  <span>
+                    {f.label}
+                    <span className="u-aux">（{f.key}）</span>
+                  </span>
+                  <input
+                    className="field"
+                    value={mapDraft[f.key] ?? ''}
+                    placeholder={f.placeholder}
+                    aria-label={'字段映射 ' + f.key}
+                    onChange={(e) => updateMapField(f.key, e.target.value)}
+                  />
+                </label>
+              ))}
+            </div>
           </section>
         )}
 

@@ -62,6 +62,12 @@ export interface AppSettings {
   task_api_interval_min: number
   /** 拉回来的任务落到哪个清单；null = 收件箱 */
   task_api_list_id: number | null
+  /** 任务数组所在的 JSON 路径，如 data.items；空 = 自动探测 */
+  task_api_rows_path: string
+  /** 字段映射（JSON：字段 → JSON 路径），空 = 按候选字段名自动识别 */
+  task_api_map: string
+  /** 按标题与本地任务去重：命中就认领那条任务，不再新建 */
+  task_api_dedupe: boolean
   /** 上次同步时间 / 结果（运行时写入，用于设置页展示） */
   task_api_last_at: string
   task_api_last_result: string
@@ -135,6 +141,9 @@ export function parseSettings(raw: Record<string, string> = {}): AppSettings {
     task_api_enabled: bool(raw.task_api_enabled, false),
     task_api_interval_min: num(raw.task_api_interval_min, 30, 5, 1440),
     task_api_list_id: numOrNull(raw.task_api_list_id),
+    task_api_rows_path: (raw.task_api_rows_path ?? '').trim(),
+    task_api_map: raw.task_api_map ?? '',
+    task_api_dedupe: bool(raw.task_api_dedupe, true),
     task_api_last_at: raw.task_api_last_at ?? '',
     task_api_last_result: raw.task_api_last_result ?? '',
   }
