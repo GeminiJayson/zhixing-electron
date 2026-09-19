@@ -92,15 +92,30 @@
    右侧不再留一条空白带。只在第一个子元素真的含 input/select 时才拉伸 ——
    若第一个是按钮，拉成整行宽反而难看，那种情况维持原样。
    拖动窗口期间不加这个类：拉伸会改控件宽度，而折叠数量按自然宽度算，两者会互相追。 */
-.tb .tb__subright.tb__subright--fill > :first-child:has(input, select),
-.tb .tb__subright.tb__subright--fill > input:first-child,
-.tb .tb__subright.tb__subright--fill > select:first-child {
+/* 注意包裹层级不止一层：工作流是 span > label.wf-policy > select，
+   所以内层必须用**后代**选择器并逐级撑满 —— 只把最外层容器拉宽，会出现
+   「布局吃掉了剩余宽度、下拉框本身没变」这种观感。 */
+.tb .tb__subright.tb__subright--fill > :first-child:not(input):not(select) {
+  display: flex;
   flex: 1 1 auto;
   min-width: 0;
 }
-.tb .tb__subright.tb__subright--fill > :first-child > input,
-.tb .tb__subright.tb__subright--fill > :first-child > select {
+.tb .tb__subright.tb__subright--fill > input:first-child,
+.tb .tb__subright.tb__subright--fill > select:first-child,
+.tb .tb__subright.tb__subright--fill > :first-child > * {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.tb .tb__subright.tb__subright--fill > :first-child :is(input, select) {
+  flex: 1 1 auto;
   width: 100%;
+  min-width: 0;
+}
+/* 被拉伸的是控件，不是标签文字：控件吃掉剩余宽度后，别把「启动策略」这类
+   前缀文字挤成两行（实测会被压成「启动策 / 略」）。 */
+.tb .tb__subright.tb__subright--fill > :first-child > * > span {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 .tb__subright {
   display: flex;

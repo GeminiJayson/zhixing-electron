@@ -304,6 +304,41 @@ await conn.send('Emulation.clearDeviceMetricsOverride')
 await sleep(900)
 await shoot('ui-toolbar-wide.png')
 
+// 工作流：第一个控件是「启动策略」下拉，包裹层级是 span > label > select ——
+// 只拉外层容器会让「布局宽了、下拉没变」
+await conn.evaluate("document.querySelector('[data-nav-item=workflow]').click()")
+await sleep(1600)
+const wfFill = await conn.evaluate(`(() => {
+  const right = document.querySelector('.tb__subright')
+  if (!right) return null
+  const first = right.firstElementChild
+  const sel = first.querySelector('select') || first
+  return {
+    hasFill: right.classList.contains('tb__subright--fill'),
+    wrapW: Math.round(first.getBoundingClientRect().width),
+    selW: Math.round(sel.getBoundingClientRect().width),
+  }
+})()`)
+check(
+  '工作流：策略下拉本身被拉宽（不是只有外层容器变宽）',
+  !!wfFill && wfFill.selW > 250,
+  JSON.stringify(wfFill)
+)
+// 拉伸控件不能把前缀文字挤成两行
+const wfLabel = await conn.evaluate(`(() => {
+  const right = document.querySelector('.tb__subright')
+  const span = right?.firstElementChild?.querySelector('span')
+  if (!span) return null
+  const r = span.getBoundingClientRect()
+  return { text: span.textContent.trim(), h: Math.round(r.height), w: Math.round(r.width) }
+})()`)
+check(
+  '「启动策略」文字仍是单行（没被压成两行）',
+  !!wfLabel && wfLabel.text.includes('启动策略') && wfLabel.h <= 24,
+  JSON.stringify(wfLabel)
+)
+await shoot('ui-toolbar-workflow.png')
+
 conn.ws.close()
 child.kill()
 await sleep(500)
