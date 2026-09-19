@@ -2,9 +2,9 @@
 
 **知行 ZhiXing 的 Electron 重构实现**：一个本地优先的个人待办 + 知识图谱桌面客户端，与 Python（PySide6）版**共用同一个 SQLite 数据库**。
 
-- 独立仓库：`zhixing-electron`（GitHub: [GeminiJayson/zhixing-electron](https://github.com/GeminiJayson/zhixing-electron)），当前版本 `0.1.7`（`package.json`）。
+- 独立仓库：`zhixing-electron`（GitHub: [GeminiJayson/zhixing-electron](https://github.com/GeminiJayson/zhixing-electron)），当前版本 **`1.0.0`**（`package.json`），安装包与便携版见 [v1.0.0 Release](https://github.com/GeminiJayson/zhixing-electron/releases/tag/v1.0.0)。
 - 对照实现：**`zhixing_python`**（Python / PySide6 应用，位于 [GeminiJayson/zhixing_python](https://github.com/GeminiJayson/zhixing_python)）。本文出现的 `zhixing/...`、`zhixing.spec`、`build_windows.bat` 路径均属该仓库。
-- 八页功能面已全部实现（`src/renderer/src/nav.ts` / `App.tsx`），综合完成度 **~70%**（分域数字见 [04-与Python实现的差异点](docs/04-与Python实现的差异点.md) §5）。
+- 八页功能面已全部实现（`src/renderer/src/nav.ts` / `App.tsx`），综合实现进度 **~85%**（分域与逐项状态见 §2；已决策不做的方向不计入缺口，见 §15）。
 - 本地优先：核心功能零网络依赖、无遥测、无账号（NFR-01）。
 - 定位上它是**并行的重构实现**，不是 Python 版的即时替代；两版长期共存、互不破坏数据。
 
@@ -26,23 +26,54 @@
 
 Electron 侧是**读写**打开（`connection.ts:137-152`，无 `readonly`），首次运行会自建数据目录与库文件，并执行 v1–v12 迁移链。
 
-## 2. 当前完成度（综合 ~70%）
+## 2. 功能实现进度（综合 ~85%，2026-09-19 重核）
 
-口径：以「Python 侧该域的功能面」为 100%，按**主链可用 / 写路径接通 / UI 入口 / 护栏**四项加权，不是按条数比例。
+口径：以「Python 侧该域的功能面」为 100%，按**主链可用 / 写路径接通 / UI 入口 / 护栏**四项加权，不是按条数比例。**已决策不做的方向**（云同步、代码签名、自动更新、mica 等，见 §15）不计入缺口。
 
 | 域 | 完成度 | 主要缺口 |
 | --- | ---: | --- |
-| 任务 | ~78% | 清单「移动到清单」无 UI、任务↔笔记段落上下文、`resume_at` 不可写、子任务 list 继承、日历口径 |
-| 笔记 | ~65% | 富文本无编辑器、Office 只读、附件与改格式、笔记↔任务/文件夹关联无 UI、MD 导入 |
-| 图谱 / 搜索 / 回顾 | ~58% | 破环未接线、引用边与 anchor 不入图、无 delta、无过滤/图内搜索、无预览；搜索缺 MRU |
-| 收件箱 / 工作流 / 捕获 | ~65% | `source_url` 无 UI、转子任务/指定目录无 UI、模板复制/重命名/删步/排序/SOP 绑定、捕获五去向 |
-| 设置 / 平台 / 窗口 | ~68% | mica/浮窗开关无 UI、字号行高偏移、浮窗启动联动、边缘缩放、托盘图标、热键状态 |
-| 数据 / 统计 / 维护 | ~78% | 只读模式/横幅、before-import 未 prune、导入非导出表残留、域广播不完整、番茄 reason/休息记账 |
-| 打包与发布 | ~70% | 无代码签名、无自动更新、仅 Windows 目标 |
-| 渲染与交互 | ~80% | 虚拟滚动、共享 pan/zoom、贝塞尔连线、对比度校正、i18n 骨架均已具备并有脚本/单测守护 |
-| **综合（按域功能面加权）** | **~70%** | 三处结构性断链：段落级上下文、笔记格式体系、图谱语义完整性 |
+| 任务 | ~92% | 任务↔笔记段落上下文缺**双向可视**（右键建立/解除已通）、日历口径待定 |
+| 笔记 | ~88% | Word / Excel 只做「登记 + 系统应用打开」、笔记数据库视图待做（依赖属性，已具备） |
+| 图谱 / 搜索 / 回顾 | ~75% | 引用边与 anchor 入图、图内过滤/搜索、节点预览浮卡；搜索缺 MRU |
+| 收件箱 / 工作流 / 捕获 | ~88% | **工作流触发器（定时 / 系统事件）**（§17 待办）、块级引用 |
+| 设置 / 平台 / 窗口 | ~78% | mica / 边缘缩放（已决策不做）、浮窗启动联动细节 |
+| 数据 / 统计 / 维护 | ~90% | 只读模式（已决策不做）、习惯打卡与按任务累计用时 |
+| 打包与发布 | ~80% | 代码签名、自动更新（均不做）；仅 Windows 目标 |
+| 渲染与交互 | ~88% | 虚拟滚动、共享 pan/zoom、对比度校正、i18n 骨架均已具备并有脚本/单测守护；缺第二语言 |
+| **综合（按域功能面加权）** | **~85%** | 剩余结构性缺口收敛为三项：**工作流触发器**、**块级引用**、**笔记数据库视图** |
 
-对照 152 条审计项的复核判决：仍成立 83 / 部分修复 27 / 已修复 42（旧文档中 69 条描述已过时），另有新增域 14 条，**共 124 条差异**。
+### 2.1 逐项功能状态（2026-09-19）
+
+| 能力 | 状态 | 落点 |
+| --- | --- | --- |
+| 任务：多层子任务 / 清单 / 标签 / 优先级 / 截止 / 重复 / 暂停恢复 | ✅ | `src/main/db/tasks.ts` |
+| 任务：四视图（列表 / 四象限 / 日历 / 看板）+ 虚拟滚动 | ✅ | `TasksPage.tsx`、`components/VirtualList.tsx` |
+| 任务：**智能清单（保存的查询）** | ✅ 本批新增 | `src/shared/query.ts`、`saved_query` 表 |
+| 任务：到点提醒（窗口内卡片） | ✅ | `ReminderPopup.tsx` + `reminder_at` |
+| 任务：**到点系统通知** | ✅ 本批新增 | 主进程 30s 轮询 + `Notification`（设置可关） |
+| 任务↔笔记：笔记归属任务 / 段落右键关联 | ✅（只建立与解除关联） | `task_note_context`、`attachBlock` |
+| 笔记：Markdown / 富文本工具栏 / 链接笔记表格 | ✅ | `MarkdownEditor.tsx`、`NotesPage.tsx` |
+| 笔记：文件夹树 / 双链 / 反链 / 标签 / 版本历史与回滚 | ✅ | `NoteTree.tsx`、`note-assoc.ts` |
+| 笔记：**结构化属性（`note.props`）** | ✅ 本批新增 | 笔记页「属性」卡片 |
+| 笔记：Word / Excel | ◐ 登记 + 用系统应用打开 | `shell:openPath` |
+| 笔记：AI 整理（单篇 / 整库，提示词可配） | ✅ | `src/main/ai.ts` |
+| 笔记：**附件管理**（归档 / 统计 / 清理） | ✅ | `src/main/db/attachments.ts` |
+| 捕获：三个全局热键读选中文字 + 独立小窗 | ✅ | `src/main/selection.ts`、`CaptureWindowApp.tsx` |
+| 闪念收件箱（合并 / 转任务 / 转子任务 / 转笔记 / 归档 / 撤销） | ✅ | `InboxPage.tsx` |
+| 工作流：模板分类树 / 步骤 / 条件 / 命令脚本动作 / 分支 / 启动策略 | ✅ | `WorkflowPage.tsx`、`workflow_group` 表 |
+| 工作流：实例推进 / 中止 / 重试 / 改名 / 条件确认独立窗 | ✅ | `ConditionApp.tsx` |
+| 工作流：**触发器（定时 / 系统事件）** | ❌ 未做 | 见 §17 |
+| 图谱（多色分层 / pan-zoom / 破环） | ✅ | `graph.ts`、`GraphPage.tsx` |
+| 回顾（周趋势 / 热力图 / 连续天数 / 成就 / 标签分布） | ✅ | `ReviewStats` |
+| 全局搜索（FTS5 + 中文分词）/ 命令面板（含 MRU） | ✅ | `fts-query.ts`、`CommandPalette.tsx` |
+| 外部任务源同步（JSON 接口 / 字段映射 / 去重认领 / 定时） | ✅ | `src/main/task-sync.ts` |
+| 设置：主题包 / 强调色 / 密度 / 热键 / 备份 / 回收站 / 附件 / 外部同步 / AI | ✅ | `SettingsPage.tsx` |
+| 数据：软删除 + 回收站 + 保留期清理 / 导入导出 / 备份 | ✅ | `trash.ts`、`backup.ts` |
+| 平台：桌面浮窗 + 托盘 + splash + 单实例 | ✅ | `src/main/index.ts` |
+| 已决策不做 | ❌ | 云同步 / 账号 / 协作、代码签名、自动更新、mica 与边缘缩放、只读模式、Markdown 导入、多语言、macOS / Linux —— 见 §15 |
+
+> §11 与 `docs/03 §12` 的旧缺口清单有多条**早已闭合**，逐条证据见 §16；后续讨论以 §2.1、§16、§17 为准。
+> 对照 152 条审计项的复核判决（审计当时的快照）：仍成立 83 / 部分修复 27 / 已修复 42，另有新增域 14 条，**共 124 条差异**。
 
 ## 3. 技术选型
 
