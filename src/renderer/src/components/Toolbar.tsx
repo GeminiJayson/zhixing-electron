@@ -163,7 +163,9 @@ export function Toolbar({
       ) : null}
 
       <div className="tb__sub">
-        <div className="tb__subleft">
+        {/* 左侧只有真的有东西（导航 / 统计）时才与右侧工具区拉开 50px；
+            左侧空着时不留这段空白，免得工具行整体看起来往右缩了一截。 */}
+        <div className={'tb__subleft' + (nav || meta ? ' tb__subleft--gap' : '')}>
           {nav}
           {meta ? <span className="tb__meta">{meta}</span> : null}
         </div>

@@ -152,6 +152,22 @@ const libPromptValue = await conn.evaluate(
 )
 check('有单独的全库整理提示词框（默认为空 = 与单篇相同）', libPromptValue === '', String(libPromptValue).slice(0, 20))
 
+// 工具栏左分隔：设置页左侧是 tab 组 → 50px；笔记编辑器工具栏左侧为空 → 不加
+const settingGap = await conn.evaluate(`(() => {
+  const left = document.querySelector('.tb__subleft')
+  const right = document.querySelector('.tb__subright')
+  if (!left || !right) return null
+  return {
+    leftW: Math.round(left.getBoundingClientRect().width),
+    gap: Math.round(right.getBoundingClientRect().left - left.getBoundingClientRect().right),
+  }
+})()`)
+check(
+  '设置页：工具栏左侧与工具区之间是 50px',
+  !!settingGap && settingGap.leftW > 0 && Math.abs(settingGap.gap - 50) <= 2,
+  JSON.stringify(settingGap)
+)
+
 // 改动 2：提示词的两个动作行要靠右（按钮右边缘与上方 textarea 对齐）
 const actionsAlign = await conn.evaluate(`(() => {
   const rows = [...document.querySelectorAll('.set-row--end')]
@@ -213,6 +229,20 @@ const toolbarText = await conn.evaluate(
   "[...document.querySelectorAll('button')].map((b) => b.textContent.trim()).join(' | ')"
 )
 check('笔记工具栏有「AI 整理」入口', String(toolbarText).includes('AI 整理'), '选中：' + noteTitle)
+const noteGap = await conn.evaluate(`(() => {
+  const left = document.querySelector('.editor .tb__subleft')
+  const right = document.querySelector('.editor .tb__subright')
+  if (!left || !right) return null
+  return {
+    leftW: Math.round(left.getBoundingClientRect().width),
+    gap: Math.round(right.getBoundingClientRect().left - left.getBoundingClientRect().right),
+  }
+})()`)
+check(
+  '笔记页：左侧没有其它布局时不加这 50px',
+  !!noteGap && noteGap.leftW === 0 && noteGap.gap <= 14,
+  JSON.stringify(noteGap)
+)
 const editorButtons = await conn.evaluate(
   "[...document.querySelectorAll('.editor button')].map((b) => b.textContent.trim()).join(' | ')"
 )
