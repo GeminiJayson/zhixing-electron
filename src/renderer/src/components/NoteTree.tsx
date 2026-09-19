@@ -192,7 +192,7 @@ export function NoteTree({
             aria-expanded={isOpen}
             aria-label={isOpen ? '折叠文件夹' : '展开文件夹'}
           >
-            <ChevronRight size={13} />
+            <ChevronRight size={16} />
           </button>
           <span className="ntree__foldername">{f.name}</span>
           <span className="ntree__count">{own.length}</span>
@@ -243,8 +243,8 @@ export function NoteTree({
       <Toolbar
         variant="panel"
         search={
-          <>
-            <Search size={13} />
+          <span className="ntree__search-wrap">
+            <Search size={14} aria-hidden />
             <input
               className="field ntree__search-input"
               value={query}
@@ -252,7 +252,7 @@ export function NoteTree({
               placeholder="搜索标题…"
               aria-label="搜索笔记标题"
             />
-          </>
+          </span>
         }
       />
       <div className="ntree__body">

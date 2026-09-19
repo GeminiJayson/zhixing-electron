@@ -1,13 +1,14 @@
 /* 回顾页 */
-.review-grid {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+.page--review {
+  /* 热力图铺满它所在的那一栏（宽度随布局伸缩）。视图坐标已按常见栏宽设计，
+     所以缩放≈1；再配上整数的格子边界与「不描边」，就不会出现发虚的边。 */
+  --review-heat-min: 300px;
 }
-.stat-card--warm svg {
-  color: var(--accent-warm);
-}
+/* 柱状图：横向铺满卡片并随卡片宽度缩放。
+   它的 viewBox 比例（1132:186 ≈ 6:1）本身就是高度上限——铺满时约 185px，
+   再叠加 max-height 只会把图挤到一侧留出空白，所以这里只保留宽度约束。 */
 .chart {
   width: 100%;
-  /* 不设 max-width：要横向铺满卡片并随卡片宽度缩放 */
 }
 .chart__bar {
   fill: var(--accent);
@@ -26,9 +27,30 @@
 .heatmap {
   width: 100%;
 }
+/* 刻意不给格子描边：0.5 单位的描边在缩放后会落到半像素上，是「看起来糊」的主要来源；
+   格子之间 4 单位的间隙本身就够分隔。 */
 .heat__cell {
-  stroke: var(--border);
-  stroke-width: 0.5;
+  stroke: none;
+}
+/* 热力图与标签分布并排：两者都是窄块，各占一整行会在右边剩一大片空白，
+   并排后页面也少一截高度。热力图那列的宽度就按图的上限给（列内不留空白），
+   标签分布吃掉剩余宽度；宽度不够时 flex-wrap 自动回落成上下两块，不用断点。 */
+.review-pair {
+  display: flex;
+  flex-wrap: wrap;
+  /* 行间距为 0：换行后两块之间的距离由 .section 自己的 margin-bottom 给，
+     否则两处间距叠加会比页面其它区块宽一倍 */
+  gap: 0 var(--space-5);
+  align-items: start;
+}
+.review-pair > .section {
+  min-width: 0;
+}
+.review-pair > .section:first-child {
+  flex: 1 1 var(--review-heat-min);
+}
+.review-pair > .section:last-child {
+  flex: 1 1 300px;
 }
 .tagdist {
   list-style: none;

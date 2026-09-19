@@ -138,6 +138,28 @@
 .ntree__folder {
   padding-right: var(--space-1);
 }
+/* 展开箭头：笔记树比任务行宽松，放大到看得清（不共用任务行的 16px 尺寸） */
+.ntree__folder .trow__caret {
+  width: 22px;
+  height: 22px;
+}
+/* 搜索图标放进输入框内部：不再单独占一格，输入框因此能吃满整行 */
+.ntree__search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.ntree__search-wrap > svg {
+  position: absolute;
+  left: var(--space-2);
+  color: var(--fg-tertiary);
+  pointer-events: none;
+}
+.ntree__search-wrap .ntree__search-input {
+  padding-left: calc(var(--space-2) * 2 + 14px);
+}
 /* 空树兜底入口：没有行可以 hover 时用 */
 .ntree__empty {
   display: flex;

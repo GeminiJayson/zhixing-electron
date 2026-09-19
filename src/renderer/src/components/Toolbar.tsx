@@ -5,11 +5,9 @@
  *   标题分区  [标题 · 副标题]                        —— 只放页面身份，不放任何操作
  *   工具栏分区 [视图 / 范围 导航 · 统计] ……… [搜索 · 筛选 · 次要操作 · 主操作]
  *
- * 折叠（判据是**第二层右侧组的真实溢出**，不是猜宽度）：
- *   level 0  全部平铺
- *   level 1  次要操作收进「更多」浮层
- *   level 2  筛选也一起收进浮层
- *   带 48px 滞回阈值，避免在边界上反复折叠／展开。
+ * 折叠：第二层最多平铺 collapseFrom 个「非搜索」控件（默认 3），超出的收进「更多」浮层；
+ * 若这样仍溢出，再逐个收进来。判据是第二层右侧组**已渲染子项**的真实宽度和。
+ * 收起**只升不降**，宽度变化时才重置 —— 按「有富余就降级」写会来回震荡并触发白屏。
  *
  * 两种形态：
  *   page   页面级：两层（第一层标题 + 主操作）
@@ -41,6 +39,8 @@ export type ToolbarProps = {
   variant?: 'page' | 'panel'
   /** 常驻（sticky）。默认 page 开、panel 关；嵌在卡片内部的编辑区工具栏可显式关掉 */
   sticky?: boolean
+  /** 折叠阈值：第二层最多平铺几个「非搜索」控件（筛选 + 次要操作），默认 3；超出的直接进「更多」 */
+  collapseFrom?: number
 }
 
 export function Toolbar({
@@ -55,38 +55,50 @@ export function Toolbar({
   primary,
   variant = 'page',
   sticky = variant === 'page',
+  collapseFrom = 3,
 }: ToolbarProps): JSX.Element {
   const rightRef = useRef<HTMLDivElement>(null)
-  const [level, setLevel] = useState(0)
+  /** 在阈值之外**额外**收起的控件数：只在溢出时递增 */
+  const [extra, setExtra] = useState(0)
+  const flatTotal = filters.length + secondary.length
+
+  // 容器宽度变了就重新评估（回到阈值内的平铺）。
+  // 注意：这里**只升不降**是刻意的 —— 早先按「有富余就降级」写，会在
+  // 「升级后不溢出、降级后又溢出」之间来回震荡，触发 React 的无限更新（白屏）。
+  // 收敛靠两点：溢出时递增到放得下为止；宽度变化时重置。
+  useLayoutEffect(() => {
+    const el = rightRef.current
+    if (!el) return
+    let last = el.clientWidth
+    const ro = new ResizeObserver(() => {
+      if (el.clientWidth !== last) {
+        last = el.clientWidth
+        setExtra(0)
+      }
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   useLayoutEffect(() => {
     const el = rightRef.current
     if (!el) return
-    const evaluate = (): void => {
-      // 不用 scrollWidth：对 overflow:visible 的元素它等于 padding box 宽，量不出溢出。
-      // 直接求子项的布局宽度和（子项都是 flex: 0 0 auto，宽度即真实需求）。
-      const style = getComputedStyle(el)
-      const gap = parseFloat(style.columnGap || style.gap || '0') || 0
-      const kids = Array.from(el.children) as HTMLElement[]
-      const need =
-        kids.reduce((n, k) => n + k.getBoundingClientRect().width, 0) + gap * Math.max(0, kids.length - 1)
-      const avail = el.clientWidth
-      const overflow = need > avail + 1
-      const slack = avail - need
-      setLevel((cur) => {
-        if (overflow && cur < 2) return cur + 1
-        if (!overflow && slack > 48 && cur > 0) return cur - 1
-        return cur
-      })
-    }
-    evaluate()
-    const ro = new ResizeObserver(evaluate)
-    ro.observe(el)
-    return () => ro.disconnect()
+    // 不用 scrollWidth：对 overflow:visible 的元素它等于 padding box 宽，量不出溢出。
+    // 直接求子项的布局宽度和（子项都是 flex: 0 0 auto，宽度即真实需求）。
+    const style = getComputedStyle(el)
+    const gap = parseFloat(style.columnGap || style.gap || '0') || 0
+    const kids = Array.from(el.children) as HTMLElement[]
+    const need =
+      kids.reduce((n, k) => n + k.getBoundingClientRect().width, 0) + gap * Math.max(0, kids.length - 1)
+    if (need > el.clientWidth + 1) setExtra((e) => (e < flatTotal ? e + 1 : e))
   })
 
-  const hiddenFilters = level >= 2 ? filters : []
-  const hiddenSecondary = level >= 1 ? secondary : []
+  // 平铺上限 = 阈值（默认 3）再减去溢出时额外收起的
+  const cap = Math.max(0, Math.min(collapseFrom, flatTotal) - extra)
+  const shownFilters = filters.slice(0, cap)
+  const shownSecondary = secondary.slice(0, Math.max(0, cap - filters.length))
+  const hiddenFilters = filters.slice(shownFilters.length)
+  const hiddenSecondary = secondary.slice(shownSecondary.length)
   const overflowCount = hiddenFilters.length + hiddenSecondary.length
 
   return (
@@ -108,8 +120,8 @@ export function Toolbar({
         </div>
         <div className="tb__subright" ref={rightRef}>
           {search}
-          {level < 2 ? filters.map((f, i) => <span key={i}>{f}</span>) : null}
-          {level < 1 ? secondary.map((s, i) => <span key={i}>{s}</span>) : null}
+          {shownFilters.map((f, i) => <span key={i}>{f}</span>)}
+          {shownSecondary.map((s, i) => <span key={i}>{s}</span>)}
           {overflowCount > 0 ? (
             <MoreMenu filters={hiddenFilters} secondary={hiddenSecondary} count={overflowCount} />
           ) : null}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Database, Download, Info, Palette, SlidersHorizontal, Tag, Timer, Trash2 } from 'lucide-react'
-import { parseSettings, type AppSettings } from '@shared/settings'
+import { parseSettings, type AppSettings, type WindowMaterial } from '@shared/settings'
 import { THEME_PACK_NAMES } from '@shared/theme-packs'
 import { t } from '../i18n'
 import { Toolbar } from '../components/Toolbar'
@@ -18,6 +18,17 @@ interface Props {
 type Tab = 'appearance' | 'tasks' | 'data' | 'about'
 
 const ACCENTS = ['#0D9488', '#2563EB', '#7C3AED', '#DB2777', '#EA580C', '#16A34A', '#D97706', '#0891B2']
+
+/**
+ * 窗口材质选项：只列 Electron 在 Windows 上真正认的取值。
+ * vibrancy 是 macOS 专属，这里刻意不给 —— 放了也只会是「选了没反应」。
+ */
+const MATERIAL_OPTIONS: { value: WindowMaterial; label: string }[] = [
+  { value: 'mica', label: '云母（Mica）' },
+  { value: 'acrylic', label: '亚克力（Acrylic）' },
+  { value: 'tabbed', label: '标签页（Tabbed）' },
+  { value: 'none', label: '不透明' },
+]
 
 /**
  * 可改键的四项全局热键（对齐 Python settings_page._build_capture 的四行）。
@@ -169,10 +180,18 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
       if (key === 'widget_click_through') {
         await window.zhixing.widget.setClickThrough(optimistic.widget_click_through)
       }
-      // 云母材质即时生效（对齐 app_controller 的 K_MICA 分支：改完不必重启）
-      if (key === 'mica_enabled') await window.zhixing.app.setMica(optimistic.mica_enabled)
       try {
-        await window.zhixing.db.setSetting(key, value)
+        if (key === 'material') {
+          // 同时回写旧键 mica_enabled：Python 版与旧版 Electron 只认它，
+          // 只写新键会让两个客户端对「材质开没开」的记忆分叉。
+          // 材质本身由主进程的「数据变更钩子」即时下发（对齐 K_MICA 分支），不必再单独 invoke。
+          await window.zhixing.db.setSettings({
+            material: value,
+            mica_enabled: value === 'none' ? '0' : '1',
+          })
+        } else {
+          await window.zhixing.db.setSetting(key, value)
+        }
         // 写完回读并重新解析：state 始终是类型化值，不再散落字符串
         rawRef.current = await window.zhixing.db.settings()
         const next = parseSettings(rawRef.current)
@@ -302,17 +321,23 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                 </span>
               </label>
               <label className="set-row">
-                <span>Mica 材质</span>
-                <input
-                  type="checkbox"
-                  checked={settings.mica_enabled}
+                <span>窗口材质</span>
+                <select
+                  className="field"
+                  value={settings.material}
                   disabled={window.zhixing.platform !== 'win32'}
-                  onChange={(e) => void update('mica_enabled', e.target.checked ? '1' : '0')}
-                />
+                  onChange={(e) => void update('material', e.target.value)}
+                >
+                  {MATERIAL_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
                 <span className="u-aux">
                   {window.zhixing.platform === 'win32'
-                    ? 'Windows 11 云母背景，改动即时生效'
-                    : '仅 Windows 11 可用'}
+                    ? '半透明窗口背景，改动即时生效；Win10 或系统关闭透明效果时自动退回不透明'
+                    : '仅 Windows 11 可用，当前平台固定不透明'}
                 </span>
               </label>
             </section>

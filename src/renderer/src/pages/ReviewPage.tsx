@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Award, CalendarCheck, CheckCircle2, CircleAlert, Inbox, Sparkles } from 'lucide-react'
+import { Award } from 'lucide-react'
 import type { ReviewStats } from '@shared/types'
 import { t } from '../i18n'
 
-/** 回顾页：今日概览 + 周趋势 + 12 周热力图 + 标签分布 + 成就。图表全部自绘 SVG。 */
+/** 回顾页：周趋势 + 12 周热力图 + 标签分布 + 成就。图表全部自绘 SVG。
+ *  顶部那块「任务统计」卡片已删：它的口径与今日页概览重复，这里只留图表；
+ *  reviewStats() 查询本身保留（下面的图表继续用它）。 */
 export function ReviewPage() {
   const [stats, setStats] = useState<ReviewStats | null>(null)
 
@@ -26,22 +28,20 @@ export function ReviewPage() {
     )
   }
 
-  const counts = [
-    { key: 'todayDue', label: '今日待办', value: stats.todayCounts.todayDue, icon: CalendarCheck, tone: 'accent' },
-    { key: 'doneToday', label: '今日完成', value: stats.todayCounts.doneToday, icon: CheckCircle2, tone: 'success' },
-    { key: 'overdue', label: '逾期', value: stats.todayCounts.overdue, icon: CircleAlert, tone: 'danger' },
-    { key: 'inbox', label: '全部任务', value: stats.todayCounts.inbox, icon: Inbox, tone: 'neutral' },
-    // 口径含归档闪念，故用「闪念收件箱」而不是「待整理闪念」（对齐 today_page.card_flash）
-    { key: 'flash', label: '闪念收件箱', value: stats.todayCounts.flash, icon: Sparkles, tone: 'warm' },
-  ] as const
-
   const weekMax = Math.max(1, ...stats.week.completed, ...stats.week.notes)
   const pomoMax = Math.max(1, ...stats.week.pomodoro)
   const heatMax = Math.max(1, ...stats.heatmap.flat().filter((v) => v >= 0))
   const tagTotal = Math.max(1, stats.tagDistribution.reduce((n, t) => n + t.count, 0))
 
-  const barW = 34
-  const chartH = 120
+  // 柱状图的视图坐标按「卡片常见宽度」设计（约 1130）：铺满宽度时缩放≈1，柱宽和字号
+  // 才是设计值。旧 viewBox 只有 342 宽，铺满 1136px 的卡片会被放大约 3.3 倍，一张 7 天图
+  // 就有 500px 高 —— 「图表太高」的根因是坐标系设计宽度不对，光加 max-height 治不了。
+  const colW = 156
+  const barW = 88
+  const chartH = 132
+  const padX = 20
+  const weekVbW = stats.week.labels.length * colW + padX * 2
+  const weekVbH = chartH + 54
 
   return (
     <div className="page page--review">
@@ -51,32 +51,14 @@ export function ReviewPage() {
       </div>
       <div className="page__body">
 
-      <section className="stat-grid review-grid" aria-label="今日概览">
-        {counts.map((c) => {
-          const Icon = c.icon
-          return (
-            <article key={c.key} className={`stat-card stat-card--${c.tone}`}>
-              <Icon size={16} strokeWidth={2} aria-hidden />
-              <span className="stat-card__value">{c.value}</span>
-              <span className="stat-card__label">{c.label}</span>
-            </article>
-          )
-        })}
-        <article className="stat-card stat-card--accent">
-          <Award size={16} strokeWidth={2} aria-hidden />
-          <span className="stat-card__value">{stats.streak}</span>
-          <span className="stat-card__label">连续完成天数</span>
-        </article>
-      </section>
-
       <section className="section">
         <header className="section__head">
           <h2>最近 7 天</h2>
           <span className="u-aux">柱=完成任务 · 线=新建笔记 · 底部数字=番茄分钟</span>
         </header>
-        <svg className="chart" viewBox={`0 0 ${stats.week.labels.length * 46 + 20} ${chartH + 40}`} role="img" aria-label="最近 7 天完成趋势">
+        <svg className="chart" viewBox={`0 0 ${weekVbW} ${weekVbH}`} role="img" aria-label="最近 7 天完成趋势">
           {stats.week.labels.map((label, i) => {
-            const x = 20 + i * 46
+            const x = padX + i * colW + (colW - barW) / 2
             const h = (stats.week.completed[i] / weekMax) * chartH
             const noteH = (stats.week.notes[i] / weekMax) * chartH
             return (
@@ -97,10 +79,10 @@ export function ReviewPage() {
                   rx={3}
                   className="chart__bar chart__bar--note"
                 />
-                <text x={x + barW / 2} y={chartH + 26} textAnchor="middle" className="chart__label">
+                <text x={x + barW / 2} y={chartH + 30} textAnchor="middle" className="chart__label">
                   {label}
                 </text>
-                <text x={x + barW / 2} y={chartH + 40} textAnchor="middle" className="chart__sub">
+                <text x={x + barW / 2} y={chartH + 48} textAnchor="middle" className="chart__sub">
                   {stats.week.pomodoro[i]} 分
                 </text>
               </g>
@@ -112,61 +94,73 @@ export function ReviewPage() {
         </details>
       </section>
 
-      <section className="section">
-        <header className="section__head">
-          <h2>完成热力图</h2>
-          <span className="u-aux">近 12 周，颜色越深完成越多</span>
-        </header>
-        <svg className="heatmap" viewBox={`0 0 ${stats.heatmap.length * 16 + 4} ${7 * 16 + 4}`} role="img" aria-label="完成热力图">
-          {stats.heatmap.map((col, w) =>
-            col.map((v, d) => (
-              <rect
-                key={`${w}-${d}`}
-                x={w * 16 + 2}
-                y={d * 16 + 2}
-                width={13}
-                height={13}
-                rx={3}
-                className="heat__cell"
-                style={{
-                  fill:
-                    v < 0
-                      ? 'transparent'
-                      : v === 0
-                        ? 'var(--bg-hover)'
-                        : `color-mix(in srgb, var(--accent) ${Math.min(90, 25 + (v / heatMax) * 65)}%, var(--bg-hover))`,
-                }}
-              >
-                <title>{`${v < 0 ? '未来' : `${v} 项完成`}`}</title>
-              </rect>
-            ))
-          )}
-        </svg>
-      </section>
+      {/* 热力图受 12 周 × 7 天的比例限制（宽度上限见 review.css），单占一行会剩一大片空白；
+          标签分布本身也是个窄块，两者并排既互补又省一截页面高度。 */}
+      <div className="review-pair">
+        <section className="section">
+          <header className="section__head">
+            <h2>完成热力图</h2>
+            <span className="u-aux">近 12 周，颜色越深完成越多</span>
+          </header>
+          {/* 视图坐标按「并排时那一栏的常见宽度」设计（12 × 44 + 边距 ≈ 532）：
+              铺满时缩放≈1，格子边界落在整数像素上，不会被拉到半像素处显虚。
+              列宽/行高都是整数，格子由 4 单位的间隙分隔（不靠描边）。 */}
+          <svg
+            className="heatmap"
+            viewBox={`0 0 ${stats.heatmap.length * 44 + 4} ${7 * 24 + 4}`}
+            role="img"
+            aria-label="完成热力图"
+          >
+            {stats.heatmap.map((col, w) =>
+              col.map((v, d) => (
+                <rect
+                  key={`${w}-${d}`}
+                  x={w * 44 + 2}
+                  y={d * 24 + 2}
+                  width={40}
+                  height={20}
+                  rx={3}
+                  className="heat__cell"
+                  style={{
+                    fill:
+                      v < 0
+                        ? 'transparent'
+                        : v === 0
+                          ? 'var(--bg-hover)'
+                          : `color-mix(in srgb, var(--accent) ${Math.min(90, 25 + (v / heatMax) * 65)}%, var(--bg-hover))`,
+                  }}
+                >
+                  <title>{`${v < 0 ? '未来' : `${v} 项完成`}`}</title>
+                </rect>
+              ))
+            )}
+          </svg>
+        </section>
 
-      <section className="section">
-        <header className="section__head">
-          <h2>标签分布</h2>
-        </header>
-        {stats.tagDistribution.length === 0 ? (
-          <p className="u-aux">还没有使用过标签。</p>
-        ) : (
-          <ul className="tagdist">
-            {stats.tagDistribution.map((t) => (
-              <li key={t.name} className="tagdist__row">
-                <span className="tagdist__name">{t.name}</span>
-                <span className="tagdist__bar">
-                  <span
-                    className="tagdist__fill"
-                    style={{ width: `${(t.count / tagTotal) * 100}%`, background: t.color }}
-                  />
-                </span>
-                <span className="u-aux">{t.count}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+        <section className="section">
+          <header className="section__head">
+            <h2>标签分布</h2>
+          </header>
+          {stats.tagDistribution.length === 0 ? (
+            <p className="u-aux">还没有使用过标签。</p>
+          ) : (
+            <ul className="tagdist">
+              {stats.tagDistribution.map((t) => (
+                <li key={t.name} className="tagdist__row">
+                  <span className="tagdist__name">{t.name}</span>
+                  <span className="tagdist__bar">
+                    <span
+                      className="tagdist__fill"
+                      style={{ width: `${(t.count / tagTotal) * 100}%`, background: t.color }}
+                    />
+                  </span>
+                  <span className="u-aux">{t.count}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
 
       <section className="section">
         <header className="section__head">

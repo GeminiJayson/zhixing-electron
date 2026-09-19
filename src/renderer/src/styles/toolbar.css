@@ -21,11 +21,12 @@
 .tb--panel {
   background: none;
 }
-/* 面板形态：工具行就是全部内容，搜索框占满剩下的宽度 */
-.tb--panel .tb__subright {
+/* 两种形态都让搜索框吃掉剩余宽度：
+   panel（笔记树）与 page（今日页的快速添加）在这一点的诉求是一样的。 */
+.tb .tb__subright {
   flex: 1 1 auto;
 }
-.tb--panel .tb__subright input {
+.tb .tb__subright input {
   flex: 1 1 auto;
 }
 .tb__head {
