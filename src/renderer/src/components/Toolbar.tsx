@@ -72,7 +72,9 @@ export function Toolbar({
     const right = rightRef.current
     const box = measureRef.current
     if (!right || !box) return
-    const avail = right.clientWidth
+    // 留 8px 余量：各项宽度是浮点，累加值与浏览器整数化后的实际布局会差几像素，
+    // 不留余量时会出现「折叠数量已按计算收敛、最左侧控件仍压出 6px」这种边界溢出。
+    const avail = Math.max(0, right.clientWidth - 8)
     const gap = parseFloat(getComputedStyle(box).columnGap || '0') || 0
     const kids = Array.from(box.children) as HTMLElement[]
     const head = search ? 1 : 0 // 搜索框固定留在最前
@@ -159,7 +161,13 @@ export function Toolbar({
           {secondary.map((s, i) => (
             <span key={'ms' + i}>{s}</span>
           ))}
-          <span className="tb-btn" />
+          {/* 占位要与真按钮同款：图标给它 44px 的底宽，数字用两位数取上限 ——
+              真实按钮的数字会随收起数量从 1 位涨到 2 位，漏算就会让折叠数量偏大，
+              表现正是「折叠生效了、最左侧控件却仍超出」。宁可保守一点。 */}
+          <span className="tb-btn">
+            <MoreHorizontal size={15} />
+            <span className="tb-btn__n">88</span>
+          </span>
           {primary}
         </div>
       </div>
