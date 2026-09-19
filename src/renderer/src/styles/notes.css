@@ -486,6 +486,13 @@
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius-lg);
 }
+/* 头部一行：左边是「链接笔记 · N 条」，右边是「添加链接」 */
+.editor__link-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
 .editor__link-row {
   display: flex;
   align-items: center;
@@ -712,6 +719,22 @@
   align-items: center;
   justify-content: center;
   gap: 2px;
+}
+/* 链接列与操作列之间也画一条同样的分隔线（与标题/链接之间那条保持一致：
+   上下各留 2px 空白，不是一根顶到底的 border） */
+.link-table__ops-head,
+.link-table__ops {
+  position: relative;
+}
+.link-table__ops-head::before,
+.link-table__ops::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 2px;
+  bottom: 2px;
+  width: 1px;
+  background: var(--border);
 }
 .link-table__ops .icon-btn:disabled {
   opacity: 0.35;
