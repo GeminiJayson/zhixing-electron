@@ -52,7 +52,8 @@
   align-items: center;
   gap: 4px;
   padding: 0 var(--space-2);
-  height: 28px;
+  /* 搜索框是控件：跟随「控件高度」，高度由外层容器承担（内层 input 去壳后不参与） */
+  min-height: var(--control-h);
   background: var(--bg-hover);
   border-radius: var(--radius-ctl);
   color: var(--fg-secondary);
@@ -60,6 +61,8 @@
 .ntree__search input {
   flex: 1;
   min-width: 0;
+  /* 行内去壳输入：高度交给外层 .ntree__search，豁免全局兜底 */
+  min-height: 0;
   border: none;
   background: transparent;
   outline: none;
@@ -160,6 +163,8 @@
   min-width: 0;
   font-size: var(--text-lead);
   font-weight: 600;
+  /* 标题框也是控件：跟随「控件高度」，原来靠 padding 猜高度 */
+  min-height: var(--control-h);
   padding: 6px var(--space-3);
   background: var(--bg-layer-solid);
   border: var(--border-w) solid var(--border);
@@ -515,7 +520,8 @@
 }
 .rt-editor__bar input[type='color'] {
   width: 28px;
-  height: 24px;
+  /* 与工具条里的 .text-btn / 下拉同高，否则一排按钮里会凹下去一块 */
+  height: var(--control-h);
   padding: 0;
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius-sm);

@@ -50,8 +50,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--hit-min);
-  height: var(--hit-min);
+  /* 正方形按钮，边长 = 控件高度：与同行的输入框、下拉严格等高 */
+  width: var(--control-h);
+  height: var(--control-h);
   border-radius: var(--radius-ctl);
   color: var(--fg-secondary);
   transition: background var(--dur-instant), color var(--dur-instant);
@@ -386,7 +387,7 @@
 }
 
 .text-btn {
-  min-height: var(--hit-min);
+  min-height: var(--control-h);
   padding: 0 var(--space-3);
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius-ctl);
@@ -529,7 +530,8 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
+  /* 上下内边距压到 8：搜索框自己按「控件高度」撑高，头部总高不再靠 padding 猜 */
+  padding: var(--space-2) var(--space-4);
   border-bottom: var(--border-w) solid var(--border);
   color: var(--fg-secondary);
 }
@@ -552,7 +554,8 @@
   align-items: center;
   gap: var(--space-2);
   width: 100%;
-  min-height: 34px;
+  /* 与 .popmenu__item 同口径：浮层里的可选项也是「控件」，跟控件高度一致 */
+  min-height: var(--control-h);
   padding: 0 var(--space-3);
   border-radius: var(--radius-ctl);
   color: var(--fg-primary);

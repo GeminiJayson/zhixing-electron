@@ -18,6 +18,7 @@
     "check:jieba": "node scripts/check-jieba-fallback.mjs",
     "check:security": "node scripts/securitycheck.mjs",
     "check:contrast": "node scripts/contrast-audit.mjs",
+    "check:ctlheight": "node scripts/ctlheightcheck.mjs",
     "check:interaction": "node scripts/interactioncheck.mjs",
     "test": "vitest run",
     "test:watch": "vitest"

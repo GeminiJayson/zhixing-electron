@@ -543,3 +543,50 @@ hovered   : chips.right=1111  acts.x=1119 w=110 opacity=1  max-width=220px   row
 同时验证：`.page__body` 计算样式 `overflow-y: hidden`；今日页恰有 **2 个** `.section__scroll`（`overflow-y: auto`，今日待办 `scrollHeight 407 > clientHeight 221` 可滚、最近笔记内容不足不滚）；点击行内「编辑」→ `.modal` 弹出、标题输入框**预填该行标题**、10 个字段与「删除 / 写复盘笔记 / 取消 / 保存」按钮齐全。
 
 **回归**：`typecheck` 0 error、`vitest` 86/86（14 个文件）。产物重新出包：`dist/Zhixing-0.1.7-x64-setup.exe`（86.89 MB）、`dist/Zhixing-0.1.7-x64-portable.exe`（86.67 MB），`postdist:win` 已自动恢复本机 ABI。
+
+---
+
+## 控件高度全局审计（2026-09-19，第九轮）
+
+用户报：**输入类控件（下拉框、输入框等）与按钮高度不一致**，要求全局审计、全部受设置页「控件高度」控制，并**划清任务项高度与控件高度的边界**。
+
+### 根因：两个同值不同源的 32px
+
+| 令牌 | 谁在用 | 问题 |
+| --- | --- | --- |
+| `--hit-min: 32px` | `.icon-btn`（固定 `width/height`）、`.text-btn`（`min-height`） | **不跟设置** —— 它只是「无障碍最小热区」，却被当成了按钮高度 |
+| `--control-h: 32px` | `.field`（输入框 / 下拉 / 日期） | 跟设置 |
+
+两者默认值都是 32px，所以**平时看不出差别**；设置页一改就分叉。实测用户当时的设置是**控件高度 24px / 行高 29px**，于是输入框 24px、按钮 32px、分段控件 26px 同排——正是报障的样子。另有 6 处裸值：`.seg button` 26、`.ntree__search` 28、`.popmenu__item` 30、`.kcol__add` 28、`.palette__item` 34、`.editor__title`（靠 padding 猜高）；`.rt-editor__bar input[type=color]` 24 与同排 32px 的按钮凹一块。
+
+### 处理
+
+| # | 动作 | 落点 |
+| --- | --- | --- |
+| 1 | **令牌分层**：删 `--hit-min`，新增派生档 `--control-h-sm: calc(var(--control-h) - 8px)`；两个可调尺度（控件 / 行）与一个派生档在 `tokens.css` 注释里写明边界 | `tokens.css:72-88` |
+| 2 | **全局兜底**：`input / select / textarea` 在 `global.css` 统一 `min-height: var(--control-h)`（排除勾选 / 单选 / 色板 / 滑块）——新页面不会再冒出一个写死高度 | `global.css:33-42` |
+| 3 | **按钮接入**：`.icon-btn`（正方形边长 = 控件高度）、`.text-btn`、`.seg`（整体取控件高度、按钮 `height:100%`）、`.kcol__add`、`.popmenu__item`、`.palette__item` | `app.css`、`tasks.css` |
+| 4 | **输入控件接入**：`.ntree__search`（内层 input 去壳、高度交给容器）、`.editor__title`、`.field--mini`（改用 `--control-h-sm`）、`.palette__input`（内边距 12→8，高度交给搜索框） | `notes.css`、`workflow.css`、`app.css` |
+| 5 | **边界豁免**：`.trow__input` 显式 `min-height: 0`，否则全局兜底的 `min-height` 会盖过它的 `height`，把 24px 的行撑破 | `tasks.css` |
+| 6 | **防止回归**：新增 `scripts/ctlheightcheck.mjs` + `npm run check:ctlheight`，静态扫描「控件选择器里的写死 px 高度」 | `package.json` |
+
+**边界**（写进 `docs/03` §2.7）：`--control-h` 管**独立控件**；`--row-h` 管**列表行**；三类刻意不跟设置——行内元素（勾选框 18 / 胶囊 20 / 行内动作按钮 20 / 行内重命名框 26）、色板圆点（WCAG 24×24 固定）、浮动主操作 FAB（38px，独立尺度，已在 `FloatingDock.tsx` 注明）。列表行一律用 `min-height`，控件调大时被内容撑高而不溢出。
+
+### 实测（CDP，8 个页面 × 两档设置）
+
+用 `CSS.forcePseudoState` 之外的思路：把 `--control-h` 在 **24px / 44px** 之间切换，逐元素比对高度差（Δ20 即接线成功），并读取两档下的设置值。**不依赖真人鼠标位置与备份库**。
+
+```
+令牌：--control-h 44px / --row-h 29px（用户当前设置）/ --control-h-sm calc(44px - 8px)
+受控且跟随：37 个元素（Δ=20）
+行内保持原尺寸：trow__caret 16 / check 18 / flag 18 / 行内 icon-btn 20  → 24px 与 44px 两档完全一致
+同父容器高度不一致：0 处（图谱节点 26/27 是 SVG 图形，非控件）
+```
+
+截图 8 张（设置页 24/32/48、任务页 24/48、笔记页 32、工作流 32、收件箱 32）人工复核：任务页工具栏整排（下拉 / 按钮 / 输入框 / 分段）在 24px 与 48px 下均**严格等高、无溢出**；设置页在 48px 下表单行不挤不破。
+
+**回归**：`typecheck` 0 error、`vitest` 86/86、`layoutcheck` 8/8（布局伸缩未被破坏）、`check:ctlheight` 通过（该脚本首次运行时确实抓到了误判项，规则收紧为「只拦写死 px 数值」后通过——说明它有效）。
+
+> **环境说明**：`themecheck` / `interactioncheck` / `todaycheck` / `notecheck` 等 13+ 个脚本依赖备份库
+> `D:\Development\backups\electron-migration\zhixing-before-electron-write.db`，该文件在本机不存在（且无 `sqlite3` CLI），
+> 拆分仓库时未被带上，**与本轮改动无关**。本轮改用不依赖它的 `layoutcheck` + 自制 CDP 审计完成验证。

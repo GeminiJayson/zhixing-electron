@@ -245,7 +245,7 @@
 | --- | --- | --- | --- | --- |
 | E1 | CSP + sandbox 安全模型 | `renderer/index.html` 声明 meta CSP（`default-src 'self'`；`connect-src` 含 `ws:`/`localhost` 供 HMR）；两个窗口都 `sandbox:true` + `contextIsolation` + `nodeIntegration:false` | 无对应层（在 Python 侧 grep CSP/Content-Security/sandbox 均 0 命中） | `src/renderer/index.html:6-9`、`src/main/index.ts:332-337`、`:104-109` |
 | E2 | 导航/弹窗/webview 三道出口收口 | `will-navigate` 只放行应用自身入口、`setWindowOpenHandler` 一律 deny、`will-attach-webview` 直接 `preventDefault`；`openExternalSafely` 只放行 `http/https/mailto`，其余写日志拦下 | 无（Qt 无明显同等威胁面，也无此校验） | `src/main/security.ts:17-64` |
-| E3 | CDP 驱动的真实 Electron 端到端验证体系 | 27 个 `.mjs` 脚本用 `--remote-debugging-port` + WebSocket 驱动真实窗口，多数在副本库上跑；Electron 侧独有测试资产 | 无同类脚本 | `scripts/*.mjs`（见 §4） |
+| E3 | CDP 驱动的真实 Electron 端到端验证体系 | 28 个 `.mjs` 脚本用 `--remote-debugging-port` + WebSocket 驱动真实窗口，多数在副本库上跑；Electron 侧独有测试资产 | 无同类脚本 | `scripts/*.mjs`（见 §4） |
 | E4 | 原生 binding 跨平台补齐 + 缺失降级 | `ensure-jieba-win-binding.mjs` 按 `@node-rs/jieba` 自声明版本补 win32-x64 binding；`fts-query.ts` 用 `require` + try/catch 使缺 binding 时降级逐字分词而不崩；`check-jieba-fallback.mjs` 断言「构建产物顶层不得出现该 require」 | PyInstaller `collect_data_files('jieba')` 一次性打包纯 Python 依赖，无 ABI/平台 binding 问题 | `scripts/ensure-jieba-win-binding.mjs`、`scripts/check-jieba-fallback.mjs`、`src/main/db/fts-query.ts:21-28` |
 | E5 | 从 Python 反向导出权威 DDL | 生成器用 SQLAlchemy 从 Python 模型导出建表 DDL + FTS DDL，生成为 `src/main/db/schema.ts`，保证两版 schema 逐字一致 | 无（Python 侧是权威源，不需要反向工具） | `scripts/export-schema.py:1-87`、`src/main/db/schema.ts:1-10` |
 | E6 | 跨实现中文分词一致性守卫 | `fts-query.test.ts` 固化 `cut_for_search` 与 Python 逐字一致的基准；`fts.ts` 写入时即分词，避免两套索引互相漏检 | 无（Python 侧无对端可比） | `src/main/db/fts-query.test.ts`、`src/main/db/fts.ts:33-47` |
@@ -266,7 +266,7 @@
 | 项目 | Python 侧 | Electron 侧 |
 | --- | --- | --- |
 | 单元测试 | 未见等价 vitest/pytest 资产记录（**未取证**） | 14 个 vitest 文件 / 86 个用例，只覆盖纯函数（`vitest.config.ts:11-19`） |
-| 端到端检查 | 无同类脚本（**未取证**） | `scripts/` 顶层 28 个文件：27 个 `.mjs` + `export-schema.py`（另有 `fixtures/gen-office-fixtures.py`） |
+| 端到端检查 | 无同类脚本（**未取证**） | `scripts/` 顶层 29 个文件：28 个 `.mjs` + `export-schema.py`（另有 `fixtures/gen-office-fixtures.py`） |
 | 方法论 | — | 拷贝备份库到临时 `ZHIXING_HOME` → 启动真实 Electron + CDP → 经 IPC 操作 → `sqlite3` CLI 校验落库 |
 | 分发 | `build_windows.bat` + `zhixing.spec`（PyInstaller COLLECT 目录） | `electron-builder` NSIS + portable + Gitee 上传脚本 |
 

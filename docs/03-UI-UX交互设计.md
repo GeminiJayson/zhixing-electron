@@ -121,9 +121,20 @@
 
 ### 2.7 尺寸令牌
 
-`--titlebar-h: 44px`、`--nav-w: 220px`、`--nav-w-collapsed: 48px`、`--control-h: 32px`、`--row-h: 40px`、`--hit-min: 32px`（`tokens.css:72-78`）。
+| 令牌 | 值 | 管辖范围 |
+| --- | ---: | --- |
+| `--control-h` | 32px | **独立控件**：输入框 / 下拉 / 日期 / 按钮 / 菜单项 —— 设置页「控件高度」(24–48) |
+| `--control-h-sm` | `calc(--control-h - 8px)` | 紧凑档：工具条内的下拉（`.field--mini`） |
+| `--row-h` | 40px | **列表行**：任务行 / 笔记树行 / 四象限行 / 设置行 —— 设置页「行高」(24–72) |
+| `--titlebar-h` / `--nav-w` / `--nav-w-collapsed` | 44 / 220 / 48px | 标题栏与侧栏固定尺寸 |
 
-运行时覆盖只发生在**两处**映射（`theme.ts:78-87`）：字号 → `--text-body`（`font_size + 1.5px`）、行高 → `--row-h`（`task_row_height + 10px`）。该偏移与序号口径差异见 `04` 文档 S6/S7。
+运行时覆盖只发生在**两处**映射（`theme.ts:176-178`）：`--control-h` ← `control_height`、`--row-h` ← `task_row_height`；`--control-h-sm` 是 calc 派生，跟着控件高度一起缩放。**此前的 `font_size + 1.5` / `task_row_height + 10` 补偿偏移已取消**（会与设置页 SpinBox 的真实值对不上）；`--hit-min` 已删除，其职责由 `--control-h` 接管（无障碍最小目标的 24px 下限由设置区间保证）。
+
+**边界**（`npm run check:ctlheight` 会拦下违规）：
+
+1. **输入类控件与按钮的高度只能来自 `--control-h` 家族**——写死 px 的那一刻就与设置页分叉了。`global.css` 对 `input`/`select`/`textarea` 有全局兜底，新页面不会又冒出一个写死高度（勾选 / 单选 / 色板 / 滑块排除在外）。
+2. **刻意不跟设置的三个尺度**：行内元素（任务行的勾选框 18 / 胶囊 20 / 行内动作按钮 20 / 行内重命名框 26）、色板圆点（WCAG 24×24 固定）、浮动主操作 FAB（38px，独立尺度）——行内元素硬跟会把 24px 的行撑破、让 72px 的行显得空。
+3. **列表行用 `min-height` 而非 `height`**：控件调大时行被内容撑高，不会溢出。
 
 ### 2.8 层级：z 五档（唯一的层叠尺度）
 

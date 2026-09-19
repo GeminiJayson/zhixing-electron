@@ -30,6 +30,15 @@ button {
   cursor: pointer;
 }
 
+/* 原生输入类控件兜底：任何没有被组件样式显式覆盖的 input / select / textarea 都跟随
+   「控件高度」设置，新增页面时不会又冒出一个写死高度。
+   勾选 / 单选 / 色板 / 滑块有自己的视觉尺寸与热区，排除在外。 */
+input:not([type='checkbox']):not([type='radio']):not([type='color']):not([type='range']),
+select,
+textarea {
+  min-height: var(--control-h);
+}
+
 /* 交互状态：按压用位移表达、禁用用降透明度 —— 两者都不改布局边界，避免抖动。
    用独立的 translate 属性而不是 transform，免得覆盖组件自己的 transform
    （比如 .toast 的 translateX(-50%)）。 */

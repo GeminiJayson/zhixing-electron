@@ -188,7 +188,7 @@
 }
 /* 工具栏内的紧凑下拉：比控件基准矮一档，避免在 .tasks-toolbar 里把整行撑高 */
 .field--mini {
-  min-height: calc(var(--control-h) - 8px);
+  min-height: var(--control-h-sm);
   padding: 0 var(--space-2);
   font-size: var(--text-aux);
 }
