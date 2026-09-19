@@ -135,6 +135,20 @@
 .gnode:active {
   cursor: grabbing;
 }
+/* 焦点指示只圈住图标本身。
+   带 tabindex 的 SVG <g> 被聚焦时，浏览器默认的 outline 画在**包围盒**上 ——
+   而下方的标签文字也在包围盒里，于是那个框看起来像「选中了一整块（图标 + 文字）」。
+   这里关掉默认框，改用下面这个与选中圆同半径的圆环（虚线，便于和「已选中」区分）。 */
+.gnode:focus,
+.gnode:focus-visible {
+  outline: none;
+}
+.gnode__focus {
+  fill: none;
+  stroke: var(--focus-ring);
+  stroke-width: var(--focus-w);
+  stroke-dasharray: 3 2.5;
+}
 .gnode__label {
   font-size: 9px;
   fill: var(--fg-secondary);

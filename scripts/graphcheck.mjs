@@ -15,16 +15,28 @@ import { setTimeout as sleep } from 'node:timers/promises'
 const require = createRequire(import.meta.url)
 const electronPath = require('electron')
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const repoRoot = join(root, '..')
-const backup = join(repoRoot, 'backups', 'electron-migration', 'zhixing-before-electron-write.db')
 const tmpHome = join(root, '.screenshots', 'graph-home')
 const PORT = 9237
-if (!existsSync(backup)) { console.error('✗ 缺备份库'); process.exit(1) }
+
+/** 副本库 = 当前真实库的拷贝：不碰用户数据，且 schema 与真实环境一致。 */
+const realDb = join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db')
+if (!existsSync(realDb)) { console.error('✗ 找不到真实库：' + realDb); process.exit(1) }
 rmSync(tmpHome, { recursive: true, force: true })
 mkdirSync(tmpHome, { recursive: true })
-copyFileSync(backup, join(tmpHome, 'zhixing.db'))
+copyFileSync(realDb, join(tmpHome, 'zhixing.db'))
+
+/** DSH 的 pwsh 环境没有系统 PATH，从它启动的 Electron 里连 cmd.exe 都找不到。 */
+const SYS_PATH = [
+  'C:\\Windows\\System32',
+  'C:\\Windows',
+  'C:\\Windows\\System32\\Wbem',
+  'C:\\Windows\\System32\\WindowsPowerShell\\v1.0',
+].join(';')
+
 const child = spawn(electronPath, ['.', `--remote-debugging-port=${PORT}`, `--user-data-dir=${join(tmpHome, 'p')}`], {
-  cwd: root, env: { ...process.env, ZHIXING_HOME: tmpHome }, stdio: ['ignore', 'pipe', 'pipe'],
+  cwd: root,
+  env: { ...process.env, PATH: `${SYS_PATH};${process.env.PATH ?? ''}`, ZHIXING_HOME: tmpHome },
+  stdio: ['ignore', 'pipe', 'pipe'],
 })
 let page = null
 for (let i = 0; i < 40 && !page; i++) {
@@ -62,12 +74,15 @@ const before = JSON.parse(await readPositions())
 const beforeCount = Object.keys(before).length
 check('图谱渲染出节点', beforeCount > 3, `nodes=${beforeCount}`)
 
-// 改变节点集合：勾选任务节点
+// 改变节点集合：切换「任务节点」开关。
+// 注意方向：图谱**默认就包含任务节点**（buildGraph 的 includeTasks 默认为真），
+// 所以第一次点它是把任务节点**排除**掉（32 → 5）。这里只断言「集合确实变了」，
+// 不再假设增减方向 —— 本脚本真正要守的是下面那条「共有节点坐标保持」。
 await ev(`[...document.querySelectorAll('.text-btn')].find(b => b.textContent.includes('任务节点'))?.click()`)
 await sleep(3000)
 const after = JSON.parse(await readPositions())
 const afterCount = Object.keys(after).length
-check('勾选任务节点后节点数增加', afterCount > beforeCount, `${beforeCount} → ${afterCount}`)
+check('切换任务节点开关后节点集合变化', afterCount !== beforeCount, `${beforeCount} → ${afterCount}`)
 
 // 共有节点的位移：复用坐标时只做微调，不复用则会被重新分配螺旋位置
 let maxShift = 0

@@ -84,6 +84,8 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
   /** 邻域子图（G8）：scope≠all 且选中节点时由主进程按 note_link 算 */
   const [neighbor, setNeighbor] = useState<GraphPayload | null>(null)
   const [selected, setSelected] = useState<number | null>(null)
+  /** 键盘焦点落在哪个节点上（Tab 走图时画圆环用，见 gnode 的 onFocus/onBlur） */
+  const [focused, setFocused] = useState<number | null>(null)
   const [preview, setPreview] = useState('')
   /** 连线起点：点「从此节点连线」后进入连线模式，再点另一个节点建立关系 */
   const [linkFrom, setLinkFrom] = useState<number | null>(null)
@@ -920,6 +922,10 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
                     if (dragRef.current == null) setHoverNode(n.id)
                   }}
                   onPointerLeave={() => setHoverNode((h) => (h === n.id ? null : h))}
+                  // 焦点自己接管：SVG <g> 的默认 outline 是**包围盒**矩形，
+                  // 而包围盒把标签文字也圈了进去（看起来像选中了一整块）。见 graph.css
+                  onFocus={() => setFocused(n.id)}
+                  onBlur={() => setFocused((f) => (f === n.id ? null : f))}
                   onPointerDown={onNodePointerDown(n)}
                   onDoubleClick={() => void openNode(n)}
                   onClick={() => {
@@ -932,6 +938,8 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
                   {/* 节点图标：多色分层（主色 + 派生内层 + 深描边），见 GraphNodeIcon */}
                   <GraphNodeIcon kind={n.kind} r={r} color={color} />
                   {isSel && <circle r={r + 4} fill="none" stroke="var(--accent)" strokeWidth={2} />}
+                  {/* 焦点环也只包图标：半径与选中圆一致，虚线以便与「已选中」区分 */}
+                  {!isSel && focused === n.id && <circle r={r + 4} className="gnode__focus" />}
                   {isHit && <circle r={r + 7} fill="none" stroke="var(--accent)" strokeWidth={1} strokeDasharray="2 2" />}
                   <text y={r + 12} textAnchor="middle" className="gnode__label">
                     {n.label.length > 12 ? n.label.slice(0, 12) + '…' : n.label}
