@@ -596,3 +596,12 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 | 布局回归 | `scripts/layoutcheck.mjs` |
 | 交互回归 | `scripts/interactioncheck.mjs` |
 | 视觉快照 | `scripts/capture.mjs`、`scripts/bigcapture.mjs` |
+
+## 17. 独立弹窗与确认交互（2026-09-19）
+
+- **独立小窗**：条件确认、捕获面板都跑在 `frame:false + transparent` 的独立 BrowserWindow 里，屏幕上只有一张圆角卡片：没有原生标题栏、没有窗口底、四角透明；卡片头部 `.modal__head` 设为拖拽区（`-webkit-app-region: drag`）；**不显示主窗口** —— 用户按热键时正在别的应用里选词，不该把他拽回来。
+- **卡片即窗口**：窗口高度由渲染层 ResizeObserver 量出卡片高度后经 `window:fitHeight` 回传，窗口跟着内容缩胀（宽度不变），不留底部空白。
+- **确认弹框**：全部收回应用内（`dialog.confirm`），标题左侧圆形底色图标（危险=红、覆盖 / 回滚 / 执行=橙、其余跟强调色）；危险操作按钮用 `text-btn--danger`。
+- **工作流侧栏**：分类 → 模板两层树，行 hover / 键盘聚焦时出胶囊（分类：在此分类下新建工作流 / 新建子分类 / 重命名 / 删除；模板：重命名 / 复制 / 删除）；实例行有「重命名实例」胶囊。
+- **外部同步卡片**：6 个 JSON 路径输入框 + 列表路径 + 「按标题去重」开关 + 「立即同步」与上次结果。
+- 回归脚本：`selectioncheck.mjs`、`condwincheck.mjs`、`wfgroupcheck.mjs`、`tasksynccheck.mjs`、`aiui.mjs`、`seedmonitor.mjs`。

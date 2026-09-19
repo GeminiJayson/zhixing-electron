@@ -292,6 +292,19 @@
 
 ### 5.1 三处结构性断链
 
+
+## 10. 本批新增的私有扩展与形态差异（2026-09-19）
+
+| 项 | Electron 侧 | Python 侧 |
+| --- | --- | --- |
+| 私有表 `workflow_group` | 模板分类（树形） | 无（模板平铺） |
+| 私有列 `workflow_template.group_id` | 模板归入分类 | 不识别该列（可空，无碍） |
+| 私有列 `task.external_source` / `external_id` | 外部任务认领与幂等同步 | 不识别 |
+| 全局热键读选区 | 模拟 Ctrl+C 读取当前选区（含 HTML） | 依赖 `keyboard` / `pyperclip` 组合 |
+| 独立确认小窗 | 无边框透明圆角卡片 | 原生 `QMessageBox` |
+| 字段映射（JSON 路径） | 设置页可配 | 无对应配置 |
+
+以上私有结构一律由 `ensureAppExtensions`（`src/main/db/connection.ts`）幂等创建：**不改 `SCHEMA_VERSION`、不进 Python 的 MIGRATIONS 链**，因此 Python 版可以继续读写同一个库文件。
 1. **任务↔笔记的段落级上下文（T3 / N10 / N11）**——表在、任务侧入口在，但读写与 UI 全缺。
 2. **笔记格式体系（N4 / N5 / N3）**——`richtext` 无编辑器、Office 只读、附件缺失。
 3. **图谱语义完整性（G2 / G3 / G4）**——破环函数写了没接线，`task_note_ref` 与 anchor 不进图。

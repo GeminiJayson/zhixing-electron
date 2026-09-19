@@ -216,3 +216,19 @@ zhixing-electron/
 ## 13. 安全模型（Electron 侧独有）
 
 `sandbox: true` + `contextIsolation: true` + `nodeIntegration: false`（主窗与浮窗都设）；`index.html` 声明 meta CSP（`default-src 'self'`，`connect-src` 含 HMR 的 `ws:`）；`will-navigate` / `setWindowOpenHandler` / `will-attach-webview` 三道出口收口，外链仅放行 `http/https/mailto`。Python 侧没有对应的 CSP / sandbox 层，这些防线是本仓库自己的责任，不因「与 Python 对齐」而降级。
+
+## 14. 近期能力更新（2026-09-19）
+
+本批围绕「不打断用户、不丢内容、可回退」补了几处：
+
+| 能力 | 说明 | 关键实现 |
+| --- | --- | --- |
+| 全局热键读取「当前选中的文字」 | 三个热键（划词捕获 / 读取选中并速记 / 快速任务）先模拟一次 Ctrl+C 取走选区的文本与 HTML，再把剪贴板原样还回；复制前写哨兵值，避免「什么都没选中」误读旧剪贴板 | `src/main/selection.ts`、`scripts/selectioncheck.mjs` |
+| 三个热键改为独立小窗口 | 无边框 + 透明圆角卡片、置顶居中，**不显示主窗口**；高度跟着卡片内容贴合 | `captureWindow`（`src/main/index.ts`）、`CaptureWindowApp.tsx` |
+| 工作流条件确认独立小窗 | 人工确认节点不再占用主窗口，「成立 / 不成立」语义与原生模态一致 | `ConditionApp.tsx`、`scripts/condwincheck.mjs` |
+| 确认操作统一应用内弹框 | 15 处 `window.confirm` 全部收回，带圆形底色图标（危险=红） | `src/renderer/src/components/Dialogs.tsx` |
+| 外部任务源同步 | GET 一个 JSON 接口，按 `(source, id)` 幂等 upsert；字段映射支持 JSON 路径；可开自动同步；按标题去重时「认领」本地同名任务 | `src/main/task-sync.ts`、`scripts/tasksynccheck.mjs` |
+| 工作流模板分类树 | 分类 → 模板两层，行内编辑胶囊，实例可重命名 | `workflow_group` 私有表、`WorkflowPage.tsx` |
+| 整库整理专用默认提示词 | 批量场景更克制：只规整排版、不重写句子 | `DEFAULT_AI_LIBRARY_PROMPT`（`src/shared/ai-note.ts`） |
+
+全流程冒烟见 `scripts/seedmonitor.mjs`：56 步，覆盖任务 / 笔记 / 工作流 / AI / 设置 / 右键菜单 / 拖拽 / 主题包。
