@@ -174,7 +174,23 @@ const api = {
     onGraphDelta: (cb: (delta: GraphDelta) => void): void => {
       ipcRenderer.on('graph:delta', (_e, delta) => cb(delta))
     },
-    workflowTemplates: (): Promise<WorkflowTemplateSummary[]> =>
+    /** 模板分类（对齐笔记树的「文件夹 → 笔记」两层） */
+  workflowGroups: (): Promise<{ id: number; parent_id: number | null; name: string; sort_key: string }[]> =>
+    ipcRenderer.invoke('db:workflowGroups'),
+  workflowTemplateGroups: (): Promise<{ id: number; group_id: number | null }[]> =>
+    ipcRenderer.invoke('db:workflowTemplateGroups'),
+  saveWorkflowGroup: (input: {
+    id?: number
+    name: string
+    parentId?: number | null
+  }): Promise<{ ok: boolean; id?: number; problems: string[] }> =>
+    ipcRenderer.invoke('db:saveWorkflowGroup', input),
+  deleteWorkflowGroup: (id: number): Promise<boolean> => ipcRenderer.invoke('db:deleteWorkflowGroup', id),
+  moveWorkflowTemplate: (id: number, groupId: number | null): Promise<boolean> =>
+    ipcRenderer.invoke('db:moveWorkflowTemplate', id, groupId),
+  renameWorkflowInstance: (id: number, title: string): Promise<boolean> =>
+    ipcRenderer.invoke('db:renameWorkflowInstance', id, title),
+  workflowTemplates: (): Promise<WorkflowTemplateSummary[]> =>
       ipcRenderer.invoke('db:workflowTemplates'),
     workflowTemplate: (id: number): Promise<WorkflowTemplatePayload | null> =>
       ipcRenderer.invoke('db:workflowTemplate', id),

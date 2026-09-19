@@ -27,6 +27,72 @@
   color: var(--fg-secondary);
   font-weight: 600;
 }
+/* 模板 / 实例树：分类 → 模板两层，行 hover 出编辑胶囊（对齐笔记树） */
+.wf-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow-y: auto;
+  min-height: 0;
+}
+.wf-node {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: var(--radius-md);
+}
+.wf-node:hover {
+  background: var(--bg-hover);
+}
+.wf-node--on {
+  background: var(--accent-soft);
+}
+.wf-node__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  text-align: left;
+  overflow: hidden;
+}
+.wf-node__label strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wf-node__label > .u-aux {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+.wf-node--group > .wf-node__label > strong {
+  font-weight: 600;
+}
+.wf-node__caret {
+  flex: 0 0 auto;
+  color: var(--fg-tertiary);
+  transform: rotate(90deg);
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+.wf-node--collapsed .wf-node__caret {
+  transform: rotate(0deg);
+}
+.wf-node__ops {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex: 0 0 auto;
+  padding-right: 4px;
+  opacity: 0;
+  transition: opacity var(--dur-fast);
+}
+.wf-node:hover .wf-node__ops,
+.wf-node:focus-within .wf-node__ops,
+.wf-node__ops--always {
+  opacity: 1;
+}
+
 .wf-list {
   display: flex;
   flex-direction: column;

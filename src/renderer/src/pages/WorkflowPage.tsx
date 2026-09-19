@@ -2,8 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowDown,
   ArrowUp,
+  ChevronRight,
   Copy,
   Diamond,
+  FilePlus2,
+  FolderPlus,
   GitBranch,
   LayoutGrid,
   Maximize2,
@@ -140,11 +143,27 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   // 画布视图（平移 / 缩放）。startDrag 定义在 hook 之前，用这个 ref 桥接。
   const panRef = useRef<ReturnType<typeof usePanZoom> | null>(null)
 
+  /** 模板分类（对齐笔记树的两层：分类 → 模板） */
+  type WfGroup = Awaited<ReturnType<typeof window.zhixing.db.workflowGroups>>[number]
+  const [groups, setGroups] = useState<WfGroup[]>([])
+  const [templateGroups, setTemplateGroups] = useState<{ id: number; group_id: number | null }[]>([])
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<number>>(new Set())
+
+  const loadGroups = useCallback(async (): Promise<void> => {
+    const [gs, links] = await Promise.all([
+      window.zhixing.db.workflowGroups(),
+      window.zhixing.db.workflowTemplateGroups(),
+    ])
+    setGroups(gs)
+    setTemplateGroups(links)
+  }, [])
+
   const loadTemplates = useCallback(async () => {
     const rows = await window.zhixing.db.workflowTemplates()
     setTemplates(rows)
+    await loadGroups()
     return rows
-  }, [])
+  }, [loadGroups])
 
   const loadInstances = useCallback(async () => {
     setInstances(await window.zhixing.db.workflowInstances())
@@ -318,7 +337,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     panRef.current?.reset()
   }, [canvasSize])
 
-  const handleNewTemplate = async (): Promise<void> => {
+  const handleNewTemplate = async (groupId: number | null = null): Promise<void> => {
     const name = await dialog.prompt({ title: '新建工作流', label: '名称' })
     if (!name?.trim()) return
     const res = await window.zhixing.db.saveWorkflowTemplate({
@@ -331,9 +350,160 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
       onNotice(`保存失败：${res.problems.join('；')}`)
       return
     }
+    // 分类不写进模板本体（saveWorkflowTemplate 的入参里没有它），建好后再挂上去
+    if (groupId !== null && res.templateId) {
+      await window.zhixing.db.moveWorkflowTemplate(res.templateId, groupId)
+    }
     await loadTemplates()
     if (res.templateId) await openTemplate(res.templateId)
     onNotice(`已创建「${name.trim()}」`)
+  }
+
+  const handleNewGroup = async (parentId: number | null): Promise<void> => {
+    const name = await dialog.prompt({
+      title: parentId === null ? '新建分类' : '新建子分类',
+      label: '分类名称',
+    })
+    if (!name?.trim()) return
+    const res = await window.zhixing.db.saveWorkflowGroup({ name: name.trim(), parentId })
+    if (!res.ok) {
+      onNotice(`新建失败：${res.problems.join('；')}`)
+      return
+    }
+    await loadGroups()
+    onNotice(`已创建分类「${name.trim()}」`)
+  }
+
+  const handleRenameGroup = async (g: WfGroup): Promise<void> => {
+    const name = await dialog.prompt({ title: '重命名分类', label: '分类名称', defaultValue: g.name })
+    if (!name?.trim() || name.trim() === g.name) return
+    await window.zhixing.db.saveWorkflowGroup({ id: g.id, name: name.trim() })
+    await loadGroups()
+    onNotice('已重命名分类')
+  }
+
+  const handleDeleteGroup = async (g: WfGroup): Promise<void> => {
+    const ok = await dialog.confirm({
+      title: '删除分类',
+      message: `删除分类「${g.name}」？\n子分类会上提一级，里面的工作流回到「未分类」——都不会被删除。`,
+      icon: <Trash2 size={15} />,
+      danger: true,
+      confirmText: '删除',
+    })
+    if (!ok) return
+    await window.zhixing.db.deleteWorkflowGroup(g.id)
+    await loadGroups()
+    onNotice('已删除分类（工作流已回到未分类）')
+  }
+
+  const handleRenameInstance = async (i: { id: number; title: string }): Promise<void> => {
+    const name = await dialog.prompt({ title: '重命名实例', label: '实例名称', defaultValue: i.title })
+    if (!name?.trim() || name.trim() === i.title) return
+    await window.zhixing.db.renameWorkflowInstance(i.id, name.trim())
+    await loadInstances()
+    onNotice('已重命名实例')
+  }
+
+  /** 分类树渲染辅助（对齐笔记树：分类可折叠、行 hover 出胶囊） */
+  const groupOf = (id: number): number | null =>
+    templateGroups.find((x) => x.id === id)?.group_id ?? null
+  const toggleGroup = (id: number): void =>
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
+  const renderTemplateRow = (t: WorkflowTemplateSummary, depth: number): JSX.Element => (
+    <div
+      key={'t' + t.id}
+      className={'wf-node wf-node--template' + (current?.id === t.id ? ' wf-node--on' : '')}
+      style={{ paddingLeft: 6 + depth * 12 }}
+    >
+      <button className="wf-node__label" onClick={() => void openTemplate(t.id)}>
+        <strong>{t.name}</strong>
+        <span className="u-aux">
+          {t.node_count} 步 · {t.start_policy === 'all' ? '一次全下发' : '逐步下发'}
+        </span>
+      </button>
+      <div className="wf-node__ops">
+        <button
+          className="icon-btn"
+          title="重命名"
+          aria-label="重命名工作流"
+          onClick={() => void openTemplate(t.id).then(() => handleRenameTemplate())}
+        >
+          <Pencil size={13} />
+        </button>
+        <button
+          className="icon-btn"
+          title="复制"
+          aria-label="复制工作流"
+          onClick={() => void handleDuplicateTemplate(t.id)}
+        >
+          <Copy size={13} />
+        </button>
+        <button
+          className="icon-btn icon-btn--danger"
+          title="删除"
+          aria-label="删除工作流"
+          onClick={() => void openTemplate(t.id).then(() => handleDeleteTemplate())}
+        >
+          <Trash2 size={13} />
+        </button>
+      </div>
+    </div>
+  )
+
+  const renderGroupRow = (g: WfGroup, depth: number): JSX.Element => {
+    const kids = groups.filter((x) => x.parent_id === g.id)
+    const tpls = templates.filter((t) => groupOf(t.id) === g.id)
+    const collapsed = collapsedGroups.has(g.id)
+    return (
+      <div key={'g' + g.id}>
+        <div
+          className={'wf-node wf-node--group' + (collapsed ? ' wf-node--collapsed' : '')}
+          style={{ paddingLeft: 6 + depth * 12 }}
+        >
+          <button className="wf-node__label" aria-expanded={!collapsed} onClick={() => toggleGroup(g.id)}>
+            <ChevronRight size={13} className="wf-node__caret" aria-hidden />
+            <strong>{g.name}</strong>
+            <span className="u-aux">{tpls.length} 个</span>
+          </button>
+          <div className="wf-node__ops">
+            <button
+              className="icon-btn"
+              title="在此分类下新建工作流"
+              aria-label="在此分类下新建工作流"
+              onClick={() => void handleNewTemplate(g.id)}
+            >
+              <FilePlus2 size={13} />
+            </button>
+            <button className="icon-btn" title="新建子分类" aria-label="新建子分类" onClick={() => void handleNewGroup(g.id)}>
+              <FolderPlus size={13} />
+            </button>
+            <button className="icon-btn" title="重命名分类" aria-label="重命名分类" onClick={() => void handleRenameGroup(g)}>
+              <Pencil size={13} />
+            </button>
+            <button
+              className="icon-btn icon-btn--danger"
+              title="删除分类"
+              aria-label="删除分类"
+              onClick={() => void handleDeleteGroup(g)}
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+        </div>
+        {!collapsed && (
+          <>
+            {kids.map((k) => renderGroupRow(k, depth + 1))}
+            {tpls.map((t) => renderTemplateRow(t, depth + 1))}
+          </>
+        )}
+      </div>
+    )
   }
 
   /** 当前模板节点的保存入参（坐标取画布上的当前值）。 */
@@ -756,37 +926,57 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
         <aside className="wf-side" aria-label="模板与实例">
           <div className="wf-side__head">
             <span>模板</span>
-            <button className="icon-btn" title="新建工作流" aria-label="新建工作流" onClick={() => void handleNewTemplate()}>
-              <Plus size={15} />
-            </button>
-          </div>
-          <div className="wf-list">
-            {templates.map((t) => (
+            {/* 原先的「新建工作流」按钮已取消：模板统一在分类的胶囊里新建 */}
+            <div className="wf-node__ops wf-node__ops--always">
               <button
-                key={t.id}
-                className={'wf-item' + (current?.id === t.id ? ' wf-item--on' : '')}
-                onClick={() => void openTemplate(t.id)}
+                className="icon-btn"
+                title="新建分类"
+                aria-label="新建分类"
+                onClick={() => void handleNewGroup(null)}
               >
-                <strong>{t.name}</strong>
-                <span className="u-aux">{t.node_count} 步 · {t.start_policy === 'all' ? '一次全下发' : '逐步下发'}</span>
+                <FolderPlus size={15} />
               </button>
-            ))}
-            {templates.length === 0 && <p className="u-aux">还没有工作流模板。</p>}
+            </div>
+          </div>
+          <div className="wf-tree">
+            {groups.filter((g) => g.parent_id === null).map((g) => renderGroupRow(g, 0))}
+            {templates.filter((t) => groupOf(t.id) === null).map((t) => renderTemplateRow(t, 0))}
+            {templates.length === 0 && groups.length === 0 && (
+              <p className="u-aux">
+                还没有分类或工作流。右上角可以先建一个分类，或者直接
+                <button className="text-btn" onClick={() => void handleNewTemplate(null)}>
+                  新建工作流
+                </button>
+                （不归入任何分类）。
+              </p>
+            )}
           </div>
 
           <div className="wf-side__head">实例</div>
-          <div className="wf-list">
+          <div className="wf-tree">
             {instances.map((i) => (
-              <div key={i.id} className="wf-item wf-item--static">
-                <strong>{i.title}</strong>
-                <span className="u-aux">
-                  {i.status === 'running' ? '进行中' : i.status === 'done' ? '已完成' : '已中止'} ·
-                  {i.steps.filter((s) => s.done).length}/{i.steps.length}
-                  {i.last_result?.state === 'running' ? ' · 正在执行' : ''}
-                  {i.last_result?.state === 'failed' || i.last_result?.state === 'timeout'
-                    ? ' · 某步未通过'
-                    : ''}
-                </span>
+              <div key={i.id} className="wf-node wf-node--static">
+                <div className="wf-node__label wf-node__label--static">
+                  <strong>{i.title}</strong>
+                  <span className="u-aux">
+                    {i.status === 'running' ? '进行中' : i.status === 'done' ? '已完成' : '已中止'} ·
+                    {i.steps.filter((s) => s.done).length}/{i.steps.length}
+                    {i.last_result?.state === 'running' ? ' · 正在执行' : ''}
+                    {i.last_result?.state === 'failed' || i.last_result?.state === 'timeout'
+                      ? ' · 某步未通过'
+                      : ''}
+                  </span>
+                </div>
+                <div className="wf-node__ops">
+                  <button
+                    className="icon-btn"
+                    title="重命名实例"
+                    aria-label="重命名实例"
+                    onClick={() => void handleRenameInstance(i)}
+                  >
+                    <Pencil size={13} />
+                  </button>
+                </div>
               </div>
             ))}
             {instances.length === 0 && <p className="u-aux">还没有运行中的实例。</p>}

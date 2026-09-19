@@ -143,6 +143,18 @@ function ensureAppExtensions(d: Database.Database): void {
   // 外部任务来源：靠 (source, id) 幂等认领，重复同步不会造出重复任务
   add('task', 'external_source', 'external_source TEXT')
   add('task', 'external_id', 'external_id TEXT')
+  // 工作流模板分类（对齐笔记树的「文件夹 → 笔记」两层）
+  add('workflow_template', 'group_id', 'group_id INTEGER')
+  d.exec(
+    `CREATE TABLE IF NOT EXISTS workflow_group (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       parent_id INTEGER,
+       name TEXT NOT NULL,
+       sort_key TEXT NOT NULL DEFAULT '',
+       created_at TEXT NOT NULL,
+       updated_at TEXT NOT NULL
+     )`
+  )
   d.exec(
     'CREATE UNIQUE INDEX IF NOT EXISTS idx_task_external ' +
       'ON task(external_source, external_id) WHERE external_id IS NOT NULL'

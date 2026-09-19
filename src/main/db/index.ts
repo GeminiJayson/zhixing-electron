@@ -43,7 +43,7 @@ import { listFolders, listTasksByList, createListFolder, renameListFolder, delet
 import { siblingsOf, isDescendantOf, reorderTask, moveTaskRelative, reparentTask, batchComplete, batchMove, batchSetDue, listTags, setTaskTags, ensureListId, quickAdd } from './task-ops'
 import { listTasks, listTodayTasks, recentNotes, noteCountMap, tagMap, listNotes, overview, toggleTask, cloneTaskTree, setPriority, setTitle, setStatus, setDueDate, nextSortKey, createTask, EDITABLE_FIELDS, updateTask, softDelete, syncTaskNoteLinks, attachTaskNote, detachTaskNote, listLinkedNotes, pauseTask, resumeTask, attachBlock, detachBlock, listLinkedContexts, contextsForNote, noteContextMap, writeNoteAfterDone, taskCandidates } from './tasks'
 import { trashItems, restoreTrash, purgeTrash, emptyTrash, purgeTrashOlderThan, tagsWithUsage, createTag, renameTag, deleteTag, mergeTags } from './trash'
-import { NODE_COLUMNS, orderedNodes, nextWorkflowNode, validateWorkflowTemplate, listWorkflowTemplates, getWorkflowTemplate, saveWorkflowTemplate, deleteWorkflowTemplate, duplicateWorkflowTemplate, autoLayoutWorkflowNodes, updateWorkflowNodePos, setWorkflowBranch, spawnStepTask, instantiateWorkflow, getWorkflowInstance, listWorkflowInstances, listWorkflowInstancesByTask, completeWorkflowStep, abortWorkflowInstance, retryWorkflowStep, setWorkflowNotifier, splitCommand, describeWorkflowAction, runWorkflowAction } from './workflow'
+import { NODE_COLUMNS, orderedNodes, nextWorkflowNode, validateWorkflowTemplate, listWorkflowTemplates, getWorkflowTemplate, saveWorkflowTemplate, deleteWorkflowTemplate, duplicateWorkflowTemplate, autoLayoutWorkflowNodes, updateWorkflowNodePos, setWorkflowBranch, spawnStepTask, instantiateWorkflow, getWorkflowInstance, listWorkflowInstances, listWorkflowInstancesByTask, completeWorkflowStep, abortWorkflowInstance, retryWorkflowStep, setWorkflowNotifier, splitCommand, describeWorkflowAction, runWorkflowAction, listWorkflowGroups, workflowTemplateGroups, saveWorkflowGroup, deleteWorkflowGroup, moveWorkflowTemplate, renameWorkflowInstance } from './workflow'
 import type { EditableField } from './tasks'
 import type { TrashItem } from './trash'
 import type { DataDomain } from '../../shared/events'
@@ -113,6 +113,10 @@ const WRITE_DOMAINS: Record<string, DataDomain | DataDomain[]> = {
   'db:removeGraphEdge': ['note', 'task'],
   'db:rewireGraphEdge': ['note', 'task'],
   'db:setWorkflowBranch': 'workflow',
+  'db:saveWorkflowGroup': 'workflow',
+  'db:deleteWorkflowGroup': 'workflow',
+  'db:moveWorkflowTemplate': 'workflow',
+  'db:renameWorkflowInstance': 'workflow',
   'db:createListFolder': 'task',
   'db:renameListFolder': 'task',
   'db:deleteListFolder': 'task',
@@ -492,6 +496,18 @@ export function registerDbHandlers(): void {
     'db:instantiateWorkflow',
     (_e, templateId: number, title: string | null, originTaskId: number | null, policy?: string) =>
       instantiateWorkflow(templateId, title, originTaskId, policy)
+  )
+  handle('db:workflowGroups', () => listWorkflowGroups())
+  handle('db:workflowTemplateGroups', () => workflowTemplateGroups())
+  handle('db:saveWorkflowGroup', (_e, input: Parameters<typeof saveWorkflowGroup>[0]) =>
+    saveWorkflowGroup(input)
+  )
+  handle('db:deleteWorkflowGroup', (_e, id: number) => deleteWorkflowGroup(id))
+  handle('db:moveWorkflowTemplate', (_e, id: number, groupId: number | null) =>
+    moveWorkflowTemplate(id, groupId)
+  )
+  handle('db:renameWorkflowInstance', (_e, id: number, title: string) =>
+    renameWorkflowInstance(id, title)
   )
   handle('db:workflowInstances', (_e, status?: string | null) =>
     listWorkflowInstances(status ?? null)

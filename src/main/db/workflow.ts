@@ -1055,6 +1055,78 @@ const CONDITION_TIMEOUT_MS = 15_000
  *   - prev：读实例上下文里的「上一步结果」（命令/脚本的退出码、任务的完成状态）——
  *           ctx.lastResult 由推进逻辑在调用前写入，这就是自动步骤把结果交给条件节点的通道
  */
+// ---------------------------------------------------------------- 模板分类（对齐笔记树）
+
+export interface WorkflowGroup {
+  id: number
+  parent_id: number | null
+  name: string
+  sort_key: string
+}
+
+export function listWorkflowGroups(): WorkflowGroup[] {
+  return conn()
+    .prepare('SELECT id, parent_id, name, sort_key FROM workflow_group ORDER BY sort_key, id')
+    .all() as WorkflowGroup[]
+}
+
+/** 模板 id → 分类 id（listWorkflowTemplates 不带这一列，单独取更省事，也不动它的 SQL） */
+export function workflowTemplateGroups(): { id: number; group_id: number | null }[] {
+  return conn().prepare('SELECT id, group_id FROM workflow_template').all() as {
+    id: number
+    group_id: number | null
+  }[]
+}
+
+export function saveWorkflowGroup(input: {
+  id?: number
+  name: string
+  parentId?: number | null
+}): { ok: boolean; id?: number; problems: string[] } {
+  const name = input.name.trim()
+  if (!name) return { ok: false, problems: ['分类名不能为空'] }
+  const c = conn()
+  const stamp = new Date().toISOString()
+  if (input.id) {
+    c.prepare('UPDATE workflow_group SET name = ?, updated_at = ? WHERE id = ?').run(name, stamp, input.id)
+    return { ok: true, id: input.id, problems: [] }
+  }
+  const parentId = input.parentId ?? null
+  if (parentId !== null && !c.prepare('SELECT id FROM workflow_group WHERE id = ?').get(parentId)) {
+    return { ok: false, problems: ['父分类不存在'] }
+  }
+  const info = c
+    .prepare(
+      'INSERT INTO workflow_group (parent_id, name, sort_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
+    )
+    .run(parentId, name, String(Date.now()), stamp, stamp)
+  return { ok: true, id: Number(info.lastInsertRowid), problems: [] }
+}
+
+/** 删除分类：子分类上提一级、模板回落到「未分类」—— 不连坐删东西。 */
+export function deleteWorkflowGroup(id: number): boolean {
+  const c = conn()
+  const row = c.prepare('SELECT id, parent_id FROM workflow_group WHERE id = ?').get(id) as
+    | { id: number; parent_id: number | null }
+    | undefined
+  if (!row) return false
+  c.prepare('UPDATE workflow_group SET parent_id = ? WHERE parent_id = ?').run(row.parent_id, id)
+  c.prepare('UPDATE workflow_template SET group_id = NULL WHERE group_id = ?').run(id)
+  c.prepare('DELETE FROM workflow_group WHERE id = ?').run(id)
+  return true
+}
+
+export function moveWorkflowTemplate(id: number, groupId: number | null): boolean {
+  return conn().prepare('UPDATE workflow_template SET group_id = ? WHERE id = ?').run(groupId, id).changes > 0
+}
+
+/** 实例改名（实例项的编辑胶囊）。 */
+export function renameWorkflowInstance(id: number, title: string): boolean {
+  const name = title.trim()
+  if (!name) return false
+  return conn().prepare('UPDATE workflow_instance SET title = ? WHERE id = ?').run(name, id).changes > 0
+}
+
 /**
  * 人工确认的「问界面」通道，由 IPC 层注入（workflow.ts 不该直接碰 BrowserWindow）。
  * 返回 **null** 表示没有可用窗口 —— 调用方回落到原生模态框，
