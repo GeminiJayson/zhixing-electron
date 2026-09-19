@@ -117,6 +117,30 @@ function upgradeSchema(d: Database.Database): void {
   }
 }
 
+/**
+ * 本应用私有的附加列 —— **不属于** Python 的迁移链（MIGRATIONS / SCHEMA_VERSION）。
+ *
+ * 为什么不并进 MIGRATIONS：那是一条与 Python 版逐号对齐的链，编号被两边共用；
+ * 在这里插号会让先升级的一方写出另一方读不懂的 schema_version。
+ * 而这几列是纯粹的 Electron 侧功能（多绑 SOP、自动步骤的期望值、上一步结果），
+ * Python 端不认识它们也无害：SELECT 都是显式列名，多出来的列不会被读，且全部可空。
+ *
+ * 幂等：先看列在不在，缺了才 ALTER；列齐时连一次写事务都不产生。
+ */
+function ensureAppExtensions(d: Database.Database): void {
+  const has = (table: string, column: string): boolean =>
+    (d.prepare('PRAGMA table_info(' + table + ')').all() as { name: string }[]).some(
+      (r) => r.name === column
+    )
+  const add = (table: string, column: string, ddl: string): void => {
+    if (!has(table, column)) d.exec('ALTER TABLE ' + table + ' ADD COLUMN ' + ddl)
+  }
+  // 表可能不存在（更老的库早于工作流模块）——SCHEMA_SQL 已带 IF NOT EXISTS 补建，这里直接加列
+  add('workflow_node', 'note_ids', 'note_ids TEXT')
+  add('workflow_node', 'action_expect', 'action_expect TEXT')
+  add('workflow_instance', 'last_result', 'last_result TEXT')
+}
+
 /** 建库失败时别把半成品留在数据目录，否则下次会被当成「已有库」直接用。 */
 function removeDatabaseFiles(p: string): void {
   for (const suffix of ['', '-wal', '-shm']) {
@@ -157,6 +181,8 @@ export function open(): Database.Database | null {
     // 全新库自己建；已有库补缺表并迁移到当前 schema 版本
     if (creating) initSchema(db)
     else upgradeSchema(db)
+    // 两条路径都要补：全新库的 DDL 里没有这几列，旧库也不会为它们升版本号
+    ensureAppExtensions(db)
     openError = ''
     readonlyReason = ''
     return db

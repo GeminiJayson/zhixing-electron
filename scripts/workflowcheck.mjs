@@ -2,7 +2,8 @@
  * 工作流链路验证：副本库上跑 模板校验/保存/节点坐标、实例化、步骤推进与中止。
  * 用法：node scripts/workflowcheck.mjs
  */
-import { execFileSync, spawn } from 'node:child_process'
+import { spawn } from 'node:child_process'
+import { DatabaseSync } from 'node:sqlite'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -12,24 +13,51 @@ import { setTimeout as sleep } from 'node:timers/promises'
 const require = createRequire(import.meta.url)
 const electronPath = require('electron')
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const repoRoot = join(root, '..')
-const backup = join(repoRoot, 'backups', 'electron-migration', 'zhixing-before-electron-write.db')
 const tmpHome = join(root, '.screenshots', 'wfcheck-home')
 const PORT = 9228
-const sql = (file, query) => execFileSync('sqlite3', [file, query]).toString().trim()
 
-if (!existsSync(backup)) {
-  console.error('✗ 找不到备份库')
+/**
+ * 副本库就是**当前真实库的拷贝**：既验证了迁移/加列能落在既有库上，
+ * 又完全不碰用户数据。早先这里读的是一个早已不存在的迁移前备份，
+ * 脚本因此长期跑不起来 —— 改用真实库副本，并把 sqlite3 CLI 换成内置的 node:sqlite
+ * （这台机器上没有 sqlite3 命令）。查询第一行第一列。
+ */
+const realDb = join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db')
+const sql = (file, query) => {
+  if (!existsSync(file)) return ''
+  const db = new DatabaseSync(file, { readOnly: true })
+  try {
+    const row = db.prepare(query).get()
+    return row ? String(Object.values(row)[0] ?? '') : ''
+  } finally {
+    db.close()
+  }
+}
+
+if (!existsSync(realDb)) {
+  console.error('✗ 找不到真实库：' + realDb)
   process.exit(1)
 }
 rmSync(tmpHome, { recursive: true, force: true })
 mkdirSync(tmpHome, { recursive: true })
-copyFileSync(backup, join(tmpHome, 'zhixing.db'))
+copyFileSync(realDb, join(tmpHome, 'zhixing.db'))
+
+/** DSH 的 pwsh 环境没有系统 PATH，从它启动的 Electron 里连 cmd.exe 都找不到。 */
+const SYS_PATH = [
+  'C:\\Windows\\System32',
+  'C:\\Windows',
+  'C:\\Windows\\System32\\Wbem',
+  'C:\\Windows\\System32\\WindowsPowerShell\\v1.0',
+].join(';')
 
 const child = spawn(
   electronPath,
   ['.', `--remote-debugging-port=${PORT}`, `--user-data-dir=${join(tmpHome, 'profile')}`],
-  { cwd: root, env: { ...process.env, ZHIXING_HOME: tmpHome }, stdio: ['ignore', 'pipe', 'pipe'] }
+  {
+    cwd: root,
+    env: { ...process.env, PATH: `${SYS_PATH};${process.env.PATH ?? ''}`, ZHIXING_HOME: tmpHome },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }
 )
 
 const attach = async () => {
@@ -162,7 +190,6 @@ check('节点整体替换落库（3 行）', nodeRows === '3', `rows=${nodeRows}
 const bindRows = sql(tmpDb, `SELECT COUNT(*) FROM workflow_step_task WHERE instance_id = ${inst.id};`)
 check('步骤任务绑定落库（3 步）', bindRows === '3', `rows=${bindRows}`)
 
-const realDb = join(process.env.HOME, 'Library/Application Support/ZhiXing/zhixing.db')
 const leaked = sql(realDb, "SELECT COUNT(*) FROM workflow_template WHERE name LIKE '验证-%';")
 const realInst = sql(realDb, "SELECT COUNT(*) FROM workflow_instance WHERE title LIKE '验证-%';")
 check('真实库未写入测试模板/实例', leaked === '0' && realInst === '0', `template=${leaked} instance=${realInst}`)

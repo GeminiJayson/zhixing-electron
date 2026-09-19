@@ -22,6 +22,12 @@ import type {
 } from '@shared/types'
 import { subscribeDomain } from '@shared/events'
 import { CONDITION_KIND, describeCondition, serializeCondition } from '@shared/workflow-condition'
+import {
+  TASK_KIND,
+  actionKindLabel,
+  isAutoActionKind,
+  normalizeActionKind,
+} from '@shared/workflow-action'
 import { t } from '../i18n'
 import { Toolbar } from '../components/Toolbar'
 import { WorkflowStepDialog } from '../components/WorkflowStepDialog'
@@ -212,6 +218,12 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     [instances, current]
   )
 
+  /** 画布上被点中的节点（浮卡与「作为某条件的分支」都以它为准）。 */
+  const selectedNode = useMemo(
+    () => ordered.find((n) => n.id === selected) ?? null,
+    [ordered, selected]
+  )
+
   const startDrag = (n: WorkflowNodePayload) => (e: React.PointerEvent<SVGGElement>) => {
     const p = pos.get(n.id)
     const world = panRef.current?.toWorld(e.clientX, e.clientY)
@@ -331,8 +343,10 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
       detail: n.detail,
       order_index: n.order_index,
       note_id: n.note_id,
+      note_ids: n.note_ids,
       action_kind: n.action_kind,
       action_value: n.action_value,
+      action_expect: n.action_expect,
       condition: n.condition,
       branch_node_id: n.branch_node_id,
       pos_x: pos.get(n.id)?.x ?? n.pos_x ?? null,
@@ -468,8 +482,10 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
       detail: '',
       order_index: ordered.length,
       note_id: null,
-      action_kind: isCondition ? CONDITION_KIND : 'none',
+      note_ids: [],
+      action_kind: isCondition ? CONDITION_KIND : TASK_KIND,
       action_value: isCondition ? serializeCondition({ kind: 'confirm' }) : '',
+      action_expect: '',
       condition: '',
       branch_node_id: null,
       pos_x: null,
@@ -519,16 +535,25 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     onNotice('步骤已保存')
   }
 
-  /** 执行节点动作；RUN_COMMAND 有副作用，执行前必须二次确认。 */
+  /**
+   * 手动试跑一个节点的动作。
+   * 命令 / 脚本有副作用且**会等待进程退出**（不再像历史 run_command 那样发完即忘），
+   * 所以执行前必须二次确认；失败时把输出尾部一并报出来，方便当场定位。
+   */
   const runNodeAction = async (n: WorkflowNodePayload): Promise<void> => {
     const kind = n.action_kind
     if (!kind || kind === 'none') return
-    if (kind === 'run_command') {
-      const desc = await window.zhixing.db.describeWorkflowAction(kind, n.action_value)
-      if (!window.confirm(`即将在本机运行命令：\n\n${desc}\n\n确定执行？`)) return
+    if (kind === 'run_command' || isAutoActionKind(kind)) {
+      const desc = await window.zhixing.db.describeWorkflowAction(kind, n.action_value, n.action_expect)
+      const wait = isAutoActionKind(kind) ? '\n\n这一步会等进程结束并核对退出码。' : ''
+      if (!window.confirm(`即将在本机执行：\n\n${desc}${wait}\n\n确定执行？`)) return
     }
-    const res = await window.zhixing.db.runWorkflowAction(kind, n.action_value)
-    onNotice(res.message)
+    const res = await window.zhixing.db.runWorkflowAction(kind, n.action_value, n.action_expect)
+    onNotice(
+      res.ok || !res.output
+        ? res.message
+        : `${res.message}｜输出尾部：${res.output.trim().slice(-160)}`
+    )
     if (res.ok && kind === 'open_note') {
       const id = Number(n.action_value)
       if (Number.isFinite(id) && id > 0) {
@@ -551,6 +576,13 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
       return
     }
     onNotice(`已启动「${inst.title}」`)
+    await refresh()
+  }
+
+  /** 自动步骤失败后原地重跑（实例停在当前节点）。 */
+  const handleRetry = async (): Promise<void> => {
+    if (!instance) return
+    await window.zhixing.db.retryWorkflowStep(instance.id)
     await refresh()
   }
 
@@ -707,6 +739,10 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                 <span className="u-aux">
                   {i.status === 'running' ? '进行中' : i.status === 'done' ? '已完成' : '已中止'} ·
                   {i.steps.filter((s) => s.done).length}/{i.steps.length}
+                  {i.last_result?.state === 'running' ? ' · 正在执行' : ''}
+                  {i.last_result?.state === 'failed' || i.last_result?.state === 'timeout'
+                    ? ' · 某步未通过'
+                    : ''}
                 </span>
               </div>
             ))}
@@ -723,6 +759,20 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
               <span className="u-aux">
                 {instance.steps.filter((s) => s.done).length}/{instance.steps.length} 步完成
               </span>
+              {/* 自动步骤（命令 / 脚本）的实时状态：运行中、还是卡在某个返回值不对的步骤上 */}
+              {instance.last_result && (
+                <span className={'wf-run wf-run--' + instance.last_result.state}>
+                  {instance.last_result.message}
+                  {instance.last_result.code != null ? `（退出码 ${instance.last_result.code}）` : ''}
+                </span>
+              )}
+              {instance.last_result &&
+                (instance.last_result.state === 'failed' ||
+                  instance.last_result.state === 'timeout') && (
+                  <button className="text-btn text-btn--accent" onClick={() => void handleRetry()}>
+                    重试该步
+                  </button>
+                )}
               <button className="text-btn text-btn--danger" onClick={() => void handleAbort()}>
                 中止
               </button>
@@ -865,7 +915,13 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                       'wf-node__idx' + (n.action_kind === CONDITION_KIND ? ' wf-node__idx--center' : '')
                     }
                   >
-                    {n.action_kind === CONDITION_KIND ? '条件' : `第 ${i + 1} 步`}
+                    {n.action_kind === CONDITION_KIND
+                    ? '条件'
+                    : `第 ${i + 1} 步${
+                        actionKindLabel(n.action_kind) === '任务'
+                          ? ''
+                          : ' · ' + actionKindLabel(n.action_kind)
+                      }`}
                   </text>
                   <text
                     x={n.action_kind === CONDITION_KIND ? NODE_W / 2 : 10}
@@ -992,22 +1048,35 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                       {node.action_kind === CONDITION_KIND && (
                         <p className="wf-card__detail">{describeCondition(node.action_value)}</p>
                       )}
+                      {isAutoActionKind(node.action_kind) && node.action_value && (
+                        <p className="wf-card__detail">
+                          {normalizeActionKind(node.action_kind) === 'script' ? '脚本' : '命令'}：
+                          {node.action_value.length > 60
+                            ? node.action_value.slice(0, 60).replace(/\n/g, ' ') + '…'
+                            : node.action_value}
+                          {' · 期望退出码 '}
+                          {node.action_expect === '' ? 0 : node.action_expect}
+                        </p>
+                      )}
                       <div className="wf-card__meta">
                         {node.action_kind === CONDITION_KIND ? (
                           <button className="text-btn" onClick={() => void runNodeAction(node)} title="立即求值这个条件（试跑）">
                             试跑条件
                           </button>
-                        ) : node.action_kind && node.action_kind !== 'none' ? (
+                        ) : isAutoActionKind(node.action_kind) ? (
                           <button
-                            className={
-                              node.action_kind === 'run_command' ? 'text-btn text-btn--danger' : 'text-btn'
-                            }
+                            className="text-btn text-btn--danger"
+                            title="等进程退出并核对退出码；只试跑，不影响实例状态"
                             onClick={() => void runNodeAction(node)}
                           >
-                            {node.action_kind === 'run_command' ? '执行命令…' : '执行动作'}
+                            {normalizeActionKind(node.action_kind) === 'script' ? '试跑脚本…' : '试跑命令…'}
+                          </button>
+                        ) : node.action_kind && node.action_kind !== 'none' && node.action_kind !== TASK_KIND ? (
+                          <button className="text-btn" onClick={() => void runNodeAction(node)}>
+                            执行动作
                           </button>
                         ) : (
-                          <span className="u-aux">无动作</span>
+                          <span className="u-aux">人工任务</span>
                         )}
                         <button className="text-btn" onClick={() => openEditNode(node)}>
                           编辑
@@ -1040,10 +1109,8 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
           <WorkflowStepDialog
             node={editing}
             isNew={editingNew}
-            siblings={ordered
-              .filter((n) => n.id !== editing.id)
-              .map((n) => ({ id: n.id, title: n.title }))}
-            selectedTitle={ordered.find((n) => n.id === selected)?.title ?? null}
+            selectedTitle={selectedNode?.title ?? null}
+            selectedIsCondition={selectedNode?.action_kind === CONDITION_KIND}
             noteChoices={noteChoices}
             onSave={(node, asBranch) => void handleSaveNode(node, asBranch)}
             onCancel={closeNodeDialog}

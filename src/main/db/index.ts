@@ -43,7 +43,7 @@ import { listFolders, listTasksByList, createListFolder, renameListFolder, delet
 import { siblingsOf, isDescendantOf, reorderTask, moveTaskRelative, reparentTask, batchComplete, batchMove, batchSetDue, listTags, setTaskTags, ensureListId, quickAdd } from './task-ops'
 import { listTasks, listTodayTasks, recentNotes, noteCountMap, tagMap, listNotes, overview, toggleTask, cloneTaskTree, setPriority, setTitle, setStatus, setDueDate, nextSortKey, createTask, EDITABLE_FIELDS, updateTask, softDelete, syncTaskNoteLinks, attachTaskNote, detachTaskNote, listLinkedNotes, pauseTask, resumeTask, attachBlock, detachBlock, listLinkedContexts, contextsForNote, noteContextMap, writeNoteAfterDone, taskCandidates } from './tasks'
 import { trashItems, restoreTrash, purgeTrash, emptyTrash, purgeTrashOlderThan, tagsWithUsage, createTag, renameTag, deleteTag, mergeTags } from './trash'
-import { NODE_COLUMNS, orderedNodes, nextWorkflowNode, validateWorkflowTemplate, listWorkflowTemplates, getWorkflowTemplate, saveWorkflowTemplate, deleteWorkflowTemplate, duplicateWorkflowTemplate, autoLayoutWorkflowNodes, updateWorkflowNodePos, setWorkflowBranch, spawnStepTask, instantiateWorkflow, getWorkflowInstance, listWorkflowInstances, listWorkflowInstancesByTask, completeWorkflowStep, abortWorkflowInstance, splitCommand, describeWorkflowAction, runWorkflowAction } from './workflow'
+import { NODE_COLUMNS, orderedNodes, nextWorkflowNode, validateWorkflowTemplate, listWorkflowTemplates, getWorkflowTemplate, saveWorkflowTemplate, deleteWorkflowTemplate, duplicateWorkflowTemplate, autoLayoutWorkflowNodes, updateWorkflowNodePos, setWorkflowBranch, spawnStepTask, instantiateWorkflow, getWorkflowInstance, listWorkflowInstances, listWorkflowInstancesByTask, completeWorkflowStep, abortWorkflowInstance, retryWorkflowStep, setWorkflowNotifier, splitCommand, describeWorkflowAction, runWorkflowAction } from './workflow'
 import type { EditableField } from './tasks'
 import type { TrashItem } from './trash'
 import type { DataDomain } from '../../shared/events'
@@ -102,6 +102,7 @@ const WRITE_DOMAINS: Record<string, DataDomain | DataDomain[]> = {
   'db:updateWorkflowNodePos': 'workflow',
   'db:instantiateWorkflow': 'workflow',
   'db:completeWorkflowStep': 'workflow',
+  'db:retryWorkflowStep': 'workflow',
   'db:abortWorkflowInstance': 'workflow',
   'db:linkNotes': 'note',
   'db:linkTaskNoteRef': 'task',
@@ -214,6 +215,9 @@ function handle(channel: string, fn: IpcHandler): void {
 }
 
 export function registerDbHandlers(): void {
+  // 自动步骤（命令 / 脚本）是在主进程后台推进的：跑完一步必须主动告诉渲染层刷新，
+  // 否则页面上会一直显示「运行中」，直到用户手动切页。
+  setWorkflowNotifier(() => broadcastDataChanged('workflow'))
   // 首次启动写入欢迎内容（对齐 Python ctx.seed_if_empty，D24）：只在空库时写，
   // 放在注册 IPC 之前，保证窗口首次取数时种子数据已就位。
   try {
@@ -255,11 +259,11 @@ export function registerDbHandlers(): void {
   handle('db:tags', () => listTags())
   handle('db:setTaskTags', (_e, id: number, names: string[]) => setTaskTags(id, names))
   handle('db:recentNotes', (_e, limit?: number) => recentNotes(limit))
-  handle('db:runWorkflowAction', (_e, kind: string, value: string) =>
-    runWorkflowAction(kind, value)
+  handle('db:runWorkflowAction', (_e, kind: string, value: string, expect?: string) =>
+    runWorkflowAction(kind, value, expect ?? '')
   )
-  handle('db:describeWorkflowAction', (_e, kind: string, value: string) =>
-    describeWorkflowAction(kind, value)
+  handle('db:describeWorkflowAction', (_e, kind: string, value: string, expect?: string) =>
+    describeWorkflowAction(kind, value, expect)
   )
   handle(
     'db:recordPomodoro',
@@ -492,6 +496,8 @@ export function registerDbHandlers(): void {
   )
   handle('db:workflowInstance', (_e, id: number) => getWorkflowInstance(id))
   handle('db:completeWorkflowStep', (_e, taskId: number) => completeWorkflowStep(taskId))
+  // 自动步骤失败后原地重跑（失败时实例停在当前节点，没有这个入口就只能中止）
+  handle('db:retryWorkflowStep', (_e, instanceId: number) => retryWorkflowStep(instanceId))
   handle('db:abortWorkflowInstance', (_e, id: number) => abortWorkflowInstance(id))
   // G7：图谱构建参数（includeTasks / 文件夹 / 标签 / 邻域），默认纳入任务节点
   handle('db:graph', (_e, query?: GraphQuery) => buildGraphTracked({ includeTasks: true, ...(query ?? {}) }))

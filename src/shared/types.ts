@@ -70,13 +70,33 @@ export interface WorkflowNodePayload {
   title: string
   detail: string
   order_index: number
+  /** 旧库的单条 SOP 绑定（新写入时同步为 note_ids 的第一条） */
   note_id: number | null
+  /** SOP 文档可以绑多条；读取时若为空则回退成 [note_id] */
+  note_ids: number[]
   action_kind: string
   action_value: string
+  /** 命令 / 脚本的期望退出码（文本，空 = 0） */
+  action_expect: string
+  /** 遗留字段：步骤自带的「进入条件」文本（编辑器已不再提供） */
   condition: string
   branch_node_id: number | null
   pos_x: number | null
   pos_y: number | null
+}
+
+/** 一次节点执行的运行态 —— 自动节点（命令 / 脚本）跑的进度与结果。 */
+export interface NodeRunResult {
+  nodeId: number
+  /** task / command / script / condition */
+  kind: string
+  /** running：正在跑；ok：返回值正确；failed：退出码不符；timeout：超时被掐断 */
+  state: 'running' | 'ok' | 'failed' | 'timeout'
+  code: number | null
+  /** 进程输出（截断后的尾部），供人工排查 */
+  output: string
+  message: string
+  at: string
 }
 
 export interface WorkflowTemplatePayload {
@@ -103,6 +123,8 @@ export interface WorkflowInstancePayload {
   origin_task_id: number | null
   created_at: string
   finished_at: string | null
+  /** 最近一次节点执行的结果：条件节点「上一步结果」的来源，也是失败后的可见凭据 */
+  last_result: NodeRunResult | null
   steps: WorkflowStepPayload[]
 }
 

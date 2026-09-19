@@ -196,7 +196,75 @@
   align-items: center;
   gap: var(--space-1);
 }
-/* 条件节点的配置区：嵌在步骤编辑弹窗里，紧跟「动作」下拉 */
+/* SOP 多选绑定：已选做成可移除的胶囊，未选的从下拉里挑（避免 <select multiple> 的烂交互） */
+.sop-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  background: var(--bg-layer);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-ctl);
+}
+.sop-picker__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: var(--control-h-sm);
+  align-items: center;
+}
+.sop-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 4px 2px 8px;
+  font-size: var(--text-aux);
+  background: var(--accent-soft);
+  color: var(--fg-primary);
+  border-radius: 999px;
+}
+.sop-chip__x {
+  border: 0;
+  background: transparent;
+  color: var(--fg-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 4px;
+}
+.sop-chip__x:hover {
+  color: var(--danger);
+}
+.sop-picker .field {
+  min-height: var(--control-h-sm);
+  /* 撑满整行：否则这个「＋ 添加文档」下拉只有内容宽，看着像缩在角落里 */
+  width: 100%;
+}
+
+/* 实例上「自动步骤」的运行态：运行中不抢眼，失败要显眼 */
+.wf-run {
+  font-size: var(--text-aux);
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--bg-layer);
+  color: var(--fg-secondary);
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wf-run--running {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.wf-run--failed,
+.wf-run--timeout {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+/* 条件节点的配置区：独立的条件编辑弹窗里，紧跟「详情」之后 */
 .wf-cond {
   display: flex;
   flex-direction: column;

@@ -948,3 +948,30 @@ notes（240px 树宽）→ ⋯ 1   （格式下拉常驻浮层）
 > 迁移时踩到一个定位坑：我用「括号配平」从 `{editing && (` 往后找段落终点，结果被段内的
 > `setEditing(null)` 提前骗到 depth 归零 —— 替换后残留了一个 `}`，报的是 `Unexpected token`。
 > **字符串/JSX 混在一起时不该用字符级的括号配平**，按行定位（找那个精确缩进的 `))}`）才可靠。
+
+## 工作流：动作三分（任务/命令/脚本）+ SOP 多绑 + 结果传给条件（2026-09-19，第二十六轮）
+
+| # | 需求 | 落地 | 实测 |
+| --- | --- | --- | --- |
+| 1 | 步骤编辑**去掉「进入条件」与「条件分支到」**（条件节点独立承担） | `WorkflowStepDialog` 删掉这两个字段（`condition` / `branch_node_id` 仍在 payload 里透传，旧模板的分支照旧生效）；只有**选中节点本身是条件节点**时，新增步骤才给「作为它的条件分支」勾选 | 弹窗正文不再含这两个词；分支仍能通过条件弹窗的「条件成立时跳到」设置 |
+| 2 | SOP 文档可以绑**多条** | 新增私有列 `workflow_node.note_ids`（JSON 数组）；编辑器是「已选胶囊 + ＋添加文档」而不是 `<select multiple>`；`note_id` 作为兼容列同步为第一条（Python 版仍按单值读）；下发任务时逐条查标题、拼成多个 `[[链接]]` | 端到端：两条绑定往返一致、`note_id`=第一条、任务备注 2 个 wikilink |
+| 3 | 动作分**任务 / 命令 / 脚本**，只有「任务」生成任务项 | `src/shared/workflow-action.ts`（两端共用）定义三类与归一：`none`/`open_url`/`open_note`/`run_command` 这些历史值一律按「任务」处理（它们此前的行为就是派待办），编辑器把历史值显示成只读项、不静默改数据 | 端到端：命令/脚本/条件节点都**不**产生 `workflow_step_task` 行 |
+| 4 | 三类都必须「等完成 / 返回值正确」才算节点完成 | 命令：shlex 拆 argv、不经 shell、`stdio:pipe` 捕获输出、**等 close**；脚本：脚本内容从 stdin 喂解释器（`powershell -Command -` / `sh -s`），同样等退出码；判据 `退出码 == action_expect`（默认 0）；120s 超时用 `taskkill /T` 收整棵进程树；任务型则等人勾选 | exit 7 == 期望 7 → ok；exit 3 期望 0 → failed 且带退出码 |
+| 5 | 下一节点是条件判断时，要把结果传进去 | 每次执行（含人工任务完成）写 `workflow_instance.last_result`（nodeId/kind/state/code/output/message/at）；条件新增来源「**上一步结果**」，判定抽成共享纯函数 `judgePrevResult`：填了退出码按退出码判、没填才看成功与否 | 19/19：命令成功 → 条件「上一步成功」成立 → 走分支跳过顺序下一步；期望「失败」时走顺序下一步 |
+| 6 | 失败之后不能没出路 | 返回值不对就停在当前节点（`current_node_id` 不动、不生成后续任务），实例仍 `running`；IPC 新增 `db:retryWorkflowStep`，页面上给「重试该步」按钮原地重跑 | 重试后 `last_result.at` 更新；同一条命令、期望值一致时能通过并推进 |
+
+> **自动步骤的泵**：`instantiateWorkflow` 与 `completeWorkflowStep` 都可能把控制权交给
+> `pumpInstance` —— 只要当前节点是命令/脚本就「执行 → 记录结果 → 推进」循环下去，直到落到
+> 人工任务、流程结束、或某步返回值不对。同一实例用 `pumping` 集合互斥，避免重试按钮与
+> 任务完成钩子并发跑同一个节点。泵是 `void` 起的（不 await）：长命令不该把启动按钮卡住，
+> 跑完由主进程主动广播 `workflow` 域刷新页面。
+>
+> **私有列不并入 Python 迁移链**：`note_ids` / `action_expect` / `last_result` 由
+> `connection.ts` 的 `ensureAppExtensions` 幂等补齐（先 PRAGMA 查列、缺了才 ALTER）。
+> 编进 `MIGRATIONS` 会占掉与 Python 共用的版本号，让先升级的一方写出另一方读不懂的
+> `schema_version`；而这几列对 Python 端无害 —— 查询都是显式列名、列全部可空。
+>
+> **验证环境的一个坑**：DSH 的 `pwsh` 只带它自己的 bin 目录，从那里启动的 Electron 里
+> `cmd.exe` / `powershell.exe` 会 ENOENT。这纯粹是验证环境的限制（用户正常启动应用时
+> PATH 完整），所以只在验证脚本里给子进程补系统 PATH，没有去改产品代码。
+

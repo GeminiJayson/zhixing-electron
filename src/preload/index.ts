@@ -188,8 +188,12 @@ const api = {
         detail?: string
         order_index?: number
         note_id?: number | null
+        /** SOP 可以绑多条；写出时 note_id 会同步为它的第一条（兼容列） */
+        note_ids?: number[]
         action_kind?: string
         action_value?: string
+        /** 命令 / 脚本的期望退出码（文本，空 = 0） */
+        action_expect?: string
         condition?: string
         branch_node_id?: number | null
         pos_x?: number | null
@@ -226,6 +230,9 @@ const api = {
       ipcRenderer.invoke('db:workflowInstance', id),
     completeWorkflowStep: (taskId: number): Promise<boolean> =>
       ipcRenderer.invoke('db:completeWorkflowStep', taskId),
+    /** 自动步骤失败后原地重跑（实例停在当前节点时用） */
+    retryWorkflowStep: (instanceId: number): Promise<boolean> =>
+      ipcRenderer.invoke('db:retryWorkflowStep', instanceId),
     abortWorkflowInstance: (id: number): Promise<boolean> =>
       ipcRenderer.invoke('db:abortWorkflowInstance', id),
     noteFolders: (): Promise<NoteFolder[]> => ipcRenderer.invoke('db:noteFolders'),
@@ -263,13 +270,15 @@ const api = {
     ): boolean => ipcRenderer.sendSync('db:flushNote', id, fields),
     materializeDangling: (srcId: number, title: string): Promise<number | null> =>
       ipcRenderer.invoke('db:materializeDangling', srcId, title),
+    /** 手动试跑一个步骤（命令 / 脚本会等待退出并核对退出码） */
     runWorkflowAction: (
       kind: string,
-      value: string
-    ): Promise<{ ok: boolean; message: string; kind: string }> =>
-      ipcRenderer.invoke('db:runWorkflowAction', kind, value),
-    describeWorkflowAction: (kind: string, value: string): Promise<string> =>
-      ipcRenderer.invoke('db:describeWorkflowAction', kind, value),
+      value: string,
+      expect?: string
+    ): Promise<{ ok: boolean; message: string; kind: string; code: number | null; output: string }> =>
+      ipcRenderer.invoke('db:runWorkflowAction', kind, value, expect ?? ''),
+    describeWorkflowAction: (kind: string, value: string, expect?: string): Promise<string> =>
+      ipcRenderer.invoke('db:describeWorkflowAction', kind, value, expect),
     /** reason：手动中断专注时记录的中断原因（D18，对齐 PomodoroRepository.add 的第 5 参） */
     recordPomodoro: (
       taskId: number | null,

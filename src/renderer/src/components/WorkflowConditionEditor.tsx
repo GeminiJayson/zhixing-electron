@@ -17,10 +17,12 @@ interface Props {
 /**
  * 条件节点的配置编辑器：选「注入条件的来源」并填参数，结果写回节点的 action_value。
  *
- * 三种来源对应三种真实判定：
+ * 四种来源对应四种真实判定：
  *   提示确认   —— 推进时弹模态确认框，用户选「是」即成立（人工闸门）
  *   任务状态   —— 查某个任务是否已完成（这里用下拉选真实任务，不让用户敲 id）
  *   脚本返回   —— 运行脚本并比较**退出码**（独立进程、不经 shell、有超时）
+ *   上一步结果 —— 读紧邻的上一个执行节点的返回值：命令/脚本看退出码、任务看是否完成。
+ *                这是「把上一步的结果传进下一个节点」在界面上的落点。
  */
 export function WorkflowConditionEditor({ value, onChange }: Props) {
   const cfg = parseCondition(value)
@@ -106,6 +108,34 @@ export function WorkflowConditionEditor({ value, onChange }: Props) {
         </div>
       )}
 
+      {kind === 'prev' && (
+        <div className="form-grid">
+          <label className="form-row">
+            <span>期望结果</span>
+            <select
+              className="field"
+              value={cfg?.expectOk === false ? 'fail' : 'ok'}
+              onChange={(e) => update({ expectOk: e.target.value === 'ok' })}
+            >
+              <option value="ok">成功</option>
+              <option value="fail">失败</option>
+            </select>
+          </label>
+          <label className="form-row">
+            <span>期望退出码（可留空）</span>
+            <input
+              className="field"
+              type="number"
+              value={cfg?.expectCode ?? ''}
+              placeholder="留空 = 只看成功与否"
+              onChange={(e) =>
+                update({ expectCode: e.target.value === '' ? undefined : Number(e.target.value) })
+              }
+            />
+          </label>
+        </div>
+      )}
+
       {kind === 'script' && (
         <div className="form-grid">
           <label className="form-row">
@@ -130,6 +160,12 @@ export function WorkflowConditionEditor({ value, onChange }: Props) {
       )}
 
       <p className="u-aux">当前条件：{describeCondition(value)}</p>
+      {kind === 'prev' && (
+        <p className="u-aux">
+          判定的是「紧邻的上一个执行节点」的结果：命令/脚本用它的退出码，人工任务用「是否完成」。
+          条件节点自身不产生结果，串联的条件节点会一直看到同一个上一步。
+        </p>
+      )}
       {kind === 'script' && (
         <p className="u-aux">
           脚本在独立进程中运行、不经 shell，最长等 15 秒；退出码等于期望值即「条件成立」。

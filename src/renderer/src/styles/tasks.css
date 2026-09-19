@@ -745,6 +745,15 @@
 .text-btn--danger {
   color: var(--danger);
 }
+/* 脚本内容：等宽 + 保留缩进，读起来才像代码 */
+.field--code {
+  font-family: var(--font-mono);
+  font-size: var(--text-aux);
+  min-height: 132px;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+}
 
 /* 勾选圆圈的已完成态（今日页与任务页共用） */
 .check--done {
