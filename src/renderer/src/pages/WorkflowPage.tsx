@@ -761,7 +761,11 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
               </span>
               {/* 自动步骤（命令 / 脚本）的实时状态：运行中、还是卡在某个返回值不对的步骤上 */}
               {instance.last_result && (
-                <span className={'wf-run wf-run--' + instance.last_result.state}>
+                <span
+                  className={'wf-run wf-run--' + instance.last_result.state}
+                  // 悬停看进程输出尾部：失败原因往往只在 stdout/stderr 里（进度条是单行，放不下）
+                  title={instance.last_result.output || undefined}
+                >
                   {instance.last_result.message}
                   {instance.last_result.code != null ? `（退出码 ${instance.last_result.code}）` : ''}
                 </span>
