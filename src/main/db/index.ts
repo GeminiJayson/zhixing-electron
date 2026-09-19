@@ -43,6 +43,7 @@ import { listFolders, listTasksByList, createListFolder, renameListFolder, delet
 import { siblingsOf, isDescendantOf, reorderTask, moveTaskRelative, reparentTask, batchComplete, batchMove, batchSetDue, listTags, setTaskTags, ensureListId, quickAdd } from './task-ops'
 import { listTasks, listTodayTasks, recentNotes, noteCountMap, tagMap, listNotes, overview, toggleTask, cloneTaskTree, setPriority, setTitle, setStatus, setDueDate, nextSortKey, createTask, EDITABLE_FIELDS, updateTask, softDelete, syncTaskNoteLinks, attachTaskNote, detachTaskNote, listLinkedNotes, pauseTask, resumeTask, attachBlock, detachBlock, listLinkedContexts, contextsForNote, noteContextMap, writeNoteAfterDone, taskCandidates } from './tasks'
 import { trashItems, restoreTrash, purgeTrash, emptyTrash, purgeTrashOlderThan, tagsWithUsage, createTag, renameTag, deleteTag, mergeTags } from './trash'
+import { attachmentStats, deleteAttachment, importAttachment, listAttachments, pruneAttachments } from './attachments'
 import { NODE_COLUMNS, orderedNodes, nextWorkflowNode, validateWorkflowTemplate, listWorkflowTemplates, getWorkflowTemplate, saveWorkflowTemplate, deleteWorkflowTemplate, duplicateWorkflowTemplate, autoLayoutWorkflowNodes, updateWorkflowNodePos, setWorkflowBranch, spawnStepTask, instantiateWorkflow, getWorkflowInstance, listWorkflowInstances, listWorkflowInstancesByTask, completeWorkflowStep, abortWorkflowInstance, retryWorkflowStep, setWorkflowNotifier, splitCommand, describeWorkflowAction, runWorkflowAction, listWorkflowGroups, workflowTemplateGroups, saveWorkflowGroup, deleteWorkflowGroup, moveWorkflowTemplate, renameWorkflowInstance } from './workflow'
 import type { EditableField } from './tasks'
 import type { TrashItem } from './trash'
@@ -117,6 +118,9 @@ const WRITE_DOMAINS: Record<string, DataDomain | DataDomain[]> = {
   'db:deleteWorkflowGroup': 'workflow',
   'db:moveWorkflowTemplate': 'workflow',
   'db:renameWorkflowInstance': 'workflow',
+  'db:importAttachment': 'note',
+  'db:deleteAttachment': 'note',
+  'db:pruneAttachments': 'note',
   'db:createListFolder': 'task',
   'db:renameListFolder': 'task',
   'db:deleteListFolder': 'task',
@@ -497,6 +501,13 @@ export function registerDbHandlers(): void {
     (_e, templateId: number, title: string | null, originTaskId: number | null, policy?: string) =>
       instantiateWorkflow(templateId, title, originTaskId, policy)
   )
+  handle('db:attachments', () => listAttachments())
+  handle('db:attachmentStats', () => attachmentStats())
+  handle('db:importAttachment', (_e, noteId: number, srcPath: string) =>
+    importAttachment(noteId, srcPath)
+  )
+  handle('db:deleteAttachment', (_e, id: number) => deleteAttachment(id))
+  handle('db:pruneAttachments', () => pruneAttachments())
   handle('db:workflowGroups', () => listWorkflowGroups())
   handle('db:workflowTemplateGroups', () => workflowTemplateGroups())
   handle('db:saveWorkflowGroup', (_e, input: Parameters<typeof saveWorkflowGroup>[0]) =>

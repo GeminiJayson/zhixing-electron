@@ -34,6 +34,8 @@ interface Props {
   libJob?: AiLibraryProgress | null
   /** 触发 / 停止整库整理 */
   onOrganizeLibrary?: () => void
+  /** 把本地文件归档成当前笔记的附件 */
+  onAddAttachment?: () => void
 }
 
 /** 笔记树：文件夹层级 + 文件夹内笔记（对齐 note_page 的两栏左树）。 */
@@ -52,6 +54,7 @@ export function NoteTree({
   onMoveFolder,
   libJob = null,
   onOrganizeLibrary,
+  onAddAttachment,
 }: Props) {
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const [query, setQuery] = useState('')
@@ -258,7 +261,7 @@ export function NoteTree({
         />
       </div>
       {/* 树级动作：整库整理属于「整棵树」的操作，放在搜索框下面比塞进编辑器工具栏更顺手 */}
-      {onOrganizeLibrary && (
+      {(onOrganizeLibrary || onAddAttachment) && (
         <div className="ntree__topbar">
           <button
             className={libJob ? 'text-btn text-btn--danger' : 'text-btn'}
@@ -267,10 +270,19 @@ export function NoteTree({
                 ? `正在整理：${libJob.currentTitle || '…'}（成功 ${libJob.ok} / 失败 ${libJob.failed}）；点此停止，当前这一篇会跑完`
                 : '逐篇整理整个笔记库（按类型分别处理，可随时停止）'
             }
-            onClick={() => onOrganizeLibrary()}
+            onClick={() => onOrganizeLibrary?.()}
           >
             <Sparkles size={13} /> {libJob ? `停止整理（${libJob.done}/${libJob.total}）` : 'AI 整理全库'}
           </button>
+          {onAddAttachment && (
+            <button
+              className="text-btn"
+              title="把本地文件复制进数据目录并挂到当前笔记（原文件移动或删除也不影响）"
+              onClick={() => onAddAttachment()}
+            >
+              <FilePlus2 size={13} /> 添加附件
+            </button>
+          )}
           {libJob && (
             <span className="u-aux ntree__topbar-hint" title={libJob.currentTitle}>
               {libJob.currentTitle || '准备中…'}

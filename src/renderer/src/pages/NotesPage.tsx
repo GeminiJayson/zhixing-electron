@@ -286,6 +286,30 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
    * 整库整理：逐篇交给主进程（串行、每篇独立审计）。
    * 正在跑时这个按钮变成「停止」—— 停止只影响下一篇，已经发出的那篇会跑完入库。
    */
+  /** 附件：选文件 → 主进程复制进数据目录并落库 → 在正文末尾补一条链接 */
+  const handleAddAttachment = async (): Promise<void> => {
+    if (selectedId == null) {
+      onNotice('先在左侧选一篇笔记')
+      return
+    }
+    const res = await window.zhixing.db.pickAttachment(selectedId)
+    if (!res.ok) {
+      onNotice(res.message)
+      return
+    }
+    const note = notes.find((n) => n.id === selectedId)
+    const lines = res.paths.map((p) => {
+      const name = p.split(/[\\/]/).pop() ?? p
+      return `📎 [${name}](file:///${p.replace(/\\/g, '/')})`
+    })
+    const next = `${note?.content_md ?? ''}\n\n${lines.join('\n')}\n`
+    await window.zhixing.db.saveNote(selectedId, { content_md: next })
+    setContent(next)
+    setDirty(false)
+    await load()
+    onNotice(res.message)
+  }
+
   const handleLibraryOrganize = async (): Promise<void> => {
     if (libJob) {
       // 取消现在会回一句人话：没在跑时说「当前没有正在运行的整库整理」，
@@ -769,6 +793,7 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
           onMoveFolder={(id, parentId) => void handleMoveFolder(id, parentId)}
           libJob={libJob}
           onOrganizeLibrary={() => void handleLibraryOrganize()}
+        onAddAttachment={() => void handleAddAttachment()}
         />
 
         {/* 编辑区与链接面板纵向排列：链接面板从右侧栏挪到了编辑区下方 */}

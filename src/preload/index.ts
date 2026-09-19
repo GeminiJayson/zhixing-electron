@@ -88,6 +88,20 @@ const api = {
     listFolders: (): Promise<unknown[]> => ipcRenderer.invoke('db:listFolders'),
   /** 用系统默认应用打开本地文件；Word / Excel 笔记的正文就是这个文件 */
   openPath: (target: string): Promise<string> => ipcRenderer.invoke('shell:openPath', target),
+  /** 附件：列表 / 统计 / 导入 / 删除 / 清理 */
+  attachments: (): Promise<
+    { id: number; note_id: number; note_title: string; path: string; kind: string; size: number; missing: boolean }[]
+  > => ipcRenderer.invoke('db:attachments'),
+  attachmentStats: (): Promise<{ count: number; bytes: number; missing: number; dir: string }> =>
+    ipcRenderer.invoke('db:attachmentStats'),
+  importAttachment: (noteId: number, srcPath: string): Promise<{ ok: boolean; path?: string; message: string }> =>
+    ipcRenderer.invoke('db:importAttachment', noteId, srcPath),
+  deleteAttachment: (id: number): Promise<boolean> => ipcRenderer.invoke('db:deleteAttachment', id),
+  pruneAttachments: (): Promise<{ removedRows: number; removedFiles: number }> =>
+    ipcRenderer.invoke('db:pruneAttachments'),
+  /** 弹系统文件选择框并归档到指定笔记，返回归档后的路径 */
+  pickAttachment: (noteId: number): Promise<{ ok: boolean; message: string; paths: string[] }> =>
+    ipcRenderer.invoke('attachment:pick', noteId),
     tasksByList: (listId: number | null): Promise<unknown[]> =>
       ipcRenderer.invoke('db:tasksByList', listId),
     createListFolder: (

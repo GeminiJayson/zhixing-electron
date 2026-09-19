@@ -35,6 +35,19 @@ const API_MAP_FIELDS: { key: string; label: string; placeholder: string }[] = [
   { key: 'done', label: '是否完成', placeholder: '如 completed' },
 ]
 
+/** 附件占用大小的可读格式 */
+function formatBytes(bytes: number): string {
+  if (!bytes) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  let n = bytes
+  let i = 0
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024
+    i += 1
+  }
+  return `${n.toFixed(n < 10 && i > 0 ? 1 : 0)} ${units[i]}`
+}
+
 /** 解析字段映射的设置值；坏 JSON 当没配 */
 function parseMapDraft(raw: string): Record<string, string> {
   try {
@@ -207,6 +220,33 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
   /** 外部任务同步：状态 + 手动触发。改完地址/开关/间隔后让主进程重排定时器。 */
   const [syncStatus, setSyncStatus] = useState<{ lastAt: string; lastResult: string } | null>(null)
   const [syncing, setSyncing] = useState(false)
+  /** 附件统计（数量 / 占用 / 失效） */
+  const [attStats, setAttStats] = useState<{ count: number; bytes: number; missing: number; dir: string } | null>(
+    null
+  )
+
+  const refreshAttachments = useCallback(async (): Promise<void> => {
+    try {
+      setAttStats(await window.zhixing.db.attachmentStats())
+    } catch {
+      setAttStats(null)
+    }
+  }, [])
+
+  const handlePruneAttachments = async (): Promise<void> => {
+    const res = await window.zhixing.db.pruneAttachments()
+    await refreshAttachments()
+    onNotice(
+      res.removedRows || res.removedFiles
+        ? `已清理 ${res.removedRows} 条失效记录、${res.removedFiles} 个孤儿文件`
+        : '没有需要清理的附件'
+    )
+  }
+
+  useEffect(() => {
+    void refreshAttachments()
+  }, [refreshAttachments])
+
   /** 清单（list 类型的文件夹）—— 外部同步的落点候选 */
   const [lists, setLists] = useState<{ id: number; name: string }[]>([])
 
@@ -753,6 +793,28 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
         {tab === 'data' && (
           <section className="set-card">
             <header className="set-card__head"><Database size={15} /> 数据</header>
+            <div className="set-row set-row--end">
+              <span>附件</span>
+              <span className="u-aux">
+                {attStats
+                  ? `${attStats.count} 个 · ${formatBytes(attStats.bytes)}${attStats.missing ? ` · ${attStats.missing} 个文件已丢失` : ''}`
+                  : '统计中…'}
+              </span>
+              <button className="text-btn" onClick={() => void refreshAttachments()}>
+                刷新
+              </button>
+              <button
+                className="text-btn"
+                onClick={() => {
+                  if (attStats?.dir) void window.zhixing.db.openPath(attStats.dir)
+                }}
+              >
+                打开目录
+              </button>
+              <button className="text-btn text-btn--danger" onClick={() => void handlePruneAttachments()}>
+                清理失效与孤儿文件
+              </button>
+            </div>
             <label className="set-row">
               <span>回收站保留</span>
               <input

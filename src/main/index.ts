@@ -11,6 +11,7 @@ import {
   nativeTheme,
   screen,
   systemPreferences,
+  dialog,
   shell,
 } from 'electron'
 import { join } from 'node:path'
@@ -29,6 +30,7 @@ import {
   testAiConnection,
 } from './ai'
 import { setConditionAsker } from './db/workflow'
+import { importAttachment } from './db/attachments'
 import { syncExternalTasks, taskSyncStatus } from './task-sync'
 import { readSelectedText } from './selection'
 
@@ -1120,6 +1122,33 @@ function registerWindowFit(): void {
   })
 }
 
+/** 附件：选文件 → 复制进数据目录 → 落库，返回归档后的路径给渲染层写进正文。 */
+function registerAttachmentHandlers(): void {
+  ipcMain.handle('attachment:pick', async (e, noteId: number) => {
+    const win = BrowserWindow.fromWebContents(e.sender)
+    const picked = win
+      ? await dialog.showOpenDialog(win, { properties: ['openFile', 'multiSelections'] })
+      : await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] })
+    if (picked.canceled || !picked.filePaths.length) {
+      return { ok: false, message: '已取消', paths: [] as string[] }
+    }
+    const paths: string[] = []
+    const problems: string[] = []
+    for (const src of picked.filePaths) {
+      const res = importAttachment(noteId, src)
+      if (res.ok && res.path) paths.push(res.path)
+      else problems.push(res.message)
+    }
+    return {
+      ok: paths.length > 0,
+      message: paths.length
+        ? `已归档 ${paths.length} 个附件${problems.length ? `（${problems.length} 个失败）` : ''}`
+        : problems[0] ?? '导入失败',
+      paths,
+    }
+  })
+}
+
 /** 用系统默认应用打开本地文件（Word / Excel 笔记的正文就是这个文件）。 */
 function registerShellHandlers(): void {
   ipcMain.handle('shell:openPath', async (_e, target: string) => {
@@ -1353,6 +1382,7 @@ app.whenReady().then(() => {
   registerTaskSyncHandlers()
   registerCaptureWindow()
   registerShellHandlers()
+  registerAttachmentHandlers()
   registerWindowFit()
   scheduleTaskSync()
   // 欢迎页要先于主窗出现（对齐 __main__.py：splash.show() 在 AppContext 构造之前）
