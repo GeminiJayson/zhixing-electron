@@ -148,8 +148,12 @@
   position: relative;
   display: flex;
   align-items: center;
+  /* 撑满树的宽度：它是表单行而不是工具项 */
   flex: 1 1 auto;
   min-width: 0;
+}
+.ntree__search-wrap .ntree__search-input {
+  width: 100%;
 }
 .ntree__search-wrap > svg {
   position: absolute;

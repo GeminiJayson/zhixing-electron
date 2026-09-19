@@ -3,7 +3,6 @@ import { CalendarClock, CheckCircle2, CircleAlert, NotebookPen, Sparkles } from 
 import { buildTaskTree, effectiveDoneMap, type TaskNode } from '@shared/task'
 import type { Note, Overview, TodayTasks } from '@shared/types'
 import { t } from '../i18n'
-import { Toolbar } from '../components/Toolbar'
 import { PriorityMenu } from '../components/PriorityMenu'
 import { TaskRow } from '../components/TaskRow'
 import { TaskEditor } from '../components/TaskEditor'
@@ -167,29 +166,29 @@ export function TodayPage({ overview, onChanged, onNotice, onOpenNote, onFocusTa
 
   return (
     <div className="page today-page">
+      <div className="page__head">
+        <h1 className="page__title">{t('page.today')}</h1>
+        <p className="page__subtitle">{greeting}</p>
+      </div>
       <div className="page__body">
 
-        <Toolbar
-          title={t('page.today')}
-          subtitle={greeting}
-          search={
-            <input
-              className="field field--compact"
-              value={draft}
-              placeholder="快速添加今日任务，回车确认（支持 !2 @列表 #标签 明天）"
-              aria-label="快速添加任务"
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void handleQuickAdd()
-              }}
-            />
-          }
-          primary={
-            <button className="text-btn text-btn--accent" onClick={() => void handleQuickAdd()}>
-              添加
-            </button>
-          }
-        />
+        {/* 快速添加不是「工具」而是「表单行」：独立于工具栏，输入框才能撑满整行。
+            塞进工具栏时它会被工具栏的内边距与折叠逻辑挤在中间。 */}
+        <div className="quick-add">
+          <input
+            className="field"
+            value={draft}
+            placeholder="快速添加今日任务，回车确认（支持 !2 @列表 #标签 明天）"
+            aria-label="快速添加任务"
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void handleQuickAdd()
+            }}
+          />
+          <button className="text-btn text-btn--accent" onClick={() => void handleQuickAdd()}>
+            添加
+          </button>
+        </div>
 
         <section className="stat-grid" aria-label="概览">
           {cards.map((c) => {

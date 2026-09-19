@@ -168,6 +168,22 @@
 }
 
 /* --- 内容面板 --- */
+/* 快速添加任务：表单行独立于工具栏。输入框撑满剩余宽度、按钮固定宽贴右 ——
+   塞进工具栏时它会被内边距与折叠逻辑挤在中间，看起来不像一个「输入行」。 */
+.quick-add {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.quick-add .field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.quick-add .text-btn {
+  flex: 0 0 auto;
+}
+
 .app__content {
   flex: 1;
   min-width: 0;

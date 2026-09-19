@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight, FilePlus2, FolderPlus, Pin, Search, Trash2 } from 'lucide-react'
 import type { Note, NoteFolder } from '@shared/types'
 import { PopMenu } from './PopMenu'
-import { Toolbar } from './Toolbar'
 
 /** 新建笔记时可选的类型：原先在工具栏里选，现在放到「新建」动作里选 */
 export type NoteFormat = 'markdown' | 'richtext' | 'word' | 'excel' | 'link'
@@ -240,21 +239,17 @@ export function NoteTree({
       aria-label="笔记树"
       style={{ width: treeWidth, flexBasis: treeWidth }}
     >
-      <Toolbar
-        variant="panel"
-        search={
-          <span className="ntree__search-wrap">
-            <Search size={14} aria-hidden />
-            <input
-              className="field ntree__search-input"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="搜索标题…"
-              aria-label="搜索笔记标题"
-            />
-          </span>
-        }
-      />
+      {/* 搜索框不是「工具」而是「表单行」：独立于工具栏，才能撑满树的宽度 */}
+      <div className="ntree__search-wrap">
+        <Search size={14} aria-hidden />
+        <input
+          className="field ntree__search-input"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="搜索标题…"
+          aria-label="搜索笔记标题"
+        />
+      </div>
       <div className="ntree__body">
         {rootNotes.map((n) => noteRow(n, 0, null))}
         {childrenOf(null).map((f) => folderNode(f, 0))}
