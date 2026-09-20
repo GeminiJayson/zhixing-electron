@@ -110,6 +110,8 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
   const [rebinding, setRebinding] = useState<keyof AppSettings | null>(null)
   /** 捕获到的组合键（显示用；真正取值走 ref，避免键盘监听闭包读到旧值） */
   const [captured, setCaptured] = useState('')
+  /** 当场预检这个组合能不能注册；busy = 被别的程序占用 */
+  const [probe, setProbe] = useState<'idle' | 'checking' | 'ok' | 'busy'>('idle')
   const capturedRef = useRef('')
 
   useEffect(() => {
@@ -153,12 +155,20 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
         }
       }
       // 取消也要重注册：进入捕获态时已把全部热键注销了
+      let next: Record<string, string> = {}
       try {
-        setHotkeys(await window.zhixing.app.rebindHotkeys())
-      } catch {
-        // 主进程重注册失败不阻塞界面，状态标签保留上一次结果
+        next = await window.zhixing.app.rebindHotkeys()
+        setHotkeys(next)
+      } catch (err) {
+        // 重注册整体失败：这次连状态都是旧的，别让界面显示成「已改好」
+        onNotice(`热键重注册失败：${(err as Error).message}`)
+        return
       }
-      if (save && key && combo) onNotice(`热键已改为 ${combo}`)
+      if (!save || !key || !combo) return
+      // 注册不上时**绝不能**报「已改好」：用户会以为生效了、按下去却没反应 ——
+      // 这正是「设置页改键不生效」最常见的原因（组合被别的程序占用）
+      if ((next[key] ?? '').includes('已注册')) onNotice(`热键已改为 ${combo}`)
+      else onNotice(`「${combo}」没能注册：这个组合已被别的程序占用，换一个再试`)
     },
     [rebinding, onNotice]
   )
@@ -190,6 +200,13 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
       const combo = parts.join('+')
       capturedRef.current = combo
       setCaptured(combo)
+      // 当场预检：进捕获态时旧热键已全部注销，此刻注册一次最干净 ——
+      // 让用户在**按下组合的那一刻**就知道它能不能用，而不是保存后才发现注册失败
+      setProbe('checking')
+      void window.zhixing.app
+        .probeHotkey(combo)
+        .then((ok) => setProbe(ok ? 'ok' : 'busy'))
+        .catch(() => setProbe('idle'))
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
@@ -790,6 +807,7 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                 <button className="text-btn" onClick={() => {
                   setCaptured('')
                   capturedRef.current = ''
+                  setProbe('idle')
                   setRebinding(row.key)
                   // 捕获期间先注销全部全局热键，否则组合键被系统层吞掉（对齐 _suspend_hotkeys）
                   void window.zhixing.app.suspendHotkeys()
@@ -800,7 +818,8 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
               </div>
             ))}
             <p className="u-aux">
-              改键后立即生效；被系统或其他程序占用时会降级为托盘菜单项（状态显示在行尾）。
+              改键后立即生效。组合被系统或其他程序占用时会注册失败（行尾标出），
+              此时只有托盘菜单里对应那一项可用 —— 换一个组合再试即可。
               「读取选中并速记」在 Electron 侧无跨应用模拟复制能力，降级为读取系统剪贴板。
             </p>
           </section>
@@ -1166,6 +1185,18 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
               <p style={{ fontSize: 20, fontWeight: 600 }}>
                 {captured || '等待按键…'}
               </p>
+              {captured && (
+                <p
+                  className="u-aux"
+                  style={probe === 'busy' ? { color: 'var(--danger)' } : undefined}
+                >
+                  {probe === 'checking'
+                    ? '正在检查这个组合能不能用…'
+                    : probe === 'ok'
+                      ? '✓ 这个组合可用'
+                      : '✗ 这个组合已被别的程序占用，建议换一个'}
+                </p>
+              )}
             </div>
             <div className="modal__foot">
               <button className="text-btn" onClick={() => void finishRebind(false)}>

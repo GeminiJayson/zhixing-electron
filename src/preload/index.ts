@@ -618,6 +618,9 @@ const api = {
     /** 应用内触发一次全局动作（与全局热键走同一条分发函数） */
     hotkeyAction: (action: string): Promise<void> =>
       ipcRenderer.invoke('app:hotkeyAction', action),
+    /** 探测组合键当前能否注册（注册成功立刻注销）；改键浮层用它当场给结果 */
+    probeHotkey: (combo: string): Promise<boolean> =>
+      ipcRenderer.invoke('app:probeHotkey', combo),
     /** 进入改键捕获态：先注销全部热键，避免组合键被系统层拦截 */
     suspendHotkeys: (): Promise<void> => ipcRenderer.invoke('app:suspendHotkeys'),
     /** 改键完成/取消后重注册全部热键，返回最新状态 */

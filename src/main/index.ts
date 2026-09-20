@@ -730,7 +730,9 @@ function registerHotkeys(): Record<string, string> {
       console.error('[hotkey] 注册失败', accel, err)
       ok = false
     }
-    hotkeyStatus[setting] = ok ? '✓ 已注册' : '未授权/冲突（已降级为托盘菜单）'
+    // 文案要说清「这个组合用不了」：说成「已降级为托盘菜单」会让人以为热键还生效，
+    // 于是改完键按下去没反应也不知道为什么（用户报的就是这个现象）
+    hotkeyStatus[setting] = ok ? '✓ 已注册' : '✗ 未注册：组合已被别的程序占用'
   }
   // 开机自启（对齐 autostart.py 的跨平台注册；mac/win 由 Electron 代劳）
   try {
@@ -1544,6 +1546,24 @@ app.whenReady().then(() => {
   ipcMain.handle('app:hotkeyAction', (_e, action: string) =>
     typeof action === 'string' ? dispatchHotkeyAction(action) : undefined
   )
+  /**
+   * 探测一个组合键现在能不能注册（注册成功立刻注销）。
+   *
+   * 为什么需要：只在保存后才报「注册不上」的话，用户得先改一次才知道这个组合被占了。
+   * 进入改键捕获态时全部热键已经注销，正是探测的干净时机。
+   */
+  ipcMain.handle('app:probeHotkey', (_e, raw: string) => {
+    const accel = toAccelerator(String(raw ?? ''))
+    if (!accel) return false
+    if (globalShortcut.isRegistered(accel)) return true
+    try {
+      const ok = globalShortcut.register(accel, () => undefined)
+      if (ok) globalShortcut.unregister(accel)
+      return ok
+    } catch {
+      return false
+    }
+  })
 
   // 浮窗边缘缩放（S17）：渲染层命中边缘后开始/推进/结束
   ipcMain.handle('widget:resizeStart', (_e, edges: string) => widgetResizeStart(edges))
