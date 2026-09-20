@@ -11,6 +11,8 @@ describe('settings 类型层', () => {
     expect(s.theme_mode).toBe('system')
     expect(s.theme_pack).toBe('青竹')
     expect(s.capture_hotkey).toBe('ctrl+shift+s')
+    // 划词入闪念是本应用私有键：只在读取层回退默认值，不进共用的 DEFAULT_SETTINGS
+    expect(s.flash_quick_hotkey).toBe('ctrl+shift+f')
     expect(s.widget_opacity).toBe(85)
   })
 

@@ -34,6 +34,7 @@ import { setConditionAsker } from './db/workflow'
 import { importAttachment } from './db/attachments'
 import { syncExternalTasks, taskSyncStatus } from './task-sync'
 import { readSelectedText } from './selection'
+import { addFlash } from './db/inbox'
 
 const SCHEME = 'zhixing'
 
@@ -660,6 +661,18 @@ const SELECTION_ACTIONS = new Set(['capture', 'select-quick', 'quick-capture'])
  * showMain 会把焦点抢过来，之后模拟复制就只剩自己的界面可复制了。
  */
 async function dispatchHotkeyAction(action: string): Promise<void> {
+  // 划词直接入闪念：读完选区**不打开任何窗口**，直接落库。
+  // 它和下面三个「读选区 + 开捕获窗」的动作不同，是按下即完成的静默路径，
+  // 所以必须在 openCaptureWindow 那条分支之前单独处理掉。
+  if (action === 'flash-quick') {
+    const selected = await readSelectedText()
+    const text = selected.text.trim()
+    // 没选中任何文字就当没按过：写一条空闪念只会变成垃圾数据
+    if (!text) return
+    addFlash(text)
+    broadcastDataChanged('flash')
+    return
+  }
   if (SELECTION_ACTIONS.has(action)) {
     const selected = await readSelectedText()
     // 独立窗口，且**不显示主窗口**：用户正按着热键在别的应用里选词
@@ -680,6 +693,7 @@ const HOTKEY_BINDINGS: { setting: string; action: string }[] = [
   { setting: 'capture_hotkey', action: 'capture' },
   { setting: 'select_quick_hotkey', action: 'select-quick' },
   { setting: 'quick_capture_hotkey', action: 'quick-capture' },
+  { setting: 'flash_quick_hotkey', action: 'flash-quick' },
   { setting: 'widget_hotkey', action: 'toggle-widget' },
 ]
 
@@ -843,6 +857,8 @@ function createTray(): void {
       { label: '新建笔记', click: () => sendAction('new-note') },
       { label: '记闪念', click: () => sendAction('flash-inbox') },
       { label: '划词捕获', click: () => void dispatchHotkeyAction('capture') },
+      // 与热键同一条静默路径：不进捕获窗，直接入闪念
+      { label: '选中入闪念', click: () => void dispatchHotkeyAction('flash-quick') },
       { label: '读取选中并速记', click: () => sendAction('select-quick') },
       { label: '显示/隐藏浮窗', click: () => toggleWidget() },
       { type: 'separator' },
@@ -1518,6 +1534,16 @@ app.whenReady().then(() => {
     globalShortcut.unregisterAll()
   })
   ipcMain.handle('app:rebindHotkeys', () => registerHotkeys())
+  /**
+   * 应用内触发一次全局动作（例如「选中入闪念」）。
+   *
+   * 为什么需要这条通道：全局热键是**系统级注册**的，注入式按键（SendKeys / SendInput）
+   * 不会被 RegisterHotKey 派发，所以自动化里没法「真按一次」；应用内也再没有别的入口。
+   * 有了它，界面与端到端验证都能走到与热键**完全相同**的那条分发函数。
+   */
+  ipcMain.handle('app:hotkeyAction', (_e, action: string) =>
+    typeof action === 'string' ? dispatchHotkeyAction(action) : undefined
+  )
 
   // 浮窗边缘缩放（S17）：渲染层命中边缘后开始/推进/结束
   ipcMain.handle('widget:resizeStart', (_e, edges: string) => widgetResizeStart(edges))

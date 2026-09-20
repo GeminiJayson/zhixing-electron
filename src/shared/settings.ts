@@ -40,6 +40,8 @@ export interface AppSettings {
   clipboard_monitor: boolean
   /** 划词速记热键（读取当前选中文字预填快速捕获） */
   select_quick_hotkey: string
+  /** 划词直接入闪念热键：读选中文字后**不弹任何窗口**，直接存进闪念 */
+  flash_quick_hotkey: string
   /** 标题栏签名文案 */
   signature: string
   quick_capture_hotkey: string
@@ -125,6 +127,8 @@ export function parseSettings(raw: Record<string, string> = {}): AppSettings {
     autostart_enabled: bool(raw.autostart_enabled, false),
     clipboard_monitor: bool(raw.clipboard_monitor, false),
     select_quick_hotkey: str(raw.select_quick_hotkey, 'ctrl+shift+u'),
+    // 本应用私有键，不进 DEFAULT_SETTINGS（那是与 Python 共用的默认集合）
+    flash_quick_hotkey: str(raw.flash_quick_hotkey, 'ctrl+shift+f'),
     signature: str(raw.signature, '知行合一'),
     widget_hotkey: str(raw.widget_hotkey, 'ctrl+shift+d'),
     quick_capture_hotkey: str(raw.quick_capture_hotkey, 'ctrl+alt+n'),

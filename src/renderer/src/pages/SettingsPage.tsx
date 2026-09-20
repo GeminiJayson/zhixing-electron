@@ -74,6 +74,11 @@ const HOTKEY_ROWS: { key: keyof AppSettings; label: string; hint: string }[] = [
     label: '读取选中并速记',
     hint: '读取选中文字预填快速捕获',
   },
+  {
+    key: 'flash_quick_hotkey',
+    label: '选中入闪念',
+    hint: '读选中文字直接存进闪念，不弹窗',
+  },
   { key: 'quick_capture_hotkey', label: '快速任务', hint: '弹出快速捕获窗口' },
   { key: 'widget_hotkey', label: '浮窗显隐', hint: '显示 / 隐藏桌面浮窗' },
 ]

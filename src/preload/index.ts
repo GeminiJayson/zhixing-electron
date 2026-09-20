@@ -615,6 +615,9 @@ const api = {
     refreshTray: (): Promise<void> => ipcRenderer.invoke('app:refreshTray'),
     /** 热键注册状态（settings 键 → 中文状态串），对齐 Python 的 hotkey_status */
     hotkeyStatus: (): Promise<Record<string, string>> => ipcRenderer.invoke('app:hotkeyStatus'),
+    /** 应用内触发一次全局动作（与全局热键走同一条分发函数） */
+    hotkeyAction: (action: string): Promise<void> =>
+      ipcRenderer.invoke('app:hotkeyAction', action),
     /** 进入改键捕获态：先注销全部热键，避免组合键被系统层拦截 */
     suspendHotkeys: (): Promise<void> => ipcRenderer.invoke('app:suspendHotkeys'),
     /** 改键完成/取消后重注册全部热键，返回最新状态 */
