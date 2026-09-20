@@ -139,8 +139,43 @@ try {
     "(() => { const row = [...document.querySelectorAll('.trow')].find((r) => r.querySelector('.trow__title')?.textContent === '进度条检查任务'); const b = [...row.querySelectorAll('button')].find((x) => (x.getAttribute('aria-label') || '').includes('编辑')); b?.click() })()"
   )
   await sleep(1200)
-  const editor = await conn.evaluate("(() => { const m = document.querySelector('.modal[role=\"dialog\"]'); return { masks: document.querySelectorAll('.modal-mask').length, modals: document.querySelectorAll('.modal').length, open: !!m, times: m ? m.querySelectorAll('input[type=\"time\"]').length : 0, dates: m ? m.querySelectorAll('input[type=\"date\"]').length : 0 } })()")
-  check('编辑弹窗里开始与截止各有一个时刻输入', editor.open && editor.times === 2, J(editor))
+  const editor = await conn.evaluate("(() => { const m = document.querySelector('.modal[role=\"dialog\"]'); return { open: !!m, picks: m ? m.querySelectorAll('.timepick').length : 0, dates: m ? m.querySelectorAll('input[type=\"date\"]').length : 0 } })()")
+  check('编辑弹窗里开始与截止各有一个时刻选择器', editor.open && editor.picks === 2, J(editor))
+
+  // ---- 自绘的时刻选择器：项高必须与控件高度一致（原生面板做不到这件事）
+  await clickReal("document.querySelector('.modal .timepick')")
+  await sleep(700)
+  const menu = await conn.evaluate(
+    "(() => {" +
+      "const el = document.querySelector('.popmenu--time');" +
+      "if (!el) return { open: false };" +
+      "const probe = document.createElement('div');" +
+      "probe.style.height = 'var(--control-h)';" +
+      "document.body.appendChild(probe);" +
+      "const want = Math.round(probe.getBoundingClientRect().height);" +
+      "probe.remove();" +
+      "const items = [...el.querySelectorAll('.popmenu__item')].map((b) => Math.round(b.getBoundingClientRect().height));" +
+      "return { open: true, want, count: items.length, min: Math.min(...items), max: Math.max(...items) };" +
+    "})()"
+  )
+  check('点开后弹出两列时刻列表（24 小时 + 60 分钟 + 清除）', menu.open === true && menu.count === 85, J({ open: menu.open, count: menu.count }))
+  check(
+    '列表项高度 = 控件高度 —— 这正是原生面板做不到的',
+    menu.open === true && menu.min === menu.want && menu.max === menu.want,
+    J(menu)
+  )
+  await clickReal("[...document.querySelectorAll('.popmenu--time .popmenu__item')].find((b) => b.textContent.trim() === '07')")
+  await sleep(600)
+  const picked = await conn.evaluate("document.querySelector('.modal .timepick').textContent.trim()")
+  check('选中的时刻写回了输入框', picked.includes('07'), J(picked))
+
+  // 再点开一次截个图（给用户看项高）
+  await clickReal("document.querySelector('.modal .timepick')")
+  await sleep(700)
+  const tpShot = await conn.send('Page.captureScreenshot', { format: 'png' })
+  const fs3 = await import('node:fs')
+  fs3.writeFileSync(join(root, '.screenshots', 'timepicker-custom.png'), Buffer.from(tpShot.result.data, 'base64'))
+  console.log('（截图 .screenshots/timepicker-custom.png）')
 
   // 日期 / 时间原生输入的内在高度比 --control-h 高，只给 min-height 压不住 ——
   // 这一条盯着它们与同行的其它控件严格等高
@@ -153,11 +188,37 @@ try {
       "const want = Math.round(probe.getBoundingClientRect().height);" +
       "probe.remove();" +
       "const h = (sel) => [...m.querySelectorAll(sel)].map((el) => Math.round(el.getBoundingClientRect().height));" +
-      "return { want, times: h('input[type=time]'), dates: h('input[type=date]'), text: h('input:not([type])') };" +
+      "return { want, times: h('.timepick'), dates: h('input[type=date]'), text: h('input:not([type])') };" +
     "})()"
   )
   check('日期输入的高度 = 控件高度', heights.dates.length > 0 && heights.dates.every((x) => x === heights.want), J(heights))
-  check('时刻输入的高度 = 控件高度', heights.times.length === 2 && heights.times.every((x) => x === heights.want), J(heights))
+  check('自绘时刻选择器的高度 = 控件高度', heights.times.length === 2 && heights.times.every((x) => x === heights.want), J(heights))
+
+  // 弹窗里所有控件的实测高度：只比 date/time 是看不出「与整体不一致」的
+  const all = await conn.evaluate(
+    "(() => {" +
+      "const m = document.querySelector('.modal[role=\"dialog\"]');" +
+      "const probe = document.createElement('div');" +
+      "probe.style.height = 'var(--control-h)';" +
+      "document.body.appendChild(probe);" +
+      "const want = Math.round(probe.getBoundingClientRect().height);" +
+      "probe.remove();" +
+      "const rows = [...m.querySelectorAll('input, select, textarea, button')].map((el) => ({" +
+      "  kind: el.tagName.toLowerCase() + (el.getAttribute('type') ? '[' + el.getAttribute('type') + ']' : '')," +
+      "  cls: el.className.slice(0, 24)," +
+      "  h: Math.round(el.getBoundingClientRect().height)," +
+      "  fs: getComputedStyle(el).fontSize" +
+      "}));" +
+      "return { want, rows };" +
+    "})()"
+  )
+  console.log('[控件高度] want=' + all.want)
+  for (const r of all.rows) console.log('   ' + r.h + '	' + r.fs + '	' + r.kind + '  .' + r.cls)
+  const box = await conn.evaluate("(() => { const m = document.querySelector('.modal[role=\"dialog\"]'); const r = m.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height } })()")
+  const shot = await conn.send('Page.captureScreenshot', { format: 'png', clip: { ...box, scale: 2 } })
+  const fs2 = await import('node:fs')
+  fs2.writeFileSync(join(root, '.screenshots', 'task-editor-heights.png'), Buffer.from(shot.result.data, 'base64'))
+  console.log('（截图 .screenshots/task-editor-heights.png）')
 } catch (err) {
   check('脚本跑完', false, err instanceof Error ? err.message : String(err))
 }

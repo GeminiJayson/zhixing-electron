@@ -368,6 +368,41 @@ button.chip--status:focus-visible {
   border-radius: var(--radius-pill);
 }
 
+/* 时刻选择器：一个长得像输入框的按钮（.field 负责边框 / 背景 / 高度） */
+.timepick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.timepick__empty {
+  color: var(--fg-tertiary);
+}
+
+/* 两列时刻列表。项高仍由 .popmenu__item 的 min-height: var(--control-h) 定，
+   所以「项」与输入框、下拉、按钮严格等高 —— 这正是自绘它换掉原生面板的原因。 */
+.popmenu--time {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  min-width: 168px;
+}
+.popmenu__col {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  max-height: calc(var(--control-h) * 8);
+}
+.popmenu__clear {
+  grid-column: 1 / -1;
+  justify-content: center;
+  min-height: var(--control-h);
+  color: var(--fg-secondary);
+}
+
 /* 四象限 */
 .quad-grid {
   display: grid;
