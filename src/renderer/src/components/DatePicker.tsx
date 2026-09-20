@@ -47,9 +47,25 @@ export function DatePicker({ value, onChange, label }: Props) {
     setOpen(true)
   }
 
-  const done = (day: string): void => {
-    onChange(day)
+  /**
+   * 刚关闭的时间戳。
+   *
+   * 点某一天时，那次点击的「第二次 click」会在几毫秒后落到下面露出来的日期框上，
+   * 于是面板刚关就又被打开（用户报的「选择日期后反而重新唤起」）。埋点实测：
+   * 关闭在 15772ms、重新打开在 15774ms。人不会在 250ms 内点两下，挡掉即可。
+   */
+  const closedAt = useRef(0)
+
+  const close = (): void => {
+    closedAt.current = performance.now()
     setOpen(false)
+  }
+
+  const done = (day: string): void => {
+    // 先收起再回填：反过来的话，onChange 引起的父组件重渲会把这次关闭吞掉
+    // （实测轨迹里面板从头到尾都是开的，而页面没有任何异常）
+    close()
+    onChange(day)
   }
 
   /**
@@ -87,10 +103,10 @@ export function DatePicker({ value, onChange, label }: Props) {
     const onDocDown = (e: MouseEvent): void => {
       const t = e.target as Node
       if (menuRef.current?.contains(t) || btnRef.current?.contains(t)) return
-      setOpen(false)
+      close()
     }
     const onEsc = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setOpen(false)
+      if (e.key === 'Escape') close()
     }
     document.addEventListener('mousedown', onDocDown, true)
     document.addEventListener('keydown', onEsc)
@@ -118,7 +134,12 @@ export function DatePicker({ value, onChange, label }: Props) {
         aria-label={label}
         aria-haspopup="dialog"
         aria-expanded={open}
-        onClick={() => (open ? setOpen(false) : openMenu())}
+        onClick={() => {
+          // 挡掉紧随关闭而来的穿透点击，否则面板会立刻弹回来
+          if (performance.now() - closedAt.current < 250) return
+          if (open) close()
+          else openMenu()
+        }}
       >
         <span className={value ? undefined : 'datepick__empty'}>{value || '年 / 月 / 日'}</span>
         <CalendarClock size={14} />

@@ -252,13 +252,50 @@ try {
   const backToDay = await conn.evaluate("(() => ({ grid: !!document.querySelector('.dpick__grid'), pick: !!document.querySelector('.dpick__pick'), panel: !!document.querySelector('.popmenu--date'), title: document.querySelector('.dpick__title')?.textContent }))()")
   check('点「返回日历」切回日期网格，月份仍是刚选的', backToDay.grid === true && String(backToDay.title).includes('2030'), J(backToDay))
   const backToDayValue = await conn.evaluate("document.querySelector('.modal .datepick').textContent.trim()")
-  // 点外面只是收起，不改值
+  // ---- 真实鼠标点某一天：面板必须关掉且不弹回来（用户报的「反而重新唤起」）
+  // 先把面板关干净：**必须用真实鼠标** —— 程序化 click() 不派发 mousedown，
+  // 而「点外面收起」正挂在 mousedown 的捕获阶段上，用 click() 根本关不掉（踩过这个坑）
+  if (await conn.evaluate("!!document.querySelector('.popmenu--date')")) {
+    await clickReal("document.querySelector('.modal__head')")
+    await sleep(500)
+  }
+  await conn.evaluate("document.querySelector('.modal .datepick').click()")
+  await sleep(700)
+  const openedForDay = await conn.evaluate("!!document.querySelector('.popmenu--date')")
+  check('先确认日期面板真的打开了（防假阳性）', openedForDay === true, J(openedForDay))
+  const dayPoint = await conn.evaluate(
+    "(() => { const b = [...document.querySelectorAll('.dpick__day')].find((x) => x.textContent.trim() === '15'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()"
+  )
+  // 装页面级异常捕获：如果 setOpen(false) 没生效是因为渲染抛错，这里能看见
+  await conn.evaluate(
+    "(() => { localStorage.removeItem('__err');" +
+      "window.addEventListener('error', (e) => localStorage.setItem('__err', String((e.error && e.error.stack) || e.message).slice(0, 700)));" +
+      "window.addEventListener('unhandledrejection', (e) => localStorage.setItem('__err', 'rejection: ' + String((e.reason && e.reason.stack) || e.reason).slice(0, 700))); })()"
+  )
+  console.log('[待点的日期格] ' + J(dayPoint))
+  if (dayPoint) {
+    await mouse('mouseMoved', dayPoint.x, dayPoint.y, 0)
+    await sleep(80)
+    await mouse('mousePressed', dayPoint.x, dayPoint.y, 1)
+    await sleep(80)
+    await mouse('mouseReleased', dayPoint.x, dayPoint.y, 0)
+    await sleep(800)
+  }
+  const afterDay = await conn.evaluate(
+    "(() => { const b = document.querySelector('.modal .datepick'); return { open: !!document.querySelector('.popmenu--date'), text: b.textContent.trim() }; })()"
+  )
+  console.log('[真实点日期后] ' + J(afterDay))
+  check('真实鼠标点日期后，面板保持关闭（不弹回来）', afterDay.open === false, J(afterDay))
+  check('真实鼠标点日期后，值落到了那一天', afterDay.text.endsWith('-15'), J(afterDay))
+
+  // 点外面只是收起，不改值 —— 基准取「点外面前」的值（前面刚用真实鼠标点过 15 号）
+  const valueBeforeOutside = await conn.evaluate("document.querySelector('.modal .datepick').textContent.trim()")
   await clickReal("document.querySelector('.modal__head')")
   await sleep(600)
   const stillToday = await conn.evaluate("document.querySelector('.modal .datepick').textContent.trim()")
   // 这一步只验证「点外面只是收起」—— 值在更早的年月操作里已经被改过了，
   // 所以比对的是「点外面前后是否一致」，而不是跟最初的今天比
-  check('点外面收起时不会改动已选日期', stillToday === backToDayValue, J({ got: stillToday, want: backToDayValue }))
+  check('点外面收起时不会改动已选日期', stillToday === valueBeforeOutside, J({ got: stillToday, want: valueBeforeOutside }))
 
   // ---- 自绘的时刻选择器：项高必须与控件高度一致（原生面板做不到这件事）
   await clickReal("document.querySelector('.modal .timepick')")
