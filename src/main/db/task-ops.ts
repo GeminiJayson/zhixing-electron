@@ -3,7 +3,7 @@ import { parseCapture } from '../../shared/capture'
 import type {
   Task,
 } from '../../shared/types'
-import { conn, nowStamp, today, getTask, TASK_COLUMNS } from './connection'
+import { conn, nowStamp, nowClock, today, getTask, TASK_COLUMNS } from './connection'
 import { reindexTask } from './fts'
 
 // ---------------------------------------------------------------- 任务排序 / 移动 / 批量 / 标签
@@ -223,11 +223,28 @@ export function quickAdd(text: string, defaultListId: number | null = null): Tas
   const stamp = nowStamp()
   const info = c
     .prepare(
-      `INSERT INTO task (title, notes_md, status, priority, due_date, reminder_at, list_id, parent_id,
-                         repeat_period, streak, sort_key, created_at, updated_at)
-       VALUES (?, '', 'todo', ?, ?, ?, ?, NULL, 'none', 0, ?, ?, ?)`
+      `INSERT INTO task (title, notes_md, status, priority, due_date, due_time, reminder_at, list_id,
+                         parent_id, repeat_period, streak, sort_key, start_date, start_time,
+                         created_at, updated_at)
+       VALUES (?, '', 'todo', ?, ?, ?, ?, ?, NULL, 'none', 0, ?, ?, ?, ?, ?)`
     )
-    .run(parsed.title, parsed.priority, due, reminderAt, listId, nextSortKey(null), stamp, stamp)
+    .run(
+      parsed.title,
+      parsed.priority,
+      due,
+      // 日期词里写了时刻（如「明天 14:30」）也同时记进 due_time —— 此前它只进了 reminder_at
+      parsed.dueClock
+        ? `${String(parsed.dueClock[0]).padStart(2, '0')}:${String(parsed.dueClock[1]).padStart(2, '0')}`
+        : null,
+      reminderAt,
+      listId,
+      nextSortKey(null),
+      // 开始时间同样是「建任务的那一刻」
+      day,
+      nowClock(),
+      stamp,
+      stamp
+    )
   const taskId = Number(info.lastInsertRowid)
   if (parsed.tags.length) setTaskTags(taskId, parsed.tags)
   reindexTask(taskId)

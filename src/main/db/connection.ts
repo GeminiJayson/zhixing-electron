@@ -34,7 +34,7 @@ export function dbPath(): string {
 export let db: Database.Database | null = null
 export let openedPath = ''
 
-export const TASK_COLUMNS = `id, title, notes_md, status, priority, due_date, start_date, reminder_at,
+export const TASK_COLUMNS = `id, title, notes_md, status, priority, due_date, start_date, start_time, due_time, reminder_at,
   list_id, parent_id, repeat_period, repeat_rule, streak, sort_key, resume_at, last_reset_date,
   completed_at, created_at, updated_at`
 
@@ -144,6 +144,11 @@ function ensureAppExtensions(d: Database.Database): void {
   add('workflow_node', 'branch_false_node_id', 'branch_false_node_id INTEGER')
   add('workflow_instance', 'last_result', 'last_result TEXT')
   // 外部任务来源：靠 (source, id) 幂等认领，重复同步不会造出重复任务
+  // 开始 / 截止的**时刻**（HH:MM，空 = 全天）。
+  // 日期仍留在 start_date / due_date —— 那两列是 DATE 且与 Python 版共用，
+  // 往里面塞带时间的字符串会让它的 Date 解析出问题；时刻另开一列，互不干扰。
+  add('task', 'start_time', 'start_time TEXT')
+  add('task', 'due_time', 'due_time TEXT')
   add('task', 'external_source', 'external_source TEXT')
   add('task', 'external_id', 'external_id TEXT')
   // 笔记的结构化属性（JSON 对象：{ "来源": "书籍", "评分": "5" }）
@@ -288,6 +293,10 @@ export function nowStamp(): string {
 }
 
 export const today = (): string => new Date().toLocaleDateString('sv-SE') // YYYY-MM-DD
+
+/** 当前时刻 HH:MM（24 小时制）—— start_time / due_time 那一对的格式。 */
+export const nowClock = (): string =>
+  new Date().toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })
 
 /** 关闭连接（应用退出时调用）；连接状态由 connection.ts 独占管理。 */
 export function closeDb(): void {

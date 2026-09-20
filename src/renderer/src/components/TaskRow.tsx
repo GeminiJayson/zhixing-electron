@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Morph, IconData, Pencil, Play, Plus, Trash2 } from '@renderer/lib/icons'
 import { priorityColor, priorityLabel } from '@shared/priority'
 import type { TaskNode } from '@shared/task'
-import { dueLabel, rangeLabel } from '../lib/date'
+import { dueLabel, rangeLabel, taskProgress } from '../lib/date'
 
 interface Props {
   node: TaskNode
@@ -46,6 +46,14 @@ export function TaskRow(props: Props) {
   const hasChildren = node.children.length > 0
   const due = dueLabel(node.due_date)
   const range = rangeLabel(node.start_date, node.due_date)
+  // 时间进度：缺了开始或截止就没有「进度」可言（见 taskProgress 的注释）
+  const progress = taskProgress(
+    node.start_date,
+    node.start_time,
+    node.due_date,
+    node.due_time,
+    node.effectiveDone
+  )
 
   const commit = (): void => {
     setEditing(false)
@@ -197,6 +205,18 @@ export function TaskRow(props: Props) {
           <Trash2 size={14} />
         </button>
       </span>
+
+      {/* 时间进度条：贴在行底的一道细线，颜色就是紧迫度的色阶（从容绿 → 临近橙 → 过点红）。
+          已完成的不画 —— 那一行本身已经灰掉了，再叠一条满格进度只是噪音。 */}
+      {progress && !node.effectiveDone && (
+        <span
+          className={`trow__progress trow__progress--${progress.tone}`}
+          title={`${progress.label} · ${Math.round(progress.ratio * 100)}%`}
+          aria-hidden
+        >
+          <i style={{ width: `${Math.min(100, Math.max(0, progress.ratio * 100))}%` }} />
+        </span>
+      )}
     </div>
   )
 }

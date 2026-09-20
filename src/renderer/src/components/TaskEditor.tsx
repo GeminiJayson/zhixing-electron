@@ -25,6 +25,9 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
   const [priority, setPriority] = useState(task.priority)
   const [due, setDue] = useState(task.due_date ?? '')
   const [start, setStart] = useState(task.start_date ?? '')
+  /** 时刻（HH:MM）：留空表示只精确到天 */
+  const [dueTime, setDueTime] = useState(task.due_time ?? '')
+  const [startTime, setStartTime] = useState(task.start_time ?? '')
   const [notes, setNotes] = useState(task.notes_md ?? '')
   const [repeat, setRepeat] = useState<RepeatPeriod>(task.repeat_period)
   const [repeatRule, setRepeatRule] = useState(task.repeat_rule ?? '')
@@ -87,7 +90,9 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
       status,
       priority,
       due_date: due || null,
+      due_time: dueTime || null,
       start_date: start || null,
+      start_time: startTime || null,
       notes_md: notes,
       repeat_period: repeat,
       repeat_rule: repeat === 'custom' ? repeatRule || null : null,
@@ -140,11 +145,31 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
             </label>
             <label className="form-row">
               <span>开始</span>
-              <input type="date" className="field" value={start} onChange={(e) => setStart(e.target.value)} />
+              {/* 日期与时刻分开：日期仍进 start_date（与 Python 版共用的 DATE 列），
+                  时刻进本应用私有的 start_time —— 这样「精确到分钟」不会污染共用 schema */}
+              <span className="form-row__pair">
+                <input type="date" className="field" value={start} onChange={(e) => setStart(e.target.value)} />
+                <input
+                  type="time"
+                  className="field"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  title="留空表示只精确到天"
+                />
+              </span>
             </label>
             <label className="form-row">
               <span>截止</span>
-              <input type="date" className="field" value={due} onChange={(e) => setDue(e.target.value)} />
+              <span className="form-row__pair">
+                <input type="date" className="field" value={due} onChange={(e) => setDue(e.target.value)} />
+                <input
+                  type="time"
+                  className="field"
+                  value={dueTime}
+                  onChange={(e) => setDueTime(e.target.value)}
+                  title="留空表示那天结束前都算没到期"
+                />
+              </span>
             </label>
             <label className="form-row">
               <span>循环</span>

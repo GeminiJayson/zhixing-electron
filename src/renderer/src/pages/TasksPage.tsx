@@ -147,6 +147,11 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
   // 设置页切换「日历显示已完成」后即时生效（T11，calendar_show_done 此前只写不读）
   useEffect(() => subscribeDomain(['settings'], () => void load()), [load])
 
+  // 任务域也要跟上。此前本页只订阅 settings / workflow，于是**任何不是本页自己发起**的
+  // 任务改动都停在旧数据上：编辑弹窗里改完日期，列表里的日期 chip 与进度条都还是旧的。
+  // 这类改动只广播事件，订阅一次就够了。
+  useEffect(() => subscribeDomain(['task'], () => void load()), [load])
+
   // 「挂到任务下」候选：走 task_candidates（q 变化即时搜索，T17）
   useEffect(() => {
     if (!parentPicker) return

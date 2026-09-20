@@ -11,6 +11,8 @@ const mk = (id: number, parent: number | null, status: Task['status'], extra: Pa
     priority: 0,
     due_date: null,
     start_date: null,
+    start_time: null,
+    due_time: null,
     reminder_at: null,
     list_id: null,
     parent_id: parent,

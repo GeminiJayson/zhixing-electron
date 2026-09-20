@@ -13,6 +13,10 @@ export interface Task {
   priority: number
   due_date: string | null
   start_date: string | null
+  /** 开始时刻 HH:MM（空 = 只精确到天）；与 start_date 合起来才是完整时刻 */
+  start_time: string | null
+  /** 截止时刻 HH:MM（空 = 当天结束前都算没到期） */
+  due_time: string | null
   reminder_at: string | null
   list_id: number | null
   parent_id: number | null

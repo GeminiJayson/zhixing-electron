@@ -14,7 +14,7 @@ import type {
   TaskStatus,
   TodayTasks,
 } from '../../shared/types'
-import { conn, nowStamp, today, getTask, TASK_COLUMNS } from './connection'
+import { conn, nowClock, nowStamp, today, getTask, TASK_COLUMNS } from './connection'
 
 // ---------------------------------------------------------------- 只读查询
 
@@ -212,10 +212,10 @@ export function cloneTaskTree(
 
   const info = c
     .prepare(
-      `INSERT INTO task (title, notes_md, status, priority, due_date, start_date, reminder_at,
-                         list_id, parent_id, repeat_period, repeat_rule, streak, sort_key,
-                         created_at, updated_at)
-       VALUES (?, ?, 'todo', ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`
+      `INSERT INTO task (title, notes_md, status, priority, due_date, start_date, start_time,
+                         reminder_at, due_time, list_id, parent_id, repeat_period, repeat_rule,
+                         streak, sort_key, created_at, updated_at)
+       VALUES (?, ?, 'todo', ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`
     )
     .run(
       src.title,
@@ -223,7 +223,9 @@ export function cloneTaskTree(
       src.priority,
       newDue ?? src.due_date,
       src.start_date,
+      src.start_time,
       src.reminder_at,
+      src.due_time,
       src.list_id,
       parentId,
       src.repeat_period,
@@ -304,13 +306,15 @@ export function createTask(title: string, parentId: number | null, listId: numbe
   const parent = parentId !== null ? getTask(parentId) : null
   const effectiveList = listId ?? parent?.list_id ?? null
   const stamp = nowStamp()
+  // 新任务的开始时间就是**创建时刻**（日期 + 到分钟）：这样「进度」从一建好就开始算，
+  // 而不是等用户自己去填一个开始日期
   const info = conn()
     .prepare(
       `INSERT INTO task (title, notes_md, status, priority, repeat_period, streak, sort_key,
-                         parent_id, list_id, created_at, updated_at)
-       VALUES (?, '', 'todo', 0, 'none', 0, ?, ?, ?, ?, ?)`
+                         parent_id, list_id, start_date, start_time, created_at, updated_at)
+       VALUES (?, '', 'todo', 0, 'none', 0, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(clean, nextSortKey(parentId), parentId, effectiveList, stamp, stamp)
+    .run(clean, nextSortKey(parentId), parentId, effectiveList, today(), nowClock(), stamp, stamp)
   const created = Number(info.lastInsertRowid)
   reindexTask(created)
   return getTask(created)
@@ -324,6 +328,8 @@ export const EDITABLE_FIELDS = [
   'priority',
   'due_date',
   'start_date',
+  'due_time',
+  'start_time',
   'repeat_period',
   'repeat_rule',
   'resume_at',
