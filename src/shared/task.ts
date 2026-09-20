@@ -19,6 +19,20 @@ export const STATUS_LABELS: Record<TaskStatus, string> = {
   abandoned: '已放弃',
 }
 
+/**
+ * 状态胶囊的色阶名，对应 tasks.css 里的 .chip--status-*。
+ *
+ * 中性留给默认的「待办」：满屏任务里绝大多数都是它，最淡才不会喧宾夺主。
+ * 五种状态五种颜色 —— 有单测盯着它们两两不同，否则「用颜色区分」就落空了。
+ */
+export const STATUS_TONES: Record<TaskStatus, 'neutral' | 'active' | 'warm' | 'success' | 'danger'> = {
+  todo: 'neutral',
+  doing: 'active',
+  waiting: 'warm',
+  done: 'success',
+  abandoned: 'danger',
+}
+
 /** 终态：完成与放弃都算（与 entities.Task.is_done 一致） */
 export function isTerminal(status: TaskStatus): boolean {
   return status === 'done' || status === 'abandoned'

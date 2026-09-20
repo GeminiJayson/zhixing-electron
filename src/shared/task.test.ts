@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { buildTaskTree, effectiveDoneMap, isTerminal } from '@shared/task'
+import {
+  STATUS_CHOICES,
+  STATUS_LABELS,
+  STATUS_TONES,
+  buildTaskTree,
+  effectiveDoneMap,
+  isTerminal,
+} from '@shared/task'
 import type { Task } from '@shared/types'
 
 const mk = (id: number, parent: number | null, status: Task['status'], extra: Partial<Task> = {}): Task =>
@@ -27,6 +34,21 @@ const mk = (id: number, parent: number | null, status: Task['status'], extra: Pa
     updated_at: '2026-01-01 00:00:00.000000',
     ...extra,
   })
+
+describe('状态胶囊：标签与色阶', () => {
+  it('每个状态都有中文标签', () => {
+    for (const s of STATUS_CHOICES) expect(STATUS_LABELS[s.value]).toBeTruthy()
+  })
+
+  it('色阶表覆盖全部状态，一个不多一个不少', () => {
+    expect(Object.keys(STATUS_TONES).sort()).toEqual(STATUS_CHOICES.map((s) => s.value).sort())
+  })
+
+  it('五种状态的色阶两两不同 —— 否则「用颜色区分」就落空了', () => {
+    const tones = STATUS_CHOICES.map((s) => STATUS_TONES[s.value])
+    expect(new Set(tones).size).toBe(tones.length)
+  })
+})
 
 describe('有效完成 roll-up', () => {
   it('叶子看自身状态', () => {

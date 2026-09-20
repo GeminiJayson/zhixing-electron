@@ -275,6 +275,7 @@ export function InboxPage({ onNotice, onChanged }: Props) {
           onOpenTags={() => onNotice('在任务页点击标签 chip 可增删')}
           onContextMenu={() => onNotice('右键菜单在任务页可用')}
           onOpenPriority={() => onNotice('优先级请在任务页的旗子上修改')}
+          onOpenStatus={() => onNotice('状态请在任务页修改')}
           onTitleCommit={async (id, title) => {
             await window.zhixing.db.setTitle(id, title)
             await refresh()

@@ -5,6 +5,7 @@ import { buildTaskTree, effectiveDoneMap, type TaskNode } from '@shared/task'
 import type { Note, Overview, TodayTasks } from '@shared/types'
 import { t } from '../i18n'
 import { PriorityMenu } from '../components/PriorityMenu'
+import { StatusMenu } from '../components/StatusMenu'
 import { TaskRow } from '../components/TaskRow'
 import { TaskEditor } from '../components/TaskEditor'
 
@@ -26,6 +27,7 @@ export function TodayPage({ overview, onChanged, onNotice, onOpenNote, onFocusTa
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const [selected, setSelected] = useState<number | null>(null)
   const [menu, setMenu] = useState<{ id: number; anchor: HTMLElement } | null>(null)
+  const [statusMenu, setStatusMenu] = useState<{ id: number; anchor: HTMLElement } | null>(null)
   const [draft, setDraft] = useState('')
   // 今日页直接编辑：与任务页共用同一个 TaskEditor
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -142,6 +144,7 @@ export function TodayPage({ overview, onChanged, onNotice, onOpenNote, onFocusTa
           onOpenTags={() => onNotice('在任务页点击标签 chip 可增删')}
           onContextMenu={() => onNotice('右键菜单在任务页可用')}
           onOpenPriority={(id, anchor) => setMenu({ id, anchor })}
+          onOpenStatus={(id, anchor) => setStatusMenu({ id, anchor })}
           onTitleCommit={async (id, title) => {
             await window.zhixing.db.setTitle(id, title)
             await refresh()
@@ -292,6 +295,19 @@ export function TodayPage({ overview, onChanged, onNotice, onOpenNote, onFocusTa
             />
           )
         })()}
+
+      {statusMenu && (
+        <StatusMenu
+          anchor={statusMenu.anchor}
+          current={today?.subtree.find((t) => t.id === statusMenu.id)?.status ?? 'todo'}
+          onPick={async (s) => {
+            await window.zhixing.db.setStatus(statusMenu.id, s)
+            setStatusMenu(null)
+            await refresh()
+          }}
+          onClose={() => setStatusMenu(null)}
+        />
+      )}
 
       {menu && (
         <PriorityMenu

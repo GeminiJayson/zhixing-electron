@@ -17,6 +17,7 @@ import { useDialog } from '../components/Dialogs'
 import { PopMenu, type PopMenuItem } from '../components/PopMenu'
 import { VirtualList } from '../components/VirtualList'
 import { PriorityMenu } from '../components/PriorityMenu'
+import { StatusMenu } from '../components/StatusMenu'
 import { CalendarBoard } from '../components/CalendarBoard'
 import { KanbanBoard } from '../components/KanbanBoard'
 import { QuadrantBoard, quadrantAssignment, type QuadrantKey } from '../components/QuadrantBoard'
@@ -89,6 +90,8 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
   const [dropHint, setDropHint] = useState<{ id: number; pos: 'before' | 'after' | 'child' } | null>(null)
   const [inspector, setInspector] = useState(false)
   const [menu, setMenu] = useState<{ id: number; anchor: HTMLElement } | null>(null)
+  /** 状态胶囊的快捷菜单（与优先级菜单互不影响，可以各自开着） */
+  const [statusMenu, setStatusMenu] = useState<{ id: number; anchor: HTMLElement } | null>(null)
   const [allTags, setAllTags] = useState<{ id: number; name: string; color: string }[]>([])
   const [tagMenu, setTagMenu] = useState<{ id: number; x: number; y: number } | null>(null)
   const [ctxMenu, setCtxMenu] = useState<{ id: number; x: number; y: number } | null>(null)
@@ -676,6 +679,7 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
           }
           onSelect={handleSelect}
           onOpenPriority={(id, anchor) => setMenu({ id, anchor })}
+          onOpenStatus={(id, anchor) => setStatusMenu({ id, anchor })}
           onDragStart={(id) => setDragId(id)}
           onDragOverRow={(id, pos) =>
             setDropHint((prev) => (prev?.id === id && prev.pos === pos ? prev : { id, pos }))
@@ -1181,6 +1185,18 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
             取消
           </button>
         </div>
+      )}
+
+      {statusMenu && (
+        <StatusMenu
+          anchor={statusMenu.anchor}
+          current={tasks.find((t) => t.id === statusMenu.id)?.status ?? 'todo'}
+          onPick={(s) => {
+            void handleStatus(statusMenu.id, s)
+            setStatusMenu(null)
+          }}
+          onClose={() => setStatusMenu(null)}
+        />
       )}
 
       {menu && (

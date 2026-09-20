@@ -294,6 +294,43 @@
   background: transparent;
 }
 
+/* 状态胶囊：五种状态五种颜色。
+   边框与淡底都用 currentColor 派生，所以每种状态只要给出颜色本身 ——
+   换主题 / 换强调色时它们跟着走，不必逐条重写。 */
+.chip--status {
+  border-color: color-mix(in srgb, currentColor 45%, transparent);
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  font-weight: 500;
+}
+/* 状态胶囊是个按钮，不是纯展示：给回点击感 */
+button.chip--status {
+  cursor: pointer;
+  font: inherit;
+}
+button.chip--status:hover {
+  border-color: currentColor;
+  background: color-mix(in srgb, currentColor 22%, transparent);
+}
+button.chip--status:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 1px;
+}
+.chip--status-neutral {
+  color: var(--fg-tertiary);
+}
+.chip--status-active {
+  color: var(--accent);
+}
+.chip--status-warm {
+  color: var(--accent-warm);
+}
+.chip--status-success {
+  color: var(--success);
+}
+.chip--status-danger {
+  color: var(--danger);
+}
+
 /* 优先级弹出菜单 */
 .popmenu {
   position: fixed;

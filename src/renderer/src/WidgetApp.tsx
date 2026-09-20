@@ -4,11 +4,12 @@ import { buildTaskTree, effectiveDoneMap, type TaskNode } from '@shared/task'
 import { bindHostEvents, subscribeDomain } from '@shared/events'
 import { parseSettings } from '@shared/settings'
 import { BLOUB_DEFAULT_SHAPE } from '@shared/bloub'
-import type { TaskNoteContext } from '@shared/types'
+import type { TaskNoteContext, TaskStatus } from '@shared/types'
 import { applyAppearance } from './theme'
 import { TaskRow } from './components/TaskRow'
 import { WidgetBall } from './components/WidgetBall'
 import { PriorityMenu } from './components/PriorityMenu'
+import { StatusMenu } from './components/StatusMenu'
 import { PopMenu, type PopMenuItem } from './components/PopMenu'
 import { useDialog } from './components/Dialogs'
 
@@ -41,6 +42,7 @@ export function WidgetApp() {
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const [notice, setNotice] = useState('')
   const [priorityMenu, setPriorityMenu] = useState<{ id: number; anchor: HTMLElement } | null>(null)
+  const [statusMenu, setStatusMenu] = useState<{ id: number; anchor: HTMLElement } | null>(null)
   const [tagMenu, setTagMenu] = useState<{ id: number; anchor: HTMLElement } | null>(null)
   /** 任务 → 标签名（标签菜单用） */
   const [tagNames, setTagNames] = useState<Map<number, string[]>>(new Map())
@@ -214,6 +216,12 @@ export function WidgetApp() {
     await load()
   }
 
+  /** 状态胶囊的快捷菜单：与优先级菜单同一条路子 */
+  const pickStatus = async (id: number, value: TaskStatus): Promise<void> => {
+    await window.zhixing.db.setStatus(id, value)
+    await load()
+  }
+
   /** 标签菜单项：移除已有标签 / 添加新标签（对齐 _edit_tags / _remove_tag / _prompt_add_tag） */
   const tagItems = (id: number): PopMenuItem[] => {
     const current = tagNames.get(id) ?? []
@@ -310,6 +318,7 @@ export function WidgetApp() {
           }
           onSelect={() => undefined}
           onOpenPriority={(id, anchor) => setPriorityMenu({ id, anchor })}
+          onOpenStatus={(id, anchor) => setStatusMenu({ id, anchor })}
           onOpenTags={(id, anchor) => setTagMenu({ id, anchor })}
           onContextMenu={() => void window.zhixing.widget.contextMenu()}
           onTitleCommit={async (id, title) => {
@@ -425,6 +434,14 @@ export function WidgetApp() {
         )}
         {notice && <div className="widget__toast">{notice}</div>}
       </div>
+      {statusMenu && tasks && (
+        <StatusMenu
+          anchor={statusMenu.anchor}
+          current={tasks.subtree.find((t) => t.id === statusMenu.id)?.status ?? 'todo'}
+          onPick={(value) => void pickStatus(statusMenu.id, value)}
+          onClose={() => setStatusMenu(null)}
+        />
+      )}
       {priorityMenu && tasks && (
         <PriorityMenu
           anchor={priorityMenu.anchor}

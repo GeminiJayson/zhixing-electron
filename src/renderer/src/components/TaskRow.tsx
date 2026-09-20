@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Morph, IconData, Pencil, Play, Plus, Trash2 } from '@renderer/lib/icons'
 import { priorityColor, priorityLabel } from '@shared/priority'
 import type { TaskNode } from '@shared/task'
+import { STATUS_LABELS, STATUS_TONES } from '@shared/task'
 import { dueLabel, rangeLabel, taskProgress } from '../lib/date'
 
 interface Props {
@@ -13,6 +14,7 @@ interface Props {
   onToggleCollapse: (id: number) => void
   onSelect: (id: number, e: React.MouseEvent) => void
   onOpenPriority: (id: number, anchor: HTMLElement) => void
+  onOpenStatus: (id: number, anchor: HTMLElement) => void
   onOpenTags: (id: number, anchor: HTMLElement) => void
   onContextMenu: (id: number, x: number, y: number) => void
   /** 拖拽排序 / 改挂父子（列表视图） */
@@ -157,6 +159,18 @@ export function TaskRow(props: Props) {
 
       {/* 胶囊统一包在一个容器里：悬浮时按钮组浮现，容器整体左移让位（见 tasks.css） */}
       <span className="trow__chips">
+        {/* 状态胶囊放最前：它是这一行最该先看到的信息。点它直接改状态，不必开编辑弹窗 */}
+        <button
+          type="button"
+          className={`chip chip--status chip--status-${STATUS_TONES[node.status]}`}
+          title={`状态：${STATUS_LABELS[node.status]}（点击修改）`}
+          onClick={(e) => {
+            e.stopPropagation()
+            props.onOpenStatus(node.id, e.currentTarget)
+          }}
+        >
+          {STATUS_LABELS[node.status]}
+        </button>
         {node.repeat_period !== 'none' && (
           <span className="chip" title={`循环：${node.repeat_period}`}>
             {node.repeat_period === 'daily' ? '每日' : node.repeat_period === 'weekly' ? '每周' : node.repeat_period === 'monthly' ? '每月' : '自定义'}
