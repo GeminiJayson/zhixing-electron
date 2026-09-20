@@ -40,6 +40,16 @@ textarea {
   min-height: var(--control-h);
 }
 
+/* 日期 / 时间这两个原生输入有**自己的内在高度**（Chromium 里比 32px 还高一截），
+   而上面那条只给了 min-height —— 压不住它，于是同一行里它比别的输入框、下拉、按钮
+   都高出一头。这里显式按「控件高度」定死，并让 box-sizing 把内边距算进去。 */
+input[type='date'],
+input[type='time'] {
+  height: var(--control-h);
+  box-sizing: border-box;
+  padding-block: 0;
+}
+
 /* 交互状态：按压用位移表达、禁用用降透明度 —— 两者都不改布局边界，避免抖动。
    用独立的 translate 属性而不是 transform，免得覆盖组件自己的 transform
    （比如 .toast 的 translateX(-50%)）。 */

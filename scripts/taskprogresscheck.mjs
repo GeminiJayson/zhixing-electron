@@ -141,6 +141,23 @@ try {
   await sleep(1200)
   const editor = await conn.evaluate("(() => { const m = document.querySelector('.modal[role=\"dialog\"]'); return { masks: document.querySelectorAll('.modal-mask').length, modals: document.querySelectorAll('.modal').length, open: !!m, times: m ? m.querySelectorAll('input[type=\"time\"]').length : 0, dates: m ? m.querySelectorAll('input[type=\"date\"]').length : 0 } })()")
   check('编辑弹窗里开始与截止各有一个时刻输入', editor.open && editor.times === 2, J(editor))
+
+  // 日期 / 时间原生输入的内在高度比 --control-h 高，只给 min-height 压不住 ——
+  // 这一条盯着它们与同行的其它控件严格等高
+  const heights = await conn.evaluate(
+    "(() => {" +
+      "const m = document.querySelector('.modal[role=\"dialog\"]');" +
+      "const probe = document.createElement('div');" +
+      "probe.style.height = 'var(--control-h)';" +
+      "document.body.appendChild(probe);" +
+      "const want = Math.round(probe.getBoundingClientRect().height);" +
+      "probe.remove();" +
+      "const h = (sel) => [...m.querySelectorAll(sel)].map((el) => Math.round(el.getBoundingClientRect().height));" +
+      "return { want, times: h('input[type=time]'), dates: h('input[type=date]'), text: h('input:not([type])') };" +
+    "})()"
+  )
+  check('日期输入的高度 = 控件高度', heights.dates.length > 0 && heights.dates.every((x) => x === heights.want), J(heights))
+  check('时刻输入的高度 = 控件高度', heights.times.length === 2 && heights.times.every((x) => x === heights.want), J(heights))
 } catch (err) {
   check('脚本跑完', false, err instanceof Error ? err.message : String(err))
 }
