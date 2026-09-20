@@ -172,10 +172,7 @@ export function DatePicker({ value, onChange, label }: Props) {
                     key={y}
                     type="button"
                     className={`popmenu__item${y === cursor.y ? ' popmenu__item--active' : ''}`}
-                    onClick={() => {
-                      setCursor((c) => ({ ...c, y }))
-                      setMode('day')
-                    }}
+                    onClick={() => setCursor((c) => ({ ...c, y }))}
                   >
                     {y} 年
                   </button>
@@ -187,14 +184,17 @@ export function DatePicker({ value, onChange, label }: Props) {
                     key={m}
                     type="button"
                     className={`popmenu__item${m - 1 === cursor.m0 ? ' popmenu__item--active' : ''}`}
-                    onClick={() => {
-                      setCursor((c) => ({ ...c, m0: m - 1 }))
-                      setMode('day')
-                    }}
+                    onClick={() => setCursor((c) => ({ ...c, m0: m - 1 }))}
                   >
                     {m} 月
                   </button>
                 ))}
+              </div>
+              {/* 年月点选后不自动退回：先挑好年月，想选具体哪天时再走这里 */}
+              <div className="dpick__foot">
+                <button type="button" onClick={() => setMode('day')}>
+                  返回日历（选具体日期）
+                </button>
               </div>
             </div>
           )}

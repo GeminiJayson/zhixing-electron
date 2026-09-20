@@ -217,7 +217,25 @@ try {
   await conn.evaluate("[...document.querySelectorAll('.dpick__ylist .popmenu__item')].find((b) => b.textContent.trim() === '2030 年').click()")
   await sleep(500)
   const afterYear = await conn.evaluate("(() => ({ title: document.querySelector('.dpick__title')?.textContent, grid: !!document.querySelector('.dpick__grid') }))()")
-  check('选年份后回到日历且标题更新', afterYear.grid === true && String(afterYear.title).includes('2030'), J({ titleBefore, afterYear }))
+  check(
+    '选年份后仍留在年月视图，且年月已落到面板上',
+    afterYear.grid === false && String(afterYear.title).includes('2030'),
+    J({ titleBefore, afterYear })
+  )
+  // 选月份同样不退回，标题继续跟着走
+  await conn.evaluate("[...document.querySelectorAll('.dpick__mlist .popmenu__item')].find((b) => b.textContent.trim() === '3 月').click()")
+  await sleep(500)
+  const afterMonth = await conn.evaluate("(() => ({ title: document.querySelector('.dpick__title')?.textContent, grid: !!document.querySelector('.dpick__grid') }))()")
+  check(
+    '选月份后仍留在年月视图，标题也更新',
+    afterMonth.grid === false && String(afterMonth.title).includes('2030') && String(afterMonth.title).includes('3 月'),
+    J(afterMonth)
+  )
+  // 走「返回日历」才切回日期网格
+  await conn.evaluate("[...document.querySelectorAll('.dpick__pick .dpick__foot button')][0].click()")
+  await sleep(500)
+  const backToDay = await conn.evaluate("(() => ({ grid: !!document.querySelector('.dpick__grid'), title: document.querySelector('.dpick__title')?.textContent }))()")
+  check('点「返回日历」切回日期网格，月份仍是刚选的', backToDay.grid === true && String(backToDay.title).includes('2030'), J(backToDay))
   // 点外面只是收起，不改值
   await clickReal("document.querySelector('.modal__head')")
   await sleep(600)

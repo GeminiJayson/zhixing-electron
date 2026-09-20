@@ -431,6 +431,11 @@ button.chip--status:focus-visible {
 .dpick__mlist {
   max-height: calc(var(--control-h) * 8);
 }
+/* 年月视图里底部那一行要横跨两列 */
+.dpick__pick .dpick__foot {
+  grid-column: 1 / -1;
+  margin-top: 0;
+}
 .dpick__nav {
   display: grid;
   place-items: center;
