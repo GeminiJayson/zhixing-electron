@@ -20,6 +20,26 @@ import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
+
+/**
+ * 受限执行环境（例如 DSH 沙箱）的 PATH 里可能连 C:\\Windows\\System32 都没有，
+ * 而打包链里的 electron-builder 要用 powershell.exe 收集 node 模块，
+ * 缺了它会在 packaging 阶段报 `spawn powershell.exe ENOENT`。这里只做**补齐**，
+ * 不重排已有项 —— 与 scripts/*check.mjs 里补 SYS_PATH 同一套路。
+ */
+if (process.platform === 'win32') {
+  const systemDirs = [
+    'C:\\Windows\\System32',
+    'C:\\Windows',
+    'C:\\Windows\\System32\\Wbem',
+    'C:\\Windows\\System32\\WindowsPowerShell\\v1.0',
+  ]
+  const parts = (process.env.PATH ?? '').split(';').filter(Boolean)
+  const lower = parts.map((p) => p.toLowerCase())
+  const missing = systemDirs.filter((d) => !lower.includes(d.toLowerCase()))
+  if (missing.length) process.env.PATH = [...parts, ...missing].join(';')
+}
+
 const args = process.argv.slice(2)
 const DRY = args.includes('--dry-run')
 const SKIP_BUILD = args.includes('--skip-build')
