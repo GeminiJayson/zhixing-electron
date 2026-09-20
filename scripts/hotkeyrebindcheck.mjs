@@ -202,6 +202,32 @@ try {
     st2.includes('已注册') ? toast2.includes('已改为') : toast2.includes('没能注册'),
     J({ toast2, status: st2 })
   )
+
+  // ------------------------------------------------ 按了组合又取消
+  // 浮层里会把新组合显示出来，很容易被当成「已经改好了」——所以取消必须明说一句，
+  // 而且设置页里那一行不能变（用户报过「提示成功但显示没改」）
+  const beforeCancel = await conn.evaluate(
+    `(() => { const el = ${rowExpr(target)}; return el ? el.querySelector('input').value : null })()`
+  )
+  await conn.evaluate(
+    `(() => { const el = ${rowExpr(target)}; [...el.querySelectorAll('button')].find((b) => b.textContent.trim() === '改键')?.click() })()`
+  )
+  await sleep(500)
+  await conn.evaluate(
+    `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', code: 'KeyP', ctrlKey: true, altKey: true, bubbles: true, cancelable: true }))`
+  )
+  await sleep(400)
+  await conn.evaluate(
+    `(() => { [...document.querySelectorAll('.modal__foot button')].find((b) => b.textContent.trim() === '取消')?.click() })()`
+  )
+  await sleep(700)
+  const toast3 = await conn.evaluate(`document.querySelector('.toast')?.textContent?.trim() ?? ''`)
+  await sleep(800)
+  const afterCancel = await conn.evaluate(
+    `(() => { const el = ${rowExpr(target)}; return el ? el.querySelector('input').value : null })()`
+  )
+  check('按了组合又取消时，明说「没有改动」', toast3.includes('已取消'), J(toast3))
+  check('取消后那一行仍是原值', afterCancel === beforeCancel, J({ beforeCancel, afterCancel }))
 } catch (err) {
   check('脚本执行完成', false, err instanceof Error ? err.message : String(err))
 }

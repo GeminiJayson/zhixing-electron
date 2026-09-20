@@ -145,11 +145,16 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
       setRebinding(null)
       setCaptured('')
       capturedRef.current = ''
+      // 保存这一步是否真的成功。失败时不能继续往下报「已改好」——
+      // onNotice 只有一条，后一句会把前面那句失败提示直接盖掉，
+      // 用户于是看到「改键成功」却发现设置页里还是旧值（报过这个现象）
+      let saved = false
       if (save && key && combo) {
         try {
           await window.zhixing.db.setSetting(key, combo)
           rawRef.current = await window.zhixing.db.settings()
           setSettings(parseSettings(rawRef.current))
+          saved = true
         } catch (err) {
           onNotice(`热键未能保存：${(err as Error).message}`)
         }
@@ -164,7 +169,13 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
         onNotice(`热键重注册失败：${(err as Error).message}`)
         return
       }
-      if (!save || !key || !combo) return
+      if (!save || !key || !combo) {
+        // 按出了组合又放弃（Esc / 点浮层外面）：浮层里已经把新组合显示出来了，
+        // 不给一句话很容易被当成「已经改好了」
+        if (!save && key && combo) onNotice('已取消，热键没有改动')
+        return
+      }
+      if (!saved) return
       // 注册不上时**绝不能**报「已改好」：用户会以为生效了、按下去却没反应 ——
       // 这正是「设置页改键不生效」最常见的原因（组合被别的程序占用）
       if ((next[key] ?? '').includes('已注册')) onNotice(`热键已改为 ${combo}`)
@@ -1181,7 +1192,10 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
           <div className="modal" style={{ maxWidth: 380 }}>
             <div className="modal__head">改键</div>
             <div className="modal__body">
-              <p className="u-aux">按下新的组合键（必须包含 Ctrl / Alt / Shift / Cmd）</p>
+              <p className="u-aux">
+                按下新的组合键（必须包含 Ctrl / Alt / Shift / Cmd），
+                <strong>再点「保存」（或按回车）才会生效</strong>
+              </p>
               <p style={{ fontSize: 20, fontWeight: 600 }}>
                 {captured || '等待按键…'}
               </p>
