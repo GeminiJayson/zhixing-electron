@@ -110,14 +110,17 @@ html[data-surface='widget'] #root {
     opacity var(--dur-fast) var(--ease-enter),
     transform var(--dur-fast) var(--ease-spring);
 }
-/* bloub 的渲染层：墨色跟着主题前景色走。
-   引擎把眼睛做成身体上的**洞** —— 没有底色之后，洞里透出的就是球下面的桌面，
-   这正是它看上去像「一个镂空的形状」的原因。 */
+/* bloub 的渲染层：身体颜色跟着**主题强调色**走 —— 用户换强调色，球就跟着换色。
+   浮窗是独立窗口，但它在 'settings' 域上订阅了主进程的广播，所以是实时的。
+   用 --accent（品牌原值）而不是 --accent-text：后者是给文字做对比度校正的，
+   填充本来就该用原值（见 theme.ts 里这两者的分工）。
+   引擎把眼睛做成身体上的**洞** —— 没有底色之后，洞里透出的是球下面的桌面，
+   这正是它看上去像一个镂空形状的原因。 */
 .bloub {
   display: block;
   width: 100%;
   height: 100%;
-  color: var(--fg-primary);
+  color: var(--accent);
 }
 .bloub__ink {
   fill: currentColor;

@@ -170,6 +170,33 @@ try {
   check('体型已切换并推给浮窗', shapeAfter === 'triangle', J({ shapeBefore, shapeAfter }))
   check('换成三角后身体路径确实变了', Boolean(third.body) && third.body !== second.body, J({ b: second.body, c: third.body }))
 
+  // ------------------------------------------------ 球色跟随主题强调色
+  const colorOf = () =>
+    conn.evaluate(`(() => {
+       const svg = document.querySelector('svg.bloub')
+       if (!svg) return null
+       // 用一个临时元素把 var(--accent) 解析成 rgb 再比对，省得自己解析颜色
+       const probe = document.createElement('div')
+       probe.style.color = 'var(--accent)'
+       document.body.appendChild(probe)
+       const accent = getComputedStyle(probe).color
+       const ball = getComputedStyle(svg).color
+       probe.remove()
+       return { accent, ball, same: accent === ball }
+     })()`)
+  const before = await colorOf()
+  check('球的颜色等于主题强调色', before?.same === true, J(before))
+
+  // 换强调色：浮窗靠 settings 域的广播实时重铺，不该等重启
+  await host.evaluate(`window.zhixing.db.setSetting('accent_color', '#e8483f')`)
+  await sleep(1200)
+  const after = await colorOf()
+  check(
+    '改强调色后球色实时跟着变',
+    Boolean(after) && after.ball !== before.ball && after.same === true,
+    J({ before, after })
+  )
+
   // 截图：先回到默认圆，再看三角与水滴（球窗口很小，看图时自行放大）
   await conn.evaluate(`window.zhixing.widget.setBallShape('cercle')`)
   await sleep(900)
