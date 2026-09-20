@@ -473,3 +473,24 @@
 .wf-port__label--false {
   fill: color-mix(in srgb, var(--danger) 74%, var(--fg-secondary));
 }
+
+/* 普通步骤拉出的「跳到」分支：中性色，与条件节点的绿 / 红两条区分开 */
+.wf-edge--branch-jump {
+  stroke: color-mix(in srgb, var(--accent) 42%, var(--graph-edge));
+}
+/* 普通步骤的出线口：平时压暗 —— 每个步骤右边都跳一个亮圆点会把画布塞满 */
+.wf-port--jump circle {
+  opacity: 0.4;
+}
+.wf-port--jump.wf-port--on circle {
+  opacity: 1;
+  fill: var(--accent-soft);
+}
+.wf-port__label--jump {
+  fill: var(--fg-tertiary);
+  opacity: 0;
+}
+/* 「跳到」两个字只在悬停 / 选中该节点时露出 */
+.wf-port--jump.wf-port--on .wf-port__label--jump {
+  opacity: 1;
+}

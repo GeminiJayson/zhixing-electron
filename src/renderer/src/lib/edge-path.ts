@@ -95,8 +95,8 @@ export interface Anchor {
   side: AnchorSide
 }
 
-/** 各边**朝外**的法线方向。 */
-const SIDE_NORMAL: Record<AnchorSide, { x: number; y: number }> = {
+/** 各边**朝外**的法线方向（调用方要沿它把按钮 / 手柄退到节点外时用得上）。 */
+export const SIDE_NORMAL: Record<AnchorSide, { x: number; y: number }> = {
   top: { x: 0, y: -1 },
   bottom: { x: 0, y: 1 },
   left: { x: -1, y: 0 },
@@ -181,7 +181,42 @@ export function orthogonalPath(from: Anchor, to: Anchor, stub = ORTHO_STUB): str
 }
 
 /**
- * 沿连线方向、从起点前进 dist 的点 —— 给「贴着起点的边标签」用。
+ * 折线路径的**弧长中点** —— 删除按钮要压在这条线上，就得沿路径量一半，不能再用
+ * 「两端点的中点」那种近似：连线改成正交折线之后，两端中点早就跑到线外面去了
+ * （实测按钮飘在空白处，点不到、删不掉）。
+ */
+export function edgePathMidpoint(d: string): { x: number; y: number } {
+  const pts = [...d.matchAll(/[ML](-?[\d.]+),(-?[\d.]+)/g)].map((m) => ({
+    x: Number(m[1]),
+    y: Number(m[2]),
+  }))
+  if (!pts.length) return { x: 0, y: 0 }
+  if (pts.length === 1) return pts[0]
+  const lens: number[] = []
+  let total = 0
+  for (let i = 1; i < pts.length; i++) {
+    const len = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y)
+    lens.push(len)
+    total += len
+  }
+  if (total < 0.001) return pts[0]
+  let acc = 0
+  for (let i = 1; i < pts.length; i++) {
+    const len = lens[i - 1]
+    if (acc + len >= total / 2) {
+      const t = len < 0.001 ? 0 : (total / 2 - acc) / len
+      return {
+        x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t,
+        y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t,
+      }
+    }
+    acc += len
+  }
+  return pts[pts.length - 1]
+}
+
+/**
+ * 沿连线方向、从起点按**直线距离**前进 dist 的点 —— 给「贴着起点的边标签」用。
  *
  * 为什么不用中点：边的中段很可能正好穿过另一个节点（纵向分层布局里很常见），
  * 标签压上去就糊成一团；而起点附近一定是空的。

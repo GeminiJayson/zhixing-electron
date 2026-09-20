@@ -38,6 +38,7 @@ import {
 import {
   BRANCH_SLOTS,
   branchSlotLabel,
+  branchTarget,
   fallthroughTarget,
   withBranchTarget,
   type BranchSlot,
@@ -48,7 +49,14 @@ import { WorkflowStepDialog } from '../components/WorkflowStepDialog'
 import { WorkflowConditionDialog } from '../components/WorkflowConditionDialog'
 import { useDialog } from '../components/Dialogs'
 import { usePanZoom } from '../lib/usePanZoom'
-import { edgePointFrom, orthogonalPath, type Anchor } from '../lib/edge-path'
+import {
+  SIDE_NORMAL,
+  edgePathMidpoint,
+  edgePointFrom,
+  orthogonalPath,
+  type Anchor,
+  type AnchorSide,
+} from '../lib/edge-path'
 import {
   directedAnchors,
   layoutBounds,
@@ -79,25 +87,28 @@ const SIDE_MAX = 460
 const SIDE_KEY_STEP = 16
 
 /**
- * 条件节点两条分支的出边起点：菱形左右两个尖角，右 = 满足、左 = 不满足。
+ * 一个节点的出线端口 —— 画布上每个节点都能**主动**拉一条线到别的节点，
+ * 不必先有连线才谈得上改挂（用户反馈过这一点）。
  *
- * 选左右尖角而不是下方，是为了避开贴在菱形下方的条件内容条 ——
- * 从下缘往下的连线会横穿内容条，被它挡住一截。
- * 普通步骤只有历史遗留的单条分支，仍沿用「从节点盒的出入边出发」的老几何。
+ * 条件节点：菱形左右两个尖角，右 = 满足、左 = 不满足。选尖角而不是下方，
+ *          是为了避开贴在菱形下方的条件内容条（从下缘出线会横穿内容条）。
+ * 普通步骤：右边中点一个「跳到」口。放在右边是为了不跟底部的顺序出边打架。
  */
-function conditionPort(
+function nodePort(
+  node: Pick<WorkflowNodePayload, 'action_kind'>,
   a: { x: number; y: number },
   slot: BranchSlot
-): { x: number; y: number } {
-  return slot === 'true'
-    ? { x: a.x + NODE_W, y: a.y + NODE_H / 2 }
-    : { x: a.x, y: a.y + NODE_H / 2 }
+): { x: number; y: number; side: AnchorSide } {
+  if (node.action_kind === CONDITION_KIND && slot === 'false') {
+    return { x: a.x, y: a.y + NODE_H / 2, side: 'left' }
+  }
+  return { x: a.x + NODE_W, y: a.y + NODE_H / 2, side: 'right' }
 }
 
 /**
  * 一条分支出边的两端锚点。
  *
- * 条件节点从菱形尖角**水平**出线（满足向右、不满足向左），落点仍按相对位置挑边；
+ * 出边一律从**端口**走（条件节点是尖角、普通步骤是右边中点），落点仍按相对位置挑边；
  * 两端都带上「这是哪条边」，交给 orthogonalPath 折线 —— 于是首段、末段都垂直于
  * 节点的边，中间的过渡段落在节点之外。
  *
@@ -111,12 +122,7 @@ function branchAnchors(
   to: { x: number; y: number }
 ): { from: Anchor; to: Anchor } {
   const anchors = directedAnchors(a, to, NODE_W, NODE_H)
-  if (from.action_kind !== CONDITION_KIND) return anchors
-  const port = conditionPort(a, slot)
-  return {
-    from: { x: port.x, y: port.y, side: slot === 'true' ? 'right' : 'left' },
-    to: anchors.to,
-  }
+  return { from: nodePort(from, a, slot), to: anchors.to }
 }
 
 /**
@@ -778,23 +784,30 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   /** I17 删除选中步骤（对齐 _delete_step：删后按顺序整体重排 order_index）。 */
   const handleDeleteStep = async (): Promise<void> => {
     if (!current || selected == null) return
-    const rest = ordered
-      .filter((n) => n.id !== selected)
-      .map((n, i) => ({ ...n, order_index: i }))
-    if (!rest.length) {
+    const removedId = selected
+    // 指向被删节点的分支引用必须一并清掉：留着它，校验会以「分支指向了不存在的步骤」
+    // 直接拒绝保存 —— 表现就是「这一步删不掉，得先把别人的分支改到别处去」
+    let rest = ordered.filter((n) => n.id !== removedId)
+    for (const slot of ['true', 'false'] as const) {
+      rest = rest.map((n) =>
+        branchTarget(n, slot) === removedId ? withBranchTarget(n, slot, null) : n
+      )
+    }
+    const next = rest.map((n, i) => ({ ...n, order_index: i }))
+    if (!next.length) {
       onNotice('至少要保留一个步骤')
       return
     }
     const confirmed = await dialog.confirm({
       title: '删除步骤',
-      message: '删除选中的步骤？删除后按顺序重排其余步骤。',
+      message: '删除选中的步骤？删除后按顺序重排其余步骤，指向它的连线也会一并去掉。',
       icon: <Trash2 size={15} />,
       danger: true,
       confirmText: '删除',
     })
     if (!confirmed) return
     setSelected(null)
-    await persistTemplate(rest)
+    await persistTemplate(next)
   }
 
   /** I17 上移 / 下移（对齐 _move_step：交换后整体重排 order_index）。 */
@@ -1367,8 +1380,11 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                     d={d}
                     markerEnd={related || hot ? 'url(#wf-arrow-on)' : 'url(#wf-arrow)'}
                     className={
-                      'wf-edge wf-edge--branch wf-edge--branch-' +
-                      slot +
+                      'wf-edge wf-edge--branch ' +
+                      // 条件节点用满足 / 不满足两色；普通步骤的「跳到」用中性色
+                      (from.action_kind === CONDITION_KIND
+                        ? 'wf-edge--branch-' + slot
+                        : 'wf-edge--branch-jump') +
                       (related || hot ? ' wf-edge--on' : '')
                     }
                   />
@@ -1484,38 +1500,55 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
               )
             })}
 
-            {/* 分支端口：条件节点菱形左右两个尖角（右 = 满足、左 = 不满足）。
-                从端口拖到目标节点就连出那条分支；文字只在悬停/选中时显示，平时留一个小圆点。 */}
+            {/* 出线端口：**每个**节点都能主动拉一条线到别的节点，不必先有连线才谈得上改挂。
+                条件节点是菱形左右两个尖角（右 = 满足、左 = 不满足，标签常驻）；
+                普通步骤是右边中点的一个「跳到」口，平时压暗、悬停该节点时才亮。 */}
             {ordered.map((n) => {
-              if (n.action_kind !== CONDITION_KIND) return null
               const a = pos.get(n.id)
               if (!a) return null
+              const isCondition = n.action_kind === CONDITION_KIND
+              const ports: { slot: BranchSlot; label: string; hint: string }[] = isCondition
+                ? BRANCH_SLOTS.map((s) => ({
+                    slot: s.value,
+                    label: s.label,
+                    hint: `从这里拖到目标节点，连出「${s.label}」分支`,
+                  }))
+                : [
+                    {
+                      slot: 'true',
+                      label: '跳到',
+                      hint: '从这里拖到目标节点：这一步完成后直接跳到它',
+                    },
+                  ]
               return (
                 <g key={`ports-${n.id}`} className="wf-ports">
-                  {BRANCH_SLOTS.map((s) => {
-                    const p = conditionPort(a, s.value)
+                  {ports.map(({ slot, label, hint }) => {
+                    const p = nodePort(n, a, slot)
+                    const outward = p.side === 'left' ? -1 : 1
                     return (
                       <g
-                        key={s.value}
+                        key={slot}
+                        data-wf-port={n.id}
+                        data-wf-slot={slot}
                         className={
-                          'wf-port wf-port--' + s.value + (hoverStep === n.id ? ' wf-port--on' : '')
+                          'wf-port wf-port--' +
+                          (isCondition ? slot : 'jump') +
+                          (hoverStep === n.id ? ' wf-port--on' : '')
                         }
                         onPointerDown={(e) => {
                           e.stopPropagation()
-                          setBranchDrag({ fromId: n.id, slot: s.value, x: p.x, y: p.y })
+                          setBranchDrag({ fromId: n.id, slot, x: p.x, y: p.y })
                         }}
                       >
-                        <title>从这里拖到目标节点，连出「{s.label}」分支</title>
+                        <title>{hint}</title>
                         <circle cx={p.x} cy={p.y} r={5} />
-                        {/* 标签常驻：两条出边的语义就写在条件节点自己的两个尖角旁，
-                            不必先去追那条虚线 */}
                         <text
-                          x={s.value === 'true' ? p.x + 8 : p.x - 8}
+                          x={p.x + outward * 8}
                           y={p.y + 3}
-                          className={'wf-port__label wf-port__label--' + s.value}
-                          textAnchor={s.value === 'true' ? 'start' : 'end'}
+                          className={'wf-port__label wf-port__label--' + (isCondition ? slot : 'jump')}
+                          textAnchor={outward > 0 ? 'start' : 'end'}
                         >
-                          {s.label}
+                          {label}
                         </text>
                       </g>
                     )
@@ -1562,33 +1595,40 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
               const a = pos.get(from.id)
               const b = pos.get(toId)
               if (!a || !b) return null
-              // 手柄退到节点外侧一点：正落在节点边框上会和节点抢指针，拖不动
-              const x2 = b.x - 8
-              const y2 = b.y + NODE_H / 2
-              const mx = (a.x + NODE_W + x2) / 2
-              const my = (a.y + NODE_H / 2 + y2) / 2
+              const ends = branchAnchors(from, a, slot, b)
+              const d = orthogonalPath(ends.from, ends.to)
+              // 改挂手柄：贴住折线终点、沿入边法线退 8px ——
+              // 正落在节点边框上会和节点抢指针，拖不动
+              const normal = SIDE_NORMAL[ends.to.side]
+              const hx = ends.to.x + normal.x * 8
+              const hy = ends.to.y + normal.y * 8
+              // 删除按钮压在折线的**弧长中点**上：连线改成正交折线之后，
+              // 「两端点的中点」早就不在线上了，按钮会飘在空白处、点不到也删不掉
+              const mid = edgePathMidpoint(d)
               return (
                 <g key={`btools-${from.id}-${slot}`}>
                   <circle
                     className="edge-handle"
-                    cx={x2}
-                    cy={y2}
+                    data-wf-handle={from.id}
+                    cx={hx}
+                    cy={hy}
                     r={5}
                     onPointerDown={(e) => {
                       e.stopPropagation()
-                      setBranchDrag({ fromId: from.id, slot, x: x2, y: y2 })
+                      setBranchDrag({ fromId: from.id, slot, x: hx, y: hy })
                     }}
                   />
                   <g
                     className="edge-del"
+                    data-wf-del={from.id}
                     onPointerDown={(e) => {
                       e.stopPropagation()
                       void removeBranch(from.id, slot)
                     }}
                   >
-                    <circle cx={mx} cy={my} r={8} />
+                    <circle cx={mid.x} cy={mid.y} r={8} />
                     <path
-                      d={`M${mx - 3.5} ${my - 3.5} L${mx + 3.5} ${my + 3.5} M${mx + 3.5} ${my - 3.5} L${mx - 3.5} ${my + 3.5}`}
+                      d={`M${mid.x - 3.5} ${mid.y - 3.5} L${mid.x + 3.5} ${mid.y + 3.5} M${mid.x + 3.5} ${mid.y - 3.5} L${mid.x - 3.5} ${mid.y + 3.5}`}
                     />
                   </g>
                 </g>
@@ -1599,11 +1639,8 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                 const n = ordered.find((x) => x.id === branchDrag.fromId)
                 const a = n ? pos.get(n.id) : undefined
                 if (!n || !a) return null
-                // 预览线从真正的出边起点出发：条件节点是端口，普通步骤是节点右边
-                const p =
-                  n.action_kind === CONDITION_KIND
-                    ? conditionPort(a, branchDrag.slot)
-                    : { x: a.x + NODE_W, y: a.y + NODE_H / 2 }
+                // 预览线从真正的出线口出发（条件节点是尖角、普通步骤是右边中点）
+                const p = nodePort(n, a, branchDrag.slot)
                 return (
                   <line
                     className="graph__edge-drag"

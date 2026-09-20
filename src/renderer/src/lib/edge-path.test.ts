@@ -7,6 +7,7 @@ import {
   edgeMidpoint,
   edgePath,
   edgePointFrom,
+  edgePathMidpoint,
   elbowPath,
   orthogonalPath,
   trimEnd,
@@ -188,5 +189,43 @@ describe('orthogonalPath —— 按边方向折线，两端都垂直于节点的
 
   it('只用直线段，不含任何曲线命令', () => {
     expect(/[CQAST]/.test(orthogonalPath(at(40, 68, 'left'), at(115, 280, 'top')))).toBe(false)
+  })
+})
+
+describe('edgePathMidpoint —— 删除按钮必须压在线上', () => {
+  it('直线：取正中间', () => {
+    expect(edgePathMidpoint('M0,0 L100,0')).toEqual({ x: 50, y: 0 })
+  })
+
+  it('折线：按弧长取一半，落在较长的那一段上（不是两端点的中点）', () => {
+    // 10 + 100 的 L 形：弧长中点应在竖直段里，而「两端点中点」会落在 (5,50) 附近偏出去
+    const m = edgePathMidpoint('M0,0 L10,0 L10,100')
+    expect(m.x).toBeCloseTo(10, 6)
+    expect(m.y).toBeCloseTo(45, 6)
+  })
+
+  it('正交折线（真实连线形状）的中点在线上', () => {
+    const d = orthogonalPath(at(190, 68, 'right'), at(170, 160, 'top'))
+    const m = edgePathMidpoint(d)
+    const pts = parse(d)
+    // 中点必须落在某一段线段上
+    const onSegment = pts.some((p, i) => {
+      if (i === 0) return false
+      const q = pts[i - 1]
+      const cross = (p.x - q.x) * (m.y - q.y) - (p.y - q.y) * (m.x - q.x)
+      if (Math.abs(cross) > 0.01) return false
+      return (
+        m.x >= Math.min(p.x, q.x) - 0.01 &&
+        m.x <= Math.max(p.x, q.x) + 0.01 &&
+        m.y >= Math.min(p.y, q.y) - 0.01 &&
+        m.y <= Math.max(p.y, q.y) + 0.01
+      )
+    })
+    expect(onSegment).toBe(true)
+  })
+
+  it('单点 / 空串不炸', () => {
+    expect(edgePathMidpoint('M5,7')).toEqual({ x: 5, y: 7 })
+    expect(edgePathMidpoint('')).toEqual({ x: 0, y: 0 })
   })
 })

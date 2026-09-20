@@ -174,7 +174,8 @@ try {
        return {
          template: on ? on.textContent : '',
          strip: strip ? strip.textContent : '',
-         ports: document.querySelectorAll('.wf-port').length,
+         ports: document.querySelectorAll('.wf-port--true, .wf-port--false').length,
+         jumpPorts: document.querySelectorAll('.wf-port--jump').length,
          labels: [...document.querySelectorAll('.wf-port__label')].map((e) => e.textContent),
          instBtns: document.querySelectorAll('[aria-label="再次运行实例"],[aria-label="删除实例"]').length,
          splitter: document.querySelectorAll('.wf-splitter').length
@@ -183,7 +184,8 @@ try {
   )
   check('打开的是刚建的模板', String(ui.template).includes('双分支'), J(ui.template))
   check('条件节点上显示了条件内容', String(ui.strip).includes('任务'), J(ui.strip))
-  check('两条分支端口都在', ui.ports === 2, J(ui.ports))
+  check('条件节点的两条分支端口都在', ui.ports === 2, J(ui.ports))
+  check('普通步骤也各有「跳到」端口', ui.jumpPorts === 2, J(ui.jumpPorts))
   // 「满足 / 不满足」写在条件节点两个端口旁，不是画在虚线上
   check(
     '两个端口分别标着满足 / 不满足',
