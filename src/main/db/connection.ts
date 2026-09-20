@@ -139,6 +139,9 @@ function ensureAppExtensions(d: Database.Database): void {
   add('workflow_node', 'note_ids', 'note_ids TEXT')
   add('workflow_node', 'action_expect', 'action_expect TEXT')
   add('workflow_node', 'action_runtime', 'action_runtime TEXT')
+  // 条件节点的「不成立」出边：与 branch_node_id（成立）配成一对，
+  // 条件节点因此能在画布上拉出「满足 / 不满足」两条分支。
+  add('workflow_node', 'branch_false_node_id', 'branch_false_node_id INTEGER')
   add('workflow_instance', 'last_result', 'last_result TEXT')
   // 外部任务来源：靠 (source, id) 幂等认领，重复同步不会造出重复任务
   add('task', 'external_source', 'external_source TEXT')

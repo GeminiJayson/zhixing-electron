@@ -7,7 +7,7 @@
  *
  * 工作流的图结构是**隐式**的：没有边表，只有两处约定 ——
  *   1. 顺序边：order_index 相邻的步骤之间存在依赖（相邻即先后）
- *   2. 分支边：node → node.branch_node_id（条件分支的去向，见 WorkflowPage 的分支连线）
+ *   2. 分支边：node → node.branch_node_id（满足）/ node.branch_false_node_id（不满足）
  * 这里把它们投影成 dagre 的有向图。
  *
  * 为什么用最小输入接口而不是整个 WorkflowNodePayload：布局只需要 id / 顺序 / 分支
@@ -20,6 +20,8 @@ export interface LayoutNode {
   id: number
   order_index: number
   branch_node_id: number | null
+  /** 条件不成立时的分支目标（条件节点的第二条出边） */
+  branch_false_node_id?: number | null
 }
 
 /** 布局方向：TB 纵向（步骤自上而下）/ LR 横向（步骤自左而右）。 */
@@ -66,9 +68,11 @@ export function workflowEdges(nodes: readonly LayoutNode[]): LayoutEdge[] {
   }
   for (let i = 0; i + 1 < ordered.length; i++) push(ordered[i].id, ordered[i + 1].id, false)
   for (const n of ordered) {
-    const to = n.branch_node_id
-    if (to == null || to === n.id || !ids.has(to)) continue
-    push(n.id, to, true)
+    // 条件节点的两条出边都参与分层，分支才会落到与主线不同的层
+    for (const to of [n.branch_node_id, n.branch_false_node_id ?? null]) {
+      if (to == null || to === n.id || !ids.has(to)) continue
+      push(n.id, to, true)
+    }
   }
   return out
 }

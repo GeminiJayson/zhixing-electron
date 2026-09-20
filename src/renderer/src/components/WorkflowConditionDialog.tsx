@@ -15,8 +15,8 @@ interface Props {
  * 条件节点的编辑弹窗。
  *
  * 与 WorkflowStepDialog 是**两个独立组件**：条件节点不生成待办，所以没有 SOP 文档、
- * 也没有「动作」——它只有两件事：**怎么判定**（注入条件）与**成立后往哪走**（分支目标）。
- * 不成立时按顺序走下一步，由推进逻辑保证。
+ * 也没有「动作」——它只有两件事：**怎么判定**（注入条件）与**结果往哪走**
+ * （满足 / 不满足两条出边，各自的跳转目标）。哪条出边没配就按顺序走下一步。
  */
 export function WorkflowConditionDialog({ node, isNew, siblings, onSave, onCancel }: Props) {
   const [draft, setDraft] = useState<WorkflowNodePayload>(node)
@@ -50,7 +50,7 @@ export function WorkflowConditionDialog({ node, isNew, siblings, onSave, onCance
             onChange={(next) => setDraft({ ...draft, action_value: next })}
           />
           <label className="form-row">
-            <span>条件成立时跳到</span>
+            <span>满足时跳到</span>
             <select
               className="field"
               value={draft.branch_node_id ?? ''}
@@ -66,8 +66,29 @@ export function WorkflowConditionDialog({ node, isNew, siblings, onSave, onCance
               ))}
             </select>
           </label>
+          <label className="form-row">
+            <span>不满足时跳到</span>
+            <select
+              className="field"
+              value={draft.branch_false_node_id ?? ''}
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  branch_false_node_id: e.target.value ? Number(e.target.value) : null,
+                })
+              }
+            >
+              <option value="">（按顺序走下一步）</option>
+              {siblings.map((n) => (
+                <option key={n.id} value={n.id}>
+                  {n.title}
+                </option>
+              ))}
+            </select>
+          </label>
           <p className="u-aux">
-            条件不成立时按顺序走下一步。条件节点到点自动求值、不生成待办，所以没有动作与 SOP。
+            两条分支都可以留空 —— 留空就按顺序走下一个节点。也可以在画布上直接拖动条件节点
+            的两个端口连线。条件节点到点自动求值、不生成待办，所以没有动作与 SOP。
           </p>
         </div>
         <footer className="modal__foot">

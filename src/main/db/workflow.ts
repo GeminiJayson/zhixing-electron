@@ -34,15 +34,18 @@ import {
   scriptRuntimeLabel,
   type ScriptRuntime,
 } from '../../shared/workflow-action'
+import { BRANCH_FIELD, findBranchCycle, nextNodeOf, type BranchSlot } from '../../shared/workflow-branch'
 
 // ---------------------------------------------------------------- 工作流
 
 export const NODE_COLUMNS =
-  'id, template_id, title, detail, order_index, note_id, note_ids, action_kind, action_value, action_expect, action_runtime, condition, branch_node_id, pos_x, pos_y'
+  'id, template_id, title, detail, order_index, note_id, note_ids, action_kind, action_value, action_expect, action_runtime, condition, branch_node_id, branch_false_node_id, pos_x, pos_y'
 
 /** workflow_node 的原始行（note_ids 是 JSON 文本，不是数组）。 */
-interface WorkflowNodeRow extends Omit<WorkflowNodePayload, 'note_ids'> {
+interface WorkflowNodeRow extends Omit<WorkflowNodePayload, 'note_ids' | 'branch_false_node_id'> {
   note_ids: string | null
+  /** 更早的库还没有这一列（ensureAppExtensions 打开时会补），补之前读到的行是 undefined */
+  branch_false_node_id?: number | null
 }
 
 /**
@@ -73,6 +76,7 @@ export function rowToNode(r: WorkflowNodeRow): WorkflowNodePayload {
   return {
     ...r,
     note_ids,
+    branch_false_node_id: r.branch_false_node_id ?? null,
     action_expect: r.action_expect ?? '',
     action_runtime: r.action_runtime ?? '',
   }
@@ -95,12 +99,7 @@ export function nextWorkflowNode(
   if (nodeId == null) return ordered[0] ?? null
   const idx = ordered.findIndex((n) => n.id === nodeId)
   if (idx < 0) return null
-  const cur = ordered[idx]
-  if (cur.branch_node_id) {
-    const branched = ordered.find((n) => n.id === cur.branch_node_id)
-    if (branched) return branched
-  }
-  return ordered[idx + 1] ?? null
+  return nextNodeOf(ordered, ordered[idx], true)
 }
 
 /** 拓扑校验，逐条对齐 WorkflowTemplate.validate；返回问题列表（空 = 可保存）。 */
@@ -109,29 +108,23 @@ export function validateWorkflowTemplate(nodes: WorkflowNodePayload[]): string[]
   const ordered = orderedNodes(nodes)
   if (ordered.length === 0) return ['工作流至少要有一个步骤']
   const ids = new Set(ordered.map((n) => n.id))
+  const checkBranch = (n: WorkflowNodePayload, target: number | null, label: string): void => {
+    if (target == null) return
+    if (target === n.id) problems.push(`步骤「${n.title}」的${label}不能指向自己`)
+    else if (!ids.has(target)) problems.push(`步骤「${n.title}」的${label}指向了不存在的步骤`)
+  }
   ordered.forEach((n, i) => {
     if (!(n.title || '').trim()) problems.push(`第 ${i + 1} 个步骤缺少标题`)
-    if (n.branch_node_id != null) {
-      if (n.branch_node_id === n.id) problems.push(`步骤「${n.title}」的分支不能指向自己`)
-      else if (!ids.has(n.branch_node_id)) problems.push(`步骤「${n.title}」的分支指向了不存在的步骤`)
+    checkBranch(n, n.branch_node_id, '分支')
+    checkBranch(n, n.branch_false_node_id, '「不满足」分支')
+    // 「满足 / 不满足」是条件节点的一对出边，普通步骤只能有历史的那一条
+    if (n.action_kind !== CONDITION_KIND && n.branch_false_node_id != null) {
+      problems.push(`步骤「${n.title}」不是条件节点，不能设置「不满足」分支`)
     }
   })
 
-  // 条件分支环检测（只沿 branch 边走）
-  const branch = new Map<number, number>()
-  for (const n of ordered) if (n.branch_node_id) branch.set(n.id, n.branch_node_id)
-  for (const start of branch.keys()) {
-    const seen = new Set<number>()
-    let cur: number | undefined = start
-    while (cur !== undefined && branch.has(cur)) {
-      if (seen.has(cur)) {
-        problems.push('步骤的条件分支形成了环，实例将无法结束')
-        return problems
-      }
-      seen.add(cur)
-      cur = branch.get(cur)
-    }
-  }
+  // 环检测沿两条出边（满足 / 不满足）一起走：只查一条会漏掉「两条边合作成环」
+  if (findBranchCycle(ordered) != null) problems.push('条件分支形成了环，实例将无法结束')
   return problems
 }
 
@@ -166,7 +159,7 @@ export function saveWorkflowTemplate(tpl: {
   name: string
   description?: string
   start_policy?: string
-  nodes: { id?: number | null; title: string; detail?: string; order_index?: number; note_id?: number | null; note_ids?: number[]; action_kind?: string; action_value?: string; action_expect?: string; action_runtime?: string; condition?: string; branch_node_id?: number | null; pos_x?: number | null; pos_y?: number | null }[]
+  nodes: { id?: number | null; title: string; detail?: string; order_index?: number; note_id?: number | null; note_ids?: number[]; action_kind?: string; action_value?: string; action_expect?: string; action_runtime?: string; condition?: string; branch_node_id?: number | null; branch_false_node_id?: number | null; pos_x?: number | null; pos_y?: number | null }[]
 }): { ok: boolean; problems: string[]; templateId?: number } {
   const draft: WorkflowNodePayload[] = tpl.nodes.map((n, i) => {
     // SOP 多绑定的唯一真相是 note_ids；note_id 只作为兼容列同步写出（Python 版仍按单值读）
@@ -188,6 +181,7 @@ export function saveWorkflowTemplate(tpl: {
       action_runtime: n.action_runtime ?? '',
       condition: n.condition ?? '',
       branch_node_id: n.branch_node_id ?? null,
+      branch_false_node_id: n.branch_false_node_id ?? null,
       pos_x: n.pos_x ?? null,
       pos_y: n.pos_y ?? null,
     }
@@ -251,14 +245,16 @@ export function saveWorkflowTemplate(tpl: {
       if (n.id !== 0) idMap.set(n.id, rowId)
       inserted.push({ rowId, oldId: n.id, raw: n })
     }
-    // 分支引用重映射（旧 id → 新 id）
+    // 分支引用重映射（旧 id → 新 id）：成立 / 不成立两条出边都要搬
     for (const it of inserted) {
-      const branch = it.raw.branch_node_id
-      if (branch == null) continue
-      c.prepare('UPDATE workflow_node SET branch_node_id = ? WHERE id = ?').run(
-        idMap.get(branch) ?? branch,
-        it.rowId
-      )
+      for (const slot of ['true', 'false'] as const) {
+        const raw = slot === 'true' ? it.raw.branch_node_id : it.raw.branch_false_node_id
+        if (raw == null) continue
+        c.prepare(`UPDATE workflow_node SET ${BRANCH_FIELD[slot]} = ? WHERE id = ?`).run(
+          idMap.get(raw) ?? raw,
+          it.rowId
+        )
+      }
     }
     return tid
   })
@@ -308,6 +304,7 @@ export function duplicateWorkflowTemplate(id: number): WorkflowTemplatePayload |
       action_runtime: n.action_runtime,
       condition: n.condition,
       branch_node_id: n.branch_node_id,
+      branch_false_node_id: n.branch_false_node_id,
     })),
   })
   if (!res.ok || !res.templateId) return null
@@ -349,10 +346,17 @@ export function listWorkflowInstancesByTask(taskId: number): WorkflowInstancePay
 }
 
 /** 仅持久化节点坐标（拖动后静默保存，不触发整体重写）。 */
-/** 单独设置 / 清除某个步骤的条件分支目标（不重写整个模板）。 */
-export function setWorkflowBranch(nodeId: number, branchNodeId: number | null): number {
+/**
+ * 单独设置 / 清除某个步骤某条分支的目标（不重写整个模板）。
+ * slot 默认 'true'（满足），两参调用与历史兼容；'false' 写「不满足」那条出边。
+ */
+export function setWorkflowBranch(
+  nodeId: number,
+  branchNodeId: number | null,
+  slot: BranchSlot = 'true'
+): number {
   return conn()
-    .prepare('UPDATE workflow_node SET branch_node_id = ? WHERE id = ?')
+    .prepare(`UPDATE workflow_node SET ${BRANCH_FIELD[slot]} = ? WHERE id = ?`)
     .run(branchNodeId, nodeId).changes
 }
 
@@ -966,6 +970,32 @@ export function abortWorkflowInstance(id: number): boolean {
   )
 }
 
+/**
+ * 删除一个实例的运行记录：连它的「步骤 ↔ 任务」绑定一起清掉。
+ * **不删模板**，也**不删已经派生的任务** —— 那些是用户真实的工作项，
+ * 删掉的只是「这一次运行」的进度与状态。
+ */
+export function deleteWorkflowInstance(id: number): boolean {
+  const c = conn()
+  const run = c.transaction(() => {
+    c.prepare('DELETE FROM workflow_step_task WHERE instance_id = ?').run(id)
+    return c.prepare('DELETE FROM workflow_instance WHERE id = ?').run(id).changes
+  })
+  return run() > 0
+}
+
+/**
+ * 重复运行：按同一模板**再启动一个新实例**，旧实例记录原样保留（当作历史）。
+ * 不复用 origin_task_id —— 旧的根任务多半已经完成，新实例的步骤该挂到一棵新的根任务下。
+ */
+export async function rerunWorkflowInstance(id: number): Promise<WorkflowInstancePayload | null> {
+  const inst = getWorkflowInstance(id)
+  if (!inst) return null
+  const tpl = getWorkflowTemplate(inst.template_id)
+  if (!tpl) return null
+  return instantiateWorkflow(inst.template_id, null, null, tpl.start_policy)
+}
+
 // ---------------------------------------------------------------- 工作流节点动作
 
 type ShlexState = 'plain' | 'single' | 'double' | 'escape' | 'escapeDouble'
@@ -1252,12 +1282,8 @@ export async function resolveNextRunnable(
     if (node.action_kind !== CONDITION_KIND) return { node, log }
     const r = await evaluateCondition(node.action_value, { lastResult })
     log.push(`条件「${node.title}」：${r.message} → ${r.ok ? '成立' : '不成立'}`)
-    const branch =
-      r.ok && node.branch_node_id
-        ? tpl.nodes.find((n) => n.id === node.branch_node_id) ?? null
-        : null
-    const idx = ordered.findIndex((n) => n.id === node.id)
-    cur = branch ?? (idx >= 0 ? ordered[idx + 1] ?? null : null)
+    // 成立走 branch_node_id、不成立走 branch_false_node_id；那条边没配就按顺序走下一步
+    cur = nextNodeOf(ordered, node, r.ok)
   }
   return { node: null, log }
 }

@@ -60,6 +60,7 @@ const ORPHAN_CLEANUP: string[] = [
   'DELETE FROM task_note_ref WHERE task_id NOT IN (SELECT id FROM task) OR note_id NOT IN (SELECT id FROM note)',
   'DELETE FROM workflow_node WHERE template_id NOT IN (SELECT id FROM workflow_template)',
   'UPDATE workflow_node SET branch_node_id = NULL WHERE branch_node_id IS NOT NULL AND branch_node_id NOT IN (SELECT id FROM workflow_node)',
+  'UPDATE workflow_node SET branch_false_node_id = NULL WHERE branch_false_node_id IS NOT NULL AND branch_false_node_id NOT IN (SELECT id FROM workflow_node)',
   'DELETE FROM workflow_instance WHERE template_id NOT IN (SELECT id FROM workflow_template)',
   'UPDATE workflow_instance SET current_node_id = NULL WHERE current_node_id IS NOT NULL AND current_node_id NOT IN (SELECT id FROM workflow_node)',
   'DELETE FROM workflow_step_task WHERE instance_id NOT IN (SELECT id FROM workflow_instance) OR node_id NOT IN (SELECT id FROM workflow_node) OR task_id NOT IN (SELECT id FROM task)',

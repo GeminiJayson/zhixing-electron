@@ -3,12 +3,20 @@
   display: flex;
   flex: 1;
   min-height: 0;
-  gap: var(--space-3);
+  /* 间距交给中间的分隔条（.wf-splitter）：它同时是拖拽改宽度的命中区 */
+  gap: 0;
   align-items: stretch;
 }
+/* 拖动分隔条期间：整块区域禁止选中文本，否则会把侧栏内容拖成蓝底 */
+.wf-wrap.is-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
 .wf-side {
-  width: 220px;
-  flex: 0 0 220px;
+  /* 宽度由行内样式给出（可拖拽调节），这里只兜住弹性与边界 */
+  flex: 0 0 auto;
+  min-width: 170px;
+  max-width: 460px;
   max-height: 100%;
   display: flex;
   flex-direction: column;
@@ -169,6 +177,13 @@
 .wf-edge--branch {
   stroke-dasharray: 5 4;
 }
+/* 满足 / 不满足：绿 / 红区分，悬停抬成主题色由后面的 .wf-edge--on 接管 */
+.wf-edge--branch-true {
+  stroke: color-mix(in srgb, var(--success) 62%, var(--graph-edge));
+}
+.wf-edge--branch-false {
+  stroke: color-mix(in srgb, var(--danger) 58%, var(--graph-edge));
+}
 /* 条件分支的文案：压在连线中点，用底色的粗描边把线「擦」开，小字才读得清 */
 .wf-edge__label {
   font-size: 10px;
@@ -181,6 +196,12 @@
   stroke-linejoin: round;
   pointer-events: none;
   user-select: none;
+}
+.wf-edge__label--true {
+  fill: color-mix(in srgb, var(--success) 72%, var(--fg-secondary));
+}
+.wf-edge__label--false {
+  fill: color-mix(in srgb, var(--danger) 68%, var(--fg-secondary));
 }
 .wf-edge__label--on {
   fill: var(--accent-text);
@@ -373,4 +394,78 @@
   min-height: var(--control-h-sm);
   padding: 0 var(--space-2);
   font-size: var(--text-aux);
+}
+
+/* 侧栏分隔条：12px 的命中区，中间是一条 2px 的细线
+   （细线用伪元素画，命中区才够宽、好拖） */
+.wf-splitter {
+  flex: 0 0 12px;
+  position: relative;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+.wf-splitter::after {
+  content: '';
+  position: absolute;
+  inset: 8px 5px;
+  border-radius: 999px;
+  background: var(--border);
+  transition: background var(--dur-fast);
+}
+.wf-splitter:hover::after,
+.wf-splitter:focus-visible::after,
+.wf-wrap.is-resizing .wf-splitter::after {
+  background: var(--accent);
+}
+
+/* 条件内容条：贴在条件菱形的下方，把判据直接写在节点上
+   （只画一条虚线看不出「什么情况下走它」） */
+.wf-node__cond rect {
+  fill: var(--bg-layer-solid);
+  stroke: color-mix(in srgb, var(--accent-warm) 45%, var(--border));
+  stroke-width: 1;
+}
+.wf-node__cond text {
+  font-size: 9px;
+  fill: var(--fg-secondary);
+  text-anchor: middle;
+  user-select: none;
+}
+
+/* 分支端口：条件节点两条出边的起点，拖它去连目标节点 */
+.wf-port {
+  cursor: crosshair;
+}
+.wf-port circle {
+  fill: var(--bg-layer-solid);
+  stroke: var(--border-strong);
+  stroke-width: 1.5;
+}
+.wf-port--true circle {
+  stroke: var(--success);
+}
+.wf-port--false circle {
+  stroke: var(--danger);
+}
+.wf-port--on circle {
+  fill: var(--accent-soft);
+  stroke-width: 2;
+}
+/* 端口标签常驻：把「满足 / 不满足」的语义写在条件节点自己的两个尖角旁 */
+.wf-port__label {
+  font-size: 9px;
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: var(--bg-layer-solid);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  pointer-events: none;
+  user-select: none;
+}
+.wf-port__label--true {
+  fill: color-mix(in srgb, var(--success) 78%, var(--fg-secondary));
+}
+.wf-port__label--false {
+  fill: color-mix(in srgb, var(--danger) 74%, var(--fg-secondary));
 }

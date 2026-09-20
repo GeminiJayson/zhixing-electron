@@ -239,7 +239,10 @@ const api = {
         /** 脚本的运行环境：powershell / cmd / python / node（空 = powershell） */
         action_runtime?: string
         condition?: string
+        /** 条件成立（满足）时跳到的节点 */
         branch_node_id?: number | null
+        /** 条件不成立（不满足）时跳到的节点 */
+        branch_false_node_id?: number | null
         pos_x?: number | null
         pos_y?: number | null
       }[]
@@ -258,9 +261,15 @@ const api = {
       ipcRenderer.invoke('db:workflowInstancesOfTask', taskId),
     updateWorkflowNodePos: (id: number, x: number, y: number): Promise<number> =>
       ipcRenderer.invoke('db:updateWorkflowNodePos', id, x, y),
-    /** 设置 / 清除某步骤的条件分支目标（分支连线编辑用） */
-    setWorkflowBranch: (id: number, branchNodeId: number | null): Promise<number> =>
-      ipcRenderer.invoke('db:setWorkflowBranch', id, branchNodeId),
+    /**
+     * 设置 / 清除条件节点某条分支的目标（分支连线编辑用）。
+     * slot：'true' = 满足（默认）/'false' = 不满足。
+     */
+    setWorkflowBranch: (
+      id: number,
+      branchNodeId: number | null,
+      slot: 'true' | 'false' = 'true'
+    ): Promise<number> => ipcRenderer.invoke('db:setWorkflowBranch', id, branchNodeId, slot),
     instantiateWorkflow: (
       templateId: number,
       title?: string | null,
@@ -279,6 +288,12 @@ const api = {
       ipcRenderer.invoke('db:retryWorkflowStep', instanceId),
     abortWorkflowInstance: (id: number): Promise<boolean> =>
       ipcRenderer.invoke('db:abortWorkflowInstance', id),
+    /** 删除实例的运行记录（不删模板，也不删已派生的任务） */
+    deleteWorkflowInstance: (id: number): Promise<boolean> =>
+      ipcRenderer.invoke('db:deleteWorkflowInstance', id),
+    /** 重复运行：按同一模板再启动一个新实例，旧实例记录保留 */
+    rerunWorkflowInstance: (id: number): Promise<WorkflowInstancePayload | null> =>
+      ipcRenderer.invoke('db:rerunWorkflowInstance', id),
     noteFolders: (): Promise<NoteFolder[]> => ipcRenderer.invoke('db:noteFolders'),
     note: (id: number): Promise<Note | null> => ipcRenderer.invoke('db:note', id),
     resolveNoteTitle: (title: string): Promise<number | null> =>

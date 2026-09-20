@@ -12,6 +12,7 @@ import {
   scriptRuntimeSpec,
   type StepActionKind,
 } from '@shared/workflow-action'
+import { BRANCH_SLOTS, type BranchSlot } from '@shared/workflow-branch'
 
 /** 「命令」类动作的填写提示（脚本类的示例随运行环境变化，见 scriptRuntimeSpec）。 */
 const COMMAND_HINT = '例如：notepad.exe some-file.txt'
@@ -25,7 +26,8 @@ interface Props {
   /** 选中节点是不是条件节点：只有条件节点才承接分支，所以只有它才给这个勾选框 */
   selectedIsCondition: boolean
   noteChoices: Note[]
-  onSave: (node: WorkflowNodePayload, asBranch: boolean) => void
+  /** 新增时如果挂到选中的条件节点上，这里说明挂的是「满足」还是「不满足」分支 */
+  onSave: (node: WorkflowNodePayload, asBranch: BranchSlot | null) => void
   onCancel: () => void
 }
 
@@ -35,8 +37,10 @@ interface Props {
  * 与 WorkflowConditionDialog 是**两个独立组件**：两类节点的字段没有交集 ——
  * 步骤管「做什么、要哪些文档、什么算做完」，条件管「怎么判定、成立了往哪走」。
  *
- * 这里**没有**「进入条件」与「条件分支到」：那是条件节点的职责（条件独立承担分支），
- * 步骤只管顺序执行。步骤的三类动作里，只有「任务」会生成待办，
+ * 这里**没有**「进入条件」与「条件分支到」：那是条件节点的职责（条件节点用
+ * 满足 / 不满足两条出边承担分支）。步骤只管顺序执行，唯一例外是新增时可以顺便
+ * 挂到选中条件节点的某一条出边上，省得再回画布拖一次。步骤的三类动作里，
+ * 只有「任务」会生成待办，
  * 「命令」「脚本」由主进程执行并等待返回值，所以它们要填期望退出码。
  */
 export function WorkflowStepDialog({
@@ -53,7 +57,7 @@ export function WorkflowStepDialog({
     // 空值本来等价于 PowerShell，但让弹窗里显示成具体那一项更不容易误解
     action_runtime: node.action_runtime || DEFAULT_SCRIPT_RUNTIME,
   })
-  const [asBranch, setAsBranch] = useState(false)
+  const [asBranch, setAsBranch] = useState<BranchSlot | null>(null)
 
   const kind = normalizeActionKind(draft.action_kind)
   const legacy = isLegacyActionKind(draft.action_kind)
@@ -152,15 +156,19 @@ export function WorkflowStepDialog({
 
           {isNew && selectedTitle != null && selectedIsCondition && (
             <label className="form-row">
-              <span>分支</span>
-              <label className="check-row">
-                <input
-                  type="checkbox"
-                  checked={asBranch}
-                  onChange={(e) => setAsBranch(e.target.checked)}
-                />
-                作为「{selectedTitle}」的条件分支（条件成立时从其跳到此步）
-              </label>
+              <span>挂到「{selectedTitle}」的</span>
+              <select
+                className="field"
+                value={asBranch ?? ''}
+                onChange={(e) => setAsBranch((e.target.value || null) as BranchSlot | null)}
+              >
+                <option value="">（不挂分支，只按顺序执行）</option>
+                {BRANCH_SLOTS.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}分支 —— 条件{s.value === 'true' ? '成立' : '不成立'}时跳到此步
+                  </option>
+                ))}
+              </select>
             </label>
           )}
 

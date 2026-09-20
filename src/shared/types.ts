@@ -84,7 +84,10 @@ export interface WorkflowNodePayload {
   action_runtime: string
   /** 遗留字段：步骤自带的「进入条件」文本（编辑器已不再提供） */
   condition: string
+  /** 条件成立（满足）时跳到的节点；空 = 按顺序走下一步 */
   branch_node_id: number | null
+  /** 条件不成立（不满足）时跳到的节点；空 = 按顺序走下一步 */
+  branch_false_node_id: number | null
   pos_x: number | null
   pos_y: number | null
 }

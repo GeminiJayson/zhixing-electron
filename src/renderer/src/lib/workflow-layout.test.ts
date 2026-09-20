@@ -9,11 +9,17 @@ import {
   type LayoutNode,
 } from './workflow-layout'
 
-/** 造一个最小节点：只带布局关心的三个字段。 */
-const node = (id: number, order_index: number, branch_node_id: number | null = null): LayoutNode => ({
+/** 造一个最小节点：只带布局关心的字段。 */
+const node = (
+  id: number,
+  order_index: number,
+  branch_node_id: number | null = null,
+  branch_false_node_id: number | null = null
+): LayoutNode => ({
   id,
   order_index,
   branch_node_id,
+  branch_false_node_id,
 })
 
 /** 任意两个节点的中心距离 —— 用来钉「不重叠」。 */
@@ -41,6 +47,13 @@ describe('workflowEdges —— 把隐式结构投影成边', () => {
     const edges = workflowEdges([node(1, 0, 2), node(2, 1)])
     // 1→2 既是顺序边又是分支边，只留一条（先到的是顺序边）
     expect(edges).toEqual([{ from: 1, to: 2, branch: false }])
+  })
+
+  it('「不满足」分支与「满足」分支一样投影成边', () => {
+    // 1 是条件节点：满足去 3、不满足去 4（都不与顺序边重合）
+    const edges = workflowEdges([node(1, 0, 3, 4), node(2, 1), node(3, 2), node(4, 3)])
+    expect(edges).toContainEqual({ from: 1, to: 3, branch: true })
+    expect(edges).toContainEqual({ from: 1, to: 4, branch: true })
   })
 
   it('自环与悬空分支被丢弃，不影响其它边', () => {
@@ -84,6 +97,14 @@ describe('layoutWorkflow —— dagre 分层', () => {
     expect(branch.y).toBeGreaterThan(src.y)
     // 分支若与主线同层，就说明没有真正分层
     expect(branch.y).not.toBe(main.y)
+  })
+
+  it('「不满足」分支也落在源之下（两条出边都分层）', () => {
+    const pos = layoutWorkflow([node(1, 0, 3, 4), node(2, 1), node(3, 2), node(4, 3)])
+    const src = pos.get(1)!
+    for (const id of [2, 3, 4]) {
+      expect(pos.get(id)!.y).toBeGreaterThan(src.y)
+    }
   })
 
   it('节点尺寸参与布局：任意两个节点都不重叠', () => {

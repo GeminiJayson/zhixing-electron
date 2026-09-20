@@ -45,7 +45,7 @@ import { listTasks, listTodayTasks, recentNotes, noteCountMap, tagMap, listNotes
 import { trashItems, restoreTrash, purgeTrash, emptyTrash, purgeTrashOlderThan, tagsWithUsage, createTag, renameTag, deleteTag, mergeTags } from './trash'
 import { attachmentStats, deleteAttachment, importAttachment, listAttachments, pruneAttachments } from './attachments'
 import { deleteSavedQuery, listSavedQueries, saveSavedQuery } from './queries'
-import { NODE_COLUMNS, orderedNodes, nextWorkflowNode, validateWorkflowTemplate, listWorkflowTemplates, getWorkflowTemplate, saveWorkflowTemplate, deleteWorkflowTemplate, duplicateWorkflowTemplate, autoLayoutWorkflowNodes, updateWorkflowNodePos, setWorkflowBranch, spawnStepTask, instantiateWorkflow, getWorkflowInstance, listWorkflowInstances, listWorkflowInstancesByTask, completeWorkflowStep, abortWorkflowInstance, retryWorkflowStep, setWorkflowNotifier, splitCommand, describeWorkflowAction, runWorkflowAction, listWorkflowGroups, workflowTemplateGroups, saveWorkflowGroup, deleteWorkflowGroup, moveWorkflowTemplate, renameWorkflowInstance } from './workflow'
+import { NODE_COLUMNS, orderedNodes, nextWorkflowNode, validateWorkflowTemplate, listWorkflowTemplates, getWorkflowTemplate, saveWorkflowTemplate, deleteWorkflowTemplate, duplicateWorkflowTemplate, autoLayoutWorkflowNodes, updateWorkflowNodePos, setWorkflowBranch, spawnStepTask, instantiateWorkflow, getWorkflowInstance, listWorkflowInstances, listWorkflowInstancesByTask, completeWorkflowStep, abortWorkflowInstance, retryWorkflowStep, deleteWorkflowInstance, rerunWorkflowInstance, setWorkflowNotifier, splitCommand, describeWorkflowAction, runWorkflowAction, listWorkflowGroups, workflowTemplateGroups, saveWorkflowGroup, deleteWorkflowGroup, moveWorkflowTemplate, renameWorkflowInstance } from './workflow'
 import type { EditableField } from './tasks'
 import type { TrashItem } from './trash'
 import type { DataDomain } from '../../shared/events'
@@ -106,6 +106,8 @@ const WRITE_DOMAINS: Record<string, DataDomain | DataDomain[]> = {
   'db:completeWorkflowStep': 'workflow',
   'db:retryWorkflowStep': 'workflow',
   'db:abortWorkflowInstance': 'workflow',
+  'db:deleteWorkflowInstance': 'workflow',
+  'db:rerunWorkflowInstance': 'workflow',
   'db:linkNotes': 'note',
   'db:linkTaskNoteRef': 'task',
   'db:unlinkTaskNoteRef': 'task',
@@ -496,8 +498,9 @@ export function registerDbHandlers(): void {
   handle('db:updateWorkflowNodePos', (_e, id: number, x: number, y: number) =>
     updateWorkflowNodePos(id, x, y)
   )
-  handle('db:setWorkflowBranch', (_e, id: number, branchId: number | null) =>
-    setWorkflowBranch(id, branchId)
+  handle('db:setWorkflowBranch', (_e, id: number, branchId: number | null, slot?: string) =>
+    // 三参调用是「满足 / 不满足」两条边；两参（旧脚本）按「满足」处理
+    setWorkflowBranch(id, branchId, slot === 'false' ? 'false' : 'true')
   )
   handle(
     'db:instantiateWorkflow',
@@ -534,6 +537,10 @@ export function registerDbHandlers(): void {
   // 自动步骤失败后原地重跑（失败时实例停在当前节点，没有这个入口就只能中止）
   handle('db:retryWorkflowStep', (_e, instanceId: number) => retryWorkflowStep(instanceId))
   handle('db:abortWorkflowInstance', (_e, id: number) => abortWorkflowInstance(id))
+  // 删除实例记录（不动模板，也不删已派生的任务）
+  handle('db:deleteWorkflowInstance', (_e, id: number) => deleteWorkflowInstance(id))
+  // 重复运行：按同一模板再启动一个新实例，旧记录保留
+  handle('db:rerunWorkflowInstance', (_e, id: number) => rerunWorkflowInstance(id))
   // G7：图谱构建参数（includeTasks / 文件夹 / 标签 / 邻域），默认纳入任务节点
   handle('db:graph', (_e, query?: GraphQuery) => buildGraphTracked({ includeTasks: true, ...(query ?? {}) }))
   // G8：笔记邻域子图（仅沿 note_link 做 1~2 度 BFS）
