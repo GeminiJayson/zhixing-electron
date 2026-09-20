@@ -763,6 +763,20 @@ button.chip--status:focus-visible {
   grid-template-columns: 1fr 1fr;
   gap: var(--space-3);
 }
+
+/* 任务编辑弹窗专用：6 列栅格。
+   状态 / 优先级 / 循环 各占 2 列（一行三个），开始 / 截止 各占 3 列（一行两个）——
+   后两者里头是「日期 + 时刻」两个控件，需要更宽。
+   双类名是为了压过上面那条两列定义，而不是靠谁写在后面。 */
+.form-grid.form-grid--task {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+.form-grid--task > .form-row--third {
+  grid-column: span 2;
+}
+.form-grid--task > .form-row--half {
+  grid-column: span 3;
+}
 /* 复选框 + 说明：说明较长，允许换行且不撑破表单列 */
 .check-row {
   display: flex;

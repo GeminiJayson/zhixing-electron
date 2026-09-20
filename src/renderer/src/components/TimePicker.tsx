@@ -12,21 +12,47 @@ interface Props {
   label: string
 }
 
+interface Draft {
+  h: string
+  m: string
+}
+
 /**
  * 自绘的时刻选择器。
  *
  * 为什么不用 <input type="time">：它点开的是 Chromium 的**原生面板** —— 那个面板
- * 不进页面的样式树，项高完全不受「控件高度」控制（用户报过这个）。
- * 这里两列数字，每项都借用 .popmenu__item 的 min-height: var(--control-h)，
- * 于是它和输入框、下拉、按钮严格等高，且不受浏览器版本影响。
+ * 不进页面的样式树，项高完全不受「控件高度」控制（用户报过这个）。这里两列数字，
+ * 每项借用 .popmenu__item 的 min-height: var(--control-h)，与其它控件严格等高。
  *
- * 定位与关闭沿用 PriorityMenu / StatusMenu 那一套（贴锚点下方，点外面或 Esc 关闭）。
+ * 取值分两步：面板里点选只改**草稿**（按钮上实时预览，他可能还要选另一列），
+ * 等失焦 / 点外面 / Esc 才写回 —— 选过任一半就落库（缺的补 00），什么都没选则不动。
  */
 export function TimePicker({ value, onChange, label }: Props) {
   const [open, setOpen] = useState(false)
+  const [draft, setDraft] = useState<Draft>({ h: '', m: '' })
+  // close() 是在 document 级监听里跑的，读 state 会拿到闭包里的旧值 —— 草稿额外存一份 ref
+  const draftRef = useRef<Draft>({ h: '', m: '' })
   const btnRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
-  const [hour, minute] = value ? value.split(':') : ['', '']
+
+  const put = (d: Draft): void => {
+    draftRef.current = d
+    setDraft(d)
+  }
+
+  const openMenu = (): void => {
+    const [h, m] = value ? value.split(':') : ['', '']
+    put({ h: h ?? '', m: m ?? '' })
+    setOpen(true)
+  }
+
+  const close = (): void => {
+    setOpen(false)
+    const { h, m } = draftRef.current
+    // 什么都没选就不动原值 —— 「也有可能没选」
+    if (!h && !m) return
+    onChange(`${h || '00'}:${m || '00'}`)
+  }
 
   useEffect(() => {
     if (!open) return
@@ -41,23 +67,27 @@ export function TimePicker({ value, onChange, label }: Props) {
 
     const onDocDown = (e: MouseEvent): void => {
       const t = e.target as Node
-      if (!menuRef.current?.contains(t) && !btnRef.current?.contains(t)) setOpen(false)
+      if (menuRef.current?.contains(t) || btnRef.current?.contains(t)) return
+      close()
     }
     const onEsc = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setOpen(false)
+      if (e.key === 'Escape') close()
     }
-    document.addEventListener('mousedown', onDocDown)
+    // 捕获阶段监听：弹窗内层的 .modal 上有 onMouseDown={stopPropagation}（防止点内部被
+    // 当成点遮罩关闭），冒泡阶段的事件到不了 document —— 那样在弹窗里点别处面板不会关。
+    // 捕获阶段先于 React 的处理器，能拿到；面板内部的点击由上面的 contains 判断放过。
+    document.addEventListener('mousedown', onDocDown, true)
     document.addEventListener('keydown', onEsc)
     return () => {
-      document.removeEventListener('mousedown', onDocDown)
+      document.removeEventListener('mousedown', onDocDown, true)
       document.removeEventListener('keydown', onEsc)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
-  const pick = (h: string, m: string): void => {
-    onChange(`${h}:${m}`)
-    setOpen(false)
-  }
+  // 打开时显示草稿（实时预览），关闭后显示已落库的值
+  const preview = draft.h || draft.m ? `${draft.h || '00'}:${draft.m || '00'}` : '--:--'
+  const shown = open ? preview : value || '--:--'
 
   return (
     <>
@@ -68,9 +98,9 @@ export function TimePicker({ value, onChange, label }: Props) {
         aria-label={label}
         aria-haspopup="listbox"
         aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => (open ? close() : openMenu())}
       >
-        <span className={value ? undefined : 'timepick__empty'}>{value || '--:--'}</span>
+        <span className={shown === '--:--' ? 'timepick__empty' : undefined}>{shown}</span>
         <Timer size={14} />
       </button>
 
@@ -82,9 +112,9 @@ export function TimePicker({ value, onChange, label }: Props) {
                 key={h}
                 type="button"
                 role="option"
-                aria-selected={h === hour}
-                className={`popmenu__item${h === hour ? ' popmenu__item--active' : ''}`}
-                onClick={() => pick(h, minute || '00')}
+                aria-selected={h === draft.h}
+                className={`popmenu__item${h === draft.h ? ' popmenu__item--active' : ''}`}
+                onClick={() => put({ h, m: draftRef.current.m })}
               >
                 {h}
               </button>
@@ -96,9 +126,9 @@ export function TimePicker({ value, onChange, label }: Props) {
                 key={m}
                 type="button"
                 role="option"
-                aria-selected={m === minute}
-                className={`popmenu__item${m === minute ? ' popmenu__item--active' : ''}`}
-                onClick={() => pick(hour || '00', m)}
+                aria-selected={m === draft.m}
+                className={`popmenu__item${m === draft.m ? ' popmenu__item--active' : ''}`}
+                onClick={() => put({ h: draftRef.current.h, m })}
               >
                 {m}
               </button>

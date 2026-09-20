@@ -123,8 +123,8 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
             <input className="field" value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
           </label>
 
-          <div className="form-grid">
-            <label className="form-row">
+          <div className="form-grid form-grid--task">
+            <label className="form-row form-row--third">
               <span>状态</span>
               <select className="field" value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)}>
                 {STATUS_CHOICES.map((s) => (
@@ -134,7 +134,7 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
                 ))}
               </select>
             </label>
-            <label className="form-row">
+            <label className="form-row form-row--third">
               <span>优先级</span>
               <select className="field" value={priority} onChange={(e) => setPriority(Number(e.target.value))}>
                 {PRIORITY_CHOICES.map((p) => (
@@ -144,24 +144,7 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
                 ))}
               </select>
             </label>
-            <label className="form-row">
-              <span>开始</span>
-              {/* 日期与时刻分开：日期仍进 start_date（与 Python 版共用的 DATE 列），
-                  时刻进本应用私有的 start_time —— 这样「精确到分钟」不会污染共用 schema */}
-              <span className="form-row__pair">
-                <input type="date" className="field" value={start} onChange={(e) => setStart(e.target.value)} />
-                {/* 自绘而不是 <input type="time">：原生面板的项高不受「控件高度」控制 */}
-                <TimePicker value={startTime} onChange={setStartTime} label="开始时间" />
-              </span>
-            </label>
-            <label className="form-row">
-              <span>截止</span>
-              <span className="form-row__pair">
-                <input type="date" className="field" value={due} onChange={(e) => setDue(e.target.value)} />
-                <TimePicker value={dueTime} onChange={setDueTime} label="截止时间" />
-              </span>
-            </label>
-            <label className="form-row">
+            <label className="form-row form-row--third">
               <span>循环</span>
               <select
                 className="field"
@@ -174,6 +157,23 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
                   </option>
                 ))}
               </select>
+            </label>
+            <label className="form-row form-row--half">
+              <span>开始</span>
+              {/* 日期与时刻分开：日期仍进 start_date（与 Python 版共用的 DATE 列），
+                  时刻进本应用私有的 start_time —— 这样「精确到分钟」不会污染共用 schema */}
+              <span className="form-row__pair">
+                <input type="date" className="field" value={start} onChange={(e) => setStart(e.target.value)} />
+                {/* 自绘而不是 <input type="time">：原生面板的项高不受「控件高度」控制 */}
+                <TimePicker value={startTime} onChange={setStartTime} label="开始时间" />
+              </span>
+            </label>
+            <label className="form-row form-row--half">
+              <span>截止</span>
+              <span className="form-row__pair">
+                <input type="date" className="field" value={due} onChange={(e) => setDue(e.target.value)} />
+                <TimePicker value={dueTime} onChange={setDueTime} label="截止时间" />
+              </span>
             </label>
           </div>
 

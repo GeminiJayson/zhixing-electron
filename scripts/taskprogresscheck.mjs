@@ -164,10 +164,44 @@ try {
     menu.open === true && menu.min === menu.want && menu.max === menu.want,
     J(menu)
   )
-  await clickReal("[...document.querySelectorAll('.popmenu--time .popmenu__item')].find((b) => b.textContent.trim() === '07')")
+  await conn.evaluate("[...document.querySelectorAll('.popmenu--time .popmenu__item')].find((b) => b.textContent.trim() === '07')?.click()")
   await sleep(600)
   const picked = await conn.evaluate("document.querySelector('.modal .timepick').textContent.trim()")
-  check('选中的时刻写回了输入框', picked.includes('07'), J(picked))
+  check('点选后按钮上立刻预览（此时还没落库）', picked.includes('07'), J(picked))
+
+  // 只选小时，然后失焦：面板应当自己消失，并把选到的时刻回填（而不是丢掉）
+  await conn.evaluate("[...document.querySelectorAll('.popmenu--time .popmenu__item')].find((b) => b.textContent.trim() === '09')?.click()")
+  await sleep(400)
+  const midPreview = await conn.evaluate("document.querySelector('.modal .timepick').textContent.trim()")
+  check('只选一半也会实时预览（09:00）', midPreview.includes('09'), J(midPreview))
+  await clickReal("document.querySelector('.modal__head')")
+  await sleep(600)
+  const blurred = await conn.evaluate("(() => ({ open: !!document.querySelector('.popmenu--time'), text: document.querySelector('.modal .timepick').textContent.trim() }))()")
+  check('失焦后面板自己消失', blurred.open === false, J(blurred))
+  check('失焦时把选到的时刻回填了', blurred.text.includes('09'), J(blurred))
+
+  // 什么都没选就失焦：原值不动（「也有可能没选」）
+  await clickReal("document.querySelector('.modal .timepick')")
+  await sleep(500)
+  await clickReal("document.querySelector('.modal__head')")
+  await sleep(500)
+  const untouched = await conn.evaluate("document.querySelector('.modal .timepick').textContent.trim()")
+  check('什么都没选就关掉，原值不变', untouched === blurred.text, J({ before: blurred.text, after: untouched }))
+
+  // ---- 表单栅格：状态 / 优先级 / 循环 同一行，开始 / 截止 下一行
+  const grid = await conn.evaluate(
+    "(() => {" +
+      "const m = document.querySelector('.modal[role=\"dialog\"]');" +
+      "const tops = (sel) => [...m.querySelectorAll(sel)].map((el) => Math.round(el.getBoundingClientRect().top));" +
+      "return { thirds: tops('.form-row--third'), halves: tops('.form-row--half') };" +
+    "})()"
+  )
+  check('状态 / 优先级 / 循环 在同一行', grid.thirds.length === 3 && new Set(grid.thirds).size === 1, J(grid))
+  check(
+    '开始 / 截止 在下一行且两者同行',
+    grid.halves.length === 2 && new Set(grid.halves).size === 1 && grid.halves[0] > grid.thirds[0],
+    J(grid)
+  )
 
   // 再点开一次截个图（给用户看项高）
   await clickReal("document.querySelector('.modal .timepick')")
