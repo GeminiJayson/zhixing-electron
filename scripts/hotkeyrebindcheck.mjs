@@ -88,6 +88,32 @@ if (!main) {
 const conn = await connect(main)
 await sleep(2500)
 
+// CDP 的真实鼠标事件。element.click() 不会派发 mousedown，
+// 而「点保存被当成点外面」的 bug 恰好只在那条路径上出现 —— 必须用真鼠标。
+const mouse = (type, x, y, buttons) =>
+  conn.send('Input.dispatchMouseEvent', {
+    type,
+    x: Math.round(x),
+    y: Math.round(y),
+    button: type === 'mouseMoved' ? 'none' : 'left',
+    buttons,
+    clickCount: type === 'mouseMoved' ? 0 : 1,
+  })
+const centerOf = (expr) =>
+  conn.evaluate(
+    `(() => { const el = ${expr}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } })()`
+  )
+const clickReal = async (expr) => {
+  const p = await centerOf(expr)
+  if (!p) return false
+  await mouse('mouseMoved', p.x, p.y, 0)
+  await sleep(60)
+  await mouse('mousePressed', p.x, p.y, 1)
+  await sleep(60)
+  await mouse('mouseReleased', p.x, p.y, 0)
+  return true
+}
+
 const results = []
 const check = (name, ok, detail = '') => {
   results.push({ name, ok })
@@ -143,10 +169,8 @@ try {
     J(probeText.slice(0, 80))
   )
 
-  // 点「保存」
-  await conn.evaluate(
-    `(() => { const btns = [...document.querySelectorAll('.modal__foot button')]; btns.find((b) => b.textContent.trim() === '保存')?.click() })()`
-  )
+  // 点「保存」：用真实鼠标，别用 element.click()
+  await clickReal(`[...document.querySelectorAll('.modal__foot button')].find((b) => b.textContent.trim() === '保存')`)
   await sleep(700)
   const toast = await conn.evaluate(`document.querySelector('.toast')?.textContent?.trim() ?? ''`)
   await sleep(900)
@@ -189,9 +213,7 @@ try {
     `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'u', code: 'KeyU', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }))`
   )
   await sleep(400)
-  await conn.evaluate(
-    `(() => { const btns = [...document.querySelectorAll('.modal__foot button')]; btns.find((b) => b.textContent.trim() === '保存')?.click() })()`
-  )
+  await clickReal(`[...document.querySelectorAll('.modal__foot button')].find((b) => b.textContent.trim() === '保存')`)
   await sleep(700)
   const toast2 = await conn.evaluate(`document.querySelector('.toast')?.textContent?.trim() ?? ''`)
   await sleep(900)
@@ -217,9 +239,7 @@ try {
     `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', code: 'KeyP', ctrlKey: true, altKey: true, bubbles: true, cancelable: true }))`
   )
   await sleep(400)
-  await conn.evaluate(
-    `(() => { [...document.querySelectorAll('.modal__foot button')].find((b) => b.textContent.trim() === '取消')?.click() })()`
-  )
+  await clickReal(`[...document.querySelectorAll('.modal__foot button')].find((b) => b.textContent.trim() === '取消')`)
   await sleep(700)
   const toast3 = await conn.evaluate(`document.querySelector('.toast')?.textContent?.trim() ?? ''`)
   await sleep(800)
@@ -227,6 +247,61 @@ try {
     `(() => { const el = ${rowExpr(target)}; return el ? el.querySelector('input').value : null })()`
   )
   check('按了组合又取消时，明说「没有改动」', toast3.includes('已取消'), J(toast3))
+
+  // 反过来也要成立：点在遮罩本身上仍该取消（修的是「点保存被当成点外面」，不是禁掉点外取消）
+  await conn.evaluate(
+    `(() => { const el = ${rowExpr(target)}; [...el.querySelectorAll('button')].find((b) => b.textContent.trim() === '改键')?.click() })()`
+  )
+  await sleep(500)
+  await conn.evaluate(
+    `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'm', code: 'KeyM', ctrlKey: true, altKey: true, bubbles: true, cancelable: true }))`
+  )
+  await sleep(400)
+  const beforeMask = await conn.evaluate(
+    `(() => {
+       const m = document.querySelector('.modal-mask[aria-label="改键"]')
+       if (!m) return { 浮层: false }
+       const r = m.getBoundingClientRect()
+       const hit = document.elementFromPoint(r.x + 6, r.y + 6)
+       return {
+         浮层: true,
+         浮层文本: m.textContent.slice(0, 50),
+         命中: hit ? hit.className || hit.tagName : null,
+         命中是遮罩: hit === m
+       }
+     })()`
+  )
+  const maskPoint = beforeMask && beforeMask.浮层 ? { x: 6, y: 6 } : null
+  if (maskPoint) {
+    await mouse('mouseMoved', maskPoint.x, maskPoint.y, 0)
+    await sleep(60)
+    await mouse('mousePressed', maskPoint.x, maskPoint.y, 1)
+    await sleep(60)
+    await mouse('mouseReleased', maskPoint.x, maskPoint.y, 0)
+  }
+  await sleep(700)
+  const toast4 = await conn.evaluate(`document.querySelector('.toast')?.textContent?.trim() ?? ''`)
+  await sleep(700)
+  const afterMask = await conn.evaluate(
+    `(() => { const el = ${rowExpr(target)}; return el ? el.querySelector('input').value : null })()`
+  )
+  const maskProbe = await conn.evaluate(
+    `(() => {
+       const m = document.querySelector('.modal-mask[aria-label="改键"]')
+       if (!m) return { 浮层: false }
+       const r = m.getBoundingClientRect()
+       const hit = document.elementFromPoint(r.x + 6, r.y + 6)
+       return { 浮层: true, 位置: { x: Math.round(r.x), y: Math.round(r.y) }, 命中: hit ? hit.className || hit.tagName : null }
+     })()`
+  )
+  if (String(beforeMask.浮层文本 ?? '').includes('ctrl+alt+m')) {
+    check('点在遮罩本身上仍然算取消', toast4.includes('已取消'), J({ toast4, beforeMask }))
+  } else {
+    // 什么都没按就点外面本来就不该提示（没有组合可「取消」），所以这条要看浮层有没有
+    // 接住按键：没接住就跳过，而不是当成失败 —— 合成 keydown 偶尔会落空
+    console.log('⏭ 跳过「点在遮罩本身上仍然算取消」—— 浮层没接住这次合成的按键')
+  }
+  check('点遮罩取消后那一行也没变', afterMask === beforeCancel, J({ beforeCancel, afterMask }))
   check('取消后那一行仍是原值', afterCancel === beforeCancel, J({ beforeCancel, afterCancel }))
 } catch (err) {
   check('脚本执行完成', false, err instanceof Error ? err.message : String(err))

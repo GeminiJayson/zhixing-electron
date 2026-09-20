@@ -1189,7 +1189,14 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
           aria-label="改键"
           onMouseDown={() => void finishRebind(false)}
         >
-          <div className="modal" style={{ maxWidth: 380 }}>
+          {/* 内层必须吃掉 mousedown：否则点「保存」时，mousedown 会先从按钮冒泡到遮罩，
+              被当成「点了浮层外面」而走取消分支 —— 表现就是「点保存却提示已取消」。
+              其余弹窗都有这一行，这个浮层当初漏了。 */}
+          <div
+            className="modal"
+            style={{ maxWidth: 380 }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
             <div className="modal__head">改键</div>
             <div className="modal__body">
               <p className="u-aux">
