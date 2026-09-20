@@ -39,8 +39,8 @@ interface Props {
  *
  * 这里**没有**「进入条件」与「条件分支到」：那是条件节点的职责（条件节点用
  * 满足 / 不满足两条出边承担分支）。步骤只管顺序执行，唯一例外是新增时可以顺便
- * 挂到选中条件节点的某一条出边上，省得再回画布拖一次。步骤的三类动作里，
- * 只有「任务」会生成待办，
+ * 挂到选中条件节点的某一条出边上（且**必须**选一条 —— 在条件节点上新增的步骤
+ * 只能是分支步骤，不能退化成常规顺序步骤）。步骤的三类动作里，只有「任务」会生成待办，
  * 「命令」「脚本」由主进程执行并等待返回值，所以它们要填期望退出码。
  */
 export function WorkflowStepDialog({
@@ -58,6 +58,9 @@ export function WorkflowStepDialog({
     action_runtime: node.action_runtime || DEFAULT_SCRIPT_RUNTIME,
   })
   const [asBranch, setAsBranch] = useState<BranchSlot | null>(null)
+
+  /** 在条件节点上新增：必须挂到满足 / 不满足其中一条分支，没有「不挂分支」这个选项 */
+  const needsBranch = isNew && selectedIsCondition && selectedTitle != null
 
   const kind = normalizeActionKind(draft.action_kind)
   const legacy = isLegacyActionKind(draft.action_kind)
@@ -162,7 +165,11 @@ export function WorkflowStepDialog({
                 value={asBranch ?? ''}
                 onChange={(e) => setAsBranch((e.target.value || null) as BranchSlot | null)}
               >
-                <option value="">（不挂分支，只按顺序执行）</option>
+                {/* 在条件节点上新增只可能是分支步骤：这里不给「不挂分支」这一项 ——
+                    选了它会落进顺序链，条件节点等于被绕过 */}
+                <option value="" disabled>
+                  （请选择满足或不满足分支）
+                </option>
                 {BRANCH_SLOTS.map((s) => (
                   <option key={s.value} value={s.value}>
                     {s.label}分支 —— 条件{s.value === 'true' ? '成立' : '不成立'}时跳到此步
@@ -268,7 +275,12 @@ export function WorkflowStepDialog({
           <button className="text-btn" onClick={onCancel}>
             取消
           </button>
-          <button className="text-btn text-btn--accent" onClick={() => onSave(draft, asBranch)}>
+          <button
+            className="text-btn text-btn--accent"
+            onClick={() => onSave(draft, asBranch)}
+            disabled={needsBranch && asBranch == null}
+            title={needsBranch && asBranch == null ? '先选择挂到满足还是不满足分支' : undefined}
+          >
             保存
           </button>
         </footer>

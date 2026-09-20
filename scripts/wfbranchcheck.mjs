@@ -217,6 +217,176 @@ try {
     Boolean(drag) && drag.after > drag.before + 40 && drag.stored === drag.after,
     J(drag)
   )
+  // ------------------------------------------------ 6. 条件节点上「加一步」必须是分支步骤
+  // 换一个「条件节点还没配任何分支」的模板：这时条件只有兜底出边
+  const tpl2 = await conn.evaluate(
+    `window.zhixing.db.saveWorkflowTemplate({ name: ${J(STAMP + ' 加步骤')}, start_policy: 'first', nodes: [
+        { title: '判断', order_index: 0, action_kind: 'condition', action_value: JSON.stringify({ kind: 'confirm', prompt: '继续吗？' }) },
+        { title: '原有下一步', order_index: 1 },
+        { title: '收尾', order_index: 2 }
+      ] }).then((r) => (r.ok ? window.zhixing.db.workflowTemplate(r.templateId) : r))`
+  )
+  check('第二个模板已建立', tpl2?.nodes?.length === 3, J(tpl2?.problems ?? ''))
+
+  // 回到任务页再切回来，强制工作流页重新挂载并打开最新模板
+  await conn.evaluate(`document.querySelector('[data-nav-item="tasks"]').click()`)
+  await sleep(400)
+  await conn.evaluate(`document.querySelector('[data-nav-item="workflow"]').click()`)
+  await sleep(1300)
+
+  const draft = await conn.evaluate(
+    `(async () => {
+       const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+       const svg = document.querySelector('.wf-canvas')
+       const cond = document.querySelector('g.wf-node .wf-node__diamond')?.closest('g.wf-node')
+       if (!svg || !cond) return { error: '找不到条件节点' }
+       const rect = cond.getBoundingClientRect()
+       const opts = { bubbles: true, pointerId: 11, isPrimary: true, clientX: rect.x + rect.width / 2, clientY: rect.y + rect.height / 2 }
+       cond.dispatchEvent(new PointerEvent('pointerdown', opts))
+       svg.dispatchEvent(new PointerEvent('pointerup', opts))
+       await wait(120)
+       const addBtn = [...document.querySelectorAll('button')].find((b) => b.textContent.includes('加一步'))
+       if (!addBtn) return { error: '找不到「加一步」' }
+       addBtn.click()
+       await wait(200)
+       const modal = document.querySelector('.modal')
+       if (!modal) return { error: '编辑弹窗没出现' }
+       const row = [...modal.querySelectorAll('.form-row')].find((r) => r.textContent.includes('挂到'))
+       const sel = row ? row.querySelector('select') : null
+       const save = [...modal.querySelectorAll('button')].find((b) => b.textContent.trim() === '保存')
+       const info = {
+         hasBranchPicker: Boolean(sel),
+         optionLabels: sel ? [...sel.options].map((o) => o.textContent.trim()) : [],
+         disabledOptions: sel ? [...sel.options].filter((o) => o.disabled).map((o) => o.value) : [],
+         saveDisabledBefore: save ? save.disabled : null
+       }
+       if (!sel || !save) return { ...info, error: '没有分支选择器或保存按钮' }
+       const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set
+       setter.call(sel, 'true')
+       sel.dispatchEvent(new Event('change', { bubbles: true }))
+       await wait(150)
+       const saveDisabledAfter = save.disabled
+       const titleInput = modal.querySelector('input.field')
+       if (titleInput) {
+         const tsetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+         tsetter.call(titleInput, '新增分支步骤')
+         titleInput.dispatchEvent(new Event('input', { bubbles: true }))
+       }
+       await wait(100)
+       save.click()
+       await wait(1200)
+       return { ...info, saveDisabledAfter, saved: !document.querySelector('.modal') }
+     })()`
+  )
+
+  if (draft?.error) {
+    check('条件节点上「加一步」走分支流程', false, J(draft))
+  } else {
+    check('条件节点上「加一步」出现分支选择器', draft.hasBranchPicker === true, J(draft.optionLabels))
+    check(
+      '分支选择器没有「不挂分支」这一项',
+      !draft.optionLabels.some((t) => t.includes('不挂')),
+      J(draft.optionLabels)
+    )
+    check(
+      '没选分支时保存不可点',
+      draft.saveDisabledBefore === true && draft.saveDisabledAfter === false,
+      J({ before: draft.saveDisabledBefore, after: draft.saveDisabledAfter })
+    )
+    check('选了「满足」后保存成功', draft.saved === true)
+  }
+
+  // ------------------------------------------------ 7. 连线几何：垂直入边、不贴边、不穿节点
+  await sleep(600)
+  const geo = await conn.evaluate(
+    `(() => {
+       const m = (g) => { const r = /translate\\(([-\\d.]+),([-\\d.]+)\\)/.exec(g.getAttribute('transform') || ''); return r ? { x: +r[1], y: +r[2] } : { x: 0, y: 0 } }
+       return {
+         nodes: [...document.querySelectorAll('g.wf-node[data-wf-node]')].map((g) => ({
+           id: +g.getAttribute('data-wf-node'),
+           title: g.querySelector('.wf-node__title')?.textContent ?? '',
+           kind: g.querySelector('.wf-node__diamond') ? 'condition' : 'step',
+           ...m(g)
+         })),
+         paths: [...document.querySelectorAll('path.wf-edge')].map((p) => ({
+           cls: p.getAttribute('class') || '', d: p.getAttribute('d') || ''
+         }))
+       }
+     })()`
+  )
+
+  const W = 150
+  const H = 56
+  const pts = (d) => [...d.matchAll(/[ML](-?[\d.]+),(-?[\d.]+)/g)].map((x) => ({ x: +x[1], y: +x[2] }))
+  const aligned = (ps) =>
+    ps.every((p, i) => i === 0 || Math.abs(p.x - ps[i - 1].x) < 0.01 || Math.abs(p.y - ps[i - 1].y) < 0.01)
+  const atEdgeMidpoint = (p, n) =>
+    (p.x === n.x + W / 2 && (p.y === n.y || p.y === n.y + H)) ||
+    (p.y === n.y + H / 2 && (p.x === n.x || p.x === n.x + W))
+  /** 末段必须垂直于所进入的那条边，并且落点在该边中点上（不是沿着边框走）。 */
+  const entersPerpendicular = (d, nodes) => {
+    const ps = pts(d)
+    if (ps.length < 2) return false
+    const last = ps[ps.length - 1]
+    const prev = ps[ps.length - 2]
+    const n = nodes.find((x) => atEdgeMidpoint(last, x))
+    if (!n) return false
+    const onTopOrBottom = last.y === n.y || last.y === n.y + H
+    return onTopOrBottom ? prev.x === last.x : prev.y === last.y
+  }
+
+  console.log('[geo] ' + J(geo))
+
+  const branches = geo.paths.filter((p) => p.cls.includes('wf-edge--branch'))
+  check(
+    '只配了「满足」时：一条分支虚线 + 一条兜底出边',
+    branches.length === 1 &&
+      branches[0].cls.includes('wf-edge--branch-true') &&
+      geo.paths.filter((p) => p.cls.includes('wf-edge--fallback')).length === 1,
+    J(geo.paths.map((p) => p.cls))
+  )
+  check(
+    '每条连线都是轴对齐折线（没有斜线）',
+    geo.paths.every((p) => aligned(pts(p.d))),
+    J(geo.paths.map((p) => p.d))
+  )
+  check(
+    '每条连线都垂直进入目标节点的边中点，不沿边框走',
+    geo.paths.every((p) => entersPerpendicular(p.d, geo.nodes)),
+    J(geo.paths.map((p) => p.d))
+  )
+
+  const condNode = geo.nodes.find((n) => n.kind === 'condition')
+  const newStep = geo.nodes.find((n) => n.title.includes('新增分支步骤'))
+  check('条件节点上新增的步骤已落到画布', Boolean(newStep), J(geo.nodes.map((n) => n.title)))
+  check(
+    '新步骤是「满足」分支的目标（绿色虚线从右尖角连过去）',
+    Boolean(newStep) &&
+      branches.some(
+        (b) =>
+          b.cls.includes('wf-edge--branch-true') &&
+          pts(b.d)[0].x === condNode.x + W &&
+          pts(b.d)[0].y === condNode.y + H / 2 &&
+          (() => {
+            const last = pts(b.d).slice(-1)[0]
+            return last.x === newStep.x + W / 2 && last.y === newStep.y
+          })()
+      ),
+    J(branches.map((b) => b.d))
+  )
+  check(
+    '条件节点没有到新步骤的常规顺序连线',
+    !geo.paths.some(
+      (p) =>
+        !p.cls.includes('wf-edge--branch') &&
+        !p.cls.includes('wf-edge--fallback') &&
+        (() => {
+          const last = pts(p.d).slice(-1)[0]
+          return newStep ? last.x === newStep.x + W / 2 && last.y === newStep.y : false
+        })()
+    ),
+    J(geo.paths.map((p) => p.cls + ' ' + p.d))
+  )
 } catch (err) {
   check('脚本执行完成', false, err instanceof Error ? err.message : String(err))
 }

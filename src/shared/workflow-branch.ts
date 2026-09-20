@@ -56,10 +56,34 @@ export function withBranchTarget<T extends BranchNode>(
 }
 
 /**
+ * 某条槽位没配目标时的兜底：顺延到**第一个不属于本节点自己分支目标**的节点。
+ *
+ * 为什么不能直接取「数组里的下一个」：在条件节点上新增分支步骤时，新节点就插在
+ * 它后面（见 WorkflowPage 的 handleSaveNode）。若兜底直接落在新节点上，
+ * 「不满足」就会跑进「满足」的分支步骤里 —— 条件节点等于白判了。
+ */
+export function fallthroughTarget<T extends BranchNode>(
+  ordered: readonly T[],
+  node: T
+): T | null {
+  const owned = new Set<number>()
+  for (const slot of ['true', 'false'] as const) {
+    const t = branchTarget(node, slot)
+    if (t != null) owned.add(t)
+  }
+  const idx = ordered.findIndex((n) => n.id === node.id)
+  if (idx < 0) return null
+  for (let i = idx + 1; i < ordered.length; i++) {
+    if (!owned.has(ordered[i].id)) return ordered[i]
+  }
+  return null
+}
+
+/**
  * 一个节点的下一个节点。
  * 条件节点按 ok 选槽（成立走「满足」、不成立走「不满足」）；
  * 普通节点只有 branch_node_id 这一条历史分支概念，ok 保持默认的 true。
- * 该槽位没配目标、或目标已不存在时按 order_index 走下一个 —— 与历史行为一致。
+ * 该槽位没配目标、或目标已不存在时按 order_index 顺延到兜底目标。
  */
 export function nextNodeOf<T extends BranchNode>(
   ordered: readonly T[],
@@ -71,8 +95,7 @@ export function nextNodeOf<T extends BranchNode>(
     const hit = ordered.find((n) => n.id === target)
     if (hit) return hit
   }
-  const idx = ordered.findIndex((n) => n.id === node.id)
-  return idx >= 0 ? ordered[idx + 1] ?? null : null
+  return fallthroughTarget(ordered, node)
 }
 
 /**

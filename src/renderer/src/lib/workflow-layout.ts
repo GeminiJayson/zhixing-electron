@@ -14,6 +14,7 @@
  * 这三个字段，收窄之后既可以脱离数据层单测，也不会因为 payload 长出字段而跟着变。
  */
 import dagre from '@dagrejs/dagre'
+import type { Anchor } from './edge-path'
 
 /** 布局只需要这三个字段（WorkflowNodePayload 结构上兼容）。 */
 export interface LayoutNode {
@@ -119,13 +120,16 @@ export function layoutWorkflow(
  *
  * 纵向布局时走上下边、横向布局时走左右边、斜向时取主方向 —— 这样同一条连线在
  * TB / LR 两种排布下都贴边，而不是从节点侧面穿出去。
+ *
+ * 返回的不只是坐标，还带**边方向**：正交路由要靠它决定折法，
+ * 否则折线会贴着节点边框走（见 edge-path.ts 的 orthogonalPath）。
  */
-export function edgeAnchors(
+export function directedAnchors(
   from: { x: number; y: number },
   to: { x: number; y: number },
   nodeWidth = LAYOUT_NODE_W,
   nodeHeight = LAYOUT_NODE_H
-): { x1: number; y1: number; x2: number; y2: number } {
+): { from: Anchor; to: Anchor } {
   const fx = from.x + nodeWidth / 2
   const fy = from.y + nodeHeight / 2
   const tx = to.x + nodeWidth / 2
@@ -135,13 +139,36 @@ export function edgeAnchors(
   if (Math.abs(dy) >= Math.abs(dx)) {
     // 纵向为主：下边 → 上边（反之亦然）
     return dy >= 0
-      ? { x1: fx, y1: from.y + nodeHeight, x2: tx, y2: to.y }
-      : { x1: fx, y1: from.y, x2: tx, y2: to.y + nodeHeight }
+      ? {
+          from: { x: fx, y: from.y + nodeHeight, side: 'bottom' },
+          to: { x: tx, y: to.y, side: 'top' },
+        }
+      : {
+          from: { x: fx, y: from.y, side: 'top' },
+          to: { x: tx, y: to.y + nodeHeight, side: 'bottom' },
+        }
   }
   // 横向为主：右边 → 左边（反之亦然）
   return dx >= 0
-    ? { x1: from.x + nodeWidth, y1: fy, x2: to.x, y2: ty }
-    : { x1: from.x, y1: fy, x2: to.x + nodeWidth, y2: ty }
+    ? {
+        from: { x: from.x + nodeWidth, y: fy, side: 'right' },
+        to: { x: to.x, y: ty, side: 'left' },
+      }
+    : {
+        from: { x: from.x, y: fy, side: 'left' },
+        to: { x: to.x + nodeWidth, y: ty, side: 'right' },
+      }
+}
+
+/** 只要两个端点坐标的老接口（保留给调用方与单测）。 */
+export function edgeAnchors(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  nodeWidth = LAYOUT_NODE_W,
+  nodeHeight = LAYOUT_NODE_H
+): { x1: number; y1: number; x2: number; y2: number } {
+  const a = directedAnchors(from, to, nodeWidth, nodeHeight)
+  return { x1: a.from.x, y1: a.from.y, x2: a.to.x, y2: a.to.y }
 }
 
 /**

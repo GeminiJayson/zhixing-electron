@@ -4,6 +4,7 @@ import {
   BRANCH_SLOTS,
   branchSlotLabel,
   branchTarget,
+  fallthroughTarget,
   findBranchCycle,
   nextNodeOf,
   withBranchTarget,
@@ -61,6 +62,37 @@ describe('nextNodeOf —— 求值后往哪走', () => {
 
   it('自环不参与「出边优先」，仍旧走顺序下一个', () => {
     expect(nextNodeOf(ordered, n(2, 2), true)?.id).toBe(3)
+  })
+})
+
+describe('fallthroughTarget —— 槽位没配时的兜底', () => {
+  it('直接取顺序下一个', () => {
+    const ordered = [n(1), n(2), n(3)]
+    expect(fallthroughTarget(ordered, ordered[0])?.id).toBe(2)
+  })
+
+  it('跳过本节点自己的分支目标（新增的分支步骤正好插在它后面）', () => {
+    // 1 的「满足」指向插在紧随其后的 2：兜底必须落到 3，
+    // 否则「不满足」会跑进「满足」的分支步骤里，条件等于白判
+    const ordered = [n(1, 2, null), n(2), n(3)]
+    expect(fallthroughTarget(ordered, ordered[0])?.id).toBe(3)
+    expect(nextNodeOf(ordered, ordered[0], false)?.id).toBe(3)
+    expect(nextNodeOf(ordered, ordered[0], true)?.id).toBe(2)
+  })
+
+  it('两条槽位都指向后面的节点时继续往后找', () => {
+    const ordered = [n(1, 2, 3), n(2), n(3), n(4)]
+    expect(fallthroughTarget(ordered, ordered[0])?.id).toBe(4)
+  })
+
+  it('后面全是自己的分支目标时没有兜底目标', () => {
+    const ordered = [n(1, 2, 3), n(2), n(3)]
+    expect(fallthroughTarget(ordered, ordered[0])).toBeNull()
+  })
+
+  it('空列表 / 找不到自己都返回 null', () => {
+    expect(fallthroughTarget([], n(1))).toBeNull()
+    expect(fallthroughTarget([n(2)], n(1))).toBeNull()
   })
 })
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   LAYOUT_NODE_H,
   LAYOUT_NODE_W,
+  directedAnchors,
   edgeAnchors,
   layoutBounds,
   layoutWorkflow,
@@ -166,6 +167,48 @@ describe('edgeAnchors —— 按相对位置选边', () => {
     const a = edgeAnchors(at(0, 0), at(40, 300))
     expect(a.y1).toBe(LAYOUT_NODE_H)
     expect(a.y2).toBe(300)
+  })
+})
+
+describe('directedAnchors —— 带边方向的锚点（正交路由靠它决定折法）', () => {
+  const at = (x: number, y: number) => ({ x, y })
+
+  it('纵向相邻：从下边出去、从上边进入', () => {
+    const a = directedAnchors(at(0, 0), at(0, 200))
+    expect(a.from).toEqual({ x: LAYOUT_NODE_W / 2, y: LAYOUT_NODE_H, side: 'bottom' })
+    expect(a.to).toEqual({ x: LAYOUT_NODE_W / 2, y: 200, side: 'top' })
+  })
+
+  it('横向相邻：从右边出去、从左边进入', () => {
+    const a = directedAnchors(at(0, 0), at(300, 0))
+    expect(a.from.side).toBe('right')
+    expect(a.to.side).toBe('left')
+  })
+
+  it('目标在上方 / 左侧时方向随之反向', () => {
+    expect(directedAnchors(at(0, 200), at(0, 0)).from.side).toBe('top')
+    expect(directedAnchors(at(0, 200), at(0, 0)).to.side).toBe('bottom')
+    expect(directedAnchors(at(300, 0), at(0, 0)).from.side).toBe('left')
+    expect(directedAnchors(at(300, 0), at(0, 0)).to.side).toBe('right')
+  })
+
+  it('与 edgeAnchors 的坐标逐例一致（老接口只是它的投影）', () => {
+    const cases: [{ x: number; y: number }, { x: number; y: number }][] = [
+      [at(0, 0), at(0, 200)],
+      [at(0, 0), at(300, 0)],
+      [at(0, 200), at(0, 0)],
+      [at(300, 0), at(0, 0)],
+      [at(0, 0), at(40, 300)],
+    ]
+    for (const [from, to] of cases) {
+      const d = directedAnchors(from, to)
+      expect(edgeAnchors(from, to)).toEqual({
+        x1: d.from.x,
+        y1: d.from.y,
+        x2: d.to.x,
+        y2: d.to.y,
+      })
+    }
   })
 })
 

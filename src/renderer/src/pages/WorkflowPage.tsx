@@ -38,6 +38,7 @@ import {
 import {
   BRANCH_SLOTS,
   branchSlotLabel,
+  fallthroughTarget,
   withBranchTarget,
   type BranchSlot,
 } from '@shared/workflow-branch'
@@ -47,9 +48,9 @@ import { WorkflowStepDialog } from '../components/WorkflowStepDialog'
 import { WorkflowConditionDialog } from '../components/WorkflowConditionDialog'
 import { useDialog } from '../components/Dialogs'
 import { usePanZoom } from '../lib/usePanZoom'
-import { edgePointFrom, elbowPath } from '../lib/edge-path'
+import { edgePointFrom, orthogonalPath, type Anchor } from '../lib/edge-path'
 import {
-  edgeAnchors,
+  directedAnchors,
   layoutBounds,
   layoutWorkflow,
   type WorkflowRankDir,
@@ -94,27 +95,28 @@ function conditionPort(
 }
 
 /**
- * 一条分支出边的两端。
+ * 一条分支出边的两端锚点。
  *
- * 普通步骤沿用老的「按相对位置挑边」；条件节点则从端口出发、从**同一侧**进入目标
- * （满足走右侧、不满足走左侧）。这一条很关键：条件分支常常跳过一整个中间节点，
- * 若仍从目标的上边进入，折线的竖段会正好落在中间节点身上 —— 实测表现为
- * 「红线走到一半钻到节点底下不见了」。走同侧就等于在节点盒之外绕行。
+ * 条件节点从菱形尖角**水平**出线（满足向右、不满足向左），落点仍按相对位置挑边；
+ * 两端都带上「这是哪条边」，交给 orthogonalPath 折线 —— 于是首段、末段都垂直于
+ * 节点的边，中间的过渡段落在节点之外。
+ *
+ * 早先为了绕开被跳过的中间节点，硬把落点放到目标**同侧**的边上：那样末段是竖直的
+ * 却落在目标的左右边框上，等于**和节点的边重合**了（用户实测就是这样）。
  */
-function branchEnds(
+function branchAnchors(
   from: WorkflowNodePayload,
   a: { x: number; y: number },
   slot: BranchSlot,
   to: { x: number; y: number }
-): { x1: number; y1: number; x2: number; y2: number } {
-  if (from.action_kind !== CONDITION_KIND) {
-    const anchors = edgeAnchors(a, to, NODE_W, NODE_H)
-    return anchors
+): { from: Anchor; to: Anchor } {
+  const anchors = directedAnchors(a, to, NODE_W, NODE_H)
+  if (from.action_kind !== CONDITION_KIND) return anchors
+  const port = conditionPort(a, slot)
+  return {
+    from: { x: port.x, y: port.y, side: slot === 'true' ? 'right' : 'left' },
+    to: anchors.to,
   }
-  const origin = conditionPort(a, slot)
-  return slot === 'true'
-    ? { x1: origin.x, y1: origin.y, x2: to.x + NODE_W, y2: to.y + NODE_H / 2 }
-    : { x1: origin.x, y1: origin.y, x2: to.x, y2: to.y + NODE_H / 2 }
 }
 
 /**
@@ -201,7 +203,13 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   const editingIsCondition = editing?.action_kind === CONDITION_KIND
   /** 步骤可绑定的 SOP 笔记（对齐 note_choices：recent(200) 的 id/标题） */
   const [noteChoices, setNoteChoices] = useState<Note[]>([])
-  const dragRef = useRef<{ id: number; dx: number; dy: number } | null>(null)
+  const dragRef = useRef<{
+    id: number
+    dx: number
+    dy: number
+    /** 按下时的坐标：松手时比对用 —— 没真的挪动过就不要写库 */
+    from: { x: number; y: number }
+  } | null>(null)
   /** 悬停的分支连线（源步骤 id + 槽位），以及正在改挂的那一条 */
   const [branchHover, setBranchHover] = useState<{ id: number; slot: BranchSlot } | null>(null)
   /** 鼠标悬浮的步骤：与它相连的连线高亮、其余淡到几乎隐形（与知识图谱同一套交互） */
@@ -345,7 +353,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
       // 同上：捕获失败不能挡住选中与拖动
     }
     // 偏移量在世界坐标系里算：画布缩放后，同样的像素位移对应的世界位移不同
-    dragRef.current = { id: n.id, dx: world.x - p.x, dy: world.y - p.y }
+    dragRef.current = { id: n.id, dx: world.x - p.x, dy: world.y - p.y, from: { x: p.x, y: p.y } }
     setDragging(true)
     setSelected(n.id)
   }
@@ -407,7 +415,13 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     setDragging(false)
     if (!drag) return
     const p = pos.get(drag.id)
-    if (p) await window.zhixing.db.updateWorkflowNodePos(drag.id, Math.round(p.x), Math.round(p.y))
+    if (!p) return
+    const nx = Math.round(p.x)
+    const ny = Math.round(p.y)
+    // 只是「点一下选中」、并没有真的挪动过，就别写库：写下去等于把 dagre 的临时排布
+    // 固化成手动坐标，之后再插入步骤时新旧节点会叠在同一个位置（实测踩到过）。
+    if (nx === Math.round(drag.from.x) && ny === Math.round(drag.from.y)) return
+    await window.zhixing.db.updateWorkflowNodePos(drag.id, nx, ny)
   }
 
   // 画布级平移 / 缩放：拖背景平移、滚轮以光标为中心缩放；非平移时的移动转给节点拖拽
@@ -701,8 +715,11 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
       condition: n.condition,
       branch_node_id: n.branch_node_id,
       branch_false_node_id: n.branch_false_node_id,
-      pos_x: pos.get(n.id)?.x ?? n.pos_x ?? null,
-      pos_y: pos.get(n.id)?.y ?? n.pos_y ?? null,
+      // 坐标只沿用**库里已有的值**，不取画布上的当前值：拖动本身是即时落库的
+      // （见 endDrag），这里再写一遍会把 dagre 的临时排布固化成手动坐标 ——
+      // 随后插入新步骤时，新旧节点就会重叠在同一格。
+      pos_x: n.pos_x ?? null,
+      pos_y: n.pos_y ?? null,
     }))
 
   /** 统一的模板保存入口：校验失败给出 problems，成功则刷新并返回 true。 */
@@ -886,12 +903,19 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     if (editingNew) {
       const list = [...ordered]
       const selIdx = selected != null ? list.findIndex((n) => n.id === selected) : -1
+      // 在条件节点上新增：必须是「满足」或「不满足」的分支步骤，不接受「不挂分支」——
+      // 否则新步骤会落进顺序链，条件节点等于被绕过（这正是用户反馈的那一点）。
+      if (selIdx >= 0 && list[selIdx].action_kind === CONDITION_KIND && asBranch == null) {
+        onNotice('请选择挂到「满足」还是「不满足」分支')
+        return
+      }
       if (selIdx >= 0) list.splice(selIdx + 1, 0, node)
       else list.push(node)
-      // 选了槽位才把选中节点的对应出边指到新节点（满足 / 不满足各一条）
+      // 把选中条件节点的对应出边指到新节点（满足 / 不满足各一条）
+      const slot = asBranch
       const linked =
-        asBranch && selIdx >= 0
-          ? list.map((n) => (n.id === selected ? withBranchTarget(n, asBranch, node.id) : n))
+        slot && selIdx >= 0
+          ? list.map((n) => (n.id === selected ? withBranchTarget(n, slot, node.id) : n))
           : list
       if (!(await persistTemplate(linked.map((n, i) => ({ ...n, order_index: i }))))) return
       // 新节点的负临时 id 保存后已失效：清掉选中态，避免高亮指向不存在的节点
@@ -1271,29 +1295,69 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                 <path d="M0,0 L8,4 L0,8 Z" className="edge-arrow edge-arrow--on" />
               </marker>
             </defs>
-            {/* 顺序连线 + 条件分支（分支用虚线区分） */}
+            {/* 顺序连线：主链上相邻两步之间的实线。
+                条件节点的**出边不在这里画** —— 它的去向由满足 / 不满足两条分支决定，
+                哪条槽位没配才另画一条兜底实线（见下面那块）。 */}
             {ordered.map((n, i) => {
+              if (n.action_kind === CONDITION_KIND) return null
               const a = pos.get(n.id)
               const nxt = ordered[i + 1]
               const b = nxt ? pos.get(nxt.id) : undefined
               if (!a || !b) return null
+              const ends = directedAnchors(a, b, NODE_W, NODE_H)
               const related = hoverStep != null && (n.id === hoverStep || nxt.id === hoverStep)
               const dim = stepFocusSet != null && !related
               return (
                 <g key={`seq-${n.id}`} className={'wf-edge-group' + (dim ? ' is-dimmed' : '')}>
                   <path
-                    d={elbowPath(edgeAnchors(a, b, NODE_W, NODE_H))}
+                    d={orthogonalPath(ends.from, ends.to)}
                     markerEnd={related ? 'url(#wf-arrow-on)' : 'url(#wf-arrow)'}
                     className={'wf-edge' + (related ? ' wf-edge--on' : '')}
                   />
                 </g>
               )
             })}
+
+            {/* 条件节点的兜底出边：某条槽位没配分支时，它按顺序走第一个**不是自己分支目标**的节点。
+                两条都配了就完全没有兜底路径，也就不画这条线 —— 于是从条件节点出来的只有
+                满足 / 不满足两条分支虚线，不会再多挂一条「常规顺序」的实线。 */}
+            {ordered.map((n) => {
+              if (n.action_kind !== CONDITION_KIND) return null
+              const a = pos.get(n.id)
+              const target = fallthroughTarget(ordered, n)
+              const b = target ? pos.get(target.id) : undefined
+              if (!a || !b || !target) return null
+              // 哪条槽位没配，就从它自己的端口拉一条点线到兜底目标。
+              // 走端口而不是节点盒的边：端口在菱形尖角、首段水平向外，
+              // 竖直通道落在节点之外 —— 否则「正对下方」的兜底线会从中间节点身上穿过去。
+              const missing: BranchSlot[] = []
+              if (!n.branch_node_id) missing.push('true')
+              if (!n.branch_false_node_id) missing.push('false')
+              const related = hoverStep != null && (n.id === hoverStep || target.id === hoverStep)
+              const dim = stepFocusSet != null && !related
+              return missing.map((slot) => {
+                const ends = branchAnchors(n, a, slot, b)
+                return (
+                  <g
+                    key={`fallback-${n.id}-${slot}`}
+                    className={'wf-edge-group' + (dim ? ' is-dimmed' : '')}
+                  >
+                    <path
+                      d={orthogonalPath(ends.from, ends.to)}
+                      markerEnd={related ? 'url(#wf-arrow-on)' : 'url(#wf-arrow)'}
+                      className={'wf-edge wf-edge--fallback' + (related ? ' wf-edge--on' : '')}
+                    />
+                  </g>
+                )
+              })
+            })}
+
             {branchEdges.map(({ from, slot, toId }) => {
               const a = pos.get(from.id)
               const b = pos.get(toId)
               if (!a || !b) return null
-              const d = elbowPath(branchEnds(from, a, slot, b))
+              const ends = branchAnchors(from, a, slot, b)
+              const d = orthogonalPath(ends.from, ends.to)
               const related = hoverStep != null && (from.id === hoverStep || toId === hoverStep)
               const hot = branchHover?.id === from.id && branchHover.slot === slot
               const dim = stepFocusSet != null && !related
@@ -1473,7 +1537,11 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
               if (!text) return null
               const related = hoverStep != null && (from.id === hoverStep || toId === hoverStep)
               // 贴分支起点 30px，而不是边中点：中段可能正好穿过另一个节点
-              const mid = edgePointFrom(branchEnds(from, a, slot, b), 30)
+              const ends = branchAnchors(from, a, slot, b)
+              const mid = edgePointFrom(
+                { x1: ends.from.x, y1: ends.from.y, x2: ends.to.x, y2: ends.to.y },
+                30
+              )
               return (
                 <text
                   key={`blabel-${from.id}-${slot}`}

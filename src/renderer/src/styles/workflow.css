@@ -184,6 +184,10 @@
 .wf-edge--branch-false {
   stroke: color-mix(in srgb, var(--danger) 58%, var(--graph-edge));
 }
+/* 条件节点上「没配分支」那条槽位的兜底出边：点线，与显式配置的分支虚线区分开 */
+.wf-edge--fallback {
+  stroke-dasharray: 2 4;
+}
 /* 条件分支的文案：压在连线中点，用底色的粗描边把线「擦」开，小字才读得清 */
 .wf-edge__label {
   font-size: 10px;
