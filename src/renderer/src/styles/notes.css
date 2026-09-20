@@ -489,8 +489,11 @@
   line-height: 1.5;
 }
 
-/* Word / Excel 笔记：正文在本地文件里，这里只给出口 */
-.editor__office {
+/* Word / Excel 笔记：正文在本地文件里、应用内不做预览时，给一条明确的出口。
+   ⚠ 这是**变体类**。它原先和下面的预览容器共用一个类名，于是
+   align-items / justify-content / padding / text-align 全都漏到了可编辑预览上 ——
+   预览区被居中又内缩，看起来永远填不满。 */
+.editor__office--fallback {
   flex: 1;
   min-height: 0;
   display: flex;
@@ -551,7 +554,7 @@
   border: var(--border-w) solid var(--border-strong);
   border-radius: var(--radius-lg);
 }
-/* Office 内嵌预览 */
+/* Office 内嵌预览：整块吃掉编辑区的剩余空间（头部 + 正文两段） */
 .editor__office {
   flex: 1;
   min-height: 0;
@@ -574,9 +577,22 @@
 .editor__office-body {
   flex: 1;
   min-height: 0;
+  /* 必须是 flex 容器：里面的编辑器靠 flex:1 撑满，
+     否则 body 只有内容高度，编辑区下面就空掉一大截 */
+  display: flex;
+  flex-direction: column;
   overflow: auto;
   padding: var(--space-4);
   line-height: 1.7;
+}
+/* 编辑器嵌在 Office 卡片里：外层已经有一圈边框和底色，
+   里面的编辑器不要再套第二层，直接吃掉剩余高度 */
+.editor__office-body > .rt-editor {
+  flex: 1;
+  min-height: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
 }
 .editor__office-body h3 {
   margin: var(--space-3) 0 var(--space-2);
@@ -596,6 +612,11 @@
   max-width: 100%;
 }
 /* Excel 可编辑网格（N-§1.3#5）：单元格是 contentEditable，聚焦要留下可见落点 */
+.xlsx-grid {
+  /* 撑满容器宽度：格数少的表只占左边一条、右边全是空，看着就不像「编辑区」 */
+  width: 100%;
+  border-collapse: collapse;
+}
 .xlsx-grid td:focus {
   outline: var(--focus-w) solid var(--focus-ring);
   outline-offset: -1px;

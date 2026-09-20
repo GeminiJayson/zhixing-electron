@@ -1169,7 +1169,8 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
                 </div>
               ) : current.format === 'word' || current.format === 'excel' ? (
                 // Word / Excel 的正文在本地文件里：应用内不做预览，给一条明确的出口
-                <div className="editor__office">
+                // （变体类：居中空状态，不能与上面的可编辑预览共用 .editor__office）
+                <div className="editor__office editor__office--fallback">
                   <FileText size={18} aria-hidden />
                   <p className="u-aux">
                     {current.format === 'word' ? 'Word' : 'Excel'} 笔记的正文在本地文件里，应用内只登记条目。

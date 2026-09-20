@@ -89,19 +89,29 @@
 .wf-node--collapsed .wf-node__caret {
   transform: rotate(0deg);
 }
+/* 行尾的编辑按钮组：未悬浮时**收拢为 0 宽**，不占位置。
+   只调 opacity 的话按钮组仍然占着宽度，标题会一直少一截、行与行右侧也对不齐；
+   与任务项（.trow__actions）用同一套 max-width + overflow:hidden 的做法。 */
 .wf-node__ops {
   display: flex;
   align-items: center;
   gap: 1px;
   flex: 0 0 auto;
-  padding-right: 4px;
+  max-width: 0;
+  padding-right: 0;
   opacity: 0;
-  transition: opacity var(--dur-fast);
+  overflow: hidden;
+  pointer-events: none;
+  transition: max-width var(--dur-fast) var(--ease-enter), opacity var(--dur-instant);
 }
 .wf-node:hover .wf-node__ops,
 .wf-node:focus-within .wf-node__ops,
 .wf-node__ops--always {
+  /* 分类行最多 4 个按钮，220px 足够展开 */
+  max-width: 220px;
+  padding-right: 4px;
   opacity: 1;
+  pointer-events: auto;
 }
 
 .wf-list {
