@@ -15,8 +15,8 @@
  *   node scripts/release.mjs --no-push    不推送标签（本地演练）
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -33,10 +33,29 @@ const fail = (msg) => {
 }
 
 function run(bin, argv, opts = {}) {
-  return execFileSync(bin, argv, { cwd: root, encoding: 'utf8', stdio: opts.quiet ? 'pipe' : 'inherit' })
+  return execFileSync(bin, argv, {
+    cwd: root,
+    encoding: 'utf8',
+    shell: opts.shell === true,
+    stdio: opts.quiet ? 'pipe' : 'inherit',
+  })
+}
+/**
+ * Windows 上 npx 是 .cmd，而 Node ≥20 出于安全不再允许不经 shell 直接 spawn .cmd
+ * （报 `spawnSync npx.cmd EINVAL`），所以这两个调用必须在 shell 里跑。
+ * 只给它们开 shell：gh / git 的参数里有带空格的中文标题，直连能绕开 cmd 代码页的坑。
+ */
+function runNpx(argv) {
+  return run(npx, argv, { shell: process.platform === 'win32' })
 }
 function capture(bin, argv) {
-  return execFileSync(bin, argv, { cwd: root, encoding: 'utf8' }).trim()
+  // stderr 必须自吞：查「标签还不存在」时 git rev-parse 会往 stderr 写 fatal，
+  // 直接继承会在发版过程里刷一屏误导性的红字
+  return execFileSync(bin, argv, {
+    cwd: root,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim()
 }
 function tryCapture(bin, argv) {
   try {
@@ -116,13 +135,11 @@ if (SKIP_BUILD) {
 } else {
   step('构建与打包')
   run('node', ['scripts/ensure-jieba-win-binding.mjs'])
-  run(npx, ['electron-vite', 'build'])
-  run(npx, ['electron-builder', '--win', '--x64', '--config.directories.output=dist-full'])
+  runNpx(['electron-vite', 'build'])
+  runNpx(['electron-builder', '--win', '--x64', '--config.directories.output=dist-full'])
   mkdirSync(distDir, { recursive: true })
-  for (const asset of assets) {
-    const name = asset.slice(distDir.length + 1)
-    run('node', ['-e', `require('fs').copyFileSync(require('path').join(process.argv[1], '${name.replace(/\\\\/g, '/')}'), process.argv[2])`, fullDir, asset])
-  }
+  // 直接用 fs 复制，别再绕 `node -e`：那串表达式里有空格，经 shell 会被拆成多个参数
+  for (const asset of assets) copyFileSync(join(fullDir, basename(asset)), asset)
   log('  ✓ 两个安装包已就位')
 }
 
