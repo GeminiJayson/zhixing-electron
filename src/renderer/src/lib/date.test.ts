@@ -1,8 +1,57 @@
 import { describe, expect, it } from 'vitest'
-import { rangeLabel, taskProgress } from './date'
+import { monthGrid, pad2, rangeLabel, taskProgress } from './date'
 
 /** 造一个本地时刻，避免测试受时区影响。 */
 const at = (s: string): Date => new Date(s)
+
+describe('monthGrid —— 月历网格', () => {
+  it('固定 6×7 = 42 格', () => {
+    for (const [y, m] of [
+      [2026, 8],
+      [2024, 1],
+      [2026, 0],
+    ] as const) {
+      expect(monthGrid(y, m)).toHaveLength(42)
+    }
+  })
+
+  it('周一永远是第一列', () => {
+    for (const [y, m] of [
+      [2026, 8],
+      [2024, 1],
+      [2025, 11],
+    ] as const) {
+      const first = monthGrid(y, m)[0].day
+      expect(new Date(first + 'T00:00:00Z').getUTCDay()).toBe(1) // 1 = 周一
+    }
+  })
+
+  it('目标月的天数正确（含闰年 2 月）', () => {
+    expect(monthGrid(2024, 1).filter((c) => c.inMonth)).toHaveLength(29)
+    expect(monthGrid(2025, 1).filter((c) => c.inMonth)).toHaveLength(28)
+    expect(monthGrid(2026, 8).filter((c) => c.inMonth)).toHaveLength(30)
+  })
+
+  it('只有首尾两段是补位的上下月', () => {
+    const cells = monthGrid(2026, 8)
+    const firstIn = cells.findIndex((c) => c.inMonth)
+    const lastIn = cells.map((c) => c.inMonth).lastIndexOf(true)
+    expect(firstIn).toBeGreaterThanOrEqual(0)
+    expect(cells.slice(0, firstIn).every((c) => !c.inMonth)).toBe(true)
+    expect(cells.slice(lastIn + 1).every((c) => !c.inMonth)).toBe(true)
+    expect(cells.some((c) => c.day === '2026-09-01' && c.inMonth)).toBe(true)
+  })
+
+  it('跨年翻月不炸', () => {
+    expect(monthGrid(2026, 11).some((c) => c.day === '2027-01-01')).toBe(true)
+    expect(monthGrid(2027, 0).some((c) => c.day === '2026-12-31')).toBe(true)
+  })
+
+  it('pad2 补零', () => {
+    expect(pad2(7)).toBe('07')
+    expect(pad2(12)).toBe('12')
+  })
+})
 
 describe('taskProgress —— 进度与色阶', () => {
   it('缺一头就没有进度（不硬算假数字）', () => {

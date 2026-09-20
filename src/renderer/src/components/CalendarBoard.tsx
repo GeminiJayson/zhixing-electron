@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight } from '@renderer/lib/icons'
 import { priorityColor } from '@shared/priority'
 import type { Task } from '@shared/types'
-import { dueLabel } from '../lib/date'
+import { dueLabel, monthGrid, pad2 } from '../lib/date'
 
 interface Props {
   tasks: Task[]
@@ -17,22 +17,7 @@ interface Props {
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日']
 const MAX_PILLS = 3
 
-const pad = (n: number): string => String(n).padStart(2, '0')
-
-/** 生成 6×7 的月份网格（周一为第一列，与 QCalendarWidget 的周首一致）。 */
-function monthGrid(year: number, month0: number): { day: string; inMonth: boolean }[] {
-  const first = new Date(Date.UTC(year, month0, 1))
-  const offset = (first.getUTCDay() + 6) % 7 // 周一=0
-  const cells: { day: string; inMonth: boolean }[] = []
-  for (let i = 0; i < 42; i++) {
-    const d = new Date(Date.UTC(year, month0, 1 - offset + i))
-    cells.push({
-      day: `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`,
-      inMonth: d.getUTCMonth() === month0,
-    })
-  }
-  return cells
-}
+const pad = pad2
 
 /**
  * 任务按日期归类，与 Python task_page.group_tasks_by_date 逐条对齐（T11）：

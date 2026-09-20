@@ -20,6 +20,35 @@ export function dueLabel(due: string | null): DueLabel {
   return { text: `${target.getMonth() + 1} 月 ${target.getDate()} 日`, tone: 'soon' }
 }
 
+export const pad2 = (n: number): string => String(n).padStart(2, '0')
+
+/**
+ * 生成 6×7 的月份网格（**周一为第一列**，与 QCalendarWidget 的周首一致）。
+ *
+ * 从 CalendarBoard 提取到这里：日历视图与新的日期选择器要的是同一个月历，
+ * 两份实现迟早会在补位、闰月这些地方分叉。全程用 UTC 造日期，避免本地时区
+ * 把 "某月 1 号" 挪到前一天去。
+ */
+export function monthGrid(year: number, month0: number): { day: string; inMonth: boolean }[] {
+  const first = new Date(Date.UTC(year, month0, 1))
+  const offset = (first.getUTCDay() + 6) % 7 // 周一=0
+  const cells: { day: string; inMonth: boolean }[] = []
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(Date.UTC(year, month0, 1 - offset + i))
+    cells.push({
+      day: `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`,
+      inMonth: d.getUTCMonth() === month0,
+    })
+  }
+  return cells
+}
+
+/** 本地「今天」的 YYYY-MM-DD。 */
+export function todayStr(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+}
+
 /**
  * 任务的时间进度与紧迫度色阶。
  *

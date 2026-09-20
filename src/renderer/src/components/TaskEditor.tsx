@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { PRIORITY_CHOICES } from '@shared/priority'
 import { STATUS_CHOICES } from '@shared/task'
 import type { Note, RepeatPeriod, Task, TaskNoteContext, TaskStatus } from '@shared/types'
+import { DatePicker } from './DatePicker'
 import { TimePicker } from './TimePicker'
 
 const REPEAT_CHOICES: { value: RepeatPeriod; label: string }[] = [
@@ -163,15 +164,15 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
               {/* 日期与时刻分开：日期仍进 start_date（与 Python 版共用的 DATE 列），
                   时刻进本应用私有的 start_time —— 这样「精确到分钟」不会污染共用 schema */}
               <span className="form-row__pair">
-                <input type="date" className="field" value={start} onChange={(e) => setStart(e.target.value)} />
-                {/* 自绘而不是 <input type="time">：原生面板的项高不受「控件高度」控制 */}
+                {/* 两个都自绘：原生 date / time 面板都不进页面的样式树，尺度不受控 */}
+                <DatePicker value={start} onChange={setStart} label="开始日期" />
                 <TimePicker value={startTime} onChange={setStartTime} label="开始时间" />
               </span>
             </label>
             <label className="form-row form-row--half">
               <span>截止</span>
               <span className="form-row__pair">
-                <input type="date" className="field" value={due} onChange={(e) => setDue(e.target.value)} />
+                <DatePicker value={due} onChange={setDue} label="截止日期" />
                 <TimePicker value={dueTime} onChange={setDueTime} label="截止时间" />
               </span>
             </label>

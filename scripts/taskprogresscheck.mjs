@@ -139,8 +139,55 @@ try {
     "(() => { const row = [...document.querySelectorAll('.trow')].find((r) => r.querySelector('.trow__title')?.textContent === '进度条检查任务'); const b = [...row.querySelectorAll('button')].find((x) => (x.getAttribute('aria-label') || '').includes('编辑')); b?.click() })()"
   )
   await sleep(1200)
-  const editor = await conn.evaluate("(() => { const m = document.querySelector('.modal[role=\"dialog\"]'); return { open: !!m, picks: m ? m.querySelectorAll('.timepick').length : 0, dates: m ? m.querySelectorAll('input[type=\"date\"]').length : 0 } })()")
+  const editor = await conn.evaluate("(() => { const m = document.querySelector('.modal[role=\"dialog\"]'); return { open: !!m, picks: m ? m.querySelectorAll('.timepick').length : 0, dates: m ? m.querySelectorAll('.datepick').length : 0 } })()")
   check('编辑弹窗里开始与截止各有一个时刻选择器', editor.open && editor.picks === 2, J(editor))
+  check('编辑弹窗里开始与截止各有一个日期选择器', editor.open && editor.dates === 2, J(editor))
+
+  // ---- 自绘日期选择器：日历面板与格子尺寸
+  await conn.evaluate("document.querySelector('.modal .datepick').click()")
+  await sleep(700)
+  const cal = await conn.evaluate(
+    "(() => {" +
+      "const el = document.querySelector('.popmenu--date');" +
+      "if (!el) return { open: false };" +
+      "const probe = document.createElement('div');" +
+      "probe.style.height = 'var(--control-h)';" +
+      "document.body.appendChild(probe);" +
+      "const want = Math.round(probe.getBoundingClientRect().height);" +
+      "probe.remove();" +
+      "const days = [...el.querySelectorAll('.dpick__day')];" +
+      "const sizes = days.map((b) => { const r = b.getBoundingClientRect(); return Math.round(r.width) + 'x' + Math.round(r.height); });" +
+      "return { open: true, title: el.querySelector('.dpick__title')?.textContent, count: days.length, uniq: [...new Set(sizes)], want };" +
+    "})()"
+  )
+  check('点开后弹出日历（6×7 = 42 格）', cal.open === true && cal.count === 42, J({ open: cal.open, count: cal.count, title: cal.title }))
+  check(
+    '日期格是「控件高度」见方',
+    cal.open === true && cal.uniq.length === 1 && cal.uniq[0] === cal.want + 'x' + cal.want,
+    J({ want: cal.want, sizes: cal.uniq })
+  )
+  // 翻月：标题里的月份应当变
+  await conn.evaluate("document.querySelector('.dpick__nav[aria-label=\"下个月\"]').click()")
+  await sleep(400)
+  const shifted = await conn.evaluate("document.querySelector('.dpick__title')?.textContent")
+  check('翻月按钮切换了月份', shifted !== cal.title, J({ before: cal.title, after: shifted }))
+  // 翻回本月再截图（给用户看日历）
+  await conn.evaluate("document.querySelector('.dpick__nav[aria-label=\"上个月\"]').click()")
+  await sleep(500)
+  const calShot = await conn.send('Page.captureScreenshot', { format: 'png' })
+  const fs4 = await import('node:fs')
+  fs4.writeFileSync(join(root, '.screenshots', 'datepicker-custom.png'), Buffer.from(calShot.result.data, 'base64'))
+  console.log('（截图 .screenshots/datepicker-custom.png）')
+
+  // 点「今天」→ 失焦 → 回填
+  await conn.evaluate("document.querySelector('.dpick__foot button').click()")
+  await sleep(400)
+  const dpPreview = await conn.evaluate("document.querySelector('.modal .datepick').textContent.trim()")
+  await clickReal("document.querySelector('.modal__head')")
+  await sleep(600)
+  const dpAfter = await conn.evaluate("(() => ({ open: !!document.querySelector('.popmenu--date'), text: document.querySelector('.modal .datepick').textContent.trim() }))()")
+  check('选「今天」后按钮上实时预览', /\d{4}-\d{2}-\d{2}/.test(dpPreview), J(dpPreview))
+  check('失焦后日历自己消失', dpAfter.open === false, J(dpAfter))
 
   // ---- 自绘的时刻选择器：项高必须与控件高度一致（原生面板做不到这件事）
   await clickReal("document.querySelector('.modal .timepick')")
@@ -222,10 +269,10 @@ try {
       "const want = Math.round(probe.getBoundingClientRect().height);" +
       "probe.remove();" +
       "const h = (sel) => [...m.querySelectorAll(sel)].map((el) => Math.round(el.getBoundingClientRect().height));" +
-      "return { want, times: h('.timepick'), dates: h('input[type=date]'), text: h('input:not([type])') };" +
+      "return { want, times: h('.timepick'), dates: h('.datepick'), text: h('input:not([type])') };" +
     "})()"
   )
-  check('日期输入的高度 = 控件高度', heights.dates.length > 0 && heights.dates.every((x) => x === heights.want), J(heights))
+  check('自绘日期选择器的高度 = 控件高度', heights.dates.length === 2 && heights.dates.every((x) => x === heights.want), J(heights))
   check('自绘时刻选择器的高度 = 控件高度', heights.times.length === 2 && heights.times.every((x) => x === heights.want), J(heights))
 
   // 弹窗里所有控件的实测高度：只比 date/time 是看不出「与整体不一致」的

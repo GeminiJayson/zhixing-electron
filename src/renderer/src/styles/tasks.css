@@ -382,6 +382,97 @@ button.chip--status:focus-visible {
   color: var(--fg-tertiary);
 }
 
+/* 日期选择器：与时刻选择器长得一样（都是 .field 包的按钮） */
+.datepick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.datepick__empty {
+  color: var(--fg-tertiary);
+}
+
+/* 日历面板：每个日期格是 --control-h 见方，与输入框、下拉、按钮同一条尺度 */
+.popmenu--date {
+  padding: var(--space-2);
+}
+.dpick__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+.dpick__title {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.dpick__nav {
+  display: grid;
+  place-items: center;
+  width: var(--control-h);
+  height: var(--control-h);
+  border-radius: var(--radius-sm);
+  color: var(--fg-secondary);
+}
+.dpick__nav:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+.dpick__week,
+.dpick__grid {
+  display: grid;
+  grid-template-columns: repeat(7, var(--control-h));
+}
+.dpick__wk {
+  display: grid;
+  place-items: center;
+  height: calc(var(--control-h) * 0.8);
+  color: var(--fg-tertiary);
+  font-size: var(--text-aux);
+}
+.dpick__day {
+  height: var(--control-h);
+  border-radius: var(--radius-sm);
+  color: var(--fg-primary);
+  font-variant-numeric: tabular-nums;
+}
+.dpick__day:hover {
+  background: var(--bg-hover);
+}
+/* 上下月补位：压淡，但仍可点 */
+.dpick__day--out {
+  color: var(--fg-tertiary);
+}
+.dpick__day--today {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.dpick__day--on {
+  background: var(--accent);
+  color: var(--fg-on-accent);
+  font-weight: 600;
+}
+.dpick__foot {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+.dpick__foot > button {
+  flex: 1;
+  min-height: var(--control-h);
+  border-radius: var(--radius-sm);
+  color: var(--fg-secondary);
+}
+.dpick__foot > button:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
 /* 两列时刻列表。项高仍由 .popmenu__item 的 min-height: var(--control-h) 定，
    所以「项」与输入框、下拉、按钮严格等高 —— 这正是自绘它换掉原生面板的原因。 */
 .popmenu--time {
