@@ -72,7 +72,7 @@ html[data-surface='widget'] #root {
   text-align: center;
 }
 
-/* ---- 悬浮球（Emotion Ball 引擎绘制，见 components/WidgetBall.tsx）----
+/* ---- 悬浮球（bloub 引擎绘制，见 components/BloubAvatar.tsx）----
    窗口边长 = 球体边长 + 16（四周各 8px）：留给 hover 放大到 1.06 与投影 —— 窗口是透明
    的，一旦碰到边界就会被硬裁成直角。球体边长由主进程控制（默认 96，可调 88~160）。 */
 .wball {
@@ -96,6 +96,10 @@ html[data-surface='widget'] #root {
   /* 跟随窗口尺寸：主进程改窗口就是改球的大小，这里不必另算 */
   width: 100%;
   height: 100%;
+  /* 不画圆底：球就是身体那个形状本身。
+     对比度靠一层**跟随形状**的投影来保（drop-shadow 贴着轮廓走），而不是一个圆盘 ——
+     圆盘会让它在深色桌面上变成一个白饼，也把「只是那个表情」的感觉盖掉了。 */
+  filter: drop-shadow(0 2px 6px rgb(0 0 0 / 28%));
   /* 声明成圆：这样焦点环（box-shadow 跟随圆角）才是圆的。曾经这里用 outline
      画焦点环 —— outline 不跟随 border-radius，会画出一个**方框**。 */
   border-radius: 50%;
@@ -105,6 +109,18 @@ html[data-surface='widget'] #root {
   transition:
     opacity var(--dur-fast) var(--ease-enter),
     transform var(--dur-fast) var(--ease-spring);
+}
+/* bloub 的渲染层：墨色跟着主题前景色走。
+   引擎把眼睛做成身体上的**洞** —— 没有底色之后，洞里透出的就是球下面的桌面，
+   这正是它看上去像「一个镂空的形状」的原因。 */
+.bloub {
+  display: block;
+  width: 100%;
+  height: 100%;
+  color: var(--fg-primary);
+}
+.bloub__ink {
+  fill: currentColor;
 }
 .wball--ready .wball__host {
   opacity: 1;

@@ -3,6 +3,7 @@ import { AppWindow, Plus, Trash2, Undo2 } from '@renderer/lib/icons'
 import { buildTaskTree, effectiveDoneMap, type TaskNode } from '@shared/task'
 import { bindHostEvents, subscribeDomain } from '@shared/events'
 import { parseSettings } from '@shared/settings'
+import { BLOUB_DEFAULT_SHAPE } from '@shared/bloub'
 import type { TaskNoteContext } from '@shared/types'
 import { applyAppearance } from './theme'
 import { TaskRow } from './components/TaskRow'
@@ -35,6 +36,8 @@ export function WidgetApp() {
    * 形态由主进程裁决（贴着屏幕边缘就收成球），渲染层只负责画。
    */
   const [mode, setMode] = useState<'full' | 'ball'>('full')
+  /** 悬浮球体型（bloub 的形状 id）：主进程右键菜单改它，这里只负责转发给球 */
+  const [ballShape, setBallShape] = useState(BLOUB_DEFAULT_SHAPE)
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const [notice, setNotice] = useState('')
   const [priorityMenu, setPriorityMenu] = useState<{ id: number; anchor: HTMLElement } | null>(null)
@@ -78,6 +81,15 @@ export function WidgetApp() {
   useEffect(() => {
     void window.zhixing.widget.getMode().then(setMode)
     window.zhixing.widget.onMode(setMode)
+  }, [])
+
+  /**
+   * 体型订阅：与形态同一套路 —— 挂载时主动问一次，之后由主进程在右键菜单选形状时推。
+   * 启动就停在球形态时，推送可能早于渲染层挂载，所以「问一次」不能省。
+   */
+  useEffect(() => {
+    void window.zhixing.widget.ballShape().then(setBallShape)
+    window.zhixing.widget.onBallShape(setBallShape)
   }, [])
 
   // 主进程的显隐联动会推 widget-refresh（对齐 _on_main_hidden 里的 widget.reload_tasks）
@@ -331,7 +343,7 @@ export function WidgetApp() {
 
   // 贴边收缩态：整个窗口交给悬浮球（点击球自身即展开）
   if (mode === 'ball') {
-    return <WidgetBall onRestore={() => void window.zhixing.widget.undock()} />
+    return <WidgetBall shape={ballShape} onRestore={() => void window.zhixing.widget.undock()} />
   }
 
   return (

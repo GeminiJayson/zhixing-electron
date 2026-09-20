@@ -171,6 +171,8 @@ export function saveWidgetBall(ball: {
   x: number
   y: number
   size: number
+  /** 悬浮球体型（bloub 的形状 id） */
+  shape: string
   active: boolean
   expandedWidth: number
   expandedHeight: number

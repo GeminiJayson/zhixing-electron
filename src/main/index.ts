@@ -18,6 +18,7 @@ import {
 import { join } from 'node:path'
 import { release } from 'node:os'
 import { extractDeepLink, parseDeepLink, toAccelerator } from '../shared/deep-link'
+import { BLOUB_DEFAULT_SHAPE, BLOUB_SHAPES, normalizeBloubShape } from '../shared/bloub'
 import { resolveThemePack } from '../shared/theme-packs'
 import { initFileLog } from './log'
 import { hardenWindow } from './security'
@@ -65,7 +66,7 @@ let mainReady = false
 let quitting = false
 /**
  * 浮窗形态：'full' 完整卡片 / 'ball' 悬浮球。
- * 与 Python 版「10px 把手」有意分歧：这里收成一颗会做表情的球（Emotion Ball 引擎），
+ * 与 Python 版「10px 把手」有意分歧：这里收成一颗会做表情的球（bloub 引擎），
  * 而且球**可以拖动、可以改大小**，不再只是贴在边缘的一个把手。
  * 形态与位置是解耦的：球的位置/边长独立存在 widget_ball，贴边只是它的一种停靠状态。
  */
@@ -75,6 +76,8 @@ let widgetBall = {
   x: 0,
   y: 0,
   size: 96,
+  /** 悬浮球的体型（bloub 的形状 id，见 shared/bloub） */
+  shape: BLOUB_DEFAULT_SHAPE,
   expandedWidth: 290,
   expandedHeight: 380,
 }
@@ -152,6 +155,7 @@ function readWidgetBall(): {
   x: number | null
   y: number | null
   size: number
+  shape: string
   active: boolean
   expandedWidth: number
   expandedHeight: number
@@ -160,6 +164,7 @@ function readWidgetBall(): {
     x: null as number | null,
     y: null as number | null,
     size: BALL_SIZE_DEFAULT,
+    shape: BLOUB_DEFAULT_SHAPE,
     active: false,
     expandedWidth: WIDGET_SIZE[0],
     expandedHeight: WIDGET_SIZE[1],
@@ -174,6 +179,7 @@ function readWidgetBall(): {
       y: Number.isFinite(Number(b.y)) ? num(b.y, 0) : null,
       size: clampBallSize(num(b.size, BALL_SIZE_DEFAULT)),
       active: b.active === true,
+      shape: normalizeBloubShape(typeof b.shape === 'string' ? b.shape : null),
       expandedWidth: Math.max(WIDGET_MIN[0], num(b.expandedWidth, WIDGET_SIZE[0])),
       expandedHeight: Math.max(WIDGET_MIN[1], num(b.expandedHeight, WIDGET_SIZE[1])),
     }
@@ -351,16 +357,29 @@ function rememberBallPosition(): void {
   widgetBall.y = y
 }
 
-/** 球状态写库：位置 / 边长 / 上次展开尺寸 / 当前是否就是球形态。 */
+/** 球状态写库：位置 / 边长 / 体型 / 上次展开尺寸 / 当前是否就是球形态。 */
 function persistBall(active = true): void {
   saveWidgetBall({
     x: Math.round(widgetBall.x),
     y: Math.round(widgetBall.y),
     size: clampBallSize(widgetBall.size),
+    shape: widgetBall.shape,
     active,
     expandedWidth: Math.round(widgetBall.expandedWidth),
     expandedHeight: Math.round(widgetBall.expandedHeight),
   })
+}
+
+/**
+ * 换悬浮球体型：改内存 + 落库 + 推给浮窗重画。
+ * 不重建窗口、也不动几何 —— 换的是渲染参数，不是布局。
+ */
+function setBallShape(id: string): void {
+  const shape = normalizeBloubShape(id)
+  if (widgetBall.shape === shape) return
+  widgetBall.shape = shape
+  persistBall(widgetMode === 'ball')
+  widgetWindow?.webContents.send('widget:ballShape', shape)
 }
 
 /** 按保存的球几何以球形态露面（位置越界时钳回对应显示器的工作区）。 */
@@ -368,6 +387,7 @@ function restoreBall(saved: ReturnType<typeof readWidgetBall>): void {
   if (!widgetWindow || widgetWindow.isDestroyed()) return
   const win = ballWindowPx(saved.size)
   widgetBall.size = saved.size
+  widgetBall.shape = saved.shape
   widgetBall.expandedWidth = saved.expandedWidth
   widgetBall.expandedHeight = saved.expandedHeight
   const wa = screen.getDisplayMatching({
@@ -1581,6 +1601,9 @@ app.whenReady().then(() => {
   ipcMain.handle('widget:undock', () => expandWidget())
   /** 浮窗当前形态：'ball' 悬浮球 / 'full' 完整卡片（渲染层挂载时先问一次） */
   ipcMain.handle('widget:mode', () => widgetMode)
+  ipcMain.handle('widget:ballShape', () => widgetBall.shape)
+  // 与右键菜单同一个入口：应用内也能改体型（也让端到端验证不必去点原生菜单）
+  ipcMain.handle('widget:setBallShape', (_e, id: string) => setBallShape(String(id)))
   // 悬浮球拖动：渲染层只报告「正在拖」，位移由主进程按屏幕光标重算（光标可能移出窗口）
   ipcMain.handle('widget:dragStart', () => ballDragStart())
   ipcMain.handle('widget:dragTo', () => ballDragTo())
@@ -1615,6 +1638,17 @@ app.whenReady().then(() => {
             click: () => setBallSize(144),
           },
         ],
+      })
+      // 体型只在待机类状态（idle / wink / wide / notify）看得见 —— 这是上游的设计：
+      // 其余状态的轮廓本身就是动画，换形状没有意义
+      items.push({
+        label: '身体形状',
+        submenu: BLOUB_SHAPES.map((s) => ({
+          label: s.label,
+          type: 'radio' as const,
+          checked: widgetBall.shape === s.id,
+          click: () => setBallShape(s.id),
+        })),
       })
     } else {
       items.push({ label: '贴边停靠', click: () => collapseWidgetToBall() })

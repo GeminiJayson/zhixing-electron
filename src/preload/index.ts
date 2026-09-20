@@ -659,6 +659,15 @@ const api = {
     setBallSize: (size: number): Promise<void> => ipcRenderer.invoke('widget:setBallSize', size),
     /** 当前形态：'ball' 贴边收缩成悬浮球 / 'full' 完整卡片 */
     getMode: (): Promise<'full' | 'ball'> => ipcRenderer.invoke('widget:mode'),
+    /** 悬浮球当前体型（bloub 的形状 id） */
+    ballShape: (): Promise<string> => ipcRenderer.invoke('widget:ballShape'),
+    /** 改悬浮球体型（bloub 的形状 id）；与右键菜单同一个入口 */
+    setBallShape: (id: string): Promise<void> =>
+      ipcRenderer.invoke('widget:setBallShape', id),
+    /** 主进程改了体型后推一次（右键菜单选形状） */
+    onBallShape: (cb: (shape: string) => void): void => {
+      ipcRenderer.on('widget:ballShape', (_e, shape: string) => cb(shape))
+    },
     /** 主进程切换形态时推送（贴边收缩 / 展开 / 启动时恢复贴边态） */
     onMode: (cb: (mode: 'full' | 'ball') => void): void => {
       ipcRenderer.on('widget:mode', (_e, mode: 'full' | 'ball') => cb(mode))
