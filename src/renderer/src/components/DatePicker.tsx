@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarClock, ChevronDown, ChevronLeft, ChevronRight } from '@renderer/lib/icons'
-import { monthGrid, todayStr } from '../lib/date'
+import { monthGrid, pad2, todayStr } from '../lib/date'
 
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日']
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1)
@@ -50,6 +50,23 @@ export function DatePicker({ value, onChange, label }: Props) {
   const done = (day: string): void => {
     onChange(day)
     setOpen(false)
+  }
+
+  /**
+   * 把年月**落到日期选择器上**：保留原来那一天，只换年和月。
+   *
+   * 这是用户报的那个「修改并未回填」—— 之前选年月只动了面板的游标，值没变，
+   * 关掉再打开又回到老月份。
+   *
+   * 两个边界：还没选过日期时**不写值**（不能替用户决定是哪天，只挪日历）；
+   * 目标月没有那一天时钳到月末（1 月 31 日 → 2 月 28/29 日）。
+   */
+  const applyYearMonth = (y: number, m0: number): void => {
+    setCursor({ y, m0 })
+    if (!value) return
+    const last = new Date(Date.UTC(y, m0 + 1, 0)).getUTCDate()
+    const day = Math.min(Number(value.slice(8, 10)), last)
+    onChange(`${y}-${pad2(m0 + 1)}-${pad2(day)}`)
   }
 
   useEffect(() => {
@@ -172,7 +189,7 @@ export function DatePicker({ value, onChange, label }: Props) {
                     key={y}
                     type="button"
                     className={`popmenu__item${y === cursor.y ? ' popmenu__item--active' : ''}`}
-                    onClick={() => setCursor((c) => ({ ...c, y }))}
+                    onClick={() => applyYearMonth(y, cursor.m0)}
                   >
                     {y} 年
                   </button>
@@ -184,15 +201,17 @@ export function DatePicker({ value, onChange, label }: Props) {
                     key={m}
                     type="button"
                     className={`popmenu__item${m - 1 === cursor.m0 ? ' popmenu__item--active' : ''}`}
-                    onClick={() => setCursor((c) => ({ ...c, m0: m - 1 }))}
+                    onClick={() => applyYearMonth(cursor.y, m - 1)}
                   >
                     {m} 月
                   </button>
                 ))}
               </div>
-              {/* 年月点选后不自动退回：先挑好年月，想选具体哪天时再走这里 */}
+              {/* 年月点选后不自动退回：先挑好年月，想选具体哪天时再走这里。
+                  用 onMouseDown 而不是 onClick —— 实测真鼠标下 onClick 不触发
+                  （程序化 click() 却有效，所以断言一度是绿的）。 */}
               <div className="dpick__foot">
-                <button type="button" onClick={() => setMode('day')}>
+                <button type="button" onMouseDown={() => setMode('day')}>
                   返回日历（选具体日期）
                 </button>
               </div>

@@ -222,6 +222,9 @@ try {
     afterYear.grid === false && String(afterYear.title).includes('2030'),
     J({ titleBefore, afterYear })
   )
+  // 「落到日期选择器」= 值本身跟着变（保留原来那一天）
+  const valAfterYear = await conn.evaluate("document.querySelector('.modal .datepick').textContent.trim()")
+  check('选年份后值也回填了（保留原来那一天）', valAfterYear.startsWith('2030-'), J(valAfterYear))
   // 选月份同样不退回，标题继续跟着走
   await conn.evaluate("[...document.querySelectorAll('.dpick__mlist .popmenu__item')].find((b) => b.textContent.trim() === '3 月').click()")
   await sleep(500)
@@ -232,15 +235,30 @@ try {
     J(afterMonth)
   )
   // 走「返回日历」才切回日期网格
-  await conn.evaluate("[...document.querySelectorAll('.dpick__pick .dpick__foot button')][0].click()")
+  const dbg = await conn.evaluate(
+    "(() => {" +
+      "const btns = [...document.querySelectorAll('.dpick__pick .dpick__foot button')];" +
+      "const el = btns[0];" +
+      "if (!el) return { found: 0, pick: !!document.querySelector('.dpick__pick') };" +
+      "const r = el.getBoundingClientRect();" +
+      "const h = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);" +
+      "return { found: btns.length, text: el.textContent.trim(), rect: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) }, hit: h ? (h.className || h.tagName) : null };" +
+    "})()"
+  )
+  console.log('[返回按钮] ' + J(dbg))
+  // 用真实鼠标：程序化 click() 不派发 mousedown，「点面板里却把面板关掉」这类 bug 只有真鼠标能抓到
+  await clickReal("[...document.querySelectorAll('.dpick__pick .dpick__foot button')][0]")
   await sleep(500)
-  const backToDay = await conn.evaluate("(() => ({ grid: !!document.querySelector('.dpick__grid'), title: document.querySelector('.dpick__title')?.textContent }))()")
+  const backToDay = await conn.evaluate("(() => ({ grid: !!document.querySelector('.dpick__grid'), pick: !!document.querySelector('.dpick__pick'), panel: !!document.querySelector('.popmenu--date'), title: document.querySelector('.dpick__title')?.textContent }))()")
   check('点「返回日历」切回日期网格，月份仍是刚选的', backToDay.grid === true && String(backToDay.title).includes('2030'), J(backToDay))
+  const backToDayValue = await conn.evaluate("document.querySelector('.modal .datepick').textContent.trim()")
   // 点外面只是收起，不改值
   await clickReal("document.querySelector('.modal__head')")
   await sleep(600)
   const stillToday = await conn.evaluate("document.querySelector('.modal .datepick').textContent.trim()")
-  check('点外面收起时不会改动已选日期', stillToday === todayIso, J({ got: stillToday, want: todayIso }))
+  // 这一步只验证「点外面只是收起」—— 值在更早的年月操作里已经被改过了，
+  // 所以比对的是「点外面前后是否一致」，而不是跟最初的今天比
+  check('点外面收起时不会改动已选日期', stillToday === backToDayValue, J({ got: stillToday, want: backToDayValue }))
 
   // ---- 自绘的时刻选择器：项高必须与控件高度一致（原生面板做不到这件事）
   await clickReal("document.querySelector('.modal .timepick')")
