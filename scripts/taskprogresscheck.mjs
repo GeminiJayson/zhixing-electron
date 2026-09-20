@@ -176,18 +176,53 @@ try {
   await sleep(500)
   const calShot = await conn.send('Page.captureScreenshot', { format: 'png' })
   const fs4 = await import('node:fs')
+  const fs5 = await import('node:fs')
   fs4.writeFileSync(join(root, '.screenshots', 'datepicker-custom.png'), Buffer.from(calShot.result.data, 'base64'))
   console.log('（截图 .screenshots/datepicker-custom.png）')
 
-  // 点「今天」→ 失焦 → 回填
+  // 点「今天」应当**立刻**落库并收起（日历上点一下就完成选择，不必再等失焦）
+  const todayIso = new Date().toLocaleDateString('sv-SE')
   await conn.evaluate("document.querySelector('.dpick__foot button').click()")
-  await sleep(400)
-  const dpPreview = await conn.evaluate("document.querySelector('.modal .datepick').textContent.trim()")
-  await clickReal("document.querySelector('.modal__head')")
   await sleep(600)
   const dpAfter = await conn.evaluate("(() => ({ open: !!document.querySelector('.popmenu--date'), text: document.querySelector('.modal .datepick').textContent.trim() }))()")
-  check('选「今天」后按钮上实时预览', /\d{4}-\d{2}-\d{2}/.test(dpPreview), J(dpPreview))
-  check('失焦后日历自己消失', dpAfter.open === false, J(dpAfter))
+  check('点「今天」后日历立刻消失', dpAfter.open === false, J(dpAfter))
+  check('点「今天」把日期落了下去', dpAfter.text === todayIso, J({ got: dpAfter.text, want: todayIso }))
+
+  // ---- 年月跳转：点标题切到两列，选完回到日历
+  await conn.evaluate("document.querySelector('.modal .datepick').click()")
+  await sleep(500)
+  await conn.evaluate("document.querySelector('.dpick__title').click()")
+  await sleep(600)
+  const ym = await conn.evaluate(
+    "(() => {" +
+      "const el = document.querySelector('.popmenu--date');" +
+      "if (!el) return { open: false };" +
+      "const ys = [...el.querySelectorAll('.dpick__ylist .popmenu__item')];" +
+      "const ms = [...el.querySelectorAll('.dpick__mlist .popmenu__item')];" +
+      "const probe = document.createElement('div');" +
+      "probe.style.height = 'var(--control-h)';" +
+      "document.body.appendChild(probe);" +
+      "const want = Math.round(probe.getBoundingClientRect().height);" +
+      "probe.remove();" +
+      "const hs = [...ys, ...ms].map((b) => Math.round(b.getBoundingClientRect().height));" +
+      "return { open: true, years: ys.length, months: ms.length, minH: Math.min(...hs), maxH: Math.max(...hs), want };" +
+    "})()"
+  )
+  check('点标题展开年月跳转（151 年 + 12 月）', ym.open === true && ym.years === 151 && ym.months === 12, J(ym))
+  check('年月项高度 = 控件高度', ym.open === true && ym.minH === ym.want && ym.maxH === ym.want, J(ym))
+  const titleBefore = await conn.evaluate("document.querySelector('.dpick__title').textContent")
+  const ymShot = await conn.send('Page.captureScreenshot', { format: 'png' })
+  fs5.writeFileSync(join(root, '.screenshots', 'datepicker-yearmonth.png'), Buffer.from(ymShot.result.data, 'base64'))
+  console.log('（截图 .screenshots/datepicker-yearmonth.png）')
+  await conn.evaluate("[...document.querySelectorAll('.dpick__ylist .popmenu__item')].find((b) => b.textContent.trim() === '2030 年').click()")
+  await sleep(500)
+  const afterYear = await conn.evaluate("(() => ({ title: document.querySelector('.dpick__title')?.textContent, grid: !!document.querySelector('.dpick__grid') }))()")
+  check('选年份后回到日历且标题更新', afterYear.grid === true && String(afterYear.title).includes('2030'), J({ titleBefore, afterYear }))
+  // 点外面只是收起，不改值
+  await clickReal("document.querySelector('.modal__head')")
+  await sleep(600)
+  const stillToday = await conn.evaluate("document.querySelector('.modal .datepick').textContent.trim()")
+  check('点外面收起时不会改动已选日期', stillToday === todayIso, J({ got: stillToday, want: todayIso }))
 
   // ---- 自绘的时刻选择器：项高必须与控件高度一致（原生面板做不到这件事）
   await clickReal("document.querySelector('.modal .timepick')")

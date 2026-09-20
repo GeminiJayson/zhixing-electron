@@ -408,8 +408,28 @@ button.chip--status:focus-visible {
   margin-bottom: var(--space-1);
 }
 .dpick__title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--control-h);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+.dpick__title:hover {
+  background: var(--bg-hover);
+}
+/* 年月跳转：左年右月，各自可滚 */
+.dpick__pick {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  width: calc(var(--control-h) * 7);
+}
+.dpick__ylist,
+.dpick__mlist {
+  max-height: calc(var(--control-h) * 8);
 }
 .dpick__nav {
   display: grid;
