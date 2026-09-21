@@ -123,8 +123,15 @@ try {
   )
   await sleep(1200)
   const editor = await app.evaluate("(() => { const m = document.querySelector('.modal[role=\"dialog\"]'); return { open: !!m, picks: m ? m.querySelectorAll('.timepick').length : 0, dates: m ? m.querySelectorAll('.datepick').length : 0 } })()")
-  check('编辑弹窗里开始与截止各有一个时刻选择器', editor.open && editor.picks === 2, J(editor))
-  check('编辑弹窗里开始与截止各有一个日期选择器', editor.open && editor.dates === 2, J(editor))
+  // 编器现在有三组日期/时刻：开始、截止、**提醒**（提醒那组是后加的界面入口）。
+  // 原先写死 === 2，于是在提醒入口加出来之后就一直是红的 —— 又是「行为改了、断言没跟」。
+  // 这里改成不写死数字：日期至少两组、时刻与日期一一配对。再加字段不必回来改。
+  check('编辑弹窗里开始与截止都有日期选择器', editor.open && editor.dates >= 2, J(editor))
+  check(
+    '时刻选择器与日期选择器一一配对（开始 / 截止 / 提醒）',
+    editor.open && editor.picks === editor.dates && editor.picks >= 2,
+    J(editor)
+  )
 
   // ---- 自绘日期选择器：日历面板与格子尺寸
   await app.evaluate("document.querySelector('.modal .datepick').click()")
@@ -363,8 +370,8 @@ try {
       "return { want, times: h('.timepick'), dates: h('.datepick'), text: h('input:not([type])') };" +
     "})()"
   )
-  check('自绘日期选择器的高度 = 控件高度', heights.dates.length === 2 && heights.dates.every((x) => x === heights.want), J(heights))
-  check('自绘时刻选择器的高度 = 控件高度', heights.times.length === 2 && heights.times.every((x) => x === heights.want), J(heights))
+  check('自绘日期选择器的高度 = 控件高度', heights.dates.length >= 2 && heights.dates.every((x) => x === heights.want), J(heights))
+  check('自绘时刻选择器的高度 = 控件高度', heights.times.length >= 2 && heights.times.every((x) => x === heights.want), J(heights))
 
   // 弹窗里所有控件的实测高度：只比 date/time 是看不出「与整体不一致」的
   const all = await app.evaluate(
