@@ -10,7 +10,7 @@
  * 因为不希望为一个写回能力引入新的打包依赖，.docx 的写回用 node:zlib 自实现的
  * 最小 ZIP 封装（OOXML 只需 [Content_Types].xml + _rels/.rels + word/document.xml）。
  */
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { extname, join } from 'node:path'
 import { deflateRawSync } from 'node:zlib'
 import mammoth from 'mammoth'
@@ -50,7 +50,9 @@ export async function previewOfficeNote(noteId: number): Promise<OfficePreview> 
       }
     }
     if (ext === '.xlsx' || ext === '.xls') {
-      const wb = XLSX.readFile(target)
+      // 不用 XLSX.readFile：打包后 xlsx 可能被解析成 browser 版（没有该方法）。
+      // 自己读字节再交给 XLSX.read，两个版本都支持。
+      const wb = XLSX.read(readFileSync(target), { type: 'buffer' })
       const parts: string[] = []
       for (const name of wb.SheetNames.slice(0, 10)) {
         const table = XLSX.utils.sheet_to_html(wb.Sheets[name], { header: '', footer: '' })
@@ -103,7 +105,7 @@ export async function officeDocNote(noteId: number): Promise<OfficeDoc> {
       return { kind: 'docx', html: sanitizeHtml(res.value), rows: [], message: '已载入，可编辑并自动写回' }
     }
     if (ext === '.xlsx' || ext === '.xls') {
-      const wb = XLSX.readFile(target)
+      const wb = XLSX.read(readFileSync(target), { type: 'buffer' })
       const ws = wb.Sheets[wb.SheetNames[0]]
       const rows = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1, raw: false, defval: '' }) as string[][]
       return {
@@ -135,7 +137,7 @@ export function createBlankOfficeFile(
     else {
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['', '', ''], ['', '', ''], ['', '', '']]), 'Sheet1')
-      XLSX.writeFile(wb, path)
+      writeFileSync(path, XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }))
     }
     return { ok: true, path, message: `已新建空白 ${isWord ? 'Word' : 'Excel'} 文件` }
   } catch (err) {
@@ -168,7 +170,7 @@ export function saveExcelNote(noteId: number, rows: string[][]): { ok: boolean; 
   if (!target || /^https?:\/\//i.test(target)) return { ok: false, message: '这篇笔记没有关联本地 Excel 文件' }
   try {
     const path = existsSync(target) ? target : onMissingPath(target, '.xlsx')
-    const wb = existsSync(path) ? XLSX.readFile(path) : XLSX.utils.book_new()
+    const wb = existsSync(path) ? XLSX.read(readFileSync(path), { type: 'buffer' }) : XLSX.utils.book_new()
     if (!wb.SheetNames.length) {
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Sheet1')
     } else {
@@ -191,7 +193,7 @@ export function saveExcelNote(noteId: number, rows: string[][]): { ok: boolean; 
       }
       wb.Sheets[wb.SheetNames[0]] = ws
     }
-    XLSX.writeFile(wb, path)
+    writeFileSync(path, XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }))
     return { ok: true, message: `已写回 ${path}` }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

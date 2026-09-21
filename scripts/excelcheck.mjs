@@ -28,7 +28,7 @@ for (let i = 0; i < 120 && !main; i++) { main = (await list()).find((t) => t.typ
 console.log('【3】连 CDP')
 const ws = new WebSocket(main.webSocketDebuggerUrl)
 await new Promise((r) => ws.addEventListener('open', r, { once: true }))
-const send = (m, p = {}, ms = 15000) => new Promise((res, rej) => {
+const send = (m, p = {}, ms = 30000) => new Promise((res, rej) => {
   const id = Math.floor(Math.random() * 1e6)
   const t = setTimeout(() => { ws.removeEventListener('message', h); rej(new Error('超时 ' + ms + 'ms: ' + m)) }, ms)
   const h = (e) => { const x = JSON.parse(e.data); if (x.id !== id) return; clearTimeout(t); ws.removeEventListener('message', h); res(x) }

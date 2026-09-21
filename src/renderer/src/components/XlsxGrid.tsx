@@ -57,34 +57,43 @@ function ImageCell({ value }: ICellRendererParams): JSX.Element | null {
 
 export default function XlsxGrid({ rows, onChange, readOnly = false }: Props): JSX.Element {
   const gridRef = useRef<AgGridReact>(null)
+  // 第一行当表头（xlsx 的惯例），其余是数据行。
+  // 原来这里用列字母 A/B/C 当表头，是因为我没把首行当表头 —— 那样用户在网格里
+  // 看不到自己的列名。
+  const header = rows[0] ?? []
+  const body = useMemo(() => rows.slice(1), [rows])
   // ag-grid 要的是对象数组，这里把二维数组映射成 {c0,c1,...}；列数取最长的一行
   const width = useMemo(() => rows.reduce((m, r) => Math.max(m, r.length), 0) || 1, [rows])
   const rowData = useMemo(
-    () => rows.map((r, i) => { const o: Record<string, string> = { __row: String(i) }; r.forEach((c, j) => { o['c' + j] = c ?? '' }); return o }),
-    [rows]
+    () => body.map((r, i) => { const o: Record<string, string> = { __row: String(i) }; r.forEach((c, j) => { o['c' + j] = c ?? '' }); return o }),
+    [body]
   )
   const colDefs = useMemo<ColDef[]>(
     () => Array.from({ length: width }, (_, j) => ({
       field: 'c' + j,
-      headerName: String.fromCharCode(65 + (j % 26)) + (j >= 26 ? String(Math.floor(j / 26)) : ''),
+      // 首行有值就用它当列名，没有才退回列字母
+      headerName:
+        (header[j] ?? '').trim() ||
+        String.fromCharCode(65 + (j % 26)) + (j >= 26 ? String(Math.floor(j / 26)) : ''),
       editable: !readOnly,
       resizable: true,
       flex: 1,
       minWidth: 90,
       cellRenderer: (p: ICellRendererParams) => (isImageCell(String(p.value ?? '')) ? <ImageCell {...p} /> : String(p.value ?? '')),
     })),
-    [width, readOnly]
+    [width, readOnly, header]
   )
   const onCellValueChanged = useCallback(
     (e: CellValueChangedEvent) => {
       const ri = Number(e.data.__row)
       const ci = Number(String(e.colDef.field).slice(1))
-      const next = rows.map((r) => [...r])
-      while (next[ri].length <= ci) next[ri].push('')
-      next[ri][ci] = String(e.newValue ?? '')
-      onChange(next)
+      // 改的是数据行（表头另存），拼回去时把表头补上，免得写回 .xlsx 时丢一行
+      const nextBody = body.map((r) => [...r])
+      while (nextBody[ri].length <= ci) nextBody[ri].push('')
+      nextBody[ri][ci] = String(e.newValue ?? '')
+      onChange([header, ...nextBody])
     },
-    [rows, onChange]
+    [body, header, onChange]
   )
 
   return (
