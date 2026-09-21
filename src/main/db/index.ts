@@ -18,6 +18,8 @@ export * from './review'
 export * from './settings'
 export * from './task-ops'
 export * from './tasks'
+// export * 只导出名字，不把它引进本文件作用域 —— 这里要直接调用它
+import { restoreCompleted } from './tasks'
 export * from './trash'
 export * from './workflow'
 
@@ -62,6 +64,7 @@ const WRITE_DOMAINS: Record<string, DataDomain | DataDomain[]> = {
   'db:setDueDate': 'task',
   'db:createTask': 'task',
   'db:updateTask': 'task',
+  'db:restoreCompleted': 'task',
   'db:deleteTask': 'task',
   'db:reorderTask': 'task',
   'db:moveTaskRelative': 'task',
@@ -643,6 +646,11 @@ export function registerDbHandlers(): void {
   handle('db:setDueDate', (_e, id: number, due: string | null) => setDueDate(id, due))
   handle('db:createTask', (_e, title: string, parentId: number | null, listId: number | null) =>
     createTask(title, parentId, listId)
+  )
+  // 把已完成的任务释放回待执行；连带恢复仍是终态的祖先，层级因此保留
+  handle('db:getTask', (_e, id: number) => getTask(Number(id)))
+  handle('db:restoreCompleted', (_e, id: number, listId?: number | null) =>
+    restoreCompleted(Number(id), listId ?? null)
   )
   handle('db:updateTask', (_e, id: number, fields: Record<string, string | number | null>) => {
     const t = updateTask(id, fields)

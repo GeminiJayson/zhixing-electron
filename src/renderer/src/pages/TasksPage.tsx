@@ -203,7 +203,8 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     const match = (t: Task): boolean => {
       if (t.parent_id !== null) return true
       if (focus === 'today') return !isDone(t) && (t.due_date === null || t.due_date >= day)
-      if (focus === 'done') return isDone(t) && (t.completed_at ?? '').slice(0, 10) === day
+      // 「已完成」清单显示**全部**已完成，而不是只有今天完成的 —— 归档之后要能找回来释放
+    if (focus === 'done') return isDone(t)
       return t.due_date !== null && t.due_date < day && !isDone(t)
     }
     return tasks.filter(match)

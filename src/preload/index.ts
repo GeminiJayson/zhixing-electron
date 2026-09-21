@@ -534,6 +534,11 @@ const api = {
       id: number,
       fields: Record<string, string | number | null>
     ): Promise<Task | null> => ipcRenderer.invoke('db:updateTask', id, fields),
+    /** 把已完成的任务释放回待执行（连带恢复仍是终态的祖先，层级因此得以保留） */
+    /** 取单个任务（含 parent_id / status），断言与调试都用得上 */
+    getTask: (id: number): Promise<Task | null> => ipcRenderer.invoke('db:getTask', id),
+    restoreCompleted: (id: number, listId?: number | null): Promise<Task | null> =>
+      ipcRenderer.invoke('db:restoreCompleted', id, listId ?? null),
     deleteTask: (id: number): Promise<number> => ipcRenderer.invoke('db:deleteTask', id),
   },
   /**

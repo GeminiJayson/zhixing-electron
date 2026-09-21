@@ -262,6 +262,43 @@ export function setTitle(id: number, title: string): Task | null {
 }
 
 /** 与 task_service.update 的等待中规则一致：离开 waiting 时清 resume_at。 */
+/**
+ * 把已完成的任务释放回「待执行」。
+ *
+ * 两点值得注意：
+ * 1. **不动 parent_id** —— 任务在完成期间一直保留着层级，所以释放后父子关系天然还在。
+ * 2. **连带恢复仍是终态的祖先**：父任务若还是「已完成」，它在当前清单里不会显示，
+ *    子任务就会变成一个找不到父亲的孤儿。所以一路向上，把仍是终态的祖先也一并恢复。
+ *    这就是需求里那句「保留记忆任务层级」。
+ *
+ * listId 只在显式传入时才改，而且**只改被释放的那一个**；祖先保持各自原来的清单。
+ */
+export function restoreCompleted(id: number, listId?: number | null): Task | null {
+  const c = conn()
+  const stamp = nowStamp()
+  const seen = new Set<number>()
+  let cur: number | null = id
+  while (cur !== null && !seen.has(cur)) {
+    seen.add(cur)
+    const row = c
+      .prepare('SELECT id, parent_id, status FROM task WHERE id = ?')
+      .get(cur) as { id: number; parent_id: number | null; status: TaskStatus } | undefined
+    if (!row) break
+    if (row.status === 'done' || row.status === 'abandoned') {
+      c.prepare('UPDATE task SET status = ?, completed_at = NULL, updated_at = ? WHERE id = ?').run(
+        'todo',
+        stamp,
+        row.id
+      )
+    }
+    cur = row.parent_id
+  }
+  if (listId !== undefined) {
+    c.prepare('UPDATE task SET list_id = ?, updated_at = ? WHERE id = ?').run(listId, stamp, id)
+  }
+  return getTask(id)
+}
+
 export function setStatus(id: number, status: TaskStatus): Task | null {
   const allowed: TaskStatus[] = ['todo', 'doing', 'waiting', 'done', 'abandoned']
   if (!allowed.includes(status)) throw new Error('非法状态: ' + status)
