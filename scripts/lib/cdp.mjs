@@ -339,15 +339,25 @@ export async function launchApp({
   }
 }
 
-/** 一条 send：按消息 id 配对；15s 不到就是超时，能直接看出卡在哪一条。 */
+/**
+ * 单条 CDP 消息的超时。可用 ZHIXING_CDP_TIMEOUT_MS 覆盖。
+ *
+ * 15s 是被真实抖动逼上去的：这台机器上纯 Runtime.evaluate 会偶发超过 15s
+ * （首次渲染 + jieba 建索引都可能压在一条消息上），于是「脚本真挂了」与
+ * 「机器正忙」分不清 —— wflinkcheck 迁移后就被这样误判成回归过。
+ * 仍然是个有限值：真卡死时错误信息会指出卡在哪一条方法上。
+ */
+const CDP_TIMEOUT = Number(process.env.ZHIXING_CDP_TIMEOUT_MS ?? 45_000)
+
+/** 一条 send：按消息 id 配对；超时就直接看出卡在哪一条。 */
 function makeSend(ws) {
   return (method, params = {}) =>
     new Promise((resolve, reject) => {
       const id = Math.floor(Math.random() * 1e6)
       const timer = setTimeout(() => {
         ws.removeEventListener('message', h)
-        reject(new Error('CDP 超时（15s）：' + method))
-      }, 15000)
+        reject(new Error('CDP 超时（' + CDP_TIMEOUT + 'ms）：' + method))
+      }, CDP_TIMEOUT)
       const h = (ev) => {
         const x = JSON.parse(ev.data)
         if (x.id !== id) return

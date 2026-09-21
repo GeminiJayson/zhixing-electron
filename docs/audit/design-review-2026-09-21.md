@@ -36,7 +36,7 @@
 | 查询静默空集 / 裸词 done | 解析期校验 due 并记 unknown；裸词 done 落地 | 单测 3 项 |
 | 布局方向重置模板 | openTemplate 用 ref 读 rankdir，去掉依赖 | 类型 + 构建（**验证较弱**） |
 | 右键两个重叠菜单 | 删原生监听，合并为一个菜单 | 护栏 ⑪ + 笔记页回归 |
-| 脚本：CDP 样板 47 份 | **部分**：抽出 scripts/lib/cdp.mjs；迁移 3 个脚本并跑绿；加棘轮护栏 | E2E 4/4 + 5/5 + 7/7 + 护栏 ⑯（做过变异验证） |
+| 脚本：CDP 样板 47 份 | **大部分**：抽出 scripts/lib/cdp.mjs；棘轮 20 → 15（本轮净迁 5 个，逐条与原版对照后只留跑得动的）；迁移器本身入库并修掉 3 个缺陷；lib 的 CDP 超时 15s → 45s（可配） | 5 个迁移脚本各自跑绿 + 10 个逐条对照的原版基线表 + 护栏 ⑯（变异验证）+ 单测 29 条 |
 | 脚本：seedmonitor 统计失败却永不失败 | 末尾补 process.exit(problems.length ? 1 : 0) | 护栏 ⑭（变异验证：去掉退出码即变红） |
 | 任务↔笔记关联只增不删 | 记来源 + 按来源对账（一删一增同事务） | 单测 11 项 + E2E 7/7 + 护栏 ⑮ |
 | 脚本：5 个未隔离 ZHIXING_HOME | 其中只有 capture 真写库 → 复制库副本隔离 | **实测**：跑 dark 截图后真实库仍是 light |
@@ -53,7 +53,7 @@
 
 ### 累计证据
 
-- 单元测试 **378 项** / 37 个文件（2026-09-22 复核时的现值）
+- 单元测试 **394 项** / 37 个文件（2026-09-22 复核时的现值）
 - **21 道架构护栏**（src/shared/architecture.test.ts，39 条断言）—— 其中 6 道做过变异验证（把缺陷改回去，护栏确实变红）
 - 端到端：remindercheck 18/18、listguardcheck 4/4、noteeditguard 5/5、tasksynccheck 20/20、dialogcheck 10/10、rollcheck 25/25、reminderstylecheck 11/11、reminderpolicycheck 7/7、notelinkcheck 7/7
 
@@ -173,25 +173,66 @@ E2E 脚本会拷一份真实库来跑（launchApp 的 copyDb）。生产库现�
 **迁移器已固化为脚本（2026-09-22）。** 前几轮的迁移代码都是一次性程序，每轮重写一遍、
 每轮重踩同样的坑。现在落在 `scripts/lib/migrate-cdp.mjs`：
 
-- `node scripts/lib/migrate-cdp.mjs <脚本名…>` 做迁移；`--self-test` 只跑扫描器自检（8 条）。
-- 块边界的四条规则（按行判、字符串/注释感知、保留声明按原序插回、引用分析迭代到不动点、
-  只保留顶格语句）写在文件头注释里，不再靠记性。
-- 13 条单测（`src/shared/migrate-cdp.test.ts`）钉住扫描器与 renameRefs 的行为 ——
+- `node scripts/lib/migrate-cdp.mjs <脚本名…>` 做迁移；`--self-test` 只跑扫描器自检（19 条）。
+- 块边界的规则（按行判、字符串/注释/正则感知、保留声明按原序插回、引用分析迭代到不动点、
+  只保留顶格语句、只在代码段改名）都写在文件头注释里，不再靠记性。
+- 29 条单测（`src/shared/migrate-cdp.test.ts`）钉住扫描器与 renameRefs 的行为 ——
   这几条规则此前反复改错，每次改错都把脚本改坏。
 - 只有被 node 直接执行时才跑 CLI（`pathToFileURL(process.argv[1])` 比对 `import.meta.url`）；
   否则被 vitest import 时会把 vitest 的参数当成脚本名去迁移。
 
-**剩余 20 个脚本按阻塞原因分三类**（下一轮从第一类开刀，别再从 ai* 那条最硬的骨头啃）：
+**这一轮从迁移器的三个真实缺陷里挖出来的东西**（都不是被迁脚本的问题，是工具的问题；
+每条都是先看到脚本变坏、再用「逐条声明量行数」的探针定位的）：
 
-1. 只缺场景数据：layoutfitcheck 需要一份能渲染的 Excel 笔记。
-2. 前置副作用：wflinkcheck / wfdialog 在启动前写库；flashhotkeycheck / tasksynccheck 起 http server。
-3. 样板区段夹带重型依赖：excelcheck / officecheck 依赖外部文件；layoutcheck / importcheck
-   带大对象 payload 与夹具文件；smoke / graphfocus / seedmonitor 连 results / failed 锚点都不齐。
+1. **表达式体的箭头函数，函数体写在下一行** —— `const mouse = (type) =>` 这一行括号是平衡的，
+   只看深度就判成单行声明，函数体整段丢掉（hotkeyrebindcheck 直接语法错）。
+   现在行尾是 `=>`、`=`、`,`、`&&` 这类「还没写完」的 token 时，声明继续吃下一行。
+2. **正则字面量里转义的方括号被当成真括号** —— `/\[\[[^\]]+\]\]/g` 与
+   `/https?:\/\/[^\s)\]，。]+/g` 让 `const server = createServer(...)` 少算 3 个括号：
+   **47 行（实际 48 行）**，收尾的 `})` 被丢掉，后面的 `await` 落进非 async 的箭头函数，
+   报错是 `Unexpected reserved word`。探针（逐条声明量行数的小程序）一跑就现形。
+3. **改名连接对象时连字符串一起改** —— 页面侧的 `if (host) host.focus()` 被改成 `app.focus()`，
+   浏览器上下文里没有 `app`，报错只有一句 `ReferenceError: app is not defined`，堆栈全在 `<anonymous>`。
+   现在只在代码段改名，字符串/模板/注释一律不动。
 
-ai* 三家（aicheck / ailibcheck / airepaircheck）这轮迁完又回退，结论记下来免得下次重试：
-aicheck 迁后能跑到真断言（日志 63 行），但内容审计不通过（「模型抄回原始片段时放行」等失败）；
-ailibcheck / airepaircheck 迁后仍在 22 行处崩。三者的原版本本来就是可跑的（16/25、15/15、16/16），
-按「迁移不得回退基线」的规矩原样退回，不计入迁移进度。
+第 2 条的修复还牵出一个反向陷阱：「空行与纯注释行不能收尾」这条规则会让**以注释行开头**的块
+一路吃到下一条声明，于是 `let payload = []` 被输出两遍（`Identifier 'payload' has already been declared`）。
+现在只有「上一行明确要求续行」时才允许跳过注释行，另外保留块按行号去重叠，双保险。
+
+**结果：棘轮 20 → 15，落了 5 个（2026-09-22）**。口径是「迁完还能跑绿」——
+下面这张对照表是这轮最值钱的产物，它证明「能机械迁移」与「迁完还跑得动」是两件事：
+
+| 脚本 | 原版 | 迁移后 | 结论 |
+| --- | --- | --- | --- |
+| ailibcheck | 15/15 | 15/15 | 保留 |
+| airepaircheck | 16/16 | 16/16 | 保留 |
+| tasksynccheck | 20/20（审计文档基线） | 20/20 | 保留 |
+| hotkeyrebindcheck | 无基线记录 | 14/14 | 保留 |
+| wflinkcheck | 11/11 全过 | 11/11 全过 | 保留（第一次跑是 CDP 超时，见下） |
+| aicheck | 16/25 | 更差一项 | 回退 |
+| importcheck | **14/14 全过** | 读夹具 ENOENT | 回退：launchApp 会清空 home |
+| officecheck | 起不来 | 起不来 | 回退 |
+| layoutcheck / wfdialog | 起不来（无法连接渲染进程） | 起不来 | 回退，无从验证 |
+| flashhotkeycheck | 挂住不返回（老脚本没有超时） | 只差「读取选区」一项 | 回退：本机没有可用交互会话，那一项读不到选区 |
+
+**顺带挖出 lib 自己的一个坑：15s 的 CDP 超时太紧。** wflinkcheck 迁后第一次跑报
+`CDP 超时（15s）：Runtime.evaluate`，差点被记成迁移回归 —— 实际上这台机器上纯 evaluate
+会偶发超过 15s（首次渲染 + jieba 建索引都可能压在一条消息上），连 lib 自己补夹具的那步也超时过。
+**「脚本真挂了」与「机器正忙」分不清，是最糟的一种测试不可靠**，所以超时改成默认 45s、
+并支持 `ZHIXING_CDP_TIMEOUT_MS` 覆盖；改完 wflinkcheck 11/11，ailibcheck 也从偶发的 exit=1 恢复 15/15。
+
+**迁移器因此新增一条「拒绝迁移」规则**：样板区段里若有脚本自己的文件准备（造夹具），直接拒绝 ——
+lib 的 launchApp 会先 `rmSync(home)` 再重建，脚本提早写进去的夹具必然被清掉。
+宁可拒绝，也不产出一个「看着迁好了、跑起来 ENOENT」的脚本。这条正对着 importcheck / officecheck。
+
+**剩下 15 个分两块**：9 个连 `results` / `failed` 锚点都没有，迁移器认不出断言区从哪开始
+（bigcapture / capture / diag-today / excelcheck / graphfocus / probe / seedmonitor / smoke / windiag，
+其中五个是截图与诊断工具）；另外 6 个就是上表回退的。
+下一步该做的不是继续堆迁移数，而是先给 excelcheck / smoke / graphfocus 这三个真验证脚本补上锚点。
+
+（顺带改掉上一轮写错的地方：那时写的「剩余 20 个分三类」里「只缺场景数据：layoutfitcheck」是错的 ——
+layoutfitcheck 早已迁移，它缺的是一份能渲染的 Excel 笔记夹具，跟迁移无关。
+教训是：没真跑过就别往清单里写原因，更别按没跑过的人数着往下排。）
 
 **2. 其余未单独修的中低优先项**（均不涉及数据安全，留待后续）：
 applyMru 的 sort+reverse、listTasksByList 漏 start_time/due_time、图谱增量实为全量重建、ZIP/CRC32 与浮窗保存的重复实现、若干死代码与不可达分支。
@@ -324,17 +365,21 @@ applyMru 的 sort+reverse、listTasksByList 漏 start_time/due_time、图谱增�
 - 复核：✓ 已核实（本次回代码确认两处 `startsWith` 原样未动；单测 8 项先红后绿 + 变异验证，
   另有护栏「自身 URL 判定必须是精确比较」做变异验证）
 
-### [高] 外部同步整批 upsert 无事务，定时路径的 rejection 无人处理
+### [高] 外部同步整批 upsert 无事务，定时路径的 rejection 无人处理 —— **已修（2026-09-22 复核）**
 - 证据：`task-sync.ts:320-327` 循环写库无 transaction；`main/index.ts:1656-1657` `void runTaskSync()` 无 catch；失败时 `remember()`（`task-sync.ts:145-147`）不执行。
 - 修复：`conn().transaction` 包整批；`runTaskSync()` 加 catch 并写回 last_result。
-- 复核：未核实
+- 复核：✓ 已核实已修 —— `task-sync.ts:339` 整批进了 `conn().transaction`；`main/index.ts:1685`
+  定时路径改走 `runTaskSyncSafely()`（catch 里写回 last_result）。这条是在「多步写缺事务」收口里一并修掉的，
+  ADR 0001 也收录了它（:18 / :57 / :78）—— 只是这张明细表没跟着更新，于是它同时以「无事务」和「已修」两种面目存在。
 
-### [高] preload 事件订阅契约不一致：9 个 on* 不返回取消订阅
+### [高] preload 事件订阅契约不一致：9 个 on* 不返回取消订阅 —— **已修（2026-09-22 复核）**
 - 证据：无返回 `preload/index.ts:206-208/439-441/652-654/660-662/687-689/691-693/701-703/719-721/722-724`；有返回 `:558-565/590-594/620-624`。
 - 影响：调用方写不出标准 cleanup，渲染层被迫绕行（`NotesPage.tsx:846` 注释「没有取消订阅接口：只注册一次…读最新 ref」）；依赖一变就静默累积监听器。
 - 补充：**本轮新加的 `onNotice` / `reminder.onPush` / `reminder.onOpenTask` 三个也都没有返回取消函数**，加剧了这个问题。
 - 修复：所有 `on*` 统一返回 `() => ipcRenderer.removeListener(channel, handler)`。
 - 复核：✓ 已核实（并发现本轮新增的也在其中）
+- 收口：已完成 —— `preload/index.ts` 现有 12 处 `removeListener` 取消函数，
+  并有护栏「preload 订阅必须可取消」盯着后续新增的 `on*`。
 
 ### [高] 剪贴板监听 2s 轮询触发 sendAction → showMain() 抢焦点
 - 证据：`main/index.ts:1728-1739` `setInterval(...,2000)` → `sendAction('clipboard-notice')`；`sendAction` 在 `:689-692` 无条件 `showMain()`；同处注释（`:1726`）写「不打断用户输入」。

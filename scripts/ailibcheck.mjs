@@ -17,22 +17,13 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { copyFileSync, existsSync, mkdirSync, rmSync } from 'node:fs'
-import { setTimeout as sleep } from 'node:timers/promises'
+import { ROOT, launchApp, createChecker, J, sleep } from './lib/cdp.mjs'
 
+const root = ROOT
 const require = createRequire(import.meta.url)
-const electronPath = require('electron')
-const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const tmpHome = join(root, '.screenshots', 'ailib-home')
+const tmpHome = join(ROOT, '.screenshots', 'ailib-home')
 const PORT = 9244
 const AI_PORT = 9243
-
-const realDb = join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db')
-if (!existsSync(realDb)) {
-  console.error('✗ 找不到真实库：' + realDb)
-  process.exit(1)
-}
-
-// ---------------------------------------------------------------- 假模型端点
 let requests = 0
 const server = createServer((req, res) => {
   let raw = ''
@@ -84,91 +75,16 @@ const server = createServer((req, res) => {
 })
 await new Promise((r) => server.listen(AI_PORT, '127.0.0.1', r))
 
-// ---------------------------------------------------------------- 启动应用
-rmSync(tmpHome, { recursive: true, force: true })
-mkdirSync(tmpHome, { recursive: true })
-copyFileSync(realDb, join(tmpHome, 'zhixing.db'))
-
-const SYS_PATH = [
-  'C:\\Windows\\System32',
-  'C:\\Windows',
-  'C:\\Windows\\System32\\Wbem',
-  'C:\\Windows\\System32\\WindowsPowerShell\\v1.0',
-].join(';')
-
-const child = spawn(
-  electronPath,
-  ['.', '--remote-debugging-port=' + PORT, '--user-data-dir=' + join(tmpHome, 'profile')],
-  {
-    cwd: root,
-    env: { ...process.env, PATH: SYS_PATH + ';' + (process.env.PATH ?? ''), ZHIXING_HOME: tmpHome },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  }
-)
-
-const attach = async () => {
-  let page = null
-  for (let i = 0; i < 60 && !page; i++) {
-    try {
-      const list = await (await fetch('http://127.0.0.1:' + PORT + '/json/list')).json()
-      page = list.find((t) => t.type === 'page')
-    } catch {
-      /* 等待 */
-    }
-    if (!page) await sleep(500)
-  }
-  if (!page) return null
-  const ws = new WebSocket(page.webSocketDebuggerUrl)
-  await new Promise((res, rej) => {
-    ws.addEventListener('open', res, { once: true })
-    ws.addEventListener('error', rej, { once: true })
-  })
-  const send = (method, params = {}) =>
-    new Promise((resolve) => {
-      const id = Math.floor(Math.random() * 1e6)
-      const h = (ev) => {
-        const m = JSON.parse(ev.data)
-        if (m.id !== id) return
-        ws.removeEventListener('message', h)
-        resolve(m)
-      }
-      ws.addEventListener('message', h)
-      ws.send(JSON.stringify({ id, method, params }))
-    })
-  await send('Runtime.enable')
-  const evaluate = async (expression) => {
-    const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })
-    if (r.result?.exceptionDetails)
-      throw new Error(r.result.exceptionDetails.exception?.description ?? 'eval failed')
-    return r.result?.result?.value
-  }
-  return { ws, evaluate }
-}
-
-const conn = await attach()
-if (!conn) {
-  console.error('✗ 无法连接渲染进程')
-  child.kill()
-  server.close()
-  process.exit(1)
-}
-await sleep(3000)
-
-const results = []
-const check = (name, ok, detail = '') => {
-  results.push([name, ok])
-  console.log((ok ? '✓ ' : '✗ ') + name + (detail ? ' — ' + detail : ''))
-}
-const J = (v) => JSON.stringify(v)
-
-await conn.evaluate(
+const app = await launchApp({ port: PORT, home: tmpHome })
+const { check, finish, results } = createChecker()
+await app.evaluate(
   `window.zhixing.db.setSettings({ ai_base_url: ${J('http://127.0.0.1:' + AI_PORT + '/v1')}, ai_api_key: 'k', ai_protocol: 'openai', ai_model: 'mock', ai_prompt: '' })`
 )
 
 // ---------------------------------------------------------------- 造一批笔记
 const PREFIX = 'LIB' + Date.now().toString(36)
 const makeNote = async (title, format, md) => {
-  const note = await conn.evaluate(
+  const note = await app.evaluate(
     `window.zhixing.db.createNote(${J(title)}, null, ${J(md)}, ${J(format)})`
   )
   return note
@@ -185,14 +101,14 @@ const wordNote = await makeNote(`${PREFIX} 表格`, 'word', 'C:/tmp/whatever.doc
 check('测试笔记已建立（3 篇正文 + 1 篇空 + 1 篇 word）', normal.every((n) => n?.id) && !!emptyNote?.id && !!wordNote?.id, '')
 
 // 进度订阅：把每一帧都收进数组（顺便记录条数）
-await conn.evaluate(`(() => {
+await app.evaluate(`(() => {
   window.__libProg = []
   window.zhixing.ai.onLibraryProgress((p) => window.__libProg.push(p))
   return true
 })()`)
 
 // ---------------------------------------------------------------- 整库整理
-const res = await conn.evaluate(`window.zhixing.ai.organizeLibrary()`)
+const res = await app.evaluate(`window.zhixing.ai.organizeLibrary()`)
 check('整库整理返回成功', res?.ok === true, res?.message)
 // 副本库里本来就有用户的笔记，所以总量只能要求「不少于我造的那几篇」，
 // 但**每一篇都要有交代**：ok + skipped 必须等于总数
@@ -204,7 +120,7 @@ check(
 )
 check('文件夹只在第一篇里新建了一次', res?.createdFolders === 2, `created=${res?.createdFolders}（整库/归档 两级）`)
 
-const after = await conn.evaluate(`window.zhixing.db.notes(200)`)
+const after = await app.evaluate(`window.zhixing.db.notes(200)`)
 const find = (id) => after.find((n) => n.id === id)
 const updated = normal.map((n) => find(n.id))
 check(
@@ -228,7 +144,7 @@ check(
   find(wordNote.id)?.content_md
 )
 
-const prog = await conn.evaluate('window.__libProg')
+const prog = await app.evaluate('window.__libProg')
 const last = Array.isArray(prog) ? prog[prog.length - 1] : null
 check('进度事件逐篇推送', Array.isArray(prog) && prog.length >= 8, `frames=${prog?.length}`)
 check(
@@ -245,7 +161,7 @@ const cancelNotes = []
 for (let i = 1; i <= 4; i++) {
   cancelNotes.push(await makeNote(`${PREFIX} 待停${i}`, 'markdown', BODY))
 }
-await conn.evaluate(`(() => {
+await app.evaluate(`(() => {
   window.__libProg2 = []
   window.__cancelled = false
   window.zhixing.ai.onLibraryProgress((p) => {
@@ -257,22 +173,18 @@ await conn.evaluate(`(() => {
   })
   return true
 })()`)
-const res2 = await conn.evaluate(`window.zhixing.ai.organizeLibrary()`)
+const res2 = await app.evaluate(`window.zhixing.ai.organizeLibrary()`)
 check('停止后明确标记 stopped', res2?.stopped === true, res2?.message)
 check('停止后确实没跑完', typeof res2?.done === 'number' && res2.done < res2.total, `done=${res2?.done}/${res2?.total}`)
 
 // ---------------------------------------------------------------- 收尾
 for (const n of [...normal, emptyNote, wordNote, ...cancelNotes]) {
-  await conn.evaluate(`window.zhixing.db.deleteNote(${n.id}).catch(() => 0)`)
+  await app.evaluate(`window.zhixing.db.deleteNote(${n.id}).catch(() => 0)`)
 }
 
-conn.ws.close()
-child.kill()
+app.ws.close()
 server.close()
 await sleep(500)
-rmSync(tmpHome, { recursive: true, force: true })
+await app.close()
 
-const failed = results.filter(([, ok]) => !ok)
-console.log('')
-console.log((results.length - failed.length) + '/' + results.length + ' 项通过（假端点共收到 ' + requests + ' 次请求）')
-process.exit(failed.length ? 1 : 0)
+process.exit(finish())

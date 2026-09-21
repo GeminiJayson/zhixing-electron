@@ -3,7 +3,7 @@ export declare function scanLine(
   text: string,
   from: number,
   to: number,
-  state: { tpl: boolean; block: boolean }
+  state: { tpl: boolean; block: boolean; tail: string }
 ): number
 export declare function declLineCount(text: string, startOffset: number): number
 export declare function renameRefs(text: string): string

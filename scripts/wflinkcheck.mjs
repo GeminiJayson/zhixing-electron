@@ -19,95 +19,21 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { setTimeout as sleep } from 'node:timers/promises'
+import { ROOT, launchApp, createChecker, J, sleep } from './lib/cdp.mjs'
 
+const root = ROOT
 const require = createRequire(import.meta.url)
-const electronPath = require('electron')
-const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const tmpHome = join(root, '.screenshots', 'wflink-home')
-const shotDir = join(root, '.screenshots')
+const tmpHome = join(ROOT, '.screenshots', 'wflink-home')
 const PORT = 9281
+const shotDir = join(root, '.screenshots')
 
-const realDb = join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db')
-if (!existsSync(realDb)) {
-  console.error('✗ 找不到真实库：' + realDb)
-  process.exit(1)
-}
-rmSync(tmpHome, { recursive: true, force: true })
-mkdirSync(tmpHome, { recursive: true })
-copyFileSync(realDb, join(tmpHome, 'zhixing.db'))
-
-const SYS_PATH = ['C:\\Windows\\System32', 'C:\\Windows', 'C:\\Windows\\System32\\Wbem'].join(';')
-const child = spawn(
-  electronPath,
-  ['.', '--remote-debugging-port=' + PORT, '--user-data-dir=' + join(tmpHome, 'profile')],
-  {
-    cwd: root,
-    env: { ...process.env, PATH: SYS_PATH + ';' + (process.env.PATH ?? ''), ZHIXING_HOME: tmpHome },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  }
-)
-
-const list = async () => {
-  try {
-    return await (await fetch('http://127.0.0.1:' + PORT + '/json/list')).json()
-  } catch {
-    return []
-  }
-}
-const connect = async (target) => {
-  const ws = new WebSocket(target.webSocketDebuggerUrl)
-  await new Promise((res, rej) => {
-    ws.addEventListener('open', res, { once: true })
-    ws.addEventListener('error', rej, { once: true })
-  })
-  const send = (method, params = {}) =>
-    new Promise((resolve) => {
-      const id = Math.floor(Math.random() * 1e6)
-      const h = (ev) => {
-        const m = JSON.parse(ev.data)
-        if (m.id !== id) return
-        ws.removeEventListener('message', h)
-        resolve(m)
-      }
-      ws.addEventListener('message', h)
-      ws.send(JSON.stringify({ id, method, params }))
-    })
-  await send('Runtime.enable')
-  const evaluate = async (expression, awaitPromise = true) => {
-    const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise })
-    if (r.result?.exceptionDetails)
-      throw new Error(r.result.exceptionDetails.exception?.description ?? 'eval failed')
-    return r.result?.result?.value
-  }
-  return { send, evaluate }
-}
-
-let main = null
-for (let i = 0; i < 60 && !main; i++) {
-  const pages = await list()
-  main = pages.find((t) => t.type === 'page')
-  if (!main) await sleep(500)
-}
-if (!main) {
-  console.error('✗ 主窗口没起来')
-  child.kill()
-  process.exit(1)
-}
-const conn = await connect(main)
-await sleep(2500)
-
-const results = []
-const check = (name, ok, detail = '') => {
-  results.push([name, ok])
-  console.log((ok ? '✓ ' : '✗ ') + name + (detail ? ' — ' + detail : ''))
-}
-const J = (v) => JSON.stringify(v)
+const app = await launchApp({ port: PORT, home: tmpHome })
+const { check, finish, results } = createChecker()
 const STAMP = 'LK' + Date.now().toString(36)
 
 /** 视口坐标（CSS 像素），与 Input.dispatchMouseEvent 同一坐标系。 */
 const mouse = (type, x, y, buttons) =>
-  conn.send('Input.dispatchMouseEvent', {
+  app.send('Input.dispatchMouseEvent', {
     type,
     x: Math.round(x),
     y: Math.round(y),
@@ -123,7 +49,7 @@ const mouse = (type, x, y, buttons) =>
  * 文字也算进去，中心点会落到文字上 —— 而文字是 pointer-events:none，点它等于点空气。
  */
 const centerOf = (expr) =>
-  conn.evaluate(
+  app.evaluate(
     `(() => {
        const el = ${expr}
        if (!el) return null
@@ -135,7 +61,7 @@ const centerOf = (expr) =>
 
 /** 在连线上找一个**真正能命中**的点：弧长中点常常正好压在某个节点上。 */
 const hoverPointOf = (selector) =>
-  conn.evaluate(
+  app.evaluate(
     `(() => {
        const path = document.querySelector(${JSON.stringify(selector)})
        if (!path) return null
@@ -158,7 +84,7 @@ const nodeExpr = (title) =>
 
 try {
   // 甲 → 乙 → 丙 顺序链，末尾一个条件节点「判」，它的满足分支指向 乙
-  const tpl = await conn.evaluate(
+  const tpl = await app.evaluate(
     `window.zhixing.db.saveWorkflowTemplate({ name: ${J(STAMP)}, start_policy: 'first', nodes: [
         { id: -1, title: '甲', order_index: 0 },
         { id: -2, title: '乙', order_index: 1 },
@@ -168,9 +94,9 @@ try {
   )
   check('测试模板已建立', tpl?.nodes?.length === 4, J(tpl?.problems ?? ''))
 
-  await conn.evaluate(`document.querySelector('[data-nav-item="workflow"]').click()`)
+  await app.evaluate(`document.querySelector('[data-nav-item="workflow"]').click()`)
   await sleep(1400)
-  await conn.evaluate(`(() => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('自动布局')); if (b) b.click() })()`)
+  await app.evaluate(`(() => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('自动布局')); if (b) b.click() })()`)
   await sleep(900)
 
   // ------------------------------------------------ 1. 删除按钮压在线上
@@ -178,7 +104,7 @@ try {
   check('分支连线有一段可以悬停命中（没有整条压在节点上）', Boolean(midOfBranch), J(midOfBranch))
   await mouse('mouseMoved', midOfBranch.x, midOfBranch.y, 0)
   await sleep(250)
-  const delPos = await conn.evaluate(
+  const delPos = await app.evaluate(
     `(() => {
        const path = document.querySelector('path.wf-edge--branch-true')
        const del = document.querySelector('.edge-del circle')
@@ -196,7 +122,7 @@ try {
   )
 
   // ------------------------------------------------ 2. 从普通步骤主动拉线到指定节点
-  const portPoint = await conn.evaluate(
+  const portPoint = await app.evaluate(
     `(() => {
        const jia = ${nodeExpr('甲')}
        const port = jia && document.querySelector('.wf-port[data-wf-port="' + jia.getAttribute('data-wf-node') + '"]')
@@ -214,7 +140,7 @@ try {
   await sleep(80)
   await mouse('mousePressed', portPoint.x, portPoint.y, 1)
   await sleep(160)
-  const dragStarted = await conn.evaluate(`document.querySelectorAll('.graph__edge-drag').length`)
+  const dragStarted = await app.evaluate(`document.querySelectorAll('.graph__edge-drag').length`)
   await mouse('mouseMoved', (portPoint.x + bingPoint.x) / 2, (portPoint.y + bingPoint.y) / 2, 1)
   await sleep(90)
   await mouse('mouseMoved', bingPoint.x, bingPoint.y, 1)
@@ -223,9 +149,9 @@ try {
   await sleep(1000)
   check('按下端口后出现拉线预览', dragStarted === 1, J(dragStarted))
 
-  const pulled = await conn.evaluate(`document.querySelectorAll('path.wf-edge--branch-jump').length`)
+  const pulled = await app.evaluate(`document.querySelectorAll('path.wf-edge--branch-jump').length`)
   check('从普通步骤的端口能拉出一条「跳到」连线', pulled === 1, J(pulled))
-  const afterPull = await conn.evaluate(`window.zhixing.db.workflowTemplate(${tpl.id})`)
+  const afterPull = await app.evaluate(`window.zhixing.db.workflowTemplate(${tpl.id})`)
   check(
     '拉线落库为「完成后跳到」',
     afterPull.nodes.find((n) => n.title === '甲')?.branch_node_id ===
@@ -242,9 +168,9 @@ try {
   await sleep(60)
   await mouse('mouseReleased', delPoint.x, delPoint.y, 0)
   await sleep(1000)
-  const afterRemoveDel = await conn.evaluate(`document.querySelectorAll('path.wf-edge--branch-jump').length`)
+  const afterRemoveDel = await app.evaluate(`document.querySelectorAll('path.wf-edge--branch-jump').length`)
   check('点删除按钮能把连线删掉', afterRemoveDel === 0, J(afterRemoveDel))
-  const afterRemove = await conn.evaluate(`window.zhixing.db.workflowTemplate(${tpl.id})`)
+  const afterRemove = await app.evaluate(`window.zhixing.db.workflowTemplate(${tpl.id})`)
   check(
     '删线落库：甲 的「跳到」被清空',
     afterRemove.nodes.find((n) => n.title === '甲')?.branch_node_id === null,
@@ -260,7 +186,7 @@ try {
   await sleep(60)
   await mouse('mouseReleased', yiPoint.x, yiPoint.y, 0)
   await sleep(400)
-  const stepDel = await conn.evaluate(
+  const stepDel = await app.evaluate(
     `(async () => {
        const wait = (ms) => new Promise((r) => setTimeout(r, ms))
        const btn = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === '删除步骤')
@@ -277,7 +203,7 @@ try {
        return { left: [...document.querySelectorAll('g.wf-node .wf-node__title')].map((t) => t.textContent) }
      })()`
   )
-  const afterDelete = await conn.evaluate(`window.zhixing.db.workflowTemplate(${tpl.id})`)
+  const afterDelete = await app.evaluate(`window.zhixing.db.workflowTemplate(${tpl.id})`)
   check('被引用的步骤能删掉', stepDel && !stepDel.error && !stepDel.left.includes('乙'), J(stepDel))
   check(
     '删除时指向它的引用被一并清空',
@@ -286,10 +212,10 @@ try {
   )
 
   // 顺手留一张图，方便肉眼复核连线与端口
-  const box = await conn.evaluate(
+  const box = await app.evaluate(
     `(() => { const r = document.querySelector('.wf-canvas').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) } })()`
   )
-  const shot = await conn.send('Page.captureScreenshot', {
+  const shot = await app.send('Page.captureScreenshot', {
     format: 'png',
     clip: { x: box.x, y: box.y, width: box.w, height: Math.min(box.h, 620), scale: 1.5 },
   })
@@ -298,8 +224,5 @@ try {
 } catch (err) {
   check('脚本执行完成', false, err instanceof Error ? err.message : String(err))
 }
-
-const failed = results.filter(([, ok]) => !ok)
-console.log('\n' + (failed.length ? '✗ ' + failed.length + ' 项未通过' : '✓ 全部通过') + `（${results.length} 项）`)
-child.kill()
-process.exit(failed.length ? 1 : 0)
+await app.close()
+process.exit(finish())

@@ -484,6 +484,19 @@ describe('架构约束 · 任务↔笔记关联必须能掉链', () => {
  * 在样板区段里藏着自己的常量（MARKER / shotDir / root）或第三种 connect() 实现。
  * 盲改只会把 44 个本机验不了的脚本改坏，所以留一条棘轮把现状钉住：
  * 份数只许往下走，迁移一个就把下面的数字减一。
+ *
+ * 2026-09-22：棘轮 20 → 15。迁移器（scripts/lib/migrate-cdp.mjs）修掉三个真实缺陷后
+ * 把 ai* 三家与热键/同步/双链三个脚本迁绿（表达式体箭头函数的函数体写在下一行被丢掉；
+ * 正则里的转义括号被当成真括号；改名连接对象时连字符串里的页面侧代码一起改）。
+ *
+ * 一度想一次迁 11 个，逐条与原版对照后只留了 5 个，其余按「没跑绿就不迁」退回：
+ *   - importcheck / officecheck：样板区段里造夹具，而 lib 的 launchApp 会先清空 home
+ *     —— 机械迁移必然产出一个读文件 ENOENT 的脚本（迁移器现在直接拒绝这类）。
+ *   - aicheck：原版 16/25，迁后更差一项。
+ *   - layoutcheck / wfdialog：原版自己也起不来（无法连接渲染进程），无从验证。
+ *   - flashhotkeycheck：本机没有可用交互会话，读选区那一项永远为空。
+ * 顺带把 lib 的 CDP 超时从 15s 抬到 45s（可配）：wflinkcheck 差点被这 15s 记成迁移回归。
+ * 教训：迁移数不是指标，「迁完还跑得动」才是；而跑不动要先分清是脚本坏了还是机器忙。
  */
 describe('架构约束 · CDP 样板只许减少', () => {
   const dir = join(process.cwd(), 'scripts')
@@ -517,12 +530,12 @@ describe('架构约束 · CDP 样板只许减少', () => {
     }
   })
 
-  it('复制着旧样板的脚本份数不得超过 20（只许减）', () => {
+  it('复制着旧样板的脚本份数不得超过 15（只许减）', () => {
     const copies = readdirSync(dir)
       .filter((n) => n.endsWith('.mjs') && !n.startsWith('.'))
       .filter((n) => readFileSync(join(dir, n), 'utf8').includes('new WebSocket'))
     // 棘轮值：迁掉一个就往下改一位。目标是把这里改到 0，然后删掉这条断言。
-    expect(copies.length, '又有人复制了 CDP 样板：' + copies.join(', ')).toBeLessThanOrEqual(20)
+    expect(copies.length, '又有人复制了 CDP 样板：' + copies.join(', ')).toBeLessThanOrEqual(15)
   })
 })
 /**
