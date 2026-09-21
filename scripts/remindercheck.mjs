@@ -269,7 +269,7 @@ try {
       const t = all.find((x) => x.type === 'page' && x.url.includes('reminder=1'))
       if (t) bubble = await connect(t)
     }
-    if (bubble) cards = await bubble.evaluate("document.querySelectorAll('.rbug__card').length", true)
+    if (bubble) cards = await bubble.evaluate("document.querySelectorAll('.modal--reminder').length", true)
     if (widget) notice = await widget.evaluate('window.__notice === null ? null : window.__notice', true)
     if (widget) {
       ballShown = await widget.evaluate(
@@ -288,10 +288,10 @@ try {
   // 知道了 → 从气泡里消失
   if (cards > 0) {
     await bubble.evaluate(
-      "[...document.querySelectorAll('.rbug__actions button')].find((b) => b.textContent.trim() === '知道了')?.click()"
+      "[...document.querySelectorAll('.reminder__actions button')].find((b) => b.textContent.trim() === '知道了')?.click()"
     )
     await sleep(1200)
-    const after = await bubble.evaluate("document.querySelectorAll('.rbug__card').length", true)
+    const after = await bubble.evaluate("document.querySelectorAll('.modal--reminder').length", true)
     check('点「知道了」后气泡收起该条', after === 0, 'after=' + after)
     const still = await main.evaluate(
       "window.zhixing.db.getTask(window.__r).then((t) => t && t.reminder_at)",

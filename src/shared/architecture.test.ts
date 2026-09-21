@@ -379,3 +379,34 @@ describe('架构约束 · 验证脚本不依赖外部 CLI', () => {
     expect(offenders, '本机没有 sqlite3 CLI —— 这些调用会让脚本在断言之前就崩掉').toEqual([])
   })
 })
+
+/**
+ * 第十三道护栏：提醒卡片与应用弹框共用一套样式。
+ *
+ * 此前同一个应用里有两张不一样的卡片：提醒用暖色描边 + lg 圆角 + lg 投影，
+ * 弹框（以及跑在独立窗口里的捕获 / 条件确认）用 --border + xl 圆角 + xl 投影。
+ * 现在三个面共用 .modal，主题换了也只有一处要跟。
+ */
+describe('架构约束 · 提醒卡片与应用弹框共用一套样式', () => {
+  const read = (p: string): string => readFileSync(join(process.cwd(), p), 'utf8')
+
+  it('两个提醒面都用 .modal 那张卡片', () => {
+    for (const f of [
+      'src/renderer/src/components/ReminderPopup.tsx',
+      'src/renderer/src/ReminderApp.tsx'
+    ]) {
+      expect(read(f), f + ' 应复用 .modal 卡片').toContain('modal modal--reminder')
+    }
+  })
+
+  it('提醒卡片不许再自己画一遍外观', () => {
+    const reminderCss = read('src/renderer/src/styles/reminder.css')
+    // 判据是「有没有引用卡片外观令牌」，而不是「有没有 background 这个词」——
+    // 这个文件本来就要把 surface 的底色压成 transparent（透明窗口的硬性要求）
+    for (const token of ['--bg-layer', '--radius-', '--shadow-']) {
+      expect(reminderCss.includes(token), 'reminder.css 不该再引用卡片外观令牌 ' + token).toBe(false)
+    }
+    // 投影是唯一的例外：透明窗口里必须显式去掉（否则被窗口边界裁成方角残影）
+    expect(reminderCss).toContain('box-shadow: none')
+  })
+})

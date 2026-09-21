@@ -40,36 +40,27 @@ export function ReminderPopup({ onOpenTask, onChanged }: Props) {
   if (due.length === 0) return null
 
   return (
-    // 一任务一卡；定位交给容器，卡片自身取消 fixed 以便纵向堆叠
-    <div
-      style={{
-        position: 'fixed',
-        right: 'var(--space-5)',
-        top: 'calc(var(--titlebar-h) + var(--space-3))',
-        width: 300,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 'var(--space-2)',
-        zIndex: 'var(--z-reminder)',
-      }}
-    >
+    // 一任务一卡；定位交给容器（.reminder-stack），卡片自身用应用弹框那套 .modal
+    <div className="reminder-stack">
       {due.map((task) => (
         <div
           key={task.id}
-          className="reminder"
+          className="modal modal--reminder"
           role="alertdialog"
           aria-label="到点提醒"
-          style={{ position: 'static', width: '100%' }}
         >
-          <header className="reminder__head">
-            <Bell size={14} aria-hidden /> 到点提醒
+          <header className="modal__head">
+            <Bell size={15} aria-hidden />
+            <h2>到点提醒</h2>
           </header>
-          <p className="reminder__title">{task.title}</p>
-          <p className="u-aux">
-            {task.reminder_at ? `提醒时刻 ${task.reminder_at.slice(11, 16)}` : '已到提醒时间'}
-            {task.due_date ? ` · 截止 ${task.due_date}` : ''}
-          </p>
-          <div className="reminder__actions">
+          <div className="modal__body">
+            <p className="reminder__title">{task.title}</p>
+            <p className="u-aux">
+              {task.reminder_at ? `提醒时刻 ${task.reminder_at.slice(11, 16)}` : '已到提醒时间'}
+              {task.due_date ? ` · 截止 ${task.due_date}` : ''}
+            </p>
+          </div>
+          <div className="modal__foot reminder__actions">
             <button className="text-btn" onClick={() => void snooze(task.id, 5)}>
               稍后 5 分
             </button>

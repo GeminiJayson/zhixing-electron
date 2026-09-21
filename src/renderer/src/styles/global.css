@@ -130,6 +130,20 @@ textarea {
 .modal--dialog {
   width: min(420px, calc(100vw - 64px));
 }
+
+/* ---- 到点提醒（主窗口卡片 / 悬浮表情气泡）----
+   两个面用的是同一张 .modal 卡片，这里只留它俩共用的两段排版。
+   放在 global.css 而不是某个窗口自己的样式表里：气泡窗口不加载 app.css。 */
+.reminder__title {
+  margin: 0;
+  font-size: var(--text-body);
+  word-break: break-word;
+}
+.reminder__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
 .dialog__message {
   margin: 0;
   white-space: pre-wrap;

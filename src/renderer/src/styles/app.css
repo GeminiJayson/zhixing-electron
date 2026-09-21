@@ -645,8 +645,11 @@
   background: var(--success);
 }
 
-/* 到点提醒 */
-.reminder {
+/* 到点提醒：主窗口里的一叠卡片。
+   卡片本体直接用应用弹框那套 .modal —— 提醒与独立弹窗（捕获 / 条件确认）本来就是同一种东西，
+   此前两边各画一套（提醒用暖色描边 + lg 圆角 + lg 投影，弹框用 --border + xl 圆角 + xl 投影），
+   同一个应用里两张卡片长得不一样。现在提醒复用它，主题换了也只有一处要跟。 */
+.reminder-stack {
   position: fixed;
   right: var(--space-5);
   top: calc(var(--titlebar-h) + var(--space-3));
@@ -654,31 +657,11 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-3);
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--accent-warm);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
   z-index: var(--z-reminder);
+}
+.modal--reminder {
+  width: 100%;
   animation: toast-in var(--dur-fast) var(--ease-enter);
-}
-.reminder__head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--accent-warm);
-  font-weight: 600;
-  font-size: var(--text-aux);
-}
-.reminder__title {
-  margin: 0;
-  font-size: var(--text-body);
-  word-break: break-word;
-}
-.reminder__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
 }
 /* 捕获面板的样式已移到 global.css（它现在跑在独立窗口里，见 .modal--capture） */
 

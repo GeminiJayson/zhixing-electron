@@ -1,6 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Bell } from '@renderer/lib/icons'
+import { bindHostEvents, subscribeDomain } from '@shared/events'
+import { parseSettings } from '@shared/settings'
 import type { Task } from '@shared/types'
+import { applyAppearance } from './theme'
 
 /**
  * 提醒气泡（?reminder=1）—— 挂在悬浮表情旁边的透明小窗。
@@ -16,6 +19,24 @@ export function ReminderApp() {
   useEffect(() => {
     void window.zhixing.reminder.current().then(setRows)
     return window.zhixing.reminder.onPush(setRows)
+  }, [])
+
+  /**
+   * 外观：气泡同样是**独立渲染进程**，主窗口那套主题不在这个进程里 ——
+   * 不自己应用一次的话，卡片用的是 tokens.css 的兜底色，跟应用里的主题对不上
+   * （实测：主窗口浅色、气泡深色）。与浮窗同一套路，靠 'settings' 域广播重铺。
+   */
+  useEffect(() => {
+    bindHostEvents(window.zhixing.db)
+    const syncAppearance = async (): Promise<void> => {
+      try {
+        applyAppearance(parseSettings(await window.zhixing.db.settings()))
+      } catch {
+        // 读不到设置就用默认主题，不能因为外观把提醒卡住
+      }
+    }
+    void syncAppearance()
+    return subscribeDomain(['settings'], () => void syncAppearance())
   }, [])
 
   /**
@@ -37,16 +58,19 @@ export function ReminderApp() {
   return (
     <div ref={hostRef} className="rbug">
       {rows.map((t) => (
-        <div key={t.id} className="rbug__card" role="alertdialog" aria-label="到点提醒">
-          <header className="rbug__head">
-            <Bell size={13} aria-hidden /> 到点提醒
+        <div key={t.id} className="modal modal--reminder" role="alertdialog" aria-label="到点提醒">
+          <header className="modal__head">
+            <Bell size={15} aria-hidden />
+            <h2>到点提醒</h2>
           </header>
-          <p className="rbug__title">{t.title}</p>
-          <p className="rbug__meta">
-            {t.reminder_at ? `提醒时刻 ${t.reminder_at.slice(11, 16)}` : '已到提醒时间'}
-            {t.due_date ? ` · 截止 ${t.due_date}` : ''}
-          </p>
-          <div className="rbug__actions">
+          <div className="modal__body">
+            <p className="reminder__title">{t.title}</p>
+            <p className="u-aux">
+              {t.reminder_at ? `提醒时刻 ${t.reminder_at.slice(11, 16)}` : '已到提醒时间'}
+              {t.due_date ? ` · 截止 ${t.due_date}` : ''}
+            </p>
+          </div>
+          <div className="modal__foot reminder__actions">
             <button
               className="text-btn"
               onClick={() => act(window.zhixing.reminder.snooze(t.id, 5))}

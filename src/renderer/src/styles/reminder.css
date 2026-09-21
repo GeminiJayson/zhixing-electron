@@ -1,5 +1,8 @@
-/* 提醒气泡：透明窗口 + 一张圆角卡片，挂在悬浮表情旁边。
-   与浮窗同一个理由，只对这一个 surface 生效 —— 主窗口若也透明，主题变量一起失效。 */
+/* 提醒气泡：透明窗口 + 应用弹框那张卡片，挂在悬浮表情旁边。
+   与浮窗同一个理由，只对这一个 surface 生效 —— 主窗口若也透明，主题变量一起失效。
+
+   这里**不定义卡片外观**：卡片就是 .modal（见 global.css），与主窗口提醒卡片、
+   独立弹窗（捕获 / 条件确认）用的是同一套。这个文件只负责「窗口里怎么放它」。 */
 html[data-surface='reminder'],
 html[data-surface='reminder'] body,
 html[data-surface='reminder'] #root {
@@ -14,41 +17,14 @@ html[data-surface='reminder'] #root {
   padding: 0;
 }
 
-.rbug__card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-3);
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--accent-warm);
-  border-radius: var(--radius-lg);
-  /* 不投影：阴影会超出窗口被硬裁成矩形边，反而更像「第二层边框」（同 .widget__card） */
-  animation: toast-in var(--dur-fast) var(--ease-enter);
-}
-
-.rbug__head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--accent-warm);
-  font-weight: 600;
-  font-size: var(--text-aux);
-}
-
-.rbug__title {
-  margin: 0;
-  font-size: var(--text-body);
-  word-break: break-word;
-}
-
-.rbug__meta {
-  margin: 0;
-  color: var(--fg-secondary);
-  font-size: var(--text-aux);
-}
-
-.rbug__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
+/* 与捕获窗 / 条件窗同理：窗口本身就是那张卡片本身。
+   宽度交给窗口（渲染层量完高度回报，主进程据此贴边定位）；
+   透明窗口里不能留投影 —— 阴影会被窗口边界裁成一圈浅灰的方角残影。 */
+html[data-surface='reminder'] .modal {
+  width: 100%;
+  max-width: none;
+  max-height: none;
+  /* 高度交给内容，窗口随后贴合它（写成 100% 会与窗口互相追） */
+  height: auto;
+  box-shadow: none;
 }
