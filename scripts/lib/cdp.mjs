@@ -200,6 +200,23 @@ export async function launchApp({
     /** 跑一段浏览器侧表达式，返回它的值。 */
     evaluate,
     /**
+     * 订阅一条 CDP 事件（例如 Runtime.consoleAPICalled）。
+     * 返回取消订阅的函数。与 send 的按 id 配对互不干扰。
+     */
+    on: (method, handler) => {
+      const h = (ev) => {
+        let x
+        try {
+          x = JSON.parse(ev.data)
+        } catch {
+          return
+        }
+        if (x.method === method) handler(x.params ?? {})
+      }
+      ws.addEventListener('message', h)
+      return () => ws.removeEventListener('message', h)
+    },
+    /**
      * 二次挂载到另一个目标（浮窗 / 提醒窗 / 条件窗…）。
      *
      * 有一批脚本要同时看主窗口和独立窗口：先把 widget 关掉让提醒走主窗口卡片，

@@ -13,102 +13,30 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { setTimeout as sleep } from 'node:timers/promises'
+import { ROOT, launchApp, createChecker, J, sleep } from './lib/cdp.mjs'
 
-const require = createRequire(import.meta.url)
-const electronPath = require('electron')
-const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const tmpHome = join(root, '.screenshots', 'bloub-home')
+// 老脚本里的 root 一律指向仓库根，原样保留的自有声明就能继续用
+const root = ROOT
+// shotDir 是脚本自己的（截图落到 .screenshots），别当成样板丢掉
 const shotDir = join(root, '.screenshots')
+
+const tmpHome = join(ROOT, '.screenshots', 'bloub-home')
 const PORT = 9311
 
-const realDb = join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db')
-if (!existsSync(realDb)) {
-  console.error('✗ 找不到真实库：' + realDb)
-  process.exit(1)
-}
-rmSync(tmpHome, { recursive: true, force: true })
-mkdirSync(tmpHome, { recursive: true })
-copyFileSync(realDb, join(tmpHome, 'zhixing.db'))
-
-const SYS_PATH = ['C:\\Windows\\System32', 'C:\\Windows', 'C:\\Windows\\System32\\Wbem'].join(';')
-const child = spawn(
-  electronPath,
-  ['.', '--remote-debugging-port=' + PORT, '--user-data-dir=' + join(tmpHome, 'profile')],
-  {
-    cwd: root,
-    env: { ...process.env, PATH: SYS_PATH + ';' + (process.env.PATH ?? ''), ZHIXING_HOME: tmpHome },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  }
-)
-
-const list = async () => {
-  try {
-    return await (await fetch('http://127.0.0.1:' + PORT + '/json/list')).json()
-  } catch {
-    return []
-  }
-}
-const connect = async (target) => {
-  const ws = new WebSocket(target.webSocketDebuggerUrl)
-  await new Promise((res, rej) => {
-    ws.addEventListener('open', res, { once: true })
-    ws.addEventListener('error', rej, { once: true })
-  })
-  const send = (method, params = {}) =>
-    new Promise((resolve) => {
-      const id = Math.floor(Math.random() * 1e6)
-      const h = (ev) => {
-        const m = JSON.parse(ev.data)
-        if (m.id !== id) return
-        ws.removeEventListener('message', h)
-        resolve(m)
-      }
-      ws.addEventListener('message', h)
-      ws.send(JSON.stringify({ id, method, params }))
-    })
-  await send('Runtime.enable')
-  const evaluate = async (expression, awaitPromise = true) => {
-    const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise })
-    if (r.result?.exceptionDetails)
-      throw new Error(r.result.exceptionDetails.exception?.description ?? 'eval failed')
-    return r.result?.result?.value
-  }
-  return { send, evaluate }
-}
-
-let main = null
-for (let i = 0; i < 60 && !main; i++) {
-  main = (await list()).find((t) => t.type === 'page' && !String(t.url).includes('widget=1'))
-  if (!main) await sleep(500)
-}
-if (!main) {
-  console.error('✗ 主窗口没起来')
-  child.kill()
-  process.exit(1)
-}
-const host = await connect(main)
-await sleep(2500)
-
-const results = []
-const check = (name, ok, detail = '') => {
-  results.push({ name, ok })
-  console.log((ok ? '✓ ' : '✗ ') + name + (detail ? ' — ' + detail : ''))
-}
-const J = (v) => JSON.stringify(v)
-
+const app = await launchApp({ port: PORT, home: tmpHome })
+const { check, finish } = createChecker()
 try {
   // 显示浮窗，再收成球（close 的语义就是「收起成球」）
-  await host.evaluate(`window.zhixing.widget.toggle()`)
+  await app.evaluate(`window.zhixing.widget.toggle()`)
   await sleep(1200)
-  await host.evaluate(`window.zhixing.widget.close()`)
+  await app.evaluate(`window.zhixing.widget.close()`)
   await sleep(1500)
 
-  let ball = (await list()).find((t) => t.type === 'page' && String(t.url).includes('widget=1'))
-  check('浮窗（球形态）已出现', Boolean(ball), J((await list()).map((t) => String(t.url).slice(-40))))
+  let ball = (await app.targets()).find((t) => t.type === 'page' && String(t.url).includes('widget=1'))
+  check('浮窗（球形态）已出现', Boolean(ball), J((await app.targets()).map((t) => String(t.url).slice(-40))))
   if (!ball) throw new Error('没有浮窗可测')
 
-  const conn = await connect(ball)
+  const conn = await app.attach((x) => String(x.url).includes('widget=1'))
   await sleep(1200)
 
   const probe = () =>
@@ -188,7 +116,7 @@ try {
   check('球的颜色等于主题强调色', before?.same === true, J(before))
 
   // 换强调色：浮窗靠 settings 域的广播实时重铺，不该等重启
-  await host.evaluate(`window.zhixing.db.setSetting('accent_color', '#e8483f')`)
+  await app.evaluate(`window.zhixing.db.setSetting('accent_color', '#e8483f')`)
   await sleep(1200)
   const after = await colorOf()
   check(
@@ -214,8 +142,5 @@ try {
 } catch (err) {
   check('脚本执行完成', false, err instanceof Error ? err.message : String(err))
 }
-
-const failed = results.filter((r) => !r.ok)
-console.log('\n' + (failed.length ? '✗ ' + failed.length + ' 项未通过' : '✓ 全部通过') + `（${results.length} 项）`)
-child.kill()
-process.exit(failed.length ? 1 : 0)
+await app.close()
+process.exit(finish())

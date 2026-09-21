@@ -8,14 +8,16 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { copyFileSync, existsSync, mkdirSync, rmSync } from 'node:fs'
-import { setTimeout as sleep } from 'node:timers/promises'
+import { ROOT, launchApp, createChecker, J, sleep } from './lib/cdp.mjs'
+
+// 老脚本里的 root 一律指向仓库根，原样保留的自有声明就能继续用
+const root = ROOT
+// 这三行必须排在 sql() 之前：dbFile 引用了 tmpHome，而 sql() 的函数体要用 require。
+// （typeText/pressEnter 里引用的是 app，那是函数体内部，调用时才求值，不受顺序影响。）
 const require = createRequire(import.meta.url)
-const electronPath = require('electron')
-const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const backup = join(root, '..', 'backups', 'electron-migration', 'zhixing-before-electron-write.db')
-const tmpHome = join(root, '.screenshots', 'dialog-home')
-const dbFile = join(tmpHome, 'zhixing.db')
+const tmpHome = join(ROOT, '.screenshots', 'dialog-home')
 const PORT = 9253
+const dbFile = join(tmpHome, 'zhixing.db')
 const sql = (q) => {
   // 原来走 `execFileSync('sqlite3', ...)` —— 那要系统装了 CLI 才有，本机与 CI 都没有，
   // 于是脚本一跑到 sql() 就 ENOENT 崩掉，后面的断言根本没机会执行（这也是污染长期没被发现的原因）。
@@ -28,48 +30,27 @@ const sql = (q) => {
     db.close()
   }
 }
-// 迁移前那份备份早已从工作区清掉 —— 缺了就退回「当前正式库的副本」。
-// 这些脚本要的只是「一张有数据的库」，对来源不敏感；没有这层回退，它们一启动就退出。
-const liveDb = join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db')
-const seedDb = existsSync(backup) ? backup : liveDb
-if (!existsSync(seedDb)) {
-  console.error('✗ 既没有迁移前备份，也找不到 ' + liveDb)
-  process.exit(1)
-}
-console.log('【基库】' + (seedDb === backup ? '迁移前备份' : '当前正式库副本'))
-rmSync(tmpHome, { recursive: true, force: true })
-mkdirSync(tmpHome, { recursive: true })
-copyFileSync(seedDb, dbFile)
-const child = spawn(electronPath, ['.', `--remote-debugging-port=${PORT}`, `--user-data-dir=${join(tmpHome, 'p')}`], { cwd: root, env: { ...process.env, ZHIXING_HOME: tmpHome }, stdio: 'ignore' })
-let page = null
-for (let i = 0; i < 40 && !page; i++) {
-  await sleep(500)
-  try { const l = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json(); page = l.find((t) => t.type === 'page') } catch {}
-}
-if (!page) { console.error('✗ 无法连接'); child.kill(); process.exit(1) }
-const ws = new WebSocket(page.webSocketDebuggerUrl)
-await new Promise((r) => ws.addEventListener('open', r, { once: true }))
-const send = (m, p = {}) => new Promise((res) => {
-  const id = Math.floor(Math.random() * 1e6)
-  const h = (ev) => { const x = JSON.parse(ev.data); if (x.id !== id) return; ws.removeEventListener('message', h); res(x) }
-  ws.addEventListener('message', h); ws.send(JSON.stringify({ id, method: m, params: p })) })
-await send('Runtime.enable')
-ws.addEventListener('message', (ev) => { const x = JSON.parse(ev.data); if (x.method === 'Runtime.consoleAPICalled') { const t = x.params.args.map(a => a.value ?? a.description ?? '').join(' '); if (t.includes('[dlg]')) console.log('  RENDERER:', t) } })
-const ev = async (e) => { const r = await send('Runtime.evaluate', { expression: e, returnByValue: true, awaitPromise: true }); return r.result?.result?.value }
 const typeText = async (text) => {
   for (const ch of text) {
-    await send('Input.dispatchKeyEvent', { type: 'char', text: ch, unmodifiedText: ch })
+    await app.send('Input.dispatchKeyEvent', { type: 'char', text: ch, unmodifiedText: ch })
     await sleep(25)
   }
 }
 const pressEnter = async () => {
   for (const type of ['keyDown', 'keyUp']) {
-    await send('Input.dispatchKeyEvent', { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 })
+    await app.send('Input.dispatchKeyEvent', { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 })
   }
 }
-await sleep(2800)
-const results = []
-const check = (n, ok, d = '') => { results.push([n, ok]); console.log(`${ok ? '✓' : '✗'} ${n}${d ? ' — ' + d : ''}`) }
+
+const app = await launchApp({ port: PORT, home: tmpHome })
+const { check, finish } = createChecker()
+/** 主窗口求值器：老脚本里叫 ev。 */
+const ev = app.evaluate
+/** 渲染进程里带 [dlg] 的日志照旧打出来，排查时有用。 */
+app.on('Runtime.consoleAPICalled', (p) => {
+  const t = (p.args ?? []).map((a) => a.value ?? a.description ?? '').join(' ')
+  if (t.includes('[dlg]')) console.log('  RENDERER:', t)
+})
 const clickText = (sel, text) =>
   ev(`[...document.querySelectorAll('${sel}')].find(b => b.textContent.includes('${text}'))?.click()`)
 
@@ -97,7 +78,7 @@ check('对话框标题正确', String(dlg.title).includes('新建标签'), dlg.t
 
 await ev(`document.querySelector('.modal--dialog input.field')?.focus()`)
 await ev(`document.querySelector('.modal--dialog input.field')?.focus()`)
-await send('Input.insertText', { text: 'e2e-tag-name' })
+await app.send('Input.insertText', { text: 'e2e-tag-name' })
 await sleep(300)
 await pressEnter()
 await sleep(1000)
@@ -111,7 +92,10 @@ await clickText('.modal .text-btn', '关闭')
 await sleep(400)
 await clickText('.text-btn', '打开标签管理')
 await sleep(700)
-await ev(`[...document.querySelectorAll('.tag-row')].find(r => r.textContent.includes(renameFrom))?.querySelector('input[type=checkbox]')?.click()`)
+// 这里原本写成裸的 renameFrom —— 那是浏览器侧的标识符，在页面里并不存在。
+// 老脚本的 ev 不检查 exceptionDetails，表达式抛错也只返回 undefined，于是这一步**静默没做**、
+// 后面的断言照样过。lib 的 evaluate 会抛，才把它顶出来。
+await ev(`[...document.querySelectorAll('.tag-row')].find(r => r.textContent.includes('${renameFrom}'))?.querySelector('input[type=checkbox]')?.click()`)
 await sleep(300)
 await clickText('.modal .text-btn', '重命名')
 await sleep(600)
@@ -124,14 +108,13 @@ await clickText('.modal .text-btn', '新建')
 await sleep(500)
 await ev(`document.querySelector('.modal--dialog input.field')?.focus()`)
 await ev(`document.querySelector('.modal--dialog input.field')?.focus()`)
-await send('Input.insertText', { text: 'e2e-should-drop' })
+await app.send('Input.insertText', { text: 'e2e-should-drop' })
 await sleep(250)
 await clickText('.modal--dialog .text-btn', '取消')
 await sleep(600)
 check('取消后对话框关闭', (await ev(`!document.querySelector('.modal--dialog')`)) === true)
 check('取消的内容没有落库', sql("SELECT COUNT(*) FROM tag WHERE name = 'e2e-should-drop';") === '0')
 
-ws.close(); child.kill(); await sleep(400)
 const realDb = join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db')
 /**
  * 指定**另一个**库文件读一格。
@@ -148,7 +131,5 @@ const countOf = (file, q) => {
   }
 }
 check('真实库未被写入', countOf(realDb, "SELECT COUNT(*) FROM tag WHERE name LIKE 'e2e-%';") === '0')
-rmSync(tmpHome, { recursive: true, force: true })
-const failed = results.filter(([, ok]) => !ok).length
-console.log(`\n${results.length - failed}/${results.length} 项通过`)
-process.exit(failed ? 1 : 0)
+await app.close()
+process.exit(finish())
