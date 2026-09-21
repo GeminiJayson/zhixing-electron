@@ -411,3 +411,57 @@ describe('架构约束 · 提醒卡片与应用弹框共用一套样式', () => 
     expect(reminderCss).toContain('box-shadow: none')
   })
 })
+
+/**
+ * 第十四道护栏：检查脚本必须能失败。
+ *
+ * seedmonitor 覆盖最广，却只打印问题计数、从不设退出码 —— CI 里恒通过。
+ * 判据不是「有没有 print」，而是「有没有终止码」：脚本末尾必须有 process.exit 或 exitCode。
+ */
+describe('架构约束 · 检查脚本必须能失败', () => {
+  it('统计了问题的脚本必须有终止码', () => {
+    const dir = join(process.cwd(), 'scripts')
+    const offenders: string[] = []
+    for (const f of readdirSync(dir).filter((n) => n.endsWith('.mjs'))) {
+      const src = readFileSync(join(dir, f), 'utf8')
+      // 只看「收集了失败」的脚本：它们有 problems/failed 之类的计数
+      if (!/problems\.length|failed\.length|results\.filter/.test(src)) continue
+      if (!/process\.exit\(|process\.exitCode/.test(src)) offenders.push(f)
+    }
+    // 只报「既统计失败又从不设退出码」的 —— 那才是恒通过的假绿灯
+    expect(offenders, '统计了失败却不设退出码，等于这道检查永远不会红').toEqual([])
+  })
+})
+/**
+ * 第十五道护栏：任务↔笔记关联必须能掉链。
+ *
+ * 这张表曾经只增不减 —— 正文里删掉 [[标题]]，⇄N 计数和图谱边永远不消失。
+ * 修复靠两件事，缺一不可：写入时记来源（source），对账时按来源删行。
+ * 少任何一件，缺陷都会以另一种形式回来：不记来源 → 手动关联被误删；
+ * 不删行 → 又变回只增不减。
+ */
+describe('架构约束 · 任务↔笔记关联必须能掉链', () => {
+  const read = (p: string): string => readFileSync(join(process.cwd(), p), 'utf8')
+  const src = read('src/main/db/tasks.ts')
+
+  it('每条 INSERT 都要写明来源，否则对账时分不清该不该删', () => {
+    for (const m of src.matchAll(/INSERT OR IGNORE INTO task_note_link[^`]*/g)) {
+      expect(m[0], '写 task_note_link 必须带 source 列：' + m[0].slice(0, 80)).toContain('source')
+    }
+  })
+
+  it('对账函数必须真的删行，而不是只往上加', () => {
+    const fn = src.slice(src.indexOf('export function syncTaskNoteLinks'))
+    const body = fn.slice(0, fn.indexOf('export function attachTaskNote'))
+    expect(body, 'syncTaskNoteLinks 里没有 DELETE，就又变回只增不减了').toContain(
+      'DELETE FROM task_note_link'
+    )
+    expect(body, '一删一增要同事务，否则会留下半截关联').toContain('c.transaction(')
+    // 判定逻辑必须在可单测的纯函数里，别把规则散回 SQL
+    expect(body).toContain('planTaskNoteLinks(')
+  })
+
+  it('判据表结构：source 列要走 ensureAppExtensions，不许动 SCHEMA_VERSION', () => {
+    expect(read('src/main/db/connection.ts')).toContain("add('task_note_link', 'source'")
+  })
+})

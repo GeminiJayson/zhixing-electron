@@ -593,3 +593,12 @@ console.log('步骤 ' + results.steps + '，通过 ' + results.ok.length + '，�
 ws.close(); child.kill(); aiServer.close()
 await sleep(600)
 rmSync(tmpHome, { recursive: true, force: true })
+
+/**
+ * 有失败就以非零退出。
+ *
+ * 这是覆盖最广的那个端到端冒烟，但它此前**只打印计数**：CI 里恒通过，问题只能靠人翻日志。
+ * 其余 30+ 个检查脚本都是 process.exit(failed ? 1 : 0)，这里不该例外。
+ * 控制台告警不计入失败（启动期本就有噪声），但会在上面的行里报出来。
+ */
+process.exit(results.problems.length ? 1 : 0)

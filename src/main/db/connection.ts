@@ -162,6 +162,22 @@ function ensureAppExtensions(d: Database.Database): void {
   add('task', 'reminder_base', 'reminder_base TEXT')
   // 笔记的结构化属性（JSON 对象：{ "来源": "书籍", "评分": "5" }）
   add('note', 'props', 'props TEXT')
+  // 任务↔笔记关联的**来源**：'wiki' = 从正文 [[标题]] 派生，'manual' = 用户手动拉的边。
+  // 没有它，正文里删掉 [[标题]] 时无法判断这一行该不该跟着消失 ——
+  // 一律删会误伤手动关联，一律留则 ⇄N 计数与图谱边永远不消失。
+  add('task_note_link', 'source', 'source TEXT')
+  // 历史行补来源：能从正文里证实是派生的才算 wiki，其余按 manual 保守保留（绝不误删用户的手动关联）。
+  // 判据用 instr 而不是 LIKE，省得标题里的 % 或 _ 被当成通配符。
+  d.exec(
+    `UPDATE task_note_link SET source = 'wiki'
+       WHERE source IS NULL
+         AND EXISTS (
+           SELECT 1 FROM task t JOIN note n ON n.id = task_note_link.note_id
+            WHERE t.id = task_note_link.task_id
+              AND instr(t.notes_md, '[[' || n.title || ']]') > 0
+         )`
+  )
+  d.exec(`UPDATE task_note_link SET source = 'manual' WHERE source IS NULL`)
   // 工作流模板分类（对齐笔记树的「文件夹 → 笔记」两层）
   add('workflow_template', 'group_id', 'group_id INTEGER')
   // 保存的查询（智能清单）：把「我要看什么」固化成一条表达式

@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { clampPriority } from '../../shared/priority'
 import { reindexTask, removeFromIndex } from './fts'
 import { extractLinks } from '../../shared/wiki'
+import { planTaskNoteLinks, type LinkRow } from '../../shared/task-note-links'
 import { appendNote, createNote, getNote, resolveNoteTitle } from './notes'
 // 撤销「删除」需要从回收站恢复：trash.ts 只依赖 connection/fts，不会成环
 import { restoreTrash } from './trash'
@@ -72,28 +73,45 @@ export function recentNotes(limit = 5): Note[] {
 }
 
 /**
- * 任务 notes_md 里的 [[笔记标题]] 落成 task_note_link
- * （对齐 task_service._sync_wiki_links）。
+ * 任务 notes_md 里的 [[笔记标题]] 与 task_note_link 对账
+ * （对齐 task_service._sync_wiki_links 的「落链」，但补上它没有的「掉链」）。
  *
- * 这张表此前只有读取与删除路径、没有任何写入 —— 于是编辑器承诺的 [[标题]]、
- * 任务行的 ⇄N 计数、图谱的任务-笔记边全部恒为空。
+ * 这张表原先只增不减：把 [[标题]] 从正文里删掉，行还留着 ——
+ * 任务行的 ⇄N 计数和图谱里的任务-笔记边于是永远不消失。
+ * 反过来直接清空重写又会误伤手动关联（task_note_link.source = 'manual'
+ * 由 attachTaskNote / 图谱拉边写入，它并不出现在正文里），
+ * 所以对账规则按来源分开，判定逻辑在 shared/task-note-links.ts 里（可单测）。
  */
 export function syncTaskNoteLinks(taskId: number, notesMd: string): number {
-  const ins = conn().prepare(
-    'INSERT OR IGNORE INTO task_note_link (task_id, note_id) VALUES (?, ?)'
+  const c = conn()
+  const existing = c
+    .prepare(
+      'SELECT l.note_id AS note_id, n.title AS title, l.source AS source ' +
+        'FROM task_note_link l LEFT JOIN note n ON n.id = l.note_id WHERE l.task_id = ?'
+    )
+    .all(taskId) as LinkRow[]
+  const plan = planTaskNoteLinks(extractLinks(notesMd ?? ''), existing, resolveNoteTitle)
+  if (plan.remove.length === 0 && plan.add.length === 0) return 0
+
+  const del = c.prepare('DELETE FROM task_note_link WHERE task_id = ? AND note_id = ?')
+  const ins = c.prepare(
+    "INSERT OR IGNORE INTO task_note_link (task_id, note_id, source) VALUES (?, ?, 'wiki')"
   )
-  let added = 0
-  for (const title of extractLinks(notesMd ?? '')) {
-    const noteId = resolveNoteTitle(title)
-    if (noteId != null) added += ins.run(taskId, noteId).changes
-  }
-  return added
+  // 一删一增必须同事务：否则中途失败会留下「旧的删了、新的没落」的半截关联，
+  // 而 ⇄N 计数和图谱边都是按这张表读的，半截状态会直接显示成 0。
+  c.transaction(() => {
+    for (const id of plan.remove) del.run(taskId, id)
+    for (const id of plan.add) ins.run(taskId, id)
+  })()
+  return plan.add.length
 }
 
-/** 手动建立任务↔笔记关联（笔记页「归属任务」用）。 */
+/** 手动建立任务↔笔记关联（笔记页「归属任务」、图谱里拉边用）。 */
 export function attachTaskNote(taskId: number, noteId: number): number {
   return conn()
-    .prepare('INSERT OR IGNORE INTO task_note_link (task_id, note_id) VALUES (?, ?)')
+    .prepare(
+      "INSERT OR IGNORE INTO task_note_link (task_id, note_id, source) VALUES (?, ?, 'manual')"
+    )
     .run(taskId, noteId).changes
 }
 
