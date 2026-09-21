@@ -132,7 +132,9 @@
    缺开始或截止的任务不画（见 lib/date.ts 的 taskProgress）。 */
 .trow__progress {
   position: absolute;
-  left: 0;
+  /* 从**勾选框**的位置开始，而不是行的最左边：左边那截是缩进与展开箭头，
+     进度条压在上面会跟缩进语义打架。24px = 展开箭头 16px + .trow 的 gap 8px。 */
+  left: calc(var(--row-indent, 0px) + 24px);
   right: 0;
   bottom: 0;
   height: 2px;

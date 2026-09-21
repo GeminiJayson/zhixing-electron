@@ -112,6 +112,16 @@ try {
   console.log('[row] ' + String(future.html))
   console.log('[buttons] ' + J(future.buttons))
   check('任务行上画出了进度条', future.found && future.hasBar, J({ hasBar: future.hasBar, cls: future.cls }))
+  // 进度条应当从勾选框的位置开始，而不是行的最左边
+  const barGeo = await conn.evaluate(
+    "(() => { const row = [...document.querySelectorAll('.trow')].find((r) => r.querySelector('.trow__progress'));" +
+      "if (!row) return { found: false };" +
+      "const bar = row.querySelector('.trow__progress'); const check = row.querySelector('.check');" +
+      "const a = bar.getBoundingClientRect(); const b = check.getBoundingClientRect();" +
+      "return { found: true, bar: Math.round(a.left), check: Math.round(b.left), right: Math.round(a.right), rowRight: Math.round(row.getBoundingClientRect().right) }; })()"
+  )
+  check('进度条从勾选框位置开始', barGeo.found && Math.abs(barGeo.bar - barGeo.check) <= 1, J(barGeo))
+  check('进度条仍然铺到行的右端', barGeo.found && Math.abs(barGeo.right - barGeo.rowRight) <= 1, J(barGeo))
   check('未到期用的是「从容」色阶（绿）', String(future.cls ?? '').includes('progress--calm'), J({ cls: future.cls }))
   check('色阶取的是 --success', future.color === future.want, J({ color: future.color, want: future.want }))
 

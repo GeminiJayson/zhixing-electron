@@ -66,7 +66,8 @@ export function TaskRow(props: Props) {
   return (
     <div
       className={`trow${selected ? ' trow--selected' : ''}${node.effectiveDone ? ' trow--done' : ''}${props.dropHint ? ` trow--drop-${props.dropHint}` : ''}`}
-      style={{ paddingLeft: 12 + depth * 20 }}
+      // --row-indent 供进度条定位用：它要跟内容一起缩进（见 tasks.css 的 .trow__progress）
+      style={{ paddingLeft: 12 + depth * 20, '--row-indent': `${12 + depth * 20}px` } as React.CSSProperties}
       draggable
       onDragStart={(e) => {
         e.dataTransfer.setData('text/plain', String(node.id))
