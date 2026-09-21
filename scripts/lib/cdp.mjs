@@ -54,19 +54,28 @@ export async function launchApp({
   tries = 70,
   settle = 3000,
   env = {},
+  /**
+   * 生产库模式：home 是用户真实数据目录时，绝不能清空、也不能拿它当 profile。
+   * 传 clean:false + copyDb:false + 独立 profile 就能与用户正在运行的实例并存 ——
+   * Electron 的单实例锁按 --user-data-dir 区分，而 WAL 下两个进程读写同一只库是安全的。
+   */
+  clean = true,
+  profile = null,
   onWait = (i) => {
     if (i % 4 === 0) console.log('【等窗口】' + Math.round(i * 0.5) + 's')
   }
 }) {
-  // 上一个实例可能还没完全释放 profile 目录（Electron 有好几个子进程），
-  // 直接 rmSync 会 EBUSY/EPERM 把脚本崩在开头 —— 重试几次，实在不行就用旧目录继续跑。
-  for (let i = 0; i < 6; i++) {
-    try {
-      rmSync(home, { recursive: true, force: true })
-      break
-    } catch (e) {
-      if (i === 5) console.log('  · 清理临时目录失败（' + (e && e.code) + '），沿用旧目录继续')
-      else await sleep(400)
+  if (clean) {
+    // 上一个实例可能还没完全释放 profile 目录（Electron 有好几个子进程），
+    // 直接 rmSync 会 EBUSY/EPERM 把脚本崩在开头 —— 重试几次，实在不行就沿用旧目录继续跑。
+    for (let i = 0; i < 6; i++) {
+      try {
+        rmSync(home, { recursive: true, force: true })
+        break
+      } catch (e) {
+        if (i === 5) console.log('  · 清理临时目录失败（' + (e && e.code) + '），沿用旧目录继续')
+        else await sleep(400)
+      }
     }
   }
   mkdirSync(home, { recursive: true })
@@ -75,7 +84,7 @@ export async function launchApp({
   }
   const child = spawn(
     require('electron'),
-    ['.', '--remote-debugging-port=' + port, '--user-data-dir=' + join(home, 'profile')],
+    ['.', '--remote-debugging-port=' + port, '--user-data-dir=' + (profile ?? join(home, 'profile'))],
     {
       cwd: ROOT,
       env: {
