@@ -1,11 +1,42 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronRight, FilePlus2, FolderPlus, Pin, Search, Sparkles, Trash2 } from '@renderer/lib/icons'
+import {
+  ChevronDown,
+  ChevronRight,
+  FilePlus2,
+  FileText,
+  FolderPlus,
+  LayoutGrid,
+  Link2,
+  NotebookPen,
+  Pin,
+  Search,
+  Sparkles,
+  Trash2,
+} from '@renderer/lib/icons'
 import type { Note, NoteFolder } from '@shared/types'
 import type { AiLibraryProgress } from '@shared/ai-note'
 import { PopMenu } from './PopMenu'
 
 /** 新建笔记时可选的类型：原先在工具栏里选，现在放到「新建」动作里选 */
 export type NoteFormat = 'markdown' | 'richtext' | 'word' | 'excel' | 'link'
+
+/**
+ * 每种笔记一个图标 + 一个色阶。
+ *
+ * 图标只有五个可用（word 与 markdown 都落在 FileText 上），所以靠颜色区分 ——
+ * 树里扫一眼就能分辨类型，不必点开看。
+ */
+const FORMAT_ICON: Record<string, { Comp: typeof FileText; tone: string }> = {
+  markdown: { Comp: FileText, tone: 'markdown' },
+  richtext: { Comp: NotebookPen, tone: 'richtext' },
+  word: { Comp: FileText, tone: 'word' },
+  excel: { Comp: LayoutGrid, tone: 'excel' },
+  link: { Comp: Link2, tone: 'link' },
+}
+
+function noteIcon(format: string | undefined): { Comp: typeof FileText; tone: string } {
+  return FORMAT_ICON[format ?? 'markdown'] ?? FORMAT_ICON.markdown
+}
 export const NOTE_FORMATS: { key: NoteFormat; label: string }[] = [
   { key: 'markdown', label: 'Markdown 笔记' },
   { key: 'richtext', label: '富文本笔记' },
@@ -135,7 +166,11 @@ export function NoteTree({
         role="treeitem"
         aria-selected={selectedId === n.id}
       >
-        {n.pinned ? <Pin size={12} className="ntree__pin" /> : <span className="ntree__dot" />}
+        {(() => {
+          const { Comp, tone } = noteIcon(n.format)
+          return <Comp size={13} className={'ntree__type ntree__type--' + tone} aria-hidden />
+        })()}
+        {n.pinned && <Pin size={12} className="ntree__pin" />}
         <span className="ntree__title">{n.title}</span>
         <span className="ntree__actions">
           <button
@@ -201,7 +236,7 @@ export function NoteTree({
             aria-expanded={isOpen}
             aria-label={isOpen ? '折叠文件夹' : '展开文件夹'}
           >
-            <ChevronRight size={16} />
+            {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
           </button>
           <span className="ntree__foldername">{f.name}</span>
           <span className="ntree__count">{own.length}</span>

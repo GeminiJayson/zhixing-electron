@@ -75,6 +75,13 @@ try {
       "return { found: true, titleWhite: cs.whiteSpace, titleWrap: cs.overflowWrap, folderWhite: f ? getComputedStyle(f).whiteSpace : null, rowAlign: rowCs ? rowCs.alignItems : null }; })()"
   )
   check('笔记标题改为换行（white-space: normal）', treeCss.titleWhite === 'normal', J(treeCss))
+  const icons = await evaluate(
+    "(() => { const t = [...document.querySelectorAll('.ntree__type')];" +
+      "const tones = [...new Set(t.map((x) => [...x.classList].find((c) => c.startsWith('ntree__type--'))))];" +
+      "return { count: t.length, tones }; })()"
+  )
+  check('笔记项按类型显示图标', (icons.count ?? 0) > 0, J(icons))
+  check('类型图标带色阶（可区分类型）', (icons.tones ?? []).length >= 1 && !(icons.tones ?? []).includes(undefined), J(icons))
   check('长词也能断行（overflow-wrap: anywhere）', String(treeCss.titleWrap).includes('anywhere'), J({ wrap: treeCss.titleWrap }))
   check('文件夹名同样换行', treeCss.folderWhite === 'normal', J(treeCss))
   check('行内元素垂直居中（align-items: center）', treeCss.rowAlign === 'center', J({ align: treeCss.rowAlign }))

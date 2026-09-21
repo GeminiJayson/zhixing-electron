@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowDown,
   ArrowUp,
+  ChevronDown,
   ChevronRight,
   Copy,
   Diamond,
@@ -664,7 +665,11 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
           style={{ paddingLeft: 6 + depth * 12 }}
         >
           <button className="wf-node__label" aria-expanded={!collapsed} onClick={() => toggleGroup(g.id)}>
-            <ChevronRight size={13} className="wf-node__caret" aria-hidden />
+            {collapsed ? (
+              <ChevronRight size={13} className="wf-node__caret" aria-hidden />
+            ) : (
+              <ChevronDown size={13} className="wf-node__caret" aria-hidden />
+            )}
             <strong>{g.name}</strong>
             <span className="u-aux">{tpls.length} 个</span>
           </button>

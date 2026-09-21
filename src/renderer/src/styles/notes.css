@@ -825,3 +825,24 @@
   border-radius: var(--radius-sm);
   cursor: zoom-in;
 }
+
+/* 笔记类型图标：五种类型五种颜色（word 与 markdown 共用 FileText，靠色阶分辨） */
+.ntree__type {
+  flex: 0 0 13px;
+  margin: 0 1px;
+}
+.ntree__type--markdown {
+  color: var(--fg-tertiary);
+}
+.ntree__type--richtext {
+  color: var(--accent);
+}
+.ntree__type--word {
+  color: #2b579a;
+}
+.ntree__type--excel {
+  color: #217346;
+}
+.ntree__type--link {
+  color: var(--accent-warm);
+}
