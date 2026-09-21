@@ -15,101 +15,31 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { setTimeout as sleep } from 'node:timers/promises'
+import { ROOT, launchApp, createChecker, J, sleep } from './lib/cdp.mjs'
 
-const require = createRequire(import.meta.url)
-const electronPath = require('electron')
-const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const tmpHome = join(root, '.screenshots', 'confirm-home')
+// 老脚本里的 root 一律指向仓库根，原样保留的自有声明就能继续用
+const root = ROOT
 const shotDir = join(root, '.screenshots')
+const realDb = join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db')
+
+const tmpHome = join(ROOT, '.screenshots', 'confirm-home')
 const PORT = 9248
 
-const realDb = join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db')
-if (!existsSync(realDb)) {
-  console.error('✗ 找不到真实库：' + realDb)
-  process.exit(1)
-}
-rmSync(tmpHome, { recursive: true, force: true })
-mkdirSync(tmpHome, { recursive: true })
-copyFileSync(realDb, join(tmpHome, 'zhixing.db'))
-
-const SYS_PATH = ['C:\\Windows\\System32', 'C:\\Windows', 'C:\\Windows\\System32\\Wbem'].join(';')
-const child = spawn(
-  electronPath,
-  ['.', '--remote-debugging-port=' + PORT, '--user-data-dir=' + join(tmpHome, 'profile')],
-  {
-    cwd: root,
-    env: { ...process.env, PATH: SYS_PATH + ';' + (process.env.PATH ?? ''), ZHIXING_HOME: tmpHome },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  }
-)
-
-const attach = async () => {
-  let page = null
-  for (let i = 0; i < 60 && !page; i++) {
-    try {
-      const list = await (await fetch('http://127.0.0.1:' + PORT + '/json/list')).json()
-      page = list.find((t) => t.type === 'page')
-    } catch {
-      /* 等待 */
-    }
-    if (!page) await sleep(500)
-  }
-  if (!page) return null
-  const ws = new WebSocket(page.webSocketDebuggerUrl)
-  await new Promise((res, rej) => {
-    ws.addEventListener('open', res, { once: true })
-    ws.addEventListener('error', rej, { once: true })
-  })
-  const send = (method, params = {}) =>
-    new Promise((resolve) => {
-      const id = Math.floor(Math.random() * 1e6)
-      const h = (ev) => {
-        const m = JSON.parse(ev.data)
-        if (m.id !== id) return
-        ws.removeEventListener('message', h)
-        resolve(m)
-      }
-      ws.addEventListener('message', h)
-      ws.send(JSON.stringify({ id, method, params }))
-    })
-  await send('Runtime.enable')
-  await send('Page.enable')
-  const evaluate = async (expression) => {
-    const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })
-    if (r.result?.exceptionDetails)
-      throw new Error(r.result.exceptionDetails.exception?.description ?? 'eval failed')
-    return r.result?.result?.value
-  }
-  return { ws, send, evaluate }
-}
-
-const conn = await attach()
-if (!conn) {
-  console.error('✗ 无法连接渲染进程')
-  child.kill()
-  process.exit(1)
-}
-await sleep(3000)
-
-const results = []
-const check = (name, ok, detail = '') => {
-  results.push([name, ok])
-  console.log((ok ? '✓ ' : '✗ ') + name + (detail ? ' — ' + detail : ''))
-}
+const app = await launchApp({ port: PORT, home: tmpHome })
+const { check, finish, results } = createChecker()
 const shoot = async (name) => {
-  const r = await conn.send('Page.captureScreenshot', { format: 'png' })
+  const r = await app.send('Page.captureScreenshot', { format: 'png' })
   if (r.result?.data) writeFileSync(join(shotDir, name), Buffer.from(r.result.data, 'base64'))
 }
 
 const TITLE = 'CONFIRM-' + Date.now().toString(36)
-await conn.evaluate(`window.zhixing.db.createNote(${JSON.stringify(TITLE)}, null, '正文', 'markdown')`)
-await conn.evaluate("document.querySelector('[data-nav-item=notes]').click()")
+await app.evaluate(`window.zhixing.db.createNote(${JSON.stringify(TITLE)}, null, '正文', 'markdown')`)
+await app.evaluate("document.querySelector('[data-nav-item=notes]').click()")
 await sleep(1500)
 
 /** 点笔记树里那篇测试笔记的删除按钮 */
 const clickTreeDelete = async () =>
-  conn.evaluate(
+  app.evaluate(
     `(() => {
       const row = [...document.querySelectorAll('.ntree__note')].find((el) => el.innerText.includes(${JSON.stringify(TITLE)}))
       if (!row) return false
@@ -120,7 +50,7 @@ const clickTreeDelete = async () =>
 
 const opened = await clickTreeDelete()
 await sleep(500)
-const dlg = await conn.evaluate(`(() => {
+const dlg = await app.evaluate(`(() => {
   const modal = document.querySelector('.modal--dialog')
   if (!modal) return null
   const icon = modal.querySelector('.dialog__icon')
@@ -142,11 +72,11 @@ check('按钮是「取消 / 删除」', JSON.stringify(dlg?.buttons) === JSON.st
 await shoot('confirm-dialog.png')
 
 // 取消 → 什么也没发生
-await conn.evaluate(
+await app.evaluate(
   "[...document.querySelectorAll('.modal--dialog .modal__foot button')].find((b) => b.textContent.trim() === '取消')?.click()"
 )
 await sleep(400)
-const afterCancel = await conn.evaluate(`(() => ({
+const afterCancel = await app.evaluate(`(() => ({
   modal: !!document.querySelector('.modal--dialog'),
   exists: !!document.body.innerText.includes(${JSON.stringify(TITLE)}),
 }))()`)
@@ -155,23 +85,18 @@ check('点取消后弹框关闭且数据还在', afterCancel.modal === false && 
 // 确定 → 真的删掉
 await clickTreeDelete()
 await sleep(400)
-await conn.evaluate(
+await app.evaluate(
   "[...document.querySelectorAll('.modal--dialog .modal__foot button')].find((b) => b.textContent.trim() === '删除')?.click()"
 )
 await sleep(800)
-const afterOk = await conn.evaluate(`(() => {
+const afterOk = await app.evaluate(`(() => {
   const count = document.querySelectorAll('.ntree__note').length
   const rows = [...document.querySelectorAll('.ntree__note')].map((el) => el.innerText)
   return { modal: !!document.querySelector('.modal--dialog'), stillThere: rows.some((t) => t.includes(${JSON.stringify(TITLE)})) }
 })()`)
 check('点删除后弹框关闭且数据被删除', afterOk.modal === false && afterOk.stillThere === false, JSON.stringify(afterOk))
 
-conn.ws.close()
-child.kill()
 await sleep(500)
-rmSync(tmpHome, { recursive: true, force: true })
 
-const failed = results.filter(([, ok]) => !ok)
-console.log('')
-console.log((results.length - failed.length) + '/' + results.length + ' 项通过')
-process.exit(failed.length ? 1 : 0)
+await app.close()
+process.exit(finish())

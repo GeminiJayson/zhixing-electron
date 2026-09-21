@@ -80,10 +80,23 @@
 所以剩下的按批次迁移，每批迁完必须跑该批脚本。棘轮值在护栏里，迁一个减一；
 减到 0 之后这条断言就可以整段删掉。
 
-第二轮（2026-09-22）把可机械迁移的又清了一遍，累计 9 个脚本迁到 lib：
+第二轮（2026-09-22）把可机械迁移的又清了一遍，累计 **12 个脚本**迁到 lib：
 listguardcheck / noteeditguard / notelinkcheck / attachmentcheck / taskarchivecheck /
-reminderpolicycheck，以及回退掉的 aiui / confirmcheck / wfdialog / wfgroupcheck。
-当前棘轮值 48。
+reminderpolicycheck / aiui / confirmcheck / wfgroupcheck（后三个是回退后重做并跑绿）。
+当前棘轮值 **45**。
+
+同批的 aiui(28/28) / confirmcheck(7/7) / wfgroupcheck(6/6) 与原版基线逐一对照：
+前两个分数一致，wfgroupcheck 反而比原版多过一项（原版 5/6，「实例项也有编辑胶囊」当时失败）——
+多出来的 3 秒 settle 大概率就是原因。**迁移没有引入回归。**
+
+迁移器这轮又补了两条（都是被真实失败逼出来的）：
+- **脚本末尾自己那句 rmSync(tmpHome) 必须一起删掉**。它没有重试，一旦 EBUSY 就崩在收尾，
+  而崩在收尾又不会打印汇总行 —— 表现是「断言全过、退出码 1、看不到总结」，和之前
+  taskkill 那次一模一样的坑。
+- **收尾段的过滤要从文件末尾反推**。iBodyEnd 判对之后，对 kept（收尾段）过滤
+  const failed / console.log / process.exit 是安全的；此前之所以出事，是因为 iBodyEnd
+  被判到了正文中间，于是把正文后半段的 await sleep 全当成收尾删了。
+  另外 createChecker 要把 results 一并解构出来，老脚本的收尾段还引用着这个名字。
 
 这轮又摸清了两件原清单没写的事：
 

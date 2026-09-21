@@ -10,124 +10,48 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { setTimeout as sleep } from 'node:timers/promises'
+import { ROOT, launchApp, createChecker, J, sleep } from './lib/cdp.mjs'
 
-const require = createRequire(import.meta.url)
-const electronPath = require('electron')
-const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const tmpHome = join(root, '.screenshots', 'aiui-home')
+// 老脚本里的 root 一律指向仓库根，原样保留的自有声明就能继续用
+const root = ROOT
 const shotDir = join(root, '.screenshots')
+const realDb = join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db')
+
+const tmpHome = join(ROOT, '.screenshots', 'aiui-home')
 const PORT = 9242
 
-const realDb = join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db')
-if (!existsSync(realDb)) {
-  console.error('✗ 找不到真实库：' + realDb)
-  process.exit(1)
-}
-rmSync(tmpHome, { recursive: true, force: true })
-mkdirSync(tmpHome, { recursive: true })
-copyFileSync(realDb, join(tmpHome, 'zhixing.db'))
-
-const SYS_PATH = [
-  'C:\\Windows\\System32',
-  'C:\\Windows',
-  'C:\\Windows\\System32\\Wbem',
-  'C:\\Windows\\System32\\WindowsPowerShell\\v1.0',
-].join(';')
-
-const child = spawn(
-  electronPath,
-  ['.', '--remote-debugging-port=' + PORT, '--user-data-dir=' + join(tmpHome, 'profile')],
-  {
-    cwd: root,
-    env: { ...process.env, PATH: SYS_PATH + ';' + (process.env.PATH ?? ''), ZHIXING_HOME: tmpHome },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  }
-)
-
-const attach = async () => {
-  let page = null
-  for (let i = 0; i < 60 && !page; i++) {
-    try {
-      const list = await (await fetch('http://127.0.0.1:' + PORT + '/json/list')).json()
-      page = list.find((t) => t.type === 'page')
-    } catch {
-      /* 等待 */
-    }
-    if (!page) await sleep(500)
-  }
-  if (!page) return null
-  const ws = new WebSocket(page.webSocketDebuggerUrl)
-  await new Promise((res, rej) => {
-    ws.addEventListener('open', res, { once: true })
-    ws.addEventListener('error', rej, { once: true })
-  })
-  const send = (method, params = {}) =>
-    new Promise((resolve) => {
-      const id = Math.floor(Math.random() * 1e6)
-      const h = (ev) => {
-        const m = JSON.parse(ev.data)
-        if (m.id !== id) return
-        ws.removeEventListener('message', h)
-        resolve(m)
-      }
-      ws.addEventListener('message', h)
-      ws.send(JSON.stringify({ id, method, params }))
-    })
-  await send('Runtime.enable')
-  await send('Page.enable')
-  const evaluate = async (expression) => {
-    const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })
-    if (r.result?.exceptionDetails)
-      throw new Error(r.result.exceptionDetails.exception?.description ?? 'eval failed')
-    return r.result?.result?.value
-  }
-  return { ws, send, evaluate }
-}
-
-const conn = await attach()
-if (!conn) {
-  console.error('✗ 无法连接渲染进程')
-  child.kill()
-  process.exit(1)
-}
-await sleep(3000)
-
-const results = []
-const check = (name, ok, detail = '') => {
-  results.push([name, ok])
-  console.log((ok ? '✓ ' : '✗ ') + name + (detail ? ' — ' + detail : ''))
-}
+const app = await launchApp({ port: PORT, home: tmpHome })
+const { check, finish, results } = createChecker()
 const shoot = async (name) => {
-  const r = await conn.send('Page.captureScreenshot', { format: 'png' })
+  const r = await app.send('Page.captureScreenshot', { format: 'png' })
   if (r.result?.data) writeFileSync(join(shotDir, name), Buffer.from(r.result.data, 'base64'))
 }
 
 // ---------------- 设置页
-await conn.evaluate("document.querySelector('[data-nav-item=settings]').click()")
+await app.evaluate("document.querySelector('[data-nav-item=settings]').click()")
 await sleep(1200)
-const tabs = await conn.evaluate(
+const tabs = await app.evaluate(
   "[...document.querySelectorAll('[role=tab]')].map((b) => b.textContent.trim()).join(',')"
 )
 check('设置页出现「AI 整理」分区', String(tabs).includes('AI 整理'), tabs)
 
-await conn.evaluate(
+await app.evaluate(
   "[...document.querySelectorAll('[role=tab]')].filter((b) => b.textContent.trim() === 'AI 整理')[0].click()"
 )
 await sleep(700)
 
 const promptSel = "textarea[aria-label='整理提示词']"
-const promptValue = await conn.evaluate(
+const promptValue = await app.evaluate(
   "(document.querySelector(" + JSON.stringify(promptSel) + ") || {}).value || ''"
 )
-const panelText = await conn.evaluate(
+const panelText = await app.evaluate(
   "[...document.querySelectorAll('.set-card')].map((c) => c.innerText).join(' | ')"
 )
-const hasKey = await conn.evaluate("!!document.querySelector('input[type=password]')")
-const hasProtocol = await conn.evaluate(
+const hasKey = await app.evaluate("!!document.querySelector('input[type=password]')")
+const hasProtocol = await app.evaluate(
   "[...document.querySelectorAll('select')].some((s) => [...s.options].some((o) => o.value === 'anthropic'))"
 )
-const cardCount = await conn.evaluate("document.querySelectorAll('.set-card').length")
+const cardCount = await app.evaluate("document.querySelectorAll('.set-card').length")
 
 check('配置卡片齐全（协议 / 地址 / Key / 模型 / 超时）', hasKey === true && cardCount >= 2, 'cards=' + cardCount)
 check('协议下拉含三种协议', hasProtocol === true, '')
@@ -147,7 +71,7 @@ check(
   String(panelText).includes('测试连接') && String(panelText).includes('恢复默认提示词'),
   ''
 )
-const libPromptValue = await conn.evaluate(
+const libPromptValue = await app.evaluate(
   "(document.querySelector(" + JSON.stringify("textarea[aria-label='全库整理提示词']") + ") || {}).value ?? null"
 )
 check(
@@ -157,7 +81,7 @@ check(
 )
 
 // 工具栏左分隔：设置页左侧是 tab 组 → 50px；笔记编辑器工具栏左侧为空 → 不加
-const settingGap = await conn.evaluate(`(() => {
+const settingGap = await app.evaluate(`(() => {
   const left = document.querySelector('.tb__subleft')
   const right = document.querySelector('.tb__subright')
   if (!left || !right) return null
@@ -173,7 +97,7 @@ check(
 )
 
 // 改动 2：提示词的两个动作行要靠右（按钮右边缘与上方 textarea 对齐）
-const actionsAlign = await conn.evaluate(`(() => {
+const actionsAlign = await app.evaluate(`(() => {
   const rows = [...document.querySelectorAll('.set-row--end')]
   const areas = [...document.querySelectorAll('textarea[aria-label="整理提示词"], textarea[aria-label="全库整理提示词"]')]
   return rows.map((row, i) => {
@@ -195,11 +119,11 @@ check(
 await shoot('ai-settings.png')
 
 // 外部任务同步卡片（在「任务与提醒」分区）
-await conn.evaluate(
+await app.evaluate(
   "[...document.querySelectorAll('[role=tab]')].filter((b) => b.textContent.trim() === '任务与提醒')[0].click()"
 )
 await sleep(700)
-const syncCard = await conn.evaluate(`(() => {
+const syncCard = await app.evaluate(`(() => {
   const cards = [...document.querySelectorAll('.set-card')]
   const card = cards.find((c) => c.innerText.includes('外部任务同步'))
   if (!card) return null
@@ -216,9 +140,9 @@ check(
 )
 
 // 今日页：今日待办比最近笔记高 100px
-await conn.evaluate("document.querySelector('[data-nav-item=today]').click()")
+await app.evaluate("document.querySelector('[data-nav-item=today]').click()")
 await sleep(1500)
-const heights = await conn.evaluate(`(() => {
+const heights = await app.evaluate(`(() => {
   const todo = document.querySelector('.section--today-todo')
   const recent = [...document.querySelectorAll('.section--grow')].find((s) => !s.classList.contains('section--today-todo'))
   if (!todo || !recent) return null
@@ -236,44 +160,44 @@ await shoot('today-heights.png')
 
 // ---------------- 笔记页入口
 // 先用 API 造一篇链接笔记，稍后检查它的编辑器
-const linkNote = await conn.evaluate(
+const linkNote = await app.evaluate(
   "window.zhixing.db.createNote('UI验证-链接笔记', null, JSON.stringify([{title:'知乎',target:'https://zhihu.com'}]), 'link')"
 )
-await conn.evaluate("document.querySelector('[data-nav-item=notes]').click()")
+await app.evaluate("document.querySelector('[data-nav-item=notes]').click()")
 await sleep(1500)
 
-const treeActions = await conn.evaluate(
+const treeActions = await app.evaluate(
   "[...document.querySelectorAll('.ntree__topbar button')].map((b) => b.textContent.trim()).join(' | ')"
 )
 check('「AI 整理全库」在笔记树里（搜索框下方）', String(treeActions).includes('AI 整理全库'), treeActions)
 
 // 改动 1：按钮与搜索框同宽
-const widthDelta = await conn.evaluate(`(() => {
+const widthDelta = await app.evaluate(`(() => {
   const btn = document.querySelector('.ntree__topbar button')
   const box = document.querySelector('.ntree__search-input')
   if (!btn || !box) return null
   return Math.round(Math.abs(btn.getBoundingClientRect().width - box.getBoundingClientRect().width))
 })()`)
 check('全库按钮与搜索框等宽（占满父布局）', widthDelta !== null && widthDelta <= 2, 'delta=' + widthDelta + 'px')
-const allLibButtons = await conn.evaluate(
+const allLibButtons = await app.evaluate(
   "[...document.querySelectorAll('button')].filter((b) => b.textContent.includes('整理全库')).length"
 )
 check('全库入口只有树里这一个（编辑器工具栏已移除）', allLibButtons === 1, 'count=' + allLibButtons)
-const noteTitle = await conn.evaluate(
+const noteTitle = await app.evaluate(
   "window.zhixing.db.notes(1).then((rows) => (rows[0] && rows[0].title) || '')"
 )
 // 笔记树里的一行是 div.ntree__note（不是 button），按标题文本命中后点它
-await conn.evaluate(
+await app.evaluate(
   "[...document.querySelectorAll('.ntree__note')].filter((el) => el.innerText.includes(" +
     JSON.stringify(noteTitle) +
     '))[0]?.click()'
 )
 await sleep(1500)
-const toolbarText = await conn.evaluate(
+const toolbarText = await app.evaluate(
   "[...document.querySelectorAll('button')].map((b) => b.textContent.trim()).join(' | ')"
 )
 check('笔记工具栏有「AI 整理」入口', String(toolbarText).includes('AI 整理'), '选中：' + noteTitle)
-const noteGap = await conn.evaluate(`(() => {
+const noteGap = await app.evaluate(`(() => {
   const left = document.querySelector('.editor .tb__subleft')
   const right = document.querySelector('.editor .tb__subright')
   if (!left || !right) return null
@@ -287,18 +211,18 @@ check(
   !!noteGap && noteGap.leftW === 0 && noteGap.gap <= 14,
   JSON.stringify(noteGap)
 )
-const editorButtons = await conn.evaluate(
+const editorButtons = await app.evaluate(
   "[...document.querySelectorAll('.editor button')].map((b) => b.textContent.trim()).join(' | ')"
 )
 check('编辑器工具栏不再有全库入口', !String(editorButtons).includes('整理全库'), '')
 await shoot('ai-note-toolbar.png')
 
 // 链接笔记：多链接可编辑
-await conn.evaluate(
+await app.evaluate(
   "[...document.querySelectorAll('.ntree__note')].filter((el) => el.innerText.includes('UI验证-链接笔记'))[0]?.click()"
 )
 await sleep(1200)
-const linkEditor = await conn.evaluate(
+const linkEditor = await app.evaluate(
   "JSON.stringify({ titleInputs: document.querySelectorAll('input[aria-label=\\'链接标题\\']').length, targetInputs: document.querySelectorAll('input[aria-label=\\'链接地址\\']').length, hasAdd: [...document.querySelectorAll('button')].some((b) => b.textContent.includes('添加链接')) })"
 )
 const linkInfo = JSON.parse(String(linkEditor))
@@ -309,7 +233,7 @@ check(
 )
 
 // 表格形态：三列表头、操作列固定宽、列宽可拖
-const table = await conn.evaluate(`(() => {
+const table = await app.evaluate(`(() => {
   const head = document.querySelector('.link-table__head')
   const row = document.querySelector('.link-table__row')
   if (!head || !row) return null
@@ -332,19 +256,19 @@ check('操作列固定宽 76px，放两个图标按钮', Math.abs((table?.opsW ?
 await shoot('ai-link-note.png')
 
 // 拖分界改列宽（真实鼠标事件）
-const grip = await conn.evaluate(`(() => {
+const grip = await app.evaluate(`(() => {
   const g = document.querySelector('.link-table__grip')
   if (!g) return null
   const r = g.getBoundingClientRect()
   return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
 })()`)
 if (grip) {
-  await conn.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: grip.x, y: grip.y, button: 'left', clickCount: 1, buttons: 1 })
-  await conn.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: grip.x + 150, y: grip.y, button: 'left', buttons: 1 })
-  await conn.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: grip.x + 150, y: grip.y, button: 'left', clickCount: 1, buttons: 0 })
+  await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: grip.x, y: grip.y, button: 'left', clickCount: 1, buttons: 1 })
+  await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: grip.x + 150, y: grip.y, button: 'left', buttons: 1 })
+  await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: grip.x + 150, y: grip.y, button: 'left', clickCount: 1, buttons: 0 })
 }
 await sleep(400)
-const resized = await conn.evaluate(
+const resized = await app.evaluate(
   "Math.round(document.querySelector('.link-table__row').children[0].getBoundingClientRect().width)"
 )
 check(
@@ -353,25 +277,25 @@ check(
   `${table?.titleW}px → ${resized}px`
 )
 await shoot('ai-link-table-resized.png')
-await conn.evaluate("window.zhixing.db.deleteNote(" + linkNote.id + ").catch(() => 0)")
+await app.evaluate("window.zhixing.db.deleteNote(" + linkNote.id + ").catch(() => 0)")
 
 // 改动 3：折叠从左边开始收 —— 「⋯」出现在已显示项的左侧，右侧那组原位不动
-await conn.send('Emulation.setDeviceMetricsOverride', {
+await app.send('Emulation.setDeviceMetricsOverride', {
   width: 1000,
   height: 900,
   deviceScaleFactor: 1,
   mobile: false,
 })
 await sleep(900)
-await conn.evaluate("document.querySelector('[data-nav-item=notes]').click()")
+await app.evaluate("document.querySelector('[data-nav-item=notes]').click()")
 await sleep(1200)
-await conn.evaluate(
+await app.evaluate(
   "[...document.querySelectorAll('.ntree__note')].filter((el) => el.innerText.includes(" +
     JSON.stringify(noteTitle) +
     '))[0]?.click()'
 )
 await sleep(1200)
-const fold = await conn.evaluate(`(() => {
+const fold = await app.evaluate(`(() => {
   const right = document.querySelector('.tb__subright')
   if (!right) return null
   const kids = [...right.children]
@@ -390,7 +314,7 @@ check(
   JSON.stringify(fold)
 )
 // 左侧不留空：工具行内容从左边缘开始排
-const flushLeft = await conn.evaluate(`(() => {
+const flushLeft = await app.evaluate(`(() => {
   const right = document.querySelector('.tb__subright')
   if (!right) return null
   const first = right.firstElementChild
@@ -399,7 +323,7 @@ const flushLeft = await conn.evaluate(`(() => {
 })()`)
 check('工具行内容贴着左侧排（消除左侧留空）', flushLeft !== null && Math.abs(flushLeft) <= 2, 'gap=' + flushLeft + 'px')
 // 窗口停稳后：第一个控件吃掉剩余宽度，行尾不再留空
-const fillGap = await conn.evaluate(`(() => {
+const fillGap = await app.evaluate(`(() => {
   const right = document.querySelector('.tb__subright')
   if (!right) return null
   const first = right.firstElementChild
@@ -419,15 +343,15 @@ check(
   JSON.stringify(fillGap)
 )
 await shoot('ui-toolbar-fold.png')
-await conn.send('Emulation.clearDeviceMetricsOverride')
+await app.send('Emulation.clearDeviceMetricsOverride')
 await sleep(900)
 await shoot('ui-toolbar-wide.png')
 
 // 工作流：第一个控件是「启动策略」下拉，包裹层级是 span > label > select ——
 // 只拉外层容器会让「布局宽了、下拉没变」
-await conn.evaluate("document.querySelector('[data-nav-item=workflow]').click()")
+await app.evaluate("document.querySelector('[data-nav-item=workflow]').click()")
 await sleep(1600)
-const wfFill = await conn.evaluate(`(() => {
+const wfFill = await app.evaluate(`(() => {
   const right = document.querySelector('.tb__subright')
   if (!right) return null
   const first = right.firstElementChild
@@ -444,7 +368,7 @@ check(
   JSON.stringify(wfFill)
 )
 // 拉伸控件不能把前缀文字挤成两行
-const wfLabel = await conn.evaluate(`(() => {
+const wfLabel = await app.evaluate(`(() => {
   const right = document.querySelector('.tb__subright')
   const span = right?.firstElementChild?.querySelector('span')
   if (!span) return null
@@ -458,12 +382,7 @@ check(
 )
 await shoot('ui-toolbar-workflow.png')
 
-conn.ws.close()
-child.kill()
 await sleep(500)
-rmSync(tmpHome, { recursive: true, force: true })
 
-const failed = results.filter(([, ok]) => !ok)
-console.log('')
-console.log((results.length - failed.length) + '/' + results.length + ' 项通过')
-process.exit(failed.length ? 1 : 0)
+await app.close()
+process.exit(finish())
