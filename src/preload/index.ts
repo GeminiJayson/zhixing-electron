@@ -535,6 +535,13 @@ const api = {
       fields: Record<string, string | number | null>
     ): Promise<Task | null> => ipcRenderer.invoke('db:updateTask', id, fields),
     /** 把已完成的任务释放回待执行（连带恢复仍是终态的祖先，层级因此得以保留） */
+    /** 把编辑区的 HTML 导出成 .docx（写到原文件同目录的新文件，不覆写原件） */
+    exportDocx: (
+      srcPath: string,
+      html: string,
+      title: string
+    ): Promise<{ ok: boolean; path?: string; message?: string }> =>
+      ipcRenderer.invoke('word:exportDocx', srcPath, html, title),
     /** 取单个任务（含 parent_id / status），断言与调试都用得上 */
     getTask: (id: number): Promise<Task | null> => ipcRenderer.invoke('db:getTask', id),
     restoreCompleted: (id: number, listId?: number | null): Promise<Task | null> =>

@@ -13,10 +13,14 @@ rmSync(tmpHome, { recursive: true, force: true })
 mkdirSync(tmpHome, { recursive: true })
 copyFileSync(join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db'), join(tmpHome, 'zhixing.db'))
 const SYS_PATH = ['C:\\Windows\\System32', 'C:\\Windows', 'C:\\Windows\\System32\\Wbem'].join(';')
+console.log('【启动】拉起 Electron…')
 const child = spawn(electronPath, ['.', '--remote-debugging-port=' + PORT, '--user-data-dir=' + join(tmpHome, 'profile')], { cwd: root, env: { ...process.env, PATH: SYS_PATH + ';' + (process.env.PATH ?? ''), ZHIXING_HOME: tmpHome }, stdio: ['ignore', 'pipe', 'pipe'] })
 const list = async () => { try { return await (await fetch('http://127.0.0.1:' + PORT + '/json/list')).json() } catch { return [] } }
 let main = null
-for (let i = 0; i < 60 && !main; i++) { main = (await list()).find((t) => t.type === 'page'); if (!main) await sleep(500) }
+for (let i = 0; i < 60 && !main; i++) {
+  main = (await list()).find((t) => t.type === 'page')
+  if (!main) { if (i % 4 === 0) console.log('【等窗口】' + Math.round(i * 0.5) + 's'); await sleep(500) }
+}
 const ws = new WebSocket(main.webSocketDebuggerUrl)
 await new Promise((res) => ws.addEventListener('open', res, { once: true }))
 const send = (m, p = {}) => new Promise((resolve) => {
@@ -35,7 +39,8 @@ const results = []
 const check = (n, ok, d = '') => { results.push(ok); console.log((ok ? '✓ ' : '✗ ') + n + (d ? ' — ' + d : '')) }
 const J = (v) => JSON.stringify(v)
 try {
-  await sleep(3200)
+  console.log('【就绪】等待界面稳定…')
+for (let i = 0; i < 7; i++) { await sleep(500); if (i % 2 === 1) console.log('  ' + Math.round((i + 1) * 0.5) + 's') }
   // 1x1 的透明 PNG，最小的合法图片
   const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
   const noteId = await evaluate("window.zhixing.db.notes().then((n) => n[0]?.id ?? null)")

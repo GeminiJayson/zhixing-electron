@@ -29,6 +29,7 @@ mkdirSync(tmpHome, { recursive: true })
 copyFileSync(realDb, join(tmpHome, 'zhixing.db'))
 
 const SYS_PATH = ['C:\\Windows\\System32', 'C:\\Windows', 'C:\\Windows\\System32\\Wbem'].join(';')
+console.log('【启动】拉起 Electron…')
 const child = spawn(
   electronPath,
   ['.', '--remote-debugging-port=' + PORT, '--user-data-dir=' + join(tmpHome, 'profile')],

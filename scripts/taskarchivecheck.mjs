@@ -2,26 +2,44 @@ import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { copyFileSync, mkdirSync, rmSync } from 'node:fs'
+import * as fsx from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, rmSync } from 'node:fs'
 import { setTimeout as sleep } from 'node:timers/promises'
 const require = createRequire(import.meta.url)
 const electronPath = require('electron')
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const tmpHome = join(root, '.screenshots', 'archive-home')
 const PORT = 9381
+const wordDir = join(root, '.screenshots', 'wordout')
+rmSync(wordDir, { recursive: true, force: true })
+mkdirSync(wordDir, { recursive: true })
 rmSync(tmpHome, { recursive: true, force: true })
 mkdirSync(tmpHome, { recursive: true })
 copyFileSync(join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db'), join(tmpHome, 'zhixing.db'))
 const SYS_PATH = ['C:\\Windows\\System32', 'C:\\Windows', 'C:\\Windows\\System32\\Wbem'].join(';')
+console.log('【启动】拉起 Electron…')
 const child = spawn(electronPath, ['.', '--remote-debugging-port=' + PORT, '--user-data-dir=' + join(tmpHome, 'profile')], { cwd: root, env: { ...process.env, PATH: SYS_PATH + ';' + (process.env.PATH ?? ''), ZHIXING_HOME: tmpHome }, stdio: ['ignore', 'pipe', 'pipe'] })
 const list = async () => { try { return await (await fetch('http://127.0.0.1:' + PORT + '/json/list')).json() } catch { return [] } }
 let main = null
-for (let i = 0; i < 60 && !main; i++) { main = (await list()).find((t) => t.type === 'page'); if (!main) await sleep(500) }
+for (let i = 0; i < 60 && !main; i++) {
+  main = (await list()).find((t) => t.type === 'page')
+  if (!main) { if (i % 4 === 0) console.log('【等窗口】' + Math.round(i * 0.5) + 's'); await sleep(500) }
+}
 const ws = new WebSocket(main.webSocketDebuggerUrl)
 await new Promise((res) => ws.addEventListener('open', res, { once: true }))
-const send = (m, p = {}) => new Promise((resolve) => { const id = Math.floor(Math.random() * 1e6); const h = (ev) => { const x = JSON.parse(ev.data); if (x.id !== id) return; ws.removeEventListener('message', h); resolve(x) }; ws.addEventListener('message', h); ws.send(JSON.stringify({ id, method: m, params: p })) })
+const send = (m, p = {}) => new Promise((resolve, reject) => {
+  const id = Math.floor(Math.random() * 1e6)
+  const timer = setTimeout(() => {
+    ws.removeEventListener('message', h)
+    reject(new Error('CDP 超时（15s 无响应）：' + m))
+  }, 15000)
+  const h = (ev) => { const x = JSON.parse(ev.data); if (x.id !== id) return; clearTimeout(timer); ws.removeEventListener('message', h); resolve(x) }
+  ws.addEventListener('message', h)
+  ws.send(JSON.stringify({ id, method: m, params: p }))
+})
 await send('Runtime.enable')
 const evaluate = async (expr) => {
+  console.log('  · eval ' + String(expr).replace(/\s+/g, ' ').slice(0, 60))
   const r = await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })
   if (r.result?.exceptionDetails) throw new Error(r.result.exceptionDetails.exception?.description ?? 'eval failed')
   return r.result?.result?.value
@@ -30,7 +48,9 @@ const results = []
 const check = (n, ok, d = '') => { results.push(ok); console.log((ok ? '✓ ' : '✗ ') + n + (d ? ' — ' + d : '')) }
 const J = (v) => JSON.stringify(v)
 try {
-  await sleep(3200)
+  console.log('【就绪】等待界面稳定…')
+for (let i = 0; i < 7; i++) { await sleep(500); if (i % 2 === 1) console.log('  ' + Math.round((i + 1) * 0.5) + 's') }
+  console.log('【步骤】造任务数据')
   // 两步：先在页面里造数据并把 id 存到全局，再用那个全局做释放 —— 全程不做字符串插值
   const setup = await evaluate(`(async () => {
     const parent = await window.zhixing.db.createTask('归档父', null, null)
@@ -65,6 +85,7 @@ try {
     cascade.beforeStatus === 'done' && cascade.afterStatus === 'todo',
     J(cascade)
   )
+  console.log('【步骤】清单增改删')
   // ---- 清单分类可编辑：新建 → 改名 → 删除，走的是 UI 用的同一组 API
   const listFlow = await evaluate(`(async () => {
     const made = await window.zhixing.db.createListFolder('验证清单', 'list', null)
@@ -85,6 +106,19 @@ try {
   await sleep(2000)
   const ui = await evaluate("(() => { const btns = [...document.querySelectorAll('button')].map((b) => b.textContent.trim()); return { hasNew: btns.includes('＋ 清单'), hasEdit: btns.includes('清单设置') } })()")
   check('任务页出现「＋ 清单」与「清单设置」', ui.hasNew === true && ui.hasEdit === true, J(ui))
+
+  console.log('【步骤】Word 导出')
+  // ---- Word 导出：转出 .docx，且**原文件一字未动**
+  const wordOut = await evaluate(`(async () => {
+    const res = await window.zhixing.db.exportDocx('C:/tmp/知行导出验证/原文.docx', '<h1>标题</h1><p>正文<strong>加粗</strong></p><ul><li>一项</li></ul>', '我的文档')
+    return res
+  })()`)
+  check('导出 .docx 成功', wordOut?.ok === true && typeof wordOut.path === 'string', J(wordOut))
+  if (wordOut?.path) {
+    check('导出的确实是 .docx 文件且已落盘', wordOut.path.endsWith('.docx') && existsSync(wordOut.path), J({ path: wordOut.path, exists: existsSync(wordOut.path) }))
+    check('文件名带「编辑版」且不覆盖原件', wordOut.path.includes('编辑版') && !wordOut.path.endsWith('原文.docx'), J({ path: wordOut.path }))
+    check('导出的是合法 docx（zip 头 PK）', fsx.readFileSync(wordOut.path).slice(0, 2).toString('utf8') === 'PK', 'ok')
+  }
 
 } catch (err) {
   check('脚本跑完', false, err instanceof Error ? err.message : String(err))

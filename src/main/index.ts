@@ -15,7 +15,12 @@ import {
   Notification,
   shell,
 } from 'electron'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx'
+import {
+  buildDocxParagraphs,
+} from './docx-export'
 import { release } from 'node:os'
 import { extractDeepLink, parseDeepLink, toAccelerator } from '../shared/deep-link'
 import { BLOUB_DEFAULT_SHAPE, BLOUB_SHAPES, normalizeBloubShape } from '../shared/bloub'
@@ -1233,6 +1238,33 @@ function registerAttachmentHandlers(): void {
 
 /** 用系统默认应用打开本地文件（Word / Excel 笔记的正文就是这个文件）。 */
 function registerShellHandlers(): void {
+  /**
+   * Word 笔记导出：把编辑区当前的 HTML 转成 .docx。
+   *
+   * **绝不覆写原文件** —— 需求是「保留原文原件」，而 docx → HTML → docx 的往返
+   * 一定会丢排版（分页、页眉页脚、精确字号这些 HTML 表达不了）。所以导出的是
+   * 同目录下的一个新文件，原件保持原样、随时可回溯。
+   */
+  ipcMain.handle('word:exportDocx', async (_e, srcPath: string, html: string, title: string) => {
+    try {
+      const src = String(srcPath ?? '').trim()
+      const dir = src ? dirname(src) : app.getPath('documents')
+      const stem = (String(title ?? '').trim() || basename(src || '未命名')).replace(/\.docx$/i, '')
+      // 目标目录不存在就建出来（用户给的路径可能指向一个还没建的文件夹）
+      mkdirSync(dir, { recursive: true })
+      const out = join(dir, stem + '-编辑版-' + Date.now().toString(36) + '.docx')
+      const body = buildDocxParagraphs(String(html ?? ''))
+      const doc = new Document({
+        sections: [{ properties: {}, children: body as Paragraph[] }],
+      })
+      const buf = await Packer.toBuffer(doc)
+            writeFileSync(out, buf)
+      return { ok: true, path: out }
+    } catch (err) {
+      return { ok: false, message: (err as Error).message }
+    }
+  })
+
   ipcMain.handle('shell:openPath', async (_e, target: string) => {
     const p = String(target ?? '').trim()
     if (!p) return '路径为空'
