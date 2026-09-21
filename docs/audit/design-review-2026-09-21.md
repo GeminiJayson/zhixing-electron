@@ -169,6 +169,29 @@ E2E 脚本会拷一份真实库来跑（launchApp 的 copyDb）。生产库现�
 另外，跨脚本验证时发现 Select-Object -First/-Last 会提前关管道把 node 打成 EPIPE，
 让整批脚本看起来「全挂」。验证一律改成把输出写日志文件再读，别用管道截断。
 
+**迁移器已固化为脚本（2026-09-22）。** 前几轮的迁移代码都是一次性程序，每轮重写一遍、
+每轮重踩同样的坑。现在落在 `scripts/lib/migrate-cdp.mjs`：
+
+- `node scripts/lib/migrate-cdp.mjs <脚本名…>` 做迁移；`--self-test` 只跑扫描器自检（8 条）。
+- 块边界的四条规则（按行判、字符串/注释感知、保留声明按原序插回、引用分析迭代到不动点、
+  只保留顶格语句）写在文件头注释里，不再靠记性。
+- 13 条单测（`src/shared/migrate-cdp.test.ts`）钉住扫描器与 renameRefs 的行为 ——
+  这几条规则此前反复改错，每次改错都把脚本改坏。
+- 只有被 node 直接执行时才跑 CLI（`pathToFileURL(process.argv[1])` 比对 `import.meta.url`）；
+  否则被 vitest import 时会把 vitest 的参数当成脚本名去迁移。
+
+**剩余 20 个脚本按阻塞原因分三类**（下一轮从第一类开刀，别再从 ai* 那条最硬的骨头啃）：
+
+1. 只缺场景数据：layoutfitcheck 需要一份能渲染的 Excel 笔记。
+2. 前置副作用：wflinkcheck / wfdialog 在启动前写库；flashhotkeycheck / tasksynccheck 起 http server。
+3. 样板区段夹带重型依赖：excelcheck / officecheck 依赖外部文件；layoutcheck / importcheck
+   带大对象 payload 与夹具文件；smoke / graphfocus / seedmonitor 连 results / failed 锚点都不齐。
+
+ai* 三家（aicheck / ailibcheck / airepaircheck）这轮迁完又回退，结论记下来免得下次重试：
+aicheck 迁后能跑到真断言（日志 63 行），但内容审计不通过（「模型抄回原始片段时放行」等失败）；
+ailibcheck / airepaircheck 迁后仍在 22 行处崩。三者的原版本本来就是可跑的（16/25、15/15、16/16），
+按「迁移不得回退基线」的规矩原样退回，不计入迁移进度。
+
 **2. 其余未单独修的中低优先项**（均不涉及数据安全，留待后续）：
 applyMru 的 sort+reverse、listTasksByList 漏 start_time/due_time、图谱增量实为全量重建、ZIP/CRC32 与浮窗保存的重复实现、若干死代码与不可达分支。
 
