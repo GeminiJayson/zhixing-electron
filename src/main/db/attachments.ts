@@ -7,7 +7,7 @@
  *
  * 只做四件事：导入 / 列出 / 删除 / 清理；不做预览、不改写正文。
  */
-import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
 import { conn, dataDir, nowStamp } from './connection'
 
@@ -69,6 +69,36 @@ export function importAttachment(
     const target = join(dir, safeName(src))
     copyFileSync(src, target)
     const kind = (extname(src).replace('.', '') || 'file').toLowerCase()
+    conn()
+      .prepare('INSERT INTO attachment (note_id, path, kind, created_at) VALUES (?, ?, ?, ?)')
+      .run(noteId, target, kind, nowStamp())
+    return { ok: true, path: target, message: '已归档' }
+  } catch (err) {
+    return { ok: false, message: '导入失败：' + (err as Error).message }
+  }
+}
+
+/**
+ * 从内存里的二进制导入附件（粘贴的图片走这条 —— 它没有源文件路径）。
+ *
+ * base64 是浏览器 FileReader 的原生输出，直接当参数传过来最省事，
+ * 不必把 Buffer 再包一层过 IPC。
+ */
+export function importAttachmentData(
+  noteId: number,
+  fileName: string,
+  base64: string
+): { ok: boolean; path?: string; message: string } {
+  const note = conn().prepare('SELECT id FROM note WHERE id = ?').get(noteId) as { id: number } | undefined
+  if (!note) return { ok: false, message: '笔记不存在' }
+  try {
+    const buf = Buffer.from(String(base64 ?? ''), 'base64')
+    if (!buf.length) return { ok: false, message: '数据为空' }
+    const dir = join(attachmentsDir(), String(noteId))
+    mkdirSync(dir, { recursive: true })
+    const target = join(dir, safeName(fileName || 'image.png'))
+    writeFileSync(target, buf)
+    const kind = (extname(fileName || '').replace('.', '') || 'file').toLowerCase()
     conn()
       .prepare('INSERT INTO attachment (note_id, path, kind, created_at) VALUES (?, ?, ?, ?)')
       .run(noteId, target, kind, nowStamp())

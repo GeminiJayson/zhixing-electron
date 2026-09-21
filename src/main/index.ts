@@ -32,7 +32,7 @@ import {
   testAiConnection,
 } from './ai'
 import { setConditionAsker } from './db/workflow'
-import { importAttachment } from './db/attachments'
+import { importAttachment, importAttachmentData } from './db/attachments'
 import { syncExternalTasks, taskSyncStatus } from './task-sync'
 import { readSelectedText } from './selection'
 import { addFlash } from './db/inbox'
@@ -1225,6 +1225,10 @@ function registerAttachmentHandlers(): void {
       paths,
     }
   })
+  // 粘贴/拖入的图片没有源文件路径，走这条把二进制直接存成附件
+  ipcMain.handle('attachment:saveData', (_e, noteId: number, fileName: string, base64: string) =>
+    importAttachmentData(Number(noteId), String(fileName ?? ''), String(base64 ?? ''))
+  )
 }
 
 /** 用系统默认应用打开本地文件（Word / Excel 笔记的正文就是这个文件）。 */

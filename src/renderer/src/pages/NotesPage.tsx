@@ -1120,6 +1120,7 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
                   {current.format === 'word' ? (
                     <div className="editor__office-body">
                       <RichTextEditor
+                        noteId={current.id}
                         html={officeEdit?.html ?? ''}
                         onChange={(h) => setOfficeEdit((prev) => (prev ? { ...prev, html: h } : prev))}
                         onCommit={(h) => void commitWord(h)}
@@ -1189,6 +1190,7 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
                 </div>
               ) : current.format === 'richtext' ? (
                 <RichTextEditor
+                  noteId={current.id}
                   html={content}
                   onChange={(h) => {
                     setContent(h)

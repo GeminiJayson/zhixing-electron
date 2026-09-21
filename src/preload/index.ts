@@ -101,6 +101,13 @@ const api = {
   attachments: (): Promise<
     { id: number; note_id: number; note_title: string; path: string; kind: string; size: number; missing: boolean }[]
   > => ipcRenderer.invoke('db:attachments'),
+    /** 把一段二进制（base64）存成本笔记的附件，返回落盘路径 */
+    saveAttachmentData: (
+      noteId: number,
+      fileName: string,
+      base64: string
+    ): Promise<{ ok: boolean; path?: string; message: string }> =>
+      ipcRenderer.invoke('attachment:saveData', noteId, fileName, base64),
   attachmentStats: (): Promise<{ count: number; bytes: number; missing: number; dir: string }> =>
     ipcRenderer.invoke('db:attachmentStats'),
   importAttachment: (noteId: number, srcPath: string): Promise<{ ok: boolean; path?: string; message: string }> =>

@@ -797,3 +797,29 @@
 .link-table__empty {
   padding: var(--space-3) var(--space-2);
 }
+
+/* 图片预览浮层：正文里是缩略图，双击看原图（需求：缩略图展示 + 原图保留） */
+.rt-preview {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: grid;
+  place-items: center;
+  padding: var(--space-6);
+  background: rgb(0 0 0 / 62%);
+  cursor: zoom-out;
+}
+.rt-preview__img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  background: var(--bg-layer-solid);
+}
+/* 正文里的缩略图：不要撑爆行宽 */
+.rt-editor__body .ProseMirror img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+  cursor: zoom-in;
+}
