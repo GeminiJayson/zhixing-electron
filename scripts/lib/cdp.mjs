@@ -81,6 +81,8 @@ export async function launchApp({
    */
   clean = true,
   profile = null,
+  /** 夹具补齐（示例笔记 + 工作流实例）。脚本自己准备库时传 false，别去抢渲染线程。 */
+  fixture = true,
   onWait = (i) => {
     if (i % 4 === 0) console.log('【等窗口】' + Math.round(i * 0.5) + 's')
   }
@@ -154,7 +156,7 @@ export async function launchApp({
   // 夹具模式：seedIfEmpty() 只给一篇 markdown 欢迎笔记，
   // 而有一批脚本要「找到一篇富文本笔记」「找到一篇 word 笔记」。
   // 这里补齐每种格式一篇，标题带「夹具」前缀，都是确定性的。
-  if (!copyDb) {
+  if (!copyDb && fixture) {
     try {
       const FIXTURE = [
         '(async () => {',
