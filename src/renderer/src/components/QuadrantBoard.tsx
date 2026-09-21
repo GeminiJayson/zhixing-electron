@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { priorityColor, priorityLabel, isImportant } from '@shared/priority'
+import { isTerminal } from '@shared/task'
 import type { Task } from '@shared/types'
 import { dueLabel } from '../lib/date'
 
@@ -56,7 +57,7 @@ export function QuadrantBoard({
   const [hover, setHover] = useState<QuadrantKey | null>(null)
   const today = new Date().toLocaleDateString('sv-SE')
 
-  const isDone = (t: Task): boolean => effective.get(t.id) ?? (t.status === 'done' || t.status === 'abandoned')
+  const isDone = (t: Task): boolean => effective.get(t.id) ?? isTerminal(t.status)
 
   const byId = new Map(tasks.map((t) => [t.id, t]))
   const childrenOf = (id: number): Task[] =>

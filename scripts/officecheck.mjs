@@ -16,10 +16,18 @@ const backup = join(repoRoot, 'backups', 'electron-migration', 'zhixing-before-e
 const tmpHome = join(root, '.screenshots', 'office-home')
 const fixtures = join(tmpHome, 'files')
 const PORT = 9238
-if (!existsSync(backup)) { console.error('✗ 缺备份库'); process.exit(1) }
+// 迁移前那份备份早已从工作区清掉 —— 缺了就退回「当前正式库的副本」。
+// 这些脚本要的只是「一张有数据的库」，对来源不敏感；没有这层回退，它们一启动就退出。
+const liveDb = join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db')
+const seedDb = existsSync(backup) ? backup : liveDb
+if (!existsSync(seedDb)) {
+  console.error('✗ 既没有迁移前备份，也找不到 ' + liveDb)
+  process.exit(1)
+}
+console.log('【基库】' + (seedDb === backup ? '迁移前备份' : '当前正式库副本'))
 rmSync(tmpHome, { recursive: true, force: true })
 mkdirSync(fixtures, { recursive: true })
-copyFileSync(backup, join(tmpHome, 'zhixing.db'))
+copyFileSync(seedDb, join(tmpHome, 'zhixing.db'))
 
 // 用 Python 的 python-docx / openpyxl 造真实文档（与 Python 版预览同源）
 // 夹具生成脚本跟本脚本一起进仓库，别放 /tmp
@@ -89,8 +97,22 @@ check('解析结果不含危险标签/属性', !hasDanger)
 ws.close()
 child.kill()
 await sleep(500)
-const realDb = join(process.env.HOME, 'Library/Application Support/ZhiXing/zhixing.db')
-check('真实库未被写入', execFileSync('sqlite3', [realDb, "SELECT COUNT(*) FROM note WHERE title LIKE '验证-%预览';"]).toString().trim() === '0')
+const realDb = join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db')
+/**
+ * 只读地数一格真实库。
+ * 原先走 execFileSync('sqlite3') —— 本机没有 CLI，这条「真实库未被写入」的断言从来没跑成过，
+ * 而它恰恰是唯一能发现测试污染用户数据的那道关。
+ */
+const countOf = (file, q) => {
+  const { DatabaseSync } = require('node:sqlite')
+  const db = new DatabaseSync(file)
+  try {
+    return String(Object.values(db.prepare(q).get() ?? {})[0] ?? '')
+  } finally {
+    db.close()
+  }
+}
+check('真实库未被写入', countOf(realDb, "SELECT COUNT(*) FROM note WHERE title LIKE '验证-%预览';") === '0')
 rmSync(tmpHome, { recursive: true, force: true })
 const failed = results.filter(([, ok]) => !ok).length
 console.log(`\n${results.length - failed}/${results.length} 项通过`)

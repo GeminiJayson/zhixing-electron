@@ -101,19 +101,43 @@ const release = await ensureRelease()
 // 上传走 curl：Node 的 fetch 要把整个文件读进内存再发，87 MB 的包会撞 undici 的
 // headers timeout（实测 UND_ERR_HEADERS_TIMEOUT，Release 建好了附件全丢）。
 // curl 直接流式发文件；token 经 --config 的 stdin 传入，不出现在命令行里（ps 看不到）。
+let failed = 0
 for (const a of assets) {
-  const cfg = `form = "access_token=${token}"\nform = "file=@${a.path}"\n`
-  const out = execFileSync('curl', ['-sS', '--config', '-', `${api}/releases/${release.id}/attach_files`], {
-    input: cfg,
-    encoding: 'utf-8',
-    maxBuffer: 32 * 1024 * 1024,
-  })
   let ok = false
+  let detail = ''
   try {
-    ok = Boolean(JSON.parse(out)?.id)
-  } catch {
-    ok = false
+    const cfg = `form = "access_token=${token}"\nform = "file=@${a.path}"\n`
+    const out = execFileSync('curl', ['-sS', '--config', '-', `${api}/releases/${release.id}/attach_files`], {
+      input: cfg,
+      encoding: 'utf-8',
+      maxBuffer: 32 * 1024 * 1024,
+    })
+    try {
+      ok = Boolean(JSON.parse(out)?.id)
+    } catch {
+      ok = false
+    }
+    if (!ok) detail = out.slice(0, 200)
+  } catch (err) {
+    // curl 自己失败（网络 / 鉴权）会抛：不让它中断循环，剩下的附件还要试一遍
+    detail = err instanceof Error ? err.message : String(err)
   }
-  console.log(ok ? `✓ 已上传 ${a.name}` : `✗ 上传失败 ${a.name}: ${out.slice(0, 200)}`)
+  if (ok) {
+    console.log(`✓ 已上传 ${a.name}`)
+  } else {
+    failed += 1
+    console.error(`✗ 上传失败 ${a.name}: ${detail}`)
+  }
+}
+
+/**
+ * 失败必须让调用方看得见。
+ *
+ * 本文件开头那段注释就记着历史：「Release 建好了附件全丢」—— 而当时循环只打印结果、
+ * 从不设退出码，调用方（与看日志的人）看到的仍是成功。发版这种一次性动作，静默失败最贵。
+ */
+if (failed) {
+  console.error(`\n✗ ${failed} / ${assets.length} 个附件没上传成功，远端 Release 不完整`)
+  process.exit(1)
 }
 console.log('\n完成。Release 页面：' + `https://gitee.com/${remote.owner}/${remote.repo}/releases/${tag}`)

@@ -209,7 +209,12 @@ mode = 'array'
 
 // 7) 去重：本地已有同名任务 → 认领而不是新建
 const LOCAL_TITLE = STAMP + ' 本地已有的任务'
-await conn.evaluate(`window.zhixing.db.createTask(${J(LOCAL_TITLE)}, null, null)`)
+// 这条是**用户自己写的**：认领之后它带上外部身份，但内容一个都不该被外部值覆盖
+const localId = await conn.evaluate(`(async () => {
+  const t = await window.zhixing.db.createTask(${J(LOCAL_TITLE)}, null, null)
+  await window.zhixing.db.updateTask(t.id, { notes_md: '我自己写的备注', due_date: '2026-12-31', priority: 7 })
+  return t.id
+})()`)
 const beforeCount = (await conn.evaluate('window.zhixing.db.tasks(300)')).filter(
   (t) => t.title === LOCAL_TITLE
 ).length
@@ -220,11 +225,21 @@ const afterList = (await conn.evaluate('window.zhixing.db.tasks(300)')).filter((
 check('本地那条没有被复制成两条', beforeCount === 1 && afterList.length === 1, `${beforeCount} → ${afterList.length}`)
 const again = await conn.evaluate('window.zhixing.taskSync.now()')
 // 认领后再同步走的是 id 匹配：不会再新建、也不会再认领一次
-// （这次 updated=1 是正常的 —— 认领只建立身份映射，外部字段从这一刻起开始同步）
 check(
   '认领后按 id 匹配（不再新建、也不再认领）',
   again?.created === 0 && again.linked === 0,
   J(again)
+)
+// 关键：认领不等于「交给外部托管」。这里原先的注释写的是「外部字段从这一刻起开始同步」，
+// 与 task-sync.ts 里「只建立映射、不改它的内容」的承诺正好相反 —— 后果是用户手写的内容
+// 在第二次同步时被静默抹掉。认领来的任务只补空字段。
+const mine = await conn.evaluate(
+  `window.zhixing.db.tasks(300).then((rows) => rows.find((t) => t.id === ${localId}))`
+)
+check(
+  '认领后的同步不覆盖用户自己写的内容',
+  mine?.notes_md === '我自己写的备注' && mine?.due_date === '2026-12-31' && mine?.priority === 7,
+  J({ notes: mine?.notes_md, due: mine?.due_date, priority: mine?.priority })
 )
 
 // 8) 非数组响应

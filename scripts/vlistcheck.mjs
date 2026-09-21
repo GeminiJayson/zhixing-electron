@@ -15,11 +15,30 @@ const repoRoot = join(root, '..')
 const backup = join(repoRoot, 'backups', 'electron-migration', 'zhixing-before-electron-write.db')
 const tmpHome = join(root, '.screenshots', 'vlist-home')
 const PORT = 9241
-const sql = (f, q) => execFileSync('sqlite3', [f, q]).toString().trim()
-if (!existsSync(backup)) { console.error('✗ 缺备份库'); process.exit(1) }
+const sql = (f, q) => {
+  // 原来走 `execFileSync('sqlite3', ...)` —— 那要系统装了 CLI 才有，本机与 CI 都没有，
+  // 于是脚本一跑到 sql() 就 ENOENT 崩掉，后面的断言根本没机会执行（这也是污染长期没被发现的原因）。
+  // 改用 Node 自带的 node:sqlite：不依赖外部程序，也不必碰 better-sqlite3 的 Electron ABI。
+  const { DatabaseSync } = require('node:sqlite')
+  const db = new DatabaseSync(f)
+  try {
+    return String(Object.values(db.prepare(q).get() ?? {})[0] ?? '')
+  } finally {
+    db.close()
+  }
+}
+// 迁移前那份备份早已从工作区清掉 —— 缺了就退回「当前正式库的副本」。
+// 这些脚本要的只是「一张有数据的库」，对来源不敏感；没有这层回退，它们一启动就退出。
+const liveDb = join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db')
+const seedDb = existsSync(backup) ? backup : liveDb
+if (!existsSync(seedDb)) {
+  console.error('✗ 既没有迁移前备份，也找不到 ' + liveDb)
+  process.exit(1)
+}
+console.log('【基库】' + (seedDb === backup ? '迁移前备份' : '当前正式库副本'))
 rmSync(tmpHome, { recursive: true, force: true })
 mkdirSync(tmpHome, { recursive: true })
-copyFileSync(backup, join(tmpHome, 'zhixing.db'))
+copyFileSync(seedDb, join(tmpHome, 'zhixing.db'))
 const dbFile = join(tmpHome, 'zhixing.db')
 
 // 递归 CTE 造 400 条任务（不经过 IPC，省时间）
@@ -81,7 +100,7 @@ check('滚动后渲染的是靠后的行', after.first !== snap.first, `first=${
 ws.close()
 child.kill()
 await sleep(500)
-const realDb = join(process.env.HOME, 'Library/Application Support/ZhiXing/zhixing.db')
+const realDb = join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db')
 check('真实库未被写入', sql(realDb, "SELECT COUNT(*) FROM task WHERE title LIKE '验证-虚拟-%';") === '0')
 rmSync(tmpHome, { recursive: true, force: true })
 const failed = results.filter(([, ok]) => !ok).length

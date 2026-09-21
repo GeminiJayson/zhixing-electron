@@ -39,6 +39,12 @@ export function WidgetApp() {
   const [mode, setMode] = useState<'full' | 'ball'>('full')
   /** 悬浮球体型（bloub 的形状 id）：主进程右键菜单改它，这里只负责转发给球 */
   const [ballShape, setBallShape] = useState(BLOUB_DEFAULT_SHAPE)
+  /**
+   * 待处理的提醒条数（主进程推 widget:notice）。
+   * 提醒气泡就挂在球旁边，球本身也该有反应 —— >0 时停在 notify 表情。
+   * 名字避开浮窗自有的 notice（那是一条提示文案），两者不是一回事。
+   */
+  const [reminderCount, setReminderCount] = useState(0)
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const [notice, setNotice] = useState('')
   const [priorityMenu, setPriorityMenu] = useState<{ id: number; anchor: HTMLElement } | null>(null)
@@ -82,7 +88,7 @@ export function WidgetApp() {
    */
   useEffect(() => {
     void window.zhixing.widget.getMode().then(setMode)
-    window.zhixing.widget.onMode(setMode)
+    return window.zhixing.widget.onMode(setMode)
   }, [])
 
   /**
@@ -91,15 +97,24 @@ export function WidgetApp() {
    */
   useEffect(() => {
     void window.zhixing.widget.ballShape().then(setBallShape)
-    window.zhixing.widget.onBallShape(setBallShape)
+    return window.zhixing.widget.onBallShape(setBallShape)
   }, [])
 
+  /**
+   * 提醒条数订阅：与形态 / 体型同一套路，主进程在派发提醒时推。
+   * 不主动「问一次」也可以 —— 挂载时主进程随后就会推，而且这条只影响表情。
+   */
+  useEffect(() => window.zhixing.widget.onNotice(setReminderCount), [])
+
   // 主进程的显隐联动会推 widget-refresh（对齐 _on_main_hidden 里的 widget.reload_tasks）
-  useEffect(() => {
-    window.zhixing.app.onAction((action) => {
-      if (action === 'widget-refresh') void load()
-    })
-  }, [load])
+  // 依赖是 [load]，load 一变就会重注册 —— 不接住取消函数就会持续叠层
+  useEffect(
+    () =>
+      window.zhixing.app.onAction((action) => {
+        if (action === 'widget-refresh') void load()
+      }),
+    [load]
+  )
 
   // 贴边交互：球形态由 WidgetBall 自己处理点击展开，这里只管双击与右键。
   // 刻意不再监听 mouseenter —— 球就贴在屏幕边缘，鼠标每次掠过都展开会非常烦人。
@@ -352,7 +367,13 @@ export function WidgetApp() {
 
   // 贴边收缩态：整个窗口交给悬浮球（点击球自身即展开）
   if (mode === 'ball') {
-    return <WidgetBall shape={ballShape} onRestore={() => void window.zhixing.widget.undock()} />
+    return (
+      <WidgetBall
+        shape={ballShape}
+        notice={reminderCount}
+        onRestore={() => void window.zhixing.widget.undock()}
+      />
+    )
   }
 
   return (

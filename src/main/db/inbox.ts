@@ -5,7 +5,7 @@ import type {
   Task,
 } from '../../shared/types'
 import { conn, nowStamp, TASK_COLUMNS } from './connection'
-import { reindexFlash, removeFromIndex } from './fts'
+import { reindexFlash, reindexTask, removeFromIndex } from './fts'
 
 // ---------------------------------------------------------------- 收件箱 / 闪念
 
@@ -113,13 +113,6 @@ export function mergeFlashes(ids: number[]): Flash | null {
   if (items.length < 2) return items[0] ?? null
   const c = conn()
   const sourceUrl = items.find((i) => i.source_url)?.source_url ?? ''
-  const merged = addFlash(
-    items.map((i) => i.content ?? '').join('\n\n---\n\n'),
-    items[0].remark ?? '',
-    items[0].source_app ?? '',
-    sourceUrl
-  )
-  if (!merged) return null
   const tagIds = new Set<number>()
   for (const i of items) {
     for (const row of c.prepare('SELECT tag_id FROM flash_tag WHERE flash_id = ?').all(i.id) as {
@@ -128,12 +121,27 @@ export function mergeFlashes(ids: number[]): Flash | null {
       tagIds.add(row.tag_id)
     }
   }
-  if (tagIds.size) {
-    const ins = c.prepare('INSERT OR IGNORE INTO flash_tag (flash_id, tag_id) VALUES (?, ?)')
-    for (const tid of tagIds) ins.run(merged.id, tid)
-  }
-  for (const i of items) deleteFlash(i.id)
-  return getFlash(merged.id)
+
+  /**
+   * 建新条 + 标签并集 + 逐条软删，三步收进一个事务。
+   * 原先裸写：中途失败会留下「新条建了、旧条还在」的重复内容 —— 而且用户看不到任何提示。
+   */
+  const tx = c.transaction(() => {
+    const merged = addFlash(
+      items.map((i) => i.content ?? '').join('\n\n---\n\n'),
+      items[0].remark ?? '',
+      items[0].source_app ?? '',
+      sourceUrl
+    )
+    if (!merged) return null
+    if (tagIds.size) {
+      const ins = c.prepare('INSERT OR IGNORE INTO flash_tag (flash_id, tag_id) VALUES (?, ?)')
+      for (const tid of tagIds) ins.run(merged.id, tid)
+    }
+    for (const i of items) deleteFlash(i.id)
+    return getFlash(merged.id)
+  })
+  return tx()
 }
 
 /** 标记闪念已转换（status=converted + 去向），对齐 flash_service._mark_converted。 */
@@ -160,6 +168,8 @@ export function flashToTask(id: number): number | null {
     )
     .run(title, `来自闪念：${(f.content ?? '').slice(0, 200)}`, nextSortKey(null), stamp, stamp)
   const taskId = Number(info.lastInsertRowid)
+  // 派发出来的任务同样要进全文索引 —— 少这一句，它在用户手工改标题之前永远搜不到
+  reindexTask(taskId)
   markFlashConverted(id, 'task', taskId)
   return taskId
 }
@@ -185,6 +195,7 @@ export function flashToSubtask(id: number, parentTaskId: number): number | null 
       stamp
     )
   const taskId = Number(info.lastInsertRowid)
+  reindexTask(taskId)
   markFlashConverted(id, 'subtask', taskId)
   return taskId
 }

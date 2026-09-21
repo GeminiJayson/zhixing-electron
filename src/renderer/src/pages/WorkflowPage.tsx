@@ -261,14 +261,27 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     setInstances(await window.zhixing.db.workflowInstances())
   }, [])
 
+  /**
+   * rankdir 只用于「打开模板时按当前方向排一次」。
+   *
+   * 放进 openTemplate 的依赖会连带出问题：下面的初始化 effect 依赖 openTemplate，
+   * 于是**切换方向就会重跑初始化**，把用户正在看的模板换成列表里的第一个。
+   * 而方向按钮本身已经调 `handleAutoLayout(nextDir)` 重排，并不需要这条依赖。
+   * 所以用 ref 读它、依赖数组里去掉 —— 初始化 effect 从此只跑一次。
+   */
+  const rankdirRef = useRef<WorkflowRankDir>(rankdir)
+  useEffect(() => {
+    rankdirRef.current = rankdir
+  }, [rankdir])
+
   const openTemplate = useCallback(async (id: number) => {
     const tpl = await window.zhixing.db.workflowTemplate(id)
     setCurrent(tpl)
-    const layout = tpl ? layoutOf(tpl.nodes, rankdir) : new Map()
+    const layout = tpl ? layoutOf(tpl.nodes, rankdirRef.current) : new Map()
     setPos(layout)
     setCanvasSize(canvasBoundsOf(layout))
     setSelected(null)
-  }, [rankdir])
+  }, [])
 
   useEffect(() => {
     void (async () => {
@@ -835,7 +848,8 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     if (!current) return
     const next = layoutWorkflow(ordered, { rankdir: dir, nodeWidth: NODE_W, nodeHeight: NODE_H })
     if (!next.size) return
-    for (const [id, p] of next) await window.zhixing.db.updateWorkflowNodePos(id, p.x, p.y)
+    // 一次提交全部坐标：逐条写的话，中途失败会留下「一半新坐标一半旧坐标」的画布
+    await window.zhixing.db.batchUpdateNodePos([...next].map(([id, p]) => ({ id, x: p.x, y: p.y })))
     await refresh()
     setPos(next)
     // 只改基准：适配视图由上面那个 effect 统一做（它等得到新基准）

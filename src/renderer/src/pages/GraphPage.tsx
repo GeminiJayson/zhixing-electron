@@ -213,8 +213,11 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
     void window.zhixing.db.graphWatch(true)
     // 登记时先打一次时间戳，避免首次写入时域订阅兜底与增量各查一遍
     lastDeltaAt.current = Date.now()
-    window.zhixing.db.onGraphDelta((d) => applyDeltaRef.current(d))
+    // 接住取消函数：这个 effect 每次进图谱页都跑，不注销就会叠一层监听 ——
+    // 一次 delta 触发 N 次旧闭包回调（含整图重查），并在已卸载的组件上 setData
+    const offDelta = window.zhixing.db.onGraphDelta((d) => applyDeltaRef.current(d))
     return () => {
+      offDelta()
       void window.zhixing.db.graphWatch(false)
     }
   }, [])

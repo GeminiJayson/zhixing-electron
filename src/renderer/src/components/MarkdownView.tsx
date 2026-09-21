@@ -1,25 +1,18 @@
 import { useMemo } from 'react'
 import { marked } from 'marked'
 import { linkifyWiki } from '@shared/wiki'
+import { sanitizeHtml } from '@shared/sanitize-html'
 
 marked.setOptions({ gfm: true, breaks: true })
 
 /**
- * 渲染前清洗：笔记正文可能来自导入或粘贴，去掉可执行内容与内联事件处理器。
- * 不依赖额外依赖，用浏览器自带的 DOMParser 做白名单式清理。
+ * 渲染前清洗：笔记正文可能来自导入 / 粘贴 / AI，属不可信输入。
+ *
+ * 这里**不再自建消毒**。原先那份是黑名单（移除固定标签表 + on* + 裸 javascript:），
+ * 而黑名单天生漏 —— 浏览器解析 URL 会剥掉 tab 与换行，\`java\tscript:alert(1)\` 绕得过去；
+ * 它也不处理 svg / math / template / noscript。共享的 sanitizeHtml 是逐 token 的白名单，
+ * 且 sanitize-html.ts 的注释早就写了「两边各写一套必然漂移」。
  */
-function sanitize(html: string): string {
-  const doc = new DOMParser().parseFromString(html, 'text/html')
-  doc.querySelectorAll('script,iframe,object,embed,link,style,form,base').forEach((n) => n.remove())
-  for (const el of Array.from(doc.querySelectorAll('*'))) {
-    for (const attr of Array.from(el.attributes)) {
-      if (/^on/i.test(attr.name)) el.removeAttribute(attr.name)
-      else if (/^(href|src|xlink:href)$/i.test(attr.name) && /^\s*javascript:/i.test(attr.value))
-        el.removeAttribute(attr.name)
-    }
-  }
-  return doc.body.innerHTML
-}
 
 interface Props {
   md: string
@@ -31,7 +24,7 @@ interface Props {
 
 export function MarkdownView({ md: source, resolved, onOpenNote, onCreateNote }: Props) {
   const html = useMemo(
-    () => sanitize(marked.parse(linkifyWiki(source, resolved), { async: false }) as string),
+    () => sanitizeHtml(marked.parse(linkifyWiki(source, resolved), { async: false }) as string),
     [source, resolved]
   )
 

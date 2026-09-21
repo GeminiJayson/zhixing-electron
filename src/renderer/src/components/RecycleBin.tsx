@@ -156,10 +156,9 @@ export function RecycleBin({ onNotice, onChanged, onClose }: Props) {
                     confirmText: '清空',
                   })
                   if (!confirmed) return
-                  let n = 0
-                  for (const k of ['task', 'note', 'flash'] as const) {
-                    n += await window.zhixing.db.emptyTrash(k)
-                  }
+                  // 三类一个事务：分三次 IPC 的话，中途失败会留下「任务清了、笔记还在」，
+                  // 而提示已经说了「已清空」
+                  const n = await window.zhixing.db.emptyAllTrash()
                   onNotice(`已清空 ${n} 项`)
                   await afterChange()
                 })()

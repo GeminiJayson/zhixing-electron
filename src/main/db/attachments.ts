@@ -108,6 +108,50 @@ export function importAttachmentData(
   }
 }
 
+/**
+ * 批量导入内存附件：多图上传一次 IPC。
+ *
+ * 渲染层原本在循环里逐张 \`await saveAttachmentData(...)\` —— 第 N 张失败时前 N-1 张
+ * 已经落盘落库。这里把**落库**收进一个事务（文件写入本身无法回滚，万一落库失败，
+ * 已写下的文件成为孤儿，由 pruneAttachments 兜底清理），并逐张回报结果，
+ * 让调用方能准确告诉用户哪几张没进去。
+ */
+export function importAttachmentDataBatch(
+  noteId: number,
+  files: { fileName: string; base64: string }[]
+): { fileName: string; ok: boolean; path?: string; message: string }[] {
+  const out: { fileName: string; ok: boolean; path?: string; message: string }[] = []
+  const note = conn().prepare('SELECT id FROM note WHERE id = ?').get(noteId) as { id: number } | undefined
+  if (!note) return files.map((f) => ({ fileName: f.fileName, ok: false, message: '笔记不存在' }))
+  const dir = join(attachmentsDir(), String(noteId))
+  const pending: { target: string; kind: string }[] = []
+  for (const f of files) {
+    try {
+      const buf = Buffer.from(String(f.base64 ?? ''), 'base64')
+      if (!buf.length) {
+        out.push({ fileName: f.fileName, ok: false, message: '数据为空' })
+        continue
+      }
+      mkdirSync(dir, { recursive: true })
+      const target = join(dir, safeName(f.fileName || 'image.png'))
+      writeFileSync(target, buf)
+      pending.push({ target, kind: (extname(f.fileName || '').replace('.', '') || 'file').toLowerCase() })
+      out.push({ fileName: f.fileName, ok: true, path: target, message: '已归档' })
+    } catch (err) {
+      out.push({ fileName: f.fileName, ok: false, message: '导入失败：' + (err as Error).message })
+    }
+  }
+  if (pending.length) {
+    const c = conn()
+    const ins = c.prepare('INSERT INTO attachment (note_id, path, kind, created_at) VALUES (?, ?, ?, ?)')
+    const tx = c.transaction((rows: { target: string; kind: string }[]) => {
+      for (const r of rows) ins.run(noteId, r.target, r.kind, nowStamp())
+    })
+    tx(pending)
+  }
+  return out
+}
+
 export function listAttachments(): AttachmentRow[] {
   const rows = conn()
     .prepare(

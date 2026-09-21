@@ -11,6 +11,7 @@
  *   - 缺 id 或缺标题的条目会被跳过并计数，不猜、不编。
  */
 import { conn, nowStamp } from './db/connection'
+import { planSyncUpdate } from './task-sync-plan'
 import { nextSortKey } from './db/tasks'
 import { listSettings, setSettings } from './db/settings'
 import { parseSettings } from '../shared/settings'
@@ -180,34 +181,47 @@ function upsertOne(
 
   const existing = c
     .prepare(
-      'SELECT id, title, notes_md, due_date, priority, status FROM task ' +
+      'SELECT id, title, notes_md, due_date, priority, status, external_linked FROM task ' +
         'WHERE external_source = ? AND external_id = ? AND deleted_at IS NULL'
     )
     .get(EXTERNAL_SOURCE, extId) as
-    | { id: number; title: string; notes_md: string | null; due_date: string | null; priority: number | null; status: string | null }
+    | {
+        id: number
+        title: string
+        notes_md: string | null
+        due_date: string | null
+        priority: number | null
+        status: string | null
+        external_linked: number | null
+      }
     | undefined
 
   if (existing) {
+    // 决策交给纯函数（有单测）：认领来的任务只补空字段，不覆盖用户自己写的内容
+    const plan = planSyncUpdate(
+      { ...existing, linked: Number(existing.external_linked ?? 0) === 1 },
+      { title, notes, due, priority, done }
+    )
     const sets: string[] = []
     const args: unknown[] = []
-    if (title !== existing.title) {
+    if (plan.title !== undefined) {
       sets.push('title = ?')
-      args.push(title)
+      args.push(plan.title)
     }
-    if (notes !== (existing.notes_md ?? '')) {
+    if (plan.notes_md !== undefined) {
       sets.push('notes_md = ?')
-      args.push(notes)
+      args.push(plan.notes_md)
     }
-    if ((due ?? null) !== (existing.due_date ?? null)) {
+    if (plan.due_date !== undefined) {
       sets.push('due_date = ?')
-      args.push(due)
+      args.push(plan.due_date)
     }
-    if (priority !== (existing.priority ?? 0)) {
+    if (plan.priority !== undefined) {
       sets.push('priority = ?')
-      args.push(priority)
+      args.push(plan.priority)
     }
     // 只进不退：外部说完成就标完成；外部又变回未完成时不动本地
-    if (done && existing.status !== 'done') {
+    if (plan.markDone) {
       sets.push("status = 'done'", 'completed_at = ?')
       args.push(stamp)
     }
@@ -228,7 +242,7 @@ function upsertOne(
       .get(title) as { id: number } | undefined
     if (twin) {
       c.prepare(
-        'UPDATE task SET external_source = ?, external_id = ?, updated_at = ? WHERE id = ?'
+        'UPDATE task SET external_source = ?, external_id = ?, external_linked = 1, updated_at = ? WHERE id = ?'
       ).run(EXTERNAL_SOURCE, extId, stamp, twin.id)
       return 'linked'
     }
@@ -317,14 +331,22 @@ export async function syncExternalTasks(): Promise<TaskSyncResult> {
   let unchanged = 0
   let linked = 0
   let skipped = 0
-  for (const row of rows) {
-    const outcome = upsertOne(row, s.task_api_list_id, map, s.task_api_dedupe)
-    if (outcome === 'created') created += 1
-    else if (outcome === 'updated') updated += 1
-    else if (outcome === 'unchanged') unchanged += 1
-    else if (outcome === 'linked') linked += 1
-    else skipped += 1
-  }
+  /**
+   * 整批 upsert 收进一个事务。
+   * 原先裸写：中途失败会留下「前一半已提交、后一半没写」的库状态，而 last_result 仍是旧值 ——
+   * 界面看到的是上一次的结果，与库里的实际情况不符。
+   */
+  const batch = conn().transaction((list: typeof rows) => {
+    for (const row of list) {
+      const outcome = upsertOne(row, s.task_api_list_id, map, s.task_api_dedupe)
+      if (outcome === 'created') created += 1
+      else if (outcome === 'updated') updated += 1
+      else if (outcome === 'unchanged') unchanged += 1
+      else if (outcome === 'linked') linked += 1
+      else skipped += 1
+    }
+  })
+  batch(rows)
 
   const parts = [`拉到 ${rows.length} 条`, `新增 ${created}`, `更新 ${updated}`]
   if (linked) parts.push(`认领 ${linked}（与本地同名任务合并）`)

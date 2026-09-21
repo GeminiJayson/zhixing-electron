@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight } from '@renderer/lib/icons'
 import { priorityColor } from '@shared/priority'
+import { isTerminal } from '@shared/task'
 import type { Task } from '@shared/types'
 import { dueLabel, monthGrid, pad2 } from '../lib/date'
 
@@ -76,7 +77,7 @@ export function CalendarBoard({ tasks, effective, onOpen, onToggle, onReschedule
   const [dropDay, setDropDay] = useState<string | null>(null)
 
   const isDone = (t: Task): boolean =>
-    effective.get(t.id) ?? (t.status === 'done' || t.status === 'abandoned')
+    effective.get(t.id) ?? isTerminal(t.status)
 
   // 已完成过滤与 Python _visible_tasks 同口径：开关关（默认 false）才隐去有效完成
   const visible = useMemo(

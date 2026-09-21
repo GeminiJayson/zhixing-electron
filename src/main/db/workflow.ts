@@ -1,6 +1,7 @@
 import { nextSortKey } from './tasks'
 import { setTaskTags } from './task-ops'
 import { getNote } from './notes'
+import { reindexTask } from './fts'
 import { openExternalSafely } from '../security'
 import { spawn } from 'node:child_process'
 import { writeFileSync, unlinkSync } from 'node:fs'
@@ -365,6 +366,21 @@ export function updateWorkflowNodePos(nodeId: number, x: number, y: number): num
     .changes
 }
 
+/**
+ * 批量写节点坐标：自动布局一次提交。
+ * 渲染层原来是逐个节点 await updateWorkflowNodePos —— 布局中途失败会留下「一半新坐标一半旧坐标」的画布。
+ */
+export function batchUpdateNodePos(items: { id: number; x: number; y: number }[]): number {
+  const c = conn()
+  const stmt = c.prepare('UPDATE workflow_node SET pos_x = ?, pos_y = ? WHERE id = ?')
+  const tx = c.transaction((list: { id: number; x: number; y: number }[]) => {
+    let n = 0
+    for (const it of list) n += stmt.run(it.x, it.y, it.id).changes
+    return n
+  })
+  return tx(items)
+}
+
 /** 工作流实例的标记标签：父任务与各步骤都打上它，任务页一眼能认出「这是流程派生的」。 */
 export const WORKFLOW_TAG = '工作流'
 
@@ -388,6 +404,8 @@ function createWorkflowParentTask(tplName: string, instanceTitle: string): numbe
       stamp
     )
   const taskId = Number(info.lastInsertRowid)
+  // 直接 INSERT 绕过了 tasks.ts 的仓储函数，索引得自己补 —— 否则这个根任务搜不到
+  reindexTask(taskId)
   // 标签是任务页上「明显标记」的载体（TaskRow 会渲染成胶囊）
   setTaskTags(taskId, [WORKFLOW_TAG])
   return taskId
@@ -420,6 +438,7 @@ export function spawnStepTask(
     )
     .run(`${tplName}：${node.title}`, notesMd, nextSortKey(parentId), parentId, stamp, stamp)
   const taskId = Number(info.lastInsertRowid)
+  reindexTask(taskId)
   // 与父任务同一个标记：任务页上能一眼看出这一串是流程派生的
   setTaskTags(taskId, [WORKFLOW_TAG])
   c.prepare('INSERT INTO workflow_step_task (instance_id, node_id, task_id, created_at) VALUES (?, ?, ?, ?)').run(
@@ -448,30 +467,37 @@ export async function instantiateWorkflow(
   const start = usePolicy === 'all' ? null : await resolveNextRunnable(tpl, null, null)
   const headId = usePolicy === 'all' ? ordered[0]?.id ?? null : start?.node?.id ?? null
   const instanceTitle = title || `${tpl.name} · ${stamp.slice(5, 16)}`
-  const info = c
-    .prepare(
-      `INSERT INTO workflow_instance (template_id, title, status, current_node_id, origin_task_id, created_at)
-       VALUES (?, ?, 'running', ?, ?, ?)`
-    )
-    .run(templateId, instanceTitle, headId, originTaskId, stamp)
-  const instanceId = Number(info.lastInsertRowid)
-
-  // 没有「启动它的那个任务」时（从工作流页直接点启动）就现造一个根任务：
-  // 各步骤挂在它下面形成一棵子树，而不是散落在任务列表顶层。
-  // 同时把它写回 origin_task_id —— spawnStepTask 取父级、以及「按任务查实例」都靠这一列。
-  const rootTaskId = originTaskId ?? createWorkflowParentTask(tpl.name, instanceTitle)
-  if (rootTaskId !== originTaskId) {
-    c.prepare('UPDATE workflow_instance SET origin_task_id = ? WHERE id = ?').run(rootTaskId, instanceId)
-  }
-
   // policy=first 只下发第一步，完成后自动推进；all 一次性下发全部。
   // 两种情况下条件节点都不建任务 —— 它是自动求值的关卡，不是待办；
   // 命令 / 脚本也不建任务 —— 它们由泵直接执行，等进程退出后自行推进。
   const toSpawn = usePolicy === 'all' ? ordered : start?.node ? [start.node] : []
-  for (const n of toSpawn) {
-    if (!needsTask(n)) continue
-    spawnStepTask(instanceId, n, tpl.name, rootTaskId)
-  }
+
+  /**
+   * 实例 + 根任务 + 各步骤任务 + origin 回写，收进一个事务。
+   * 原先裸写：中途失败会留下「实例建了却没有根任务」这类半成品，页面上就是一个空实例。
+   * 事务内必须同步，所以上面的 resolveNextRunnable（异步）与下面的 pumpInstance 都留在外面。
+   */
+  const instanceId = c.transaction(() => {
+    const info = c
+      .prepare(
+        `INSERT INTO workflow_instance (template_id, title, status, current_node_id, origin_task_id, created_at)
+         VALUES (?, ?, 'running', ?, ?, ?)`
+      )
+      .run(templateId, instanceTitle, headId, originTaskId, stamp)
+    const id = Number(info.lastInsertRowid)
+    // 没有「启动它的那个任务」时（从工作流页直接点启动）就现造一个根任务：
+    // 各步骤挂在它下面形成一棵子树，而不是散落在任务列表顶层。
+    // 同时把它写回 origin_task_id —— spawnStepTask 取父级、以及「按任务查实例」都靠这一列。
+    const rootTaskId = originTaskId ?? createWorkflowParentTask(tpl.name, instanceTitle)
+    if (rootTaskId !== originTaskId) {
+      c.prepare('UPDATE workflow_instance SET origin_task_id = ? WHERE id = ?').run(rootTaskId, id)
+    }
+    for (const n of toSpawn) {
+      if (!needsTask(n)) continue
+      spawnStepTask(id, n, tpl.name, rootTaskId)
+    }
+    return id
+  })()
   // 首节点若是命令 / 脚本，建完实例就交给泵自动跑。这里**不 await**：
   // 长命令可能要跑一阵，页面应当立刻拿到实例并显示「运行中」，而不是卡在启动按钮上。
   const head = headId == null ? null : ordered.find((n) => n.id === headId) ?? null

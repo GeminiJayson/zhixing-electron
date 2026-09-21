@@ -27,7 +27,7 @@ import { BLOUB_DEFAULT_SHAPE, BLOUB_SHAPES, normalizeBloubShape } from '../share
 import { resolveThemePack } from '../shared/theme-packs'
 import { initFileLog } from './log'
 import { hardenWindow } from './security'
-import { autoBackup, broadcastDataChanged, closeDb, currentSettings, dbPath, dbOpenError, dbReadonlyReason, dueReminders, ensureDefaultSettings, listTodayTasks, open, registerDbHandlers, saveWidgetGeometry, saveWidgetBall, setDataChangedHook } from './db'
+import { autoBackup, broadcastDataChanged, closeDb, currentSettings, dbPath, dbOpenError, dbReadonlyReason, dismissReminder, dueReminders, ensureDefaultSettings, listTodayTasks, open, registerDbHandlers, saveWidgetGeometry, saveWidgetBall, setDataChangedHook, snoozeReminder } from './db'
 import {
   cancelOrganizeLibrary,
   currentLibraryProgress,
@@ -37,7 +37,7 @@ import {
   testAiConnection,
 } from './ai'
 import { setConditionAsker } from './db/workflow'
-import { importAttachment, importAttachmentData } from './db/attachments'
+import { importAttachment, importAttachmentData, importAttachmentDataBatch } from './db/attachments'
 import { syncExternalTasks, taskSyncStatus } from './task-sync'
 import { readSelectedText } from './selection'
 import { addFlash } from './db/inbox'
@@ -274,6 +274,8 @@ function createWidgetWindow(): void {
     }, 400)
   }
   widgetWindow.on('moved', () => {
+    // 提醒气泡锚在浮窗旁边，浮窗一动它就得跟着（内含去抖）
+    followWidgetSoon()
     // 球形态：窗口本身就是球，拖动只更新球位置（停手后再吸附 + 写库）
     if (widgetMode === 'ball') {
       rememberBallPosition()
@@ -285,6 +287,7 @@ function createWidgetWindow(): void {
     persistSoon()
   })
   widgetWindow.on('resized', () => {
+    followWidgetSoon()
     if (widgetMode === 'ball') persistBallSoon()
     else persistSoon()
   })
@@ -565,26 +568,36 @@ function toggleWidget(): void {
  * 主窗显示时隐藏浮窗，主窗隐藏（关闭到浮窗/最小化）时显示浮窗并刷新今日待办。
  */
 function syncWidgetVisibility(): void {
-  if (!widgetWindow || widgetWindow.isDestroyed()) return
-  // splash 阶段主窗还没露面，此时不该弹浮窗
-  if (!mainReady) {
-    widgetWindow.hide()
-    return
+  // 提前 return 的分支很多，而「浮窗在不在」正是提醒该走气泡还是走主窗口那张卡片的判据，
+  // 所以收尾统一放 finally —— 每个分支都漏不掉，也不必在每个 return 前补一遍。
+  try {
+    if (!widgetWindow || widgetWindow.isDestroyed()) return
+    // splash 阶段主窗还没露面，此时不该弹浮窗
+    if (!mainReady) {
+      widgetWindow.hide()
+      return
+    }
+    if (!currentSettings().widget_enabled) {
+      widgetWindow.hide()
+      return
+    }
+    if (widgetManualOpen) return
+    const mainVisible =
+      !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized()
+    if (mainVisible) {
+      // 有欠着的提醒、且浮窗正停在球形态时，别把球藏了 —— 提醒就是从它旁边冒出来的，
+      // 球一藏，气泡就成了「从空无一物的地方浮出来」。提醒处理完自然会被收回。
+      if (activeReminders.length && widgetMode === 'ball') return
+      widgetWindow.hide()
+      return
+    }
+    widgetWindow.show()
+    // 浮窗自身每 5s 轮询一次；主窗刚隐藏时立刻推一次，避免先看到过期列表
+    widgetWindow.webContents.send('app:action', 'widget-refresh')
+  } finally {
+    // 有欠着的提醒时才值得重排，平时这一步是空转
+    if (activeReminders.length) dispatchReminders()
   }
-  if (!currentSettings().widget_enabled) {
-    widgetWindow.hide()
-    return
-  }
-  if (widgetManualOpen) return
-  const mainVisible =
-    !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized()
-  if (mainVisible) {
-    widgetWindow.hide()
-    return
-  }
-  widgetWindow.show()
-  // 浮窗自身每 5s 轮询一次；主窗刚隐藏时立刻推一次，避免先看到过期列表
-  widgetWindow.webContents.send('app:action', 'widget-refresh')
 }
 
 /**
@@ -1167,42 +1180,255 @@ function registerWindowFit(): void {
 }
 
 /**
- * 系统级到点提醒。
+ * 到点提醒的**唯一消费者**。
  *
- * 渲染层那张提醒卡片只在主窗口活着时看得见 —— 窗口收进托盘或隐藏后，它等于没有。
- * 所以主进程按同一节奏（30 秒）自己查一遍，用系统通知把提醒送进 Windows 通知中心。
+ * 此前渲染层自己轮询 `db:dueReminders`（查与清合一），主进程另开一条只读通道发系统通知 ——
+ * 两个地方都从同一个 reminder_at 读，谁是消费方只是一个隐式约定。一旦再来第三个读者
+ * （悬浮表情气泡），两边就会互相抢着清，用户反而少看到一条提醒。
  *
- * 与渲染层的分工：**这里只读，不清 reminder_at**；消费仍然由 db:dueReminders 完成。
- * 两边都清会互相抢，用户反而少看到一条提醒。
+ * 现在收归这里一处：查出到期项 → 立刻消费（清 reminder_at，一次性语义）→ 把「已消费但
+ * 用户还没处理」的那一份留在 activeReminders → 按优先级派发：
+ *   1. 悬浮表情可见 → 气泡窗口（「从悬浮表情出现」）
+ *   2. 否则         → 主窗口那张卡片（浮窗关掉 / 收进托盘时的兜底）
+ * 两个窗口都只是显示器，只读不写。
  */
-let notifiedReminders = new Set<string>()
-let reminderNotifyTimer: NodeJS.Timeout | null = null
+type ReminderRow = ReturnType<typeof dueReminders>[number]
 
-function startReminderNotifications(): void {
+/** 待展示的提醒（主进程唯一持有）：reminder_at 已清，这是「欠着用户、还没处理」的那一份。 */
+let activeReminders: ReminderRow[] = []
+let reminderWindow: BrowserWindow | null = null
+let reminderNotifyTimer: NodeJS.Timeout | null = null
+let reminderFollowTimer: NodeJS.Timeout | null = null
+/** 气泡内容高度：渲染层量完上报，定位时要用 */
+let reminderHeight = 200
+let notifiedReminders = new Set<string>()
+
+/** 气泡宽度：够放标题与一排按钮，又不至于横着占掉半屏 */
+const REMINDER_W = 320
+/** 气泡与浮窗之间的间隙 */
+const REMINDER_GAP = 10
+
+/**
+ * 提醒气泡窗口。
+ *
+ * 为什么是独立窗口而不是画在浮窗里：浮窗贴边收成球时整个窗口只有球那么大
+ * （BALL_WIN_MIN），气泡根本塞不下；把球窗口临时撑大又要跟贴边、拖拽、滚轮缩放
+ * 那一整套几何逻辑打架。独立窗口让球留在自己的位置上，气泡从旁边长出来。
+ */
+function createReminderWindow(): void {
+  if (reminderWindow && !reminderWindow.isDestroyed()) return
+  reminderWindow = new BrowserWindow({
+    width: REMINDER_W,
+    height: reminderHeight,
+    show: false,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    // 与浮窗同一个理由：Windows 下 resizable:false 会让 setBounds 的尺寸部分失效，
+    // 而气泡高度由内容决定（渲染层量完上报），必须保持可程序化改尺寸。
+    resizable: true,
+    minimizable: false,
+    maximizable: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  })
+  hardenWindow(reminderWindow)
+  reminderWindow.setAlwaysOnTop(true, 'floating')
+  reminderWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  reminderWindow.on('closed', () => {
+    reminderWindow = null
+  })
+  if (isDev) {
+    void reminderWindow.loadURL(`${process.env.ELECTRON_RENDERER_URL}?reminder=1`)
+  } else {
+    void reminderWindow.loadFile(join(__dirname, '../renderer/index.html'), {
+      query: { reminder: '1' },
+    })
+  }
+}
+
+/**
+ * 气泡落点：贴在浮窗 / 悬浮球旁边，并夹回工作区。
+ * 浮窗落在屏幕右半边就放到它左边，反之放右边 —— 贴边的那一侧没有空间。
+ */
+function placeReminderWindow(height = reminderHeight): void {
+  if (!reminderWindow || reminderWindow.isDestroyed()) return
+  // 浮窗隐藏时也拿它上次的几何作锚：提醒就该从「球在的地方」长出来。
+  // 若改成「不可见就退回右上角」，主窗口在前台时提醒又会变回原来那张卡片 ——
+  // 那正是这次要换掉的行为。
+  const anchor = widgetWindow && !widgetWindow.isDestroyed() ? widgetWindow.getBounds() : null
+  const wa = (anchor ? screen.getDisplayMatching(anchor) : screen.getPrimaryDisplay()).workArea
+  const h = Math.max(120, Math.round(height))
+  let x: number
+  let y: number
+  if (anchor) {
+    const onRightHalf = anchor.x + anchor.width / 2 > wa.x + wa.width / 2
+    x = onRightHalf
+      ? anchor.x - REMINDER_W - REMINDER_GAP
+      : anchor.x + anchor.width + REMINDER_GAP
+    y = Math.round(anchor.y + anchor.height / 2 - h / 2)
+  } else {
+    // 没有浮窗可依：贴右上角，与从前的卡片位置一致
+    x = wa.x + wa.width - REMINDER_W - REMINDER_GAP
+    y = wa.y + REMINDER_GAP
+  }
+  x = Math.max(wa.x, Math.min(x, wa.x + wa.width - REMINDER_W))
+  y = Math.max(wa.y, Math.min(y, wa.y + wa.height - h))
+  reminderWindow.setBounds({ x, y, width: REMINDER_W, height: h })
+}
+
+/**
+ * 提醒走气泡的条件：浮窗启用着（球有地方可依）。
+ *
+ * 刻意**不要求浮窗此刻可见** —— 主窗口在前台时浮窗是隐藏的（syncWidgetVisibility 的
+ * 显隐联动），若把可见性也算进来，那种情况下提醒又会退回主窗口右上角那张卡片，
+ * 「从悬浮表情出现」就等于没做。球不可见时气泡照样锚在它上次的位置上。
+ */
+function bubbleAvailable(): boolean {
+  return !!widgetWindow && !widgetWindow.isDestroyed() && currentSettings().widget_enabled
+}
+
+function sendRemindersTo(win: BrowserWindow | null, rows: ReminderRow[]): void {
+  if (!win || win.isDestroyed()) return
+  win.webContents.send('reminder:push', rows)
+}
+
+/** 把这一批提醒交给该显示它的那个窗口，并同步悬浮球的表情。 */
+function dispatchReminders(): void {
+  const toBubble = bubbleAvailable()
+  sendRemindersTo(reminderWindow, toBubble ? activeReminders : [])
+  sendRemindersTo(mainWindow, toBubble ? [] : activeReminders)
+  if (widgetWindow && !widgetWindow.isDestroyed()) {
+    // 有提醒时球切 notify 表情（由 WidgetBall 的节拍接管，见 widget:notice）
+    widgetWindow.webContents.send('widget:notice', toBubble ? activeReminders.length : 0)
+  }
+  if (toBubble && activeReminders.length) {
+    // 「从悬浮表情出现」：球可能正被主窗口的显隐联动藏着，提醒来了就让它露面。
+    // 只唤球，不唤整块卡片 —— 卡片凭空弹出来太打扰。
+    if (
+      widgetMode === 'ball' &&
+      widgetWindow &&
+      !widgetWindow.isDestroyed() &&
+      !widgetWindow.isVisible()
+    ) {
+      widgetWindow.show()
+    }
+    placeReminderWindow()
+    // showInactive：提醒露面但不把焦点从用户手上抢走
+    reminderWindow?.showInactive()
+  } else {
+    reminderWindow?.hide()
+  }
+}
+
+/** 浮窗移动 / 缩放时气泡跟着走（去抖：拖动过程每帧重排会闪）。 */
+function followWidgetSoon(): void {
+  if (!reminderWindow || reminderWindow.isDestroyed() || !reminderWindow.isVisible()) return
+  if (reminderFollowTimer) clearTimeout(reminderFollowTimer)
+  reminderFollowTimer = setTimeout(() => {
+    reminderFollowTimer = null
+    if (reminderWindow?.isVisible()) placeReminderWindow()
+  }, 200)
+}
+
+/** 系统通知：与窗口内提醒同一批数据，独立开关。 */
+function notifyReminders(rows: ReminderRow[]): void {
+  if (!Notification.isSupported()) return
+  for (const t of rows) {
+    const key = String(t.id) + ':' + (t.reminder_at ?? '')
+    if (notifiedReminders.has(key)) continue
+    notifiedReminders.add(key)
+    const note = new Notification({
+      title: '待办提醒 · ' + t.title,
+      body: t.due_date ? '截止 ' + t.due_date : '到点了',
+    })
+    note.on('click', () => showMain())
+    note.show()
+  }
+  if (notifiedReminders.size > 200) {
+    notifiedReminders = new Set([...notifiedReminders].slice(-100))
+  }
+}
+
+function startReminderDispatch(): void {
+  // E2E 脚本要验证提醒的**读取规则**（已到期 / 未到 / 等待中 / 已完成），而派发循环会
+  // 抢先把 reminder_at 清掉，让那些断言随机失败。给脚本留一个开关，见 scripts/rollcheck.mjs。
+  if (process.env.ZHIXING_NO_REMINDER_DISPATCH === '1') return
   if (reminderNotifyTimer) clearInterval(reminderNotifyTimer)
   reminderNotifyTimer = setInterval(() => {
     try {
       const s = currentSettings()
-      if (!s.reminder_enabled || !s.reminder_notify) return
-      if (!Notification.isSupported()) return
-      for (const t of dueReminders()) {
-        const key = String(t.id) + ':' + (t.reminder_at ?? '')
-        if (notifiedReminders.has(key)) continue
-        notifiedReminders.add(key)
-        const note = new Notification({
-          title: '待办提醒 · ' + t.title,
-          body: t.due_date ? '截止 ' + t.due_date : '到点了',
-        })
-        note.on('click', () => showMain())
-        note.show()
+      if (!s.reminder_enabled) {
+        // 关掉开关就是「别再打扰我」：连已经欠着的那一批也一起撤掉
+        if (activeReminders.length) {
+          activeReminders = []
+          dispatchReminders()
+        }
+        return
       }
-      if (notifiedReminders.size > 200) {
-        notifiedReminders = new Set([...notifiedReminders].slice(-100))
+      // 上一批还没处理完就不叠加 —— 提醒是欠着的，不该被新一轮冲掉。
+      if (activeReminders.length) return
+      const rows = dueReminders()
+      if (!rows.length) return
+
+      /**
+       * 顺序很要紧：**先派发成功、再消费**。
+       *
+       * 原来的写法是先 dismissReminder 再 dispatchReminders —— 消费不可回滚，一旦派发抛错，
+       * activeReminders 已经非空而窗口什么都没收到；下一轮 tick 开头的
+       * `if (activeReminders.length) return` 直接返回，这批提醒就再也不会推给任何窗口
+       * （只有窗口重载时靠 reminder:current 拉回）。等于「提醒永久消失」。
+       *
+       * 现在：派发失败就撤掉这批、也不清 reminder_at —— 下一轮会重新查到并重试。
+       * 反过来（派发成功但清库失败）只会导致重复提醒一次，比丢失安全。
+       */
+      activeReminders = rows
+      try {
+        if (s.reminder_notify) notifyReminders(rows)
+        dispatchReminders()
+      } catch (err) {
+        activeReminders = []
+        console.error('[reminder] 派发失败，本轮不作消费，下轮重试', err)
+        return
       }
+      // 确认已经交出去（webContents.send 是同步入队）之后才消费：一次性的前提是它真的弹出来了
+      for (const t of rows) dismissReminder(t.id)
     } catch (err) {
-      console.error('[reminder] 系统通知失败', err)
+      console.error('[reminder] 派发失败', err)
     }
   }, 30_000)
+}
+
+function registerReminderHandlers(): void {
+  // 渲染层挂载时先拉一次：推送可能早于窗口加载完成
+  ipcMain.handle('reminder:current', () => activeReminders)
+  ipcMain.handle('reminder:dismiss', (_e, id: number) => {
+    activeReminders = activeReminders.filter((t) => t.id !== id)
+    dispatchReminders()
+    return activeReminders
+  })
+  ipcMain.handle('reminder:snooze', (_e, id: number, minutes: number) => {
+    snoozeReminder(Number(id), Number(minutes))
+    activeReminders = activeReminders.filter((t) => t.id !== id)
+    dispatchReminders()
+    return activeReminders
+  })
+  // 渲染层量完内容高度上报，气泡才不会留一截空白或者裁掉按钮
+  ipcMain.handle('reminder:resize', (_e, height: number) => {
+    reminderHeight = Math.max(120, Math.min(1200, Math.round(Number(height) || 0)))
+    if (reminderWindow?.isVisible()) placeReminderWindow(reminderHeight)
+  })
+  ipcMain.handle('reminder:openTask', (_e, id: number) => {
+    showMain()
+    mainWindow?.webContents.send('reminder:openTask', Number(id))
+  })
 }
 
 /** 附件：选文件 → 复制进数据目录 → 落库，返回归档后的路径给渲染层写进正文。 */
@@ -1233,6 +1459,18 @@ function registerAttachmentHandlers(): void {
   // 粘贴/拖入的图片没有源文件路径，走这条把二进制直接存成附件
   ipcMain.handle('attachment:saveData', (_e, noteId: number, fileName: string, base64: string) =>
     importAttachmentData(Number(noteId), String(fileName ?? ''), String(base64 ?? ''))
+  )
+  // 多图上传：一次 IPC 存一批（渲染层原先在循环里逐张调 attachment:saveData）
+  ipcMain.handle(
+    'attachment:saveDataBatch',
+    (_e, noteId: number, files: { fileName: string; base64: string }[]) =>
+      importAttachmentDataBatch(
+        Number(noteId),
+        (Array.isArray(files) ? files : []).map((f) => ({
+          fileName: String(f?.fileName ?? ''),
+          base64: String(f?.base64 ?? ''),
+        }))
+      )
   )
 }
 
@@ -1430,6 +1668,19 @@ async function runTaskSync(): Promise<Awaited<ReturnType<typeof syncExternalTask
 }
 
 /**
+ * 定时同步的失败出口。
+ *
+ * 两个定时器都是 `void runTaskSync()` —— 没有 catch，一次异常就是未处理的 rejection，
+ * 用户那边只表现为「同步悄悄不工作了」。这里把失败写进日志并弹一条可见提示。
+ */
+function runTaskSyncSafely(): void {
+  void runTaskSync().catch((err: unknown) => {
+    console.error('[task-sync] 同步失败', err)
+    sendAction('notice', '外部同步失败：' + (err instanceof Error ? err.message : String(err)))
+  })
+}
+
+/**
  * 按设置重排自动同步：关掉开关就不跑；间隔改了立刻生效。
  * 启动后先等 30 秒再跑第一次（别和启动时的一堆初始化抢资源）。
  */
@@ -1445,8 +1696,8 @@ function scheduleTaskSync(): void {
   const s = currentSettings()
   if (!s.task_api_enabled || !s.task_api_url.trim()) return
   const every = Math.max(5, s.task_api_interval_min) * 60_000
-  taskSyncBootTimer = setTimeout(() => void runTaskSync(), 30_000)
-  taskSyncTimer = setInterval(() => void runTaskSync(), every)
+  taskSyncBootTimer = setTimeout(() => runTaskSyncSafely(), 30_000)
+  taskSyncTimer = setInterval(() => runTaskSyncSafely(), every)
 }
 
 function registerTaskSyncHandlers(): void {
@@ -1498,7 +1749,8 @@ app.whenReady().then(() => {
   registerShellHandlers()
   registerAttachmentHandlers()
   registerWindowFit()
-  startReminderNotifications()
+  startReminderDispatch()
+  registerReminderHandlers()
   scheduleTaskSync()
   // 欢迎页要先于主窗出现（对齐 __main__.py：splash.show() 在 AppContext 构造之前）
   try {
@@ -1548,6 +1800,9 @@ app.whenReady().then(() => {
   // 浮窗随应用启动创建，但**不显示**（对齐 app_controller.startup 末尾的 self.widget.hide()）：
   // 启动只露主窗，之后由主窗显隐联动浮窗。
   if (currentSettings().widget_enabled) createWidgetWindow()
+  // 提醒气泡窗口与浮窗同理：启动就创建，但不显示（首次派发时才露面）。
+  // 必须常驻 —— 等有提醒才建的话，reminder:push 会落在窗口加载完成之前，那一条就丢了。
+  createReminderWindow()
 
   ipcMain.handle('app:info', () => ({
     version: app.getVersion(),

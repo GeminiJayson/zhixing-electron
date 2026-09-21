@@ -2,7 +2,8 @@
  * 跨天维护与导出验证：循环子任务打卡重置（含 streak）、等待中到期恢复、导出内容形状。
  * 用法：node scripts/rollcheck.mjs
  */
-import { execFileSync, spawn } from 'node:child_process'
+import { spawn } from 'node:child_process'
+import { DatabaseSync } from 'node:sqlite'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -15,13 +16,42 @@ const repoRoot = join(root, '..')
 const backup = join(repoRoot, 'backups', 'electron-migration', 'zhixing-before-electron-write.db')
 const tmpHome = join(root, '.screenshots', 'rollcheck-home')
 const PORT = 9235
-const sql = (f, q) => execFileSync('sqlite3', [f, q]).toString().trim()
-if (!existsSync(backup)) { console.error('✗ 缺备份库'); process.exit(1) }
+/**
+ * 只读取一个计数。
+ *
+ * 原来走的是 sqlite3 命令行 —— 那要系统装了 CLI 才行，而这个仓库的 CI/开发机上并没有。
+ * 改用 Node 自带的 node:sqlite：不依赖外部程序，也不必和 better-sqlite3 的
+ * Electron ABI 打交道（那只装给应用用，Node 直接 require 会 ABI 不匹配）。
+ */
+const countOf = (f, q) => {
+  const db = new DatabaseSync(f)
+  try {
+    const row = db.prepare(q).get()
+    return Number(Object.values(row ?? {})[0] ?? 0)
+  } finally {
+    db.close()
+  }
+}
+/**
+ * 基库：优先用迁移前的备份（当年是拿它做迁移对照的），
+ * 那份文件已经从工作区清掉了 —— 缺了就用当前正式库的副本顶上，
+ * 跨天维护那几条断言要的只是「一张有任务的 task 表」，对来源不敏感。
+ */
+const liveDb = join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db')
+const seedDb = existsSync(backup) ? backup : liveDb
+if (!existsSync(seedDb)) {
+  console.error('✗ 既没有迁移前备份，也找不到 ' + liveDb)
+  process.exit(1)
+}
+console.log('【基库】' + (seedDb === backup ? '迁移前备份' : '当前正式库副本'))
 rmSync(tmpHome, { recursive: true, force: true })
 mkdirSync(tmpHome, { recursive: true })
-copyFileSync(backup, join(tmpHome, 'zhixing.db'))
+copyFileSync(seedDb, join(tmpHome, 'zhixing.db'))
 const child = spawn(electronPath, ['.', `--remote-debugging-port=${PORT}`, `--user-data-dir=${join(tmpHome, 'p')}`], {
-  cwd: root, env: { ...process.env, ZHIXING_HOME: tmpHome }, stdio: ['ignore', 'pipe', 'pipe'],
+  cwd: root,
+  // 关掉主进程的提醒派发：它会抢清 reminder_at，让下面那几条读取断言随机失败
+  env: { ...process.env, ZHIXING_HOME: tmpHome, ZHIXING_NO_REMINDER_DISPATCH: '1' },
+  stdio: ['ignore', 'pipe', 'pipe'],
 })
 let page = null
 for (let i = 0; i < 40 && !page; i++) {
@@ -87,10 +117,10 @@ const w1 = await ev("window.zhixing.db.createTask('验证-等待-到期', null)"
 await ev(`window.zhixing.db.updateTask(${w1.id}, { status: 'waiting' })`)
 const w2 = await ev("window.zhixing.db.createTask('验证-等待-未到期', null)")
 await ev(`window.zhixing.db.updateTask(${w2.id}, { status: 'waiting' })`)
-const dbFile = join(tmpHome, 'zhixing.db')
 const c = child
-// 直接改副本库里的 resume_at（模型层无该写入入口）
-execFileSync('sqlite3', [dbFile, `UPDATE task SET resume_at='${day(-1)}' WHERE id=${w1.id}; UPDATE task SET resume_at='${day(1)}' WHERE id=${w2.id};`])
+// resume_at 走应用自己的写入路径（它在 updateTask 的白名单里），不再借道 sqlite3 CLI
+await ev(`window.zhixing.db.updateTask(${w1.id}, { resume_at: '${day(-1)}' })`)
+await ev(`window.zhixing.db.updateTask(${w2.id}, { resume_at: '${day(1)}' })`)
 const resumed = await ev('window.zhixing.db.resumeDueToday()')
 check('等待中到期任务被恢复', resumed === 1, `resumed=${resumed}`)
 const w1r = await ev(`window.zhixing.db.tasks().then(rows => rows.find(r => r.id === ${w1.id}))`)
@@ -109,8 +139,8 @@ check('未完成的番茄不计入统计', after.sessions === before.sessions + 
 // ---- 到点提醒 ----
 const mkReminder = async (title, reminderAt, status) => {
   const t = await ev(`window.zhixing.db.createTask(${JSON.stringify(title)}, null)`)
-  await ev(`window.zhixing.db.updateTask(${t.id}, { status: 'todo' })`)
-  execFileSync('sqlite3', [dbFile, `UPDATE task SET reminder_at='${reminderAt}', status='${status}' WHERE id=${t.id};`])
+  // reminder_at 也在白名单里了（本版把它开放给编辑面板），所以整条都走应用 API
+  await ev(`window.zhixing.db.updateTask(${t.id}, { reminder_at: '${reminderAt}', status: '${status}' })`)
   return t.id
 }
 const past = day(0) + ' 00:00:00.000000'
@@ -144,7 +174,17 @@ check(
 const j = await ev("window.zhixing.db.exportPreview('json')")
 check('JSON 导出外壳正确', j.app === 'zhixing' && j.version === 1, `app=${j.app} v=${j.version}`)
 const tables = (j.keys ?? []).filter((k) => k !== 'app' && k !== 'version')
-check('JSON 导出包含 15 张表', tables.length === 15, `tables=${tables.length}`)
+// 不再写死张数：15 是 Python 版的老数字，Electron 版另加了 attachment、workflow_* 等私有表。
+// 写死的话每加一张表这里就变红，而真正要守的是「一张都不能漏」。
+const coreTables = ['task', 'note', 'flash', 'tag', 'settings']
+const extraTables = ['attachment', 'workflow_template', 'pomodoro_session']
+check(
+  'JSON 导出覆盖核心表与 Electron 版新增表',
+  tables.length >= 15 &&
+    coreTables.every((n) => tables.includes(n)) &&
+    extraTables.every((n) => tables.includes(n)),
+  `tables=${tables.length}`
+)
 check('JSON 导出行数等于库内总量', (j.count ?? 0) > 0, `rows=${j.count}`)
 const csv = await ev("window.zhixing.db.exportPreview('csv')")
 check('CSV 带 UTF-8 BOM', csv.hasBom === true)
@@ -155,9 +195,13 @@ check('Markdown 导出有笔记且有分区', (md.count ?? 0) > 0 && (md.folders
 ws.close()
 child.kill()
 await sleep(600)
-const realDb = join(process.env.HOME, 'Library/Application Support/ZhiXing/zhixing.db')
-const leak = sql(realDb, "SELECT COUNT(*) FROM task WHERE title LIKE '验证-打卡-%' OR title LIKE '验证-等待-%';")
-check('真实库未被写入', leak === '0', `匹配 ${leak} 行`)
+// 这里原本是 macOS 的路径（Library/Application Support）—— 在 Windows 上 process.env.HOME
+// 是 undefined，join 直接抛错，脚本最后一条断言从来没跑成过。
+const realDb = join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db')
+const leak = existsSync(realDb)
+  ? countOf(realDb, "SELECT COUNT(*) FROM task WHERE title LIKE '验证-打卡-%' OR title LIKE '验证-等待-%'")
+  : 0
+check('真实库未被写入', leak === 0, `匹配 ${leak} 行`)
 rmSync(tmpHome, { recursive: true, force: true })
 const failed = results.filter(([, ok]) => !ok).length
 console.log(`\n${results.length - failed}/${results.length} 项通过`)

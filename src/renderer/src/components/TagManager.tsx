@@ -101,7 +101,7 @@ export function TagManager({ onNotice, onChanged, onClose }: Props) {
                     confirmText: '删除',
                   })
                   if (!confirmed) return
-                  for (const id of picked) await window.zhixing.db.deleteTag(id)
+                  await window.zhixing.db.batchDeleteTags([...picked])
                   setPicked(new Set())
                   await load()
                   await onChanged()

@@ -240,7 +240,8 @@ export default function App() {
 
   // 深链与全局动作（托盘 / 全局热键）统一在这里落地
   useEffect(() => {
-    window.zhixing.app.onDeepLink((link) => {
+    // preload 的 on* 现在统一返回取消函数，这里必须接住 —— 否则每次 effect 重跑都叠一层监听
+    const offDeepLink = window.zhixing.app.onDeepLink((link) => {
       // 先切页并记下待派发的「精确定位」目标；目标页可能在本次 setPage 后才挂载，
       // 立刻派发会丢事件，因此在下面的 effect 里等页面渲染后再发（S22）。
       if (link.kind === 'task') {
@@ -263,7 +264,7 @@ export default function App() {
     }
     window.addEventListener('zhixing:open-note', onOpenNote)
 
-    window.zhixing.app.onAction((action, payload) => {
+    const offAction = window.zhixing.app.onAction((action, payload) => {
       // 「快速任务 / 划词捕获 / 读取选中并速记」现在开在**独立的捕获窗口**里，
       // 主窗口不再接管（按热键时用户正在别的应用里，不该把他拽回来）。
       if (action === 'notice') {
@@ -281,7 +282,11 @@ export default function App() {
       }
     })
 
-    return () => window.removeEventListener('zhixing:open-note', onOpenNote)
+    return () => {
+      offDeepLink()
+      offAction()
+      window.removeEventListener('zhixing:open-note', onOpenNote)
+    }
   }, [openNote])
 
   /**
@@ -349,19 +354,34 @@ export default function App() {
     return () => window.removeEventListener('zhixing:undoable', onUndoable)
   }, [])
 
+  /**
+   * 打开主窗口并定位到某条任务。
+   *
+   * 抽成一个函数是因为这个参数**曾经在一条链路上被丢掉**：主窗口提醒卡片的 onOpenTask 当时是
+   * \`setPage('tasks'); void id\` —— 于是卡片上的「查看」只切页、不定位，而气泡那条链路是好的。
+   * 同一个语义两条实现，一条管用一条不管用。现在两条入口共用这一个。
+   */
+  const openTaskInList = useCallback((id: number): void => {
+    setTaskFocus(null)
+    setPage('tasks')
+    // 等一帧：setPage 之后目标页才挂载，定位事件必须落在挂载完成之后（与深链同套路）
+    window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('zhixing:open-task', { detail: { id } }))
+    }, 60)
+  }, [])
+
+  // 提醒气泡里点「查看」：主进程已经把主窗口抬起来了，这里负责把那条任务送进列表并定位
+  useEffect(() => window.zhixing.reminder.onOpenTask(openTaskInList), [openTaskInList])
+
   const undoLast = useCallback(async () => {
     if (!undoBar) return
     const { ids, action, prevStatus } = undoBar
     setUndoBar(null)
     // 撤销动作按来源区分：完成/取消完成 → 反向切换；删除 → 从回收站恢复
     // （对齐 app_controller._undo_last 支持撤销删除整棵子树）
-    for (const id of ids) {
-      if (action === 'restore') await window.zhixing.db.restoreTrash('task', id)
-      // T13：取消完成若带前一个状态（doing/waiting），回写该状态而不是简单翻转，
-      // 否则 toggleTask 只会把 done 翻成 todo，把用户原本的状态丢掉
-      else if (prevStatus) await window.zhixing.db.setStatus(id, prevStatus)
-      else await window.zhixing.db.toggleTask(id)
-    }
+    // 整批一次事务。原先是渲染层循环逐条 IPC：任一条失败即中断，而撤销条已经清掉了 ——
+    // 用户既看不到错误，也没有重试入口（T13 的 prevStatus 语义不变，仍由主进程分派）。
+    await window.zhixing.db.batchUndoLast(ids, action ?? 'toggle', prevStatus ?? null)
     await refreshOverview()
     setToast(action === 'restore' ? `已恢复 ${ids.length} 项` : `已撤销 ${ids.length} 项完成`)
   }, [undoBar, refreshOverview])
@@ -533,14 +553,7 @@ export default function App() {
         autoBreak={pomo.autoBreak}
         onNotice={showToast}
       />
-      <ReminderPopup
-        onOpenTask={(id) => {
-          setTaskFocus(null)
-          setPage('tasks')
-          void id
-        }}
-        onChanged={refreshOverview}
-      />
+      <ReminderPopup onOpenTask={openTaskInList} onChanged={refreshOverview} />
 
       <CommandPalette
         open={paletteOpen}

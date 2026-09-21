@@ -108,6 +108,12 @@ const api = {
       base64: string
     ): Promise<{ ok: boolean; path?: string; message: string }> =>
       ipcRenderer.invoke('attachment:saveData', noteId, fileName, base64),
+    /** 多图上传：一次 IPC 存一批，逐张回结果（替代渲染层的 for + saveAttachmentData） */
+    saveAttachmentsBatch: (
+      noteId: number,
+      files: { fileName: string; base64: string }[]
+    ): Promise<{ fileName: string; ok: boolean; path?: string; message: string }[]> =>
+      ipcRenderer.invoke('attachment:saveDataBatch', noteId, files),
   attachmentStats: (): Promise<{ count: number; bytes: number; missing: number; dir: string }> =>
     ipcRenderer.invoke('db:attachmentStats'),
   importAttachment: (noteId: number, srcPath: string): Promise<{ ok: boolean; path?: string; message: string }> =>
@@ -203,8 +209,10 @@ const api = {
     graphOpenNode: (kind: string, id: number): Promise<boolean> =>
       ipcRenderer.invoke('db:graphOpenNode', kind, id),
     /** 图谱增量（G5/G6）：消费端按节点/边定点增删、保留坐标与 pinned */
-    onGraphDelta: (cb: (delta: GraphDelta) => void): void => {
-      ipcRenderer.on('graph:delta', (_e, delta) => cb(delta))
+    onGraphDelta: (cb: (delta: GraphDelta) => void): (() => void) => {
+      const handler = (_e: unknown, delta: GraphDelta): void => cb(delta)
+      ipcRenderer.on('graph:delta', handler)
+      return () => ipcRenderer.removeListener('graph:delta', handler)
     },
     /** 模板分类（对齐笔记树的「文件夹 → 笔记」两层） */
   workflowGroups: (): Promise<{ id: number; parent_id: number | null; name: string; sort_key: string }[]> =>
@@ -436,8 +444,10 @@ const api = {
     mergeTags: (target: number, sources: number[]): Promise<number> =>
       ipcRenderer.invoke('db:mergeTags', target, sources),
     /** 主进程写入后广播的数据变更（O3）：domain 取值见 shared/events.ts */
-    onDataChanged: (cb: (domain: string) => void): void => {
-      ipcRenderer.on('data:changed', (_e, domain) => cb(domain))
+    onDataChanged: (cb: (domain: string) => void): (() => void) => {
+      const handler = (_e: unknown, domain: string): void => cb(domain)
+      ipcRenderer.on('data:changed', handler)
+      return () => ipcRenderer.removeListener('data:changed', handler)
     },
 
     noteRevisions: (id: number): Promise<NoteRevision[]> =>
@@ -527,6 +537,23 @@ const api = {
       ipcRenderer.invoke('db:batchMove', ids, listId),
     batchSetDue: (ids: number[], due: string | null): Promise<number> =>
       ipcRenderer.invoke('db:batchSetDue', ids, due),
+    /** 批量软删除任务（级联子树，一个事务）—— 替代渲染层的 for + deleteTask */
+    batchDeleteTasks: (ids: number[]): Promise<number> =>
+      ipcRenderer.invoke('db:batchDeleteTasks', ids),
+    /** 批量删除标签（一个事务）—— 替代渲染层的 for + deleteTag */
+    batchDeleteTags: (ids: number[]): Promise<number> =>
+      ipcRenderer.invoke('db:batchDeleteTags', ids),
+    /** 撤销一步（完成 / 取消完成 / 删除恢复）整批一个事务 */
+    batchUndoLast: (
+      ids: number[],
+      action: 'toggle' | 'restore',
+      prevStatus: string | null
+    ): Promise<number> => ipcRenderer.invoke('db:batchUndoLast', ids, action, prevStatus),
+    /** 自动布局：一次提交全部节点坐标 */
+    batchUpdateNodePos: (items: { id: number; x: number; y: number }[]): Promise<number> =>
+      ipcRenderer.invoke('db:batchUpdateNodePos', items),
+    /** 清空三类回收站（一个事务） */
+    emptyAllTrash: (): Promise<number> => ipcRenderer.invoke('db:emptyAllTrash'),
     tags: (): Promise<{ id: number; name: string; color: string }[]> => ipcRenderer.invoke('db:tags'),
     setTaskTags: (id: number, names: string[]): Promise<void> =>
       ipcRenderer.invoke('db:setTaskTags', id, names),
@@ -649,16 +676,26 @@ const api = {
      * 载荷形状用 shared/deep-link 的 DeepLink：图页双击跨页跳转也复用这条通道，
      * 因此 kind 只可能是 task / note / flash / folder。
      */
-    onDeepLink: (cb: (link: DeepLink) => void): void => {
-      ipcRenderer.on('app:deeplink', (_e, link) => cb(link))
+    onDeepLink: (cb: (link: DeepLink) => void): (() => void) => {
+      const handler = (_e: unknown, link: DeepLink): void => cb(link)
+      ipcRenderer.on('app:deeplink', handler)
+      return () => ipcRenderer.removeListener('app:deeplink', handler)
     },
     /**
      * 托盘 / 全局热键触发的应用动作。
      * 「划词捕获 / 读取选中并速记 / 快速任务」这三个会带上主进程刚取到的**当前选中文字**
      * （文本 + HTML，HTML 用于解析来源 URL）。
      */
-    onAction: (cb: (action: string, payload?: { text: string; html: string }) => void): void => {
-      ipcRenderer.on('app:action', (_e, action, payload) => cb(action, payload || undefined))
+    onAction: (
+      cb: (action: string, payload?: { text: string; html: string }) => void
+    ): (() => void) => {
+      const handler = (
+        _e: unknown,
+        action: string,
+        payload?: { text: string; html: string }
+      ): void => cb(action, payload || undefined)
+      ipcRenderer.on('app:action', handler)
+      return () => ipcRenderer.removeListener('app:action', handler)
     },
     /** 独立弹窗（无边框）把窗口高度贴合卡片内容 */
     fitHeight: (height: number): void => ipcRenderer.send('window:fitHeight', height),
@@ -684,12 +721,16 @@ const api = {
     setBallShape: (id: string): Promise<void> =>
       ipcRenderer.invoke('widget:setBallShape', id),
     /** 主进程改了体型后推一次（右键菜单选形状） */
-    onBallShape: (cb: (shape: string) => void): void => {
-      ipcRenderer.on('widget:ballShape', (_e, shape: string) => cb(shape))
+    onBallShape: (cb: (shape: string) => void): (() => void) => {
+      const handler = (_e: unknown, shape: string): void => cb(shape)
+      ipcRenderer.on('widget:ballShape', handler)
+      return () => ipcRenderer.removeListener('widget:ballShape', handler)
     },
     /** 主进程切换形态时推送（贴边收缩 / 展开 / 启动时恢复贴边态） */
-    onMode: (cb: (mode: 'full' | 'ball') => void): void => {
-      ipcRenderer.on('widget:mode', (_e, mode: 'full' | 'ball') => cb(mode))
+    onMode: (cb: (mode: 'full' | 'ball') => void): (() => void) => {
+      const handler = (_e: unknown, mode: 'full' | 'ball'): void => cb(mode)
+      ipcRenderer.on('widget:mode', handler)
+      return () => ipcRenderer.removeListener('widget:mode', handler)
     },
     /** 边缘缩放（S17）：渲染层判定命中的边后交给主进程按屏幕光标重算尺寸 */
     resizeStart: (edges: string): Promise<void> => ipcRenderer.invoke('widget:resizeStart', edges),
@@ -697,6 +738,37 @@ const api = {
     resizeEnd: (): Promise<void> => ipcRenderer.invoke('widget:resizeEnd'),
     contextMenu: (): Promise<void> => ipcRenderer.invoke('widget:contextMenu'),
     openMain: (): Promise<void> => ipcRenderer.invoke('widget:openMain'),
+    /** 主进程告知「当前有 N 条提醒」，球据此切 notify 表情（0 = 回到常规节拍） */
+    onNotice: (cb: (count: number) => void): (() => void) => {
+      const handler = (_e: unknown, count: number): void => cb(count)
+      ipcRenderer.on('widget:notice', handler)
+      return () => ipcRenderer.removeListener('widget:notice', handler)
+    },
+  },
+  /**
+   * 到点提醒。消费（清 reminder_at）已收归主进程一处，这里只剩读与「用户处理了」——
+   * 渲染层不再自己查库，否则气泡窗口与主窗口会互相抢着清，反而少看到一条。
+   */
+  reminder: {
+    /** 当前待展示的提醒（含已消费、但用户还没处理的那一份） */
+    current: (): Promise<Task[]> => ipcRenderer.invoke('reminder:current'),
+    dismiss: (id: number): Promise<Task[]> => ipcRenderer.invoke('reminder:dismiss', id),
+    snooze: (id: number, minutes: number): Promise<Task[]> =>
+      ipcRenderer.invoke('reminder:snooze', id, minutes),
+    /** 气泡量完内容高度上报，主进程据此贴边定位 */
+    resize: (height: number): Promise<void> => ipcRenderer.invoke('reminder:resize', height),
+    /** 打开主窗口并定位到该任务 */
+    openTask: (id: number): Promise<void> => ipcRenderer.invoke('reminder:openTask', id),
+    onPush: (cb: (rows: Task[]) => void): (() => void) => {
+      const handler = (_e: unknown, rows: Task[]): void => cb(rows)
+      ipcRenderer.on('reminder:push', handler)
+      return () => ipcRenderer.removeListener('reminder:push', handler)
+    },
+    onOpenTask: (cb: (id: number) => void): (() => void) => {
+      const handler = (_e: unknown, id: number): void => cb(id)
+      ipcRenderer.on('reminder:openTask', handler)
+      return () => ipcRenderer.removeListener('reminder:openTask', handler)
+    },
   },
   window: {
     minimize: (): Promise<void> => ipcRenderer.invoke('window:minimize'),

@@ -6,6 +6,7 @@ import TextAlign from '@tiptap/extension-text-align'
 import Placeholder from '@tiptap/extension-placeholder'
 import FontSize from '@tiptap/extension-text-style/font-size'
 import Color from '@tiptap/extension-color'
+import { attachmentUrl } from '@shared/attachment-url'
 import { Toolbar } from './Toolbar'
 import { useDialog } from './Dialogs'
 
@@ -132,8 +133,9 @@ export function RichTextEditor({ html, onChange, readOnly = false, placeholder, 
       const attach = img?.getAttribute('data-attachment')
       if (!attach) return
       e.preventDefault()
-      // 附件存的是绝对路径，file:// 直接能读；路径里的空格等要转义
-      setPreview('file://' + attach.split('/').map(encodeURIComponent).join('/'))
+      // 附件存的是绝对路径。旧写法在 Windows 反斜杠路径下产出无效 URL
+      // （file://C%3A%5C...，new URL() 报 Invalid URL），统一走 shared/attachment-url.ts
+      setPreview(attachmentUrl(attach))
     }
     root.addEventListener('dblclick', onDbl)
     return () => root.removeEventListener('dblclick', onDbl)
@@ -162,7 +164,7 @@ export function RichTextEditor({ html, onChange, readOnly = false, placeholder, 
     const paths = (res?.paths ?? []) as string[]
     for (const p of paths) {
       const name = p.split(/[\\/]/).pop() ?? p
-      const url = 'file://' + p.split('/').map(encodeURIComponent).join('/')
+      const url = attachmentUrl(p)
       chain().insertContent('<a href="' + url + '">' + name + '</a>').run()
     }
   }
@@ -175,22 +177,31 @@ export function RichTextEditor({ html, onChange, readOnly = false, placeholder, 
     input.onchange = () => {
       const files = Array.from(input.files ?? [])
       void (async () => {
+        // 先本地读取（不碰 IPC），再一次性存附件，最后统一插入。
+        // 原先是循环里逐张读 + 逐张 IPC：第 N 张失败时前 N-1 张已经落盘落库了。
+        const prepared: { file: File; full: string; thumb: string }[] = []
         for (const file of files) {
           const [full, thumb] = await Promise.all([readAsDataUrl(file), makeThumb(file)])
-          const id = noteIdRef.current
-          let path = ''
-          if (id) {
-            const base64 = full.slice(full.indexOf(',') + 1)
-            const saved = await window.zhixing.db.saveAttachmentData(id, file.name, base64)
-            path = saved?.path ?? ''
-          }
+          prepared.push({ file, full, thumb })
+        }
+        const id = noteIdRef.current
+        const saved = id
+          ? await window.zhixing.db.saveAttachmentsBatch(
+              id,
+              prepared.map((p) => ({
+                fileName: p.file.name,
+                base64: p.full.slice(p.full.indexOf(',') + 1),
+              }))
+            )
+          : []
+        prepared.forEach((p, i) => {
           chain()
             .insertContent({
               type: 'image',
-              attrs: { src: thumb || full, alt: file.name, attachment: path || null },
+              attrs: { src: p.thumb || p.full, alt: p.file.name, attachment: saved[i]?.path || null },
             })
             .run()
-        }
+        })
       })()
     }
     input.click()

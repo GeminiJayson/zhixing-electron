@@ -20,10 +20,18 @@ const repoRoot = join(root, '..')
 const backup = join(repoRoot, 'backups', 'electron-migration', 'zhixing-before-electron-write.db')
 const tmpHome = join(root, '.screenshots', 'security-home')
 const PORT = 9242
-if (!existsSync(backup)) { console.error('✗ 缺备份库'); process.exit(1) }
+// 迁移前那份备份早已从工作区清掉 —— 缺了就退回「当前正式库的副本」。
+// 这些脚本要的只是「一张有数据的库」，对来源不敏感；没有这层回退，它们一启动就退出。
+const liveDb = join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db')
+const seedDb = existsSync(backup) ? backup : liveDb
+if (!existsSync(seedDb)) {
+  console.error('✗ 既没有迁移前备份，也找不到 ' + liveDb)
+  process.exit(1)
+}
+console.log('【基库】' + (seedDb === backup ? '迁移前备份' : '当前正式库副本'))
 rmSync(tmpHome, { recursive: true, force: true })
 mkdirSync(tmpHome, { recursive: true })
-copyFileSync(backup, join(tmpHome, 'zhixing.db'))
+copyFileSync(seedDb, join(tmpHome, 'zhixing.db'))
 const child = spawn(electronPath, ['.', `--remote-debugging-port=${PORT}`, `--user-data-dir=${join(tmpHome, 'p')}`], {
   cwd: root, env: { ...process.env, ZHIXING_HOME: tmpHome }, stdio: ['ignore', 'pipe', 'pipe'],
 })

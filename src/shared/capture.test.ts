@@ -94,3 +94,39 @@ describe('自然日期词', () => {
     expect(parseCapture('- 买菜', TODAY).title).toBe('买菜')
   })
 })
+
+/**
+ * 周短语必须走**整串**才测得出来。
+ *
+ * 上面单独测 parseNaturalDate('下周五') 是通过的 —— 缺陷恰恰藏在「词法」那一层：
+ * parseCapture 的 DATE_WORDS 里写的是 \`下下周?[一二三四五六日天]\`，\`下下周?\` 需要**两个**「下」，
+ * 所以「下周五」匹配不到，退而匹配到「周五」：日期被算成本周五，且「下」留在标题里。
+ * 而「下下周五」词法能匹配、解析层的 /^(下)?周X$/ 又不认 —— 日期词被整段删掉却不解析。
+ * 两处各写一套表达，必然分叉。
+ */
+describe('整串里的周短语', () => {
+  it('「下周五」落在下一周，标题不留残字', () => {
+    const p = parseCapture('下周五交报告', TODAY)
+    expect(p.dueDate).toBe('2026-09-25')
+    expect(p.title).toBe('交报告')
+    expect(p.title).not.toContain('下')
+  })
+
+  it('「下下周五」不能把日期词吃掉却不解析', () => {
+    const p = parseCapture('下下周五交报告', TODAY)
+    expect(p.dueDate).toBe('2026-10-02')
+    expect(p.title).toBe('交报告')
+  })
+
+  it('无前缀的「周五」仍是本周五，已过则顺延', () => {
+    expect(parseCapture('周五交报告', TODAY)).toMatchObject({ dueDate: '2026-09-18', title: '交报告' })
+    // 2026-09-19 是周六，本周五已过 → 顺延到 09-25
+    expect(parseCapture('周五交报告', '2026-09-19').dueDate).toBe('2026-09-25')
+  })
+
+  it('三种前缀各自相差一周', () => {
+    expect(parseCapture('周五交', TODAY).dueDate).toBe('2026-09-18')
+    expect(parseCapture('下周五交', TODAY).dueDate).toBe('2026-09-25')
+    expect(parseCapture('下下周五交', TODAY).dueDate).toBe('2026-10-02')
+  })
+})

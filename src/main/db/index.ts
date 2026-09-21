@@ -43,11 +43,11 @@ import { autoBackup, listBackups, restoreBackup } from './backup'
 import { globalSearch, searchTouch } from './search'
 import { listFolders, listTasksByList, createListFolder, renameListFolder, deleteListFolder, moveTaskToList, defaultListId } from './lists'
 import { siblingsOf, isDescendantOf, reorderTask, moveTaskRelative, reparentTask, batchComplete, batchMove, batchSetDue, listTags, setTaskTags, ensureListId, quickAdd } from './task-ops'
-import { listTasks, listTodayTasks, recentNotes, noteCountMap, tagMap, listNotes, overview, toggleTask, cloneTaskTree, setPriority, setTitle, setStatus, setDueDate, nextSortKey, createTask, EDITABLE_FIELDS, updateTask, softDelete, syncTaskNoteLinks, attachTaskNote, detachTaskNote, listLinkedNotes, pauseTask, resumeTask, attachBlock, detachBlock, listLinkedContexts, contextsForNote, noteContextMap, writeNoteAfterDone, taskCandidates } from './tasks'
-import { trashItems, restoreTrash, purgeTrash, emptyTrash, purgeTrashOlderThan, tagsWithUsage, createTag, renameTag, deleteTag, mergeTags } from './trash'
+import { listTasks, listTodayTasks, recentNotes, noteCountMap, tagMap, listNotes, overview, toggleTask, cloneTaskTree, setPriority, setTitle, setStatus, setDueDate, nextSortKey, createTask, EDITABLE_FIELDS, updateTask, softDelete, batchDeleteTasks, batchUndoLast, syncTaskNoteLinks, attachTaskNote, detachTaskNote, listLinkedNotes, pauseTask, resumeTask, attachBlock, detachBlock, listLinkedContexts, contextsForNote, noteContextMap, writeNoteAfterDone, taskCandidates } from './tasks'
+import { trashItems, restoreTrash, purgeTrash, emptyTrash, emptyAllTrash, purgeTrashOlderThan, tagsWithUsage, createTag, renameTag, deleteTag, batchDeleteTags, mergeTags } from './trash'
 import { attachmentStats, deleteAttachment, importAttachment, listAttachments, pruneAttachments } from './attachments'
 import { deleteSavedQuery, listSavedQueries, saveSavedQuery } from './queries'
-import { NODE_COLUMNS, orderedNodes, nextWorkflowNode, validateWorkflowTemplate, listWorkflowTemplates, getWorkflowTemplate, saveWorkflowTemplate, deleteWorkflowTemplate, duplicateWorkflowTemplate, autoLayoutWorkflowNodes, updateWorkflowNodePos, setWorkflowBranch, spawnStepTask, instantiateWorkflow, getWorkflowInstance, listWorkflowInstances, listWorkflowInstancesByTask, completeWorkflowStep, abortWorkflowInstance, retryWorkflowStep, deleteWorkflowInstance, rerunWorkflowInstance, setWorkflowNotifier, splitCommand, describeWorkflowAction, runWorkflowAction, listWorkflowGroups, workflowTemplateGroups, saveWorkflowGroup, deleteWorkflowGroup, moveWorkflowTemplate, renameWorkflowInstance } from './workflow'
+import { NODE_COLUMNS, orderedNodes, nextWorkflowNode, validateWorkflowTemplate, listWorkflowTemplates, getWorkflowTemplate, saveWorkflowTemplate, deleteWorkflowTemplate, duplicateWorkflowTemplate, autoLayoutWorkflowNodes, updateWorkflowNodePos, batchUpdateNodePos, setWorkflowBranch, spawnStepTask, instantiateWorkflow, getWorkflowInstance, listWorkflowInstances, listWorkflowInstancesByTask, completeWorkflowStep, abortWorkflowInstance, retryWorkflowStep, deleteWorkflowInstance, rerunWorkflowInstance, setWorkflowNotifier, splitCommand, describeWorkflowAction, runWorkflowAction, listWorkflowGroups, workflowTemplateGroups, saveWorkflowGroup, deleteWorkflowGroup, moveWorkflowTemplate, renameWorkflowInstance } from './workflow'
 import type { EditableField } from './tasks'
 import type { TrashItem } from './trash'
 import type { DataDomain } from '../../shared/events'
@@ -72,6 +72,12 @@ const WRITE_DOMAINS: Record<string, DataDomain | DataDomain[]> = {
   'db:batchComplete': 'task',
   'db:batchMove': 'task',
   'db:batchSetDue': 'task',
+  'db:batchDeleteTasks': 'task',
+  'db:batchDeleteTags': 'task',
+  'db:batchUndoLast': 'task',
+  'db:batchUpdateNodePos': 'workflow',
+  // 清空回收站会动三类数据，声明多个域（handle 支持数组）
+  'db:emptyAllTrash': ['task', 'note', 'flash'],
   'db:setTaskTags': 'task',
   'db:quickAdd': 'task',
   'db:saveNote': 'note',
@@ -92,7 +98,10 @@ const WRITE_DOMAINS: Record<string, DataDomain | DataDomain[]> = {
   'db:bindDanglingByTitle': 'note',
   'db:materializeDangling': 'note',
   'db:addFlash': 'flash',
-  'db:setFlashStatus': 'flash',
+  // 真正在跑的通道是这两个；原先这里写的是 'db:setFlashStatus' —— 那个通道从未注册过，
+  // 于是「归档 / 取消归档闪念」写库成功却零广播，其它视图停在旧数据（见 architecture.test.ts 的死键断言）
+  'db:archiveFlash': 'flash',
+  'db:unarchiveFlash': 'flash',
   'db:deleteFlash': 'flash',
   'db:flashToTask': 'flash',
   'db:flashToNote': 'flash',
@@ -138,6 +147,11 @@ const WRITE_DOMAINS: Record<string, DataDomain | DataDomain[]> = {
   // 段落级上下文：任务侧「关联段落」与笔记侧反链/图谱两侧都要刷新
   'db:attachBlock': ['task', 'note'],
   'db:detachBlock': ['task', 'note'],
+  // 任务↔笔记的归属关联（写 task_note_link）此前漏登记：行内 ⇄N 计数与图谱边不会跟着刷新
+  'db:attachTaskNote': 'task',
+  'db:detachTaskNote': 'task',
+  // 建默认笔记文件夹会写 note_folder
+  'db:ensureDefaultFolder': 'note',
   'db:writeNoteAfterDone': ['task', 'note'],
   'db:setSetting': 'settings',
   'db:setSettings': 'settings',
@@ -271,6 +285,16 @@ export function registerDbHandlers(): void {
     return n
   })
   handle('db:batchMove', (_e, ids: number[], listId: number | null) => batchMove(ids, listId))
+  // 批量删除：一次调用一个事务（渲染层原先在循环里逐条 IPC，见 docs/adr/0001）
+  handle('db:batchDeleteTasks', (_e, ids: number[]) => batchDeleteTasks(ids))
+  handle('db:batchDeleteTags', (_e, ids: number[]) => batchDeleteTags(ids))
+  handle('db:batchUndoLast', (_e, ids: number[], action: 'toggle' | 'restore', prevStatus: string | null) =>
+    batchUndoLast(ids, action, (prevStatus ?? null) as never)
+  )
+  handle('db:batchUpdateNodePos', (_e, items: { id: number; x: number; y: number }[]) =>
+    batchUpdateNodePos(Array.isArray(items) ? items : [])
+  )
+  handle('db:emptyAllTrash', () => emptyAllTrash())
   handle('db:batchSetDue', (_e, ids: number[], due: string | null) => batchSetDue(ids, due))
   handle('db:tags', () => listTags())
   handle('db:setTaskTags', (_e, id: number, names: string[]) => setTaskTags(id, names))
@@ -289,14 +313,16 @@ export function registerDbHandlers(): void {
       recordPomodoro(taskId, minutes, completed, reason ?? null)
   )
   handle('db:pomodoroToday', () => pomodoroToday())
+  /**
+   * 到点提醒的**只读**查询。
+   *
+   * 此前它是「查 + 清」合一的，于是「谁是消费方」变成了一个隐式约定。现在消费收归主进程
+   * 一处（main/index.ts 的 startReminderDispatch）：那边查出到期项、清掉 reminder_at、
+   * 再把结果推给该显示的窗口。渲染层若自己调这里，只会和气泡窗口抢，反而少看到一条。
+   */
   handle('db:dueReminders', () => {
-    // 关掉「到点提醒」就不该再弹（对齐 app_controller：开关为 False 时直接 return）
     if (!currentSettings().reminder_enabled) return []
-    const rows = dueReminders()
-    // 弹出即视为已提醒：先清 reminder_at（对齐 app_controller 的弹窗前 dismiss），
-    // 否则用户忽略弹窗后重启会被重复打扰。点「稍后」会写入新的 reminder_at。
-    for (const t of rows) dismissReminder(t.id)
-    return rows
+    return dueReminders()
   })
   handle('db:dismissReminder', (_e, id: number) => dismissReminder(id))
   handle('db:snoozeReminder', (_e, id: number, minutes: number) => snoozeReminder(id, minutes))

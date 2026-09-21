@@ -58,8 +58,17 @@ const SIZE_MIN = 88
 
 const clamp1 = (v: number): number => Math.max(-1, Math.min(1, v))
 
-export function WidgetBall({ shape, onRestore }: { shape: string; onRestore: () => void }) {
+interface Props {
+  shape: string
+  onRestore: () => void
+  /** 待处理的提醒条数：>0 时停在 notify 表情，让「有事找你」先被看见 */
+  notice?: number
+}
+
+export function WidgetBall({ shape, onRestore, notice = 0 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
+  /** 节拍 effect 只挂一次，读不到最新的 notice —— 用 ref 搭个桥 */
+  const noticeRef = useRef(notice)
   /** 当前状态：bloub 的 StateId，由下面的节拍与交互驱动 */
   const [state, setState] = useState<StateId>(IDLE)
   /** 指针注视（归一化）；null = 交给引擎自己漂移 */
@@ -75,6 +84,15 @@ export function WidgetBall({ shape, onRestore }: { shape: string; onRestore: () 
   // 首帧就绪：bloub 的 sample(0) 是同步的，挂载后同一帧里就有画面，这里只是把
   // 容器从「缩着且透明」放到正常态，免得看见一张空容器
   useEffect(() => setReady(true), [])
+
+  /**
+   * notice 一变就同步进 ref 并立刻切表情 —— 不等下一拍节拍，
+   * 提醒该在球上马上看得见（节拍那侧负责「保持」，见 beat）。
+   */
+  useEffect(() => {
+    noticeRef.current = notice
+    if (notice > 0) setState('notify')
+  }, [notice])
 
   useEffect(() => {
     let disposed = false
@@ -94,6 +112,13 @@ export function WidgetBall({ shape, onRestore }: { shape: string; onRestore: () 
     /** 随机表情节拍：亮一个随机状态 → 停留一会儿 → 回待机 → 再等下一拍 */
     const beat = (): void => {
       after(GAP_MIN + Math.random() * GAP_SPAN, () => {
+        // 有未处理的提醒就停在 notify：随机表情会把「有事找你」冲掉，
+        // 而那恰恰是最该被看见的时候。提醒处理完 notice 归零，节拍照旧。
+        if (noticeRef.current > 0) {
+          setState('notify')
+          beat()
+          return
+        }
         if (Date.now() - lastTouchRef.current > SLEEP_AFTER) {
           // 久置：打盹后不再排下一拍，等 wake() 唤醒
           asleepRef.current = true

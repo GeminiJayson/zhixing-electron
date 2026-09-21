@@ -96,6 +96,23 @@ export function emptyTrash(kind: 'task' | 'note' | 'flash'): number {
 }
 
 /**
+ * 清空三类回收站：一个事务。
+ * 渲染层原来是 \`for (k of ['task','note','flash']) await emptyTrash(k)\` —— 三次 IPC，
+ * 中途失败会留下「任务清空了、笔记还在」的半完成状态，而提示已经说「已清空」。
+ */
+export function emptyAllTrash(): number {
+  const c = conn()
+  const tx = c.transaction(() => {
+    let n = 0
+    for (const kind of ['task', 'note', 'flash'] as const) {
+      for (const item of trashItems(kind)) n += purgeTrash(kind, item.id)
+    }
+    return n
+  })
+  return tx()
+}
+
+/**
  * 按保留天数清理（对齐 Python 的 purge_older_than）。
  *
  * Python 用 datetime 比较：`deleted_at < datetime.now() - timedelta(days)`（D12）。
@@ -144,6 +161,18 @@ export function renameTag(id: number, name: string): void {
 /** 删除标签：task_tag / note_tag / flash_tag 由外键 ON DELETE CASCADE 连带清理。 */
 export function deleteTag(id: number): number {
   return conn().prepare('DELETE FROM tag WHERE id = ?').run(id).changes
+}
+
+/** 批量删除标签：一次 IPC、一个事务（渲染层原先在循环里逐条调 deleteTag）。 */
+export function batchDeleteTags(ids: number[]): number {
+  const c = conn()
+  const stmt = c.prepare('DELETE FROM tag WHERE id = ?')
+  const tx = c.transaction((list: number[]) => {
+    let n = 0
+    for (const id of list) n += stmt.run(id).changes
+    return n
+  })
+  return tx(ids)
 }
 
 /**

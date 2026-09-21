@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Plus, Trash2 } from '@renderer/lib/icons'
-import { STATUS_LABELS, buildTaskTree, effectiveDoneMap, type TaskNode } from '@shared/task'
+import { STATUS_LABELS, buildTaskTree, effectiveDoneMap, isTerminal, type TaskNode } from '@shared/task'
 import { filterTasks } from '@shared/query'
 import { priorityLabel } from '@shared/priority'
 import type {
@@ -45,6 +45,12 @@ const VIEWS: { key: ViewKey; label: string }[] = [
 
 type Tag = { id: number; name: string; color: string }
 
+/**
+ * 「已完成」清单的筛选键。它不是真实清单 id（带下划线前缀，永不与数字冲突），
+ * 只是一个视图开关：任务一旦进入终态就从当前清单收走，只在这里露面。
+ */
+const DONE_KEY = '__done'
+
 /** 工作流实例状态的中文名（与 WorkflowPage 的取值口径一致，I12）。 */
 function wfStatusLabel(status: string): string {
   return status === 'running' ? '进行中' : status === 'done' ? '已完成' : '已中止'
@@ -78,6 +84,8 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
   /** 多选集合（Ctrl/Cmd 点击切换、Shift 点击选范围），批量操作的输入 */
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [batchMenu, setBatchMenu] = useState<{ x: number; y: number } | null>(null)
+  /** 清单设置的菜单锚点（改名与删除从这里分开走） */
+  const [listMenu, setListMenu] = useState<{ x: number; y: number } | null>(null)
   /** 列表视图的行高（与 --row-h 同源，虚拟列表要求固定行高） */
   const [rowH, setRowH] = useState(40)
   // 行高取自 --row-h（虚拟列表要求固定行高，不能用内容撑开）
@@ -117,8 +125,13 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
 
   const load = useCallback(async () => {
     // 选中清单时走 list_tree 的语义（根 + 后代闭包）；收件箱对应 list_id 为空
+    // 「已完成」与清单无关：完成的任务可能来自任何清单，所以从全部里筛
     const scoped: number | null | 'all' =
-      listKey === '' ? 'all' : listKey === 'none' ? null : Number(listKey)
+      listKey === '' || listKey === DONE_KEY
+        ? 'all'
+        : listKey === 'none'
+          ? null
+          : Number(listKey)
     const [rows, nc, tt, tg, fs, st] = await Promise.all([
       scoped === 'all' ? window.zhixing.db.tasks() : window.zhixing.db.tasksByList(scoped),
       window.zhixing.db.noteCounts(),
@@ -194,21 +207,28 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
 
   const effective = useMemo(() => effectiveDoneMap(tasks), [tasks])
 
-  /** 聚焦过滤：只筛根任务，子树仍由 buildTaskTree 自然挂回（与今日待办同口径）。 */
+  /**
+   * 视图过滤：只筛根任务，子树仍由 buildTaskTree 自然挂回（与今日待办同口径）。
+   *
+   * 终态任务（完成 / 放弃）不再留在当前清单里，一律收进「已完成」—— 清单里留着一排
+   * 划掉的行，既占位置，又让「还剩多少」变得不可信。唯一的例外是子树：父任务还在，
+   * 它的子任务就不该凭空消失。
+   */
   const scopedTasks = useMemo(() => {
-    if (!focus) return tasks
     const day = new Date().toLocaleDateString('sv-SE')
     const isDone = (t: Task): boolean =>
-      effective.get(t.id) ?? (t.status === 'done' || t.status === 'abandoned')
+      effective.get(t.id) ?? isTerminal(t.status)
     const match = (t: Task): boolean => {
       if (t.parent_id !== null) return true
-      if (focus === 'today') return !isDone(t) && (t.due_date === null || t.due_date >= day)
-      // 「已完成」清单显示**全部**已完成，而不是只有今天完成的 —— 归档之后要能找回来释放
-    if (focus === 'done') return isDone(t)
-      return t.due_date !== null && t.due_date < day && !isDone(t)
+      // 「已完成」显示**全部**已完成（跨清单、跨时间），而不是只有今天完成的
+      if (focus === 'done' || listKey === DONE_KEY) return isDone(t)
+      if (isDone(t)) return false
+      if (focus === 'today') return t.due_date === null || t.due_date >= day
+      if (focus === 'overdue') return t.due_date !== null && t.due_date < day
+      return true
     }
     return tasks.filter(match)
-  }, [tasks, focus, effective])
+  }, [tasks, focus, listKey, effective])
 
   /** 智能清单（保存的查询）：在聚焦过滤之后再套一层表达式过滤 */
   const queriedTasks = useMemo(() => {
@@ -220,6 +240,9 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
       today: day,
       listNames,
       tagsOf: (t) => (tags.get(t.id) ?? []).map((x) => x.name),
+      // 把列表用的同一份「有效完成态」交给查询：否则智能清单里的 !done / done
+      // 会和上面 scopedTasks 的判定不一致（abandoned 与 roll-up 都是分叉点）
+      doneOf: (t) => effective.get(t.id) ?? isTerminal(t.status),
     })
   }, [scopedTasks, activeQuery, folders, tags])
 
@@ -274,12 +297,18 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
       if (!Number.isFinite(id) || id <= 0) return
       setView('list')
       setFilter('')
-      setListKey('')
       onClearFocus?.()
       setSelected(id)
       setSelectedIds(new Set([id]))
       setInspector(true)
       setPendingFocus(id)
+      // 深链目标可能已经完成 —— 终态任务已被当前清单收走，若还停在原清单筛选上，
+      // 下面的定位就永远等不到那一行（它会一直挂在 pendingFocus 上）。
+      void (async () => {
+        const t = await window.zhixing.db.getTask(id)
+        const done = t != null && isTerminal(t.status)
+        setListKey(done ? DONE_KEY : '')
+      })()
     }
     window.addEventListener('zhixing:open-task', onOpenTask)
     return () => window.removeEventListener('zhixing:open-task', onOpenTask)
@@ -423,7 +452,7 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
         confirmText: '删除',
       })
       if (!confirmed) return
-      for (const id of ids) await window.zhixing.db.deleteTask(id)
+      await window.zhixing.db.batchDeleteTasks(ids)
       // 删除也可撤销（对齐 app_controller 的 delete→undo 链路；此前只有回收站一条退路）
       window.dispatchEvent(
         new CustomEvent('zhixing:undoable', {
@@ -462,7 +491,7 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
   const handleToggle = async (id: number): Promise<void> => {
     const before = tasks.find((t) => t.id === id)
     const wasDone = before
-      ? (effective.get(id) ?? (before.status === 'done' || before.status === 'abandoned'))
+      ? (effective.get(id) ?? isTerminal(before.status))
       : false
     await window.zhixing.db.toggleTask(id)
     // 对齐 app_controller._toggle_task：撤销要记录勾选前的 prev_status（T13）
@@ -540,19 +569,37 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     onNotice('已新建清单「' + name.trim() + '」')
   }
 
-  /** 重命名 / 删除当前筛选到的那张清单 */
-  const editList = async (): Promise<void> => {
+  /**
+   * 重命名当前筛选到的清单。
+   *
+   * 与删除**彻底分开**。此前这两件事共用一个函数：改名分支不成立时（没改名，或者用户点了
+   * 取消 —— prompt 此时 resolve(null)）就直接往下走到 dialog.confirm「删除清单？」。
+   * 实测后果：在「清单设置」里取消一次，就会弹出一次删除确认，连击两下即误删清单。
+   */
+  const renameCurrentList = async (): Promise<void> => {
     const id = Number(listKey)
     const cur = folders.find((f) => f.id === id)
     if (!cur) return
     const name = await dialog.prompt({ title: '重命名清单', label: '新名称', defaultValue: cur.name })
-    if (name?.trim() && name.trim() !== cur.name) {
-      await window.zhixing.db.renameListFolder(id, name.trim())
-      await reloadFolders()
-      onNotice('已重命名为「' + name.trim() + '」')
-      return
-    }
-    const ok = await dialog.confirm({ title: '删除清单', message: '删除「' + cur.name + '」？清单里的任务会回到收件箱。' })
+    if (name === null) return // 用户取消：什么都不做
+    const clean = name.trim()
+    if (!clean || clean === cur.name) return // 没改名：同样什么都不做
+    await window.zhixing.db.renameListFolder(id, clean)
+    await reloadFolders()
+    onNotice('已重命名为「' + clean + '」')
+  }
+
+  /** 删除当前筛选到的清单：独立入口，不会因为「名字没变」而被顺带走到。 */
+  const deleteCurrentList = async (): Promise<void> => {
+    const id = Number(listKey)
+    const cur = folders.find((f) => f.id === id)
+    if (!cur) return
+    const ok = await dialog.confirm({
+      title: '删除清单',
+      message: '删除「' + cur.name + '」？清单里的任务会回到收件箱。',
+      danger: true,
+      confirmText: '删除',
+    })
     if (!ok) return
     await window.zhixing.db.deleteListFolder(id)
     setListKey('')
@@ -561,7 +608,7 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
   }
   /** 移动到清单（T1）：收件箱 = null；复用 moveTaskToList（对齐 move_to_list）。 */
   const handleMoveToList = async (ids: number[], listId: number | null): Promise<void> => {
-    for (const id of ids) await window.zhixing.db.moveTaskToList(id, listId)
+    await window.zhixing.db.batchMove(ids, listId)
     setMoveMenu(null)
     onNotice(ids.length > 1 ? `已移动 ${ids.length} 项` : '已移动 1 项')
     setSelectedIds(new Set())
@@ -795,7 +842,8 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
         meta={(
           <span className="u-aux">
             共 {tree.length} 项
-            {focus ? ` · 聚焦「${focus === 'today' ? '今日待办' : focus === 'done' ? '今日已完成' : '已逾期'}」` : ''}
+            {listKey === DONE_KEY ? ' · 已完成' : ''}
+            {focus ? ` · 聚焦「${focus === 'today' ? '今日待办' : focus === 'done' ? '已完成' : '已逾期'}」` : ''}
           </span>
         )}
         search={(
@@ -817,6 +865,7 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
           >
             <option value="">全部清单</option>
             <option value="none">收件箱（未归属）</option>
+            <option value={DONE_KEY}>已完成</option>
             {folders
               .filter((f) => f.kind === 'list')
               .map((f) => (
@@ -833,7 +882,10 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
             className="text-btn"
             title="重命名 / 删除当前选中的清单"
             disabled={!listKey || listKey === 'none'}
-            onClick={() => void editList()}
+            onClick={(e) => {
+              const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+              setListMenu({ x: r.left, y: r.bottom + 4 })
+            }}
           >
             清单设置
           </button>,
@@ -1078,6 +1130,19 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
             />
           )
         })()}
+
+      {/* 清单设置：改名与删除分成两个菜单项 —— 一个入口承担两种不可逆语义正是之前的缺陷 */}
+      {listMenu && (
+        <PopMenu
+          x={listMenu.x}
+          y={listMenu.y}
+          onClose={() => setListMenu(null)}
+          items={[
+            { key: 'rename', label: '重命名清单', onPick: () => void renameCurrentList() },
+            { key: 'delete', label: '删除清单', danger: true, onPick: () => void deleteCurrentList() },
+          ]}
+        />
+      )}
 
       {batchMenu && (
         <PopMenu

@@ -118,21 +118,29 @@ export function saveNote(
   }
   if (!sets.length) return before
 
-  // 正文变更前先落一份版本快照（与 note_service.save 的 _snapshot 时机一致）
-  if ('content_md' in fields) snapshotNote(id)
-
   const stamp = nowStamp()
   sets.push('updated_at = ?')
   args.push(stamp, id)
-  c.prepare(`UPDATE note SET ${sets.join(', ')} WHERE id = ?`).run(...args)
+  const sql = `UPDATE note SET ${sets.join(', ')} WHERE id = ?`
 
-  if ('content_md' in fields) syncNoteLinks(id, fields.content_md ?? '')
-  // 改名后，原先指向旧标题的链接跟随改名（对齐 links.rename_target）
-  if (nextTitle !== before.title) {
-    c.prepare('UPDATE note_link SET dst_title = ? WHERE dst_title = ?').run(nextTitle, before.title)
-  }
-  reindexNote(id)
-  return getNote(id)
+  /**
+   * 五步写收进一个事务：版本快照 → 正文 UPDATE → 关联删插 → 改名传播 → 重建索引。
+   * 原先是裸的连续写：任一步抛错就留下「快照落了、正文没改」这类半完成状态。
+   * 这几步全是同步的，正好适合 better-sqlite3 的同步事务 —— 异步副作用必须留在事务外。
+   */
+  const tx = c.transaction(() => {
+    // 正文变更前先落一份版本快照（与 note_service.save 的 _snapshot 时机一致）
+    if ('content_md' in fields) snapshotNote(id)
+    c.prepare(sql).run(...args)
+    if ('content_md' in fields) syncNoteLinks(id, fields.content_md ?? '')
+    // 改名后，原先指向旧标题的链接跟随改名（对齐 links.rename_target）
+    if (nextTitle !== before.title) {
+      c.prepare('UPDATE note_link SET dst_title = ? WHERE dst_title = ?').run(nextTitle, before.title)
+    }
+    reindexNote(id)
+    return getNote(id)
+  })
+  return tx()
 }
 
 /** 五种笔记格式（对齐 NOTE_FORMATS）。word/excel 的 content_md 存本地路径，link 存 URL。 */

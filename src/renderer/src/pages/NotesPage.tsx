@@ -488,6 +488,24 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
     }
   }, [title, content, current, dirty, persist])
 
+  /**
+   * 切走（组件卸载）时把防抖窗口里的编辑冲掉。
+   *
+   * 不能把这一步写进上面那个 effect 的 cleanup：它的依赖含 title / content，
+   * **每敲一个字 cleanup 都会跑一次**，在那里落盘就等于取消防抖、一字一次写库。
+   * 所以用 ref 存一份「当前待落盘的内容」，交给一个空依赖的 effect，只在真正卸载时调用。
+   */
+  const flushOnUnmount = useRef<() => void>(() => {})
+  flushOnUnmount.current = () => {
+    if (!current || !dirty) return
+    if (timer.current) {
+      window.clearTimeout(timer.current)
+      timer.current = null
+    }
+    void persist(current.id, { title, content_md: content })
+  }
+  useEffect(() => () => flushOnUnmount.current(), [])
+
   /** 在正文里找下一个匹配并选中（循环；对齐 Python _find_next）。 */
   const findNext = useCallback((): void => {
     const needle = findText
@@ -842,14 +860,16 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
   locateRef.current = locateBlock
   const selectRef = useRef(selectNote)
   selectRef.current = selectNote
-  useEffect(() => {
-    // onDeepLink 基于 ipcRenderer.on，没有取消订阅接口：只注册一次，回调里读最新 ref
-    window.zhixing.app.onDeepLink((link) => {
-      if (link.kind !== 'note') return
-      if (link.id) void selectRef.current(link.id)
-      if (link.block) window.setTimeout(() => locateRef.current(link.block), 400)
-    })
-  }, [])
+  // 回调里读最新 ref，所以依赖为空；preload 的 on* 现在返回取消函数，直接交给 effect 收尾
+  useEffect(
+    () =>
+      window.zhixing.app.onDeepLink((link) => {
+        if (link.kind !== 'note') return
+        if (link.id) void selectRef.current(link.id)
+        if (link.block) window.setTimeout(() => locateRef.current(link.block), 400)
+      }),
+    []
+  )
 
   const dangling = outLinks.filter((l) => l.dst_note_id == null)
 

@@ -16,11 +16,30 @@ const backup = join(root, '..', 'backups', 'electron-migration', 'zhixing-before
 const tmpHome = join(root, '.screenshots', 'dialog-home')
 const dbFile = join(tmpHome, 'zhixing.db')
 const PORT = 9253
-const sql = (q) => execFileSync('sqlite3', [dbFile, q]).toString().trim()
-if (!existsSync(backup)) { console.error('✗ 缺备份库'); process.exit(1) }
+const sql = (q) => {
+  // 原来走 `execFileSync('sqlite3', ...)` —— 那要系统装了 CLI 才有，本机与 CI 都没有，
+  // 于是脚本一跑到 sql() 就 ENOENT 崩掉，后面的断言根本没机会执行（这也是污染长期没被发现的原因）。
+  // 改用 Node 自带的 node:sqlite：不依赖外部程序，也不必碰 better-sqlite3 的 Electron ABI。
+  const { DatabaseSync } = require('node:sqlite')
+  const db = new DatabaseSync(dbFile)
+  try {
+    return String(Object.values(db.prepare(q).get() ?? {})[0] ?? '')
+  } finally {
+    db.close()
+  }
+}
+// 迁移前那份备份早已从工作区清掉 —— 缺了就退回「当前正式库的副本」。
+// 这些脚本要的只是「一张有数据的库」，对来源不敏感；没有这层回退，它们一启动就退出。
+const liveDb = join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db')
+const seedDb = existsSync(backup) ? backup : liveDb
+if (!existsSync(seedDb)) {
+  console.error('✗ 既没有迁移前备份，也找不到 ' + liveDb)
+  process.exit(1)
+}
+console.log('【基库】' + (seedDb === backup ? '迁移前备份' : '当前正式库副本'))
 rmSync(tmpHome, { recursive: true, force: true })
 mkdirSync(tmpHome, { recursive: true })
-copyFileSync(backup, dbFile)
+copyFileSync(seedDb, dbFile)
 const child = spawn(electronPath, ['.', `--remote-debugging-port=${PORT}`, `--user-data-dir=${join(tmpHome, 'p')}`], { cwd: root, env: { ...process.env, ZHIXING_HOME: tmpHome }, stdio: 'ignore' })
 let page = null
 for (let i = 0; i < 40 && !page; i++) {
@@ -113,8 +132,22 @@ check('取消后对话框关闭', (await ev(`!document.querySelector('.modal--di
 check('取消的内容没有落库', sql("SELECT COUNT(*) FROM tag WHERE name = 'e2e-should-drop';") === '0')
 
 ws.close(); child.kill(); await sleep(400)
-const realDb = join(process.env.HOME, 'Library/Application Support/ZhiXing/zhixing.db')
-check('真实库未被写入', execFileSync('sqlite3', [realDb, "SELECT COUNT(*) FROM tag WHERE name LIKE 'e2e-%';"]).toString().trim() === '0')
+const realDb = join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db')
+/**
+ * 指定**另一个**库文件读一格。
+ * 与上面的 sql() 分开：那个固定查临时库；这条要查真实库，验证「测试没污染用户数据」。
+ * 原先走 execFileSync('sqlite3')，本机没有 CLI —— 于是这条断言从来没跑成过。
+ */
+const countOf = (file, q) => {
+  const { DatabaseSync } = require('node:sqlite')
+  const db = new DatabaseSync(file)
+  try {
+    return String(Object.values(db.prepare(q).get() ?? {})[0] ?? '')
+  } finally {
+    db.close()
+  }
+}
+check('真实库未被写入', countOf(realDb, "SELECT COUNT(*) FROM tag WHERE name LIKE 'e2e-%';") === '0')
 rmSync(tmpHome, { recursive: true, force: true })
 const failed = results.filter(([, ok]) => !ok).length
 console.log(`\n${results.length - failed}/${results.length} 项通过`)

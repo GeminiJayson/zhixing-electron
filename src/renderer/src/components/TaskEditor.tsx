@@ -2,8 +2,12 @@ import { useCallback, useEffect, useState } from 'react'
 import { PRIORITY_CHOICES } from '@shared/priority'
 import { STATUS_CHOICES } from '@shared/task'
 import type { Note, RepeatPeriod, Task, TaskNoteContext, TaskStatus } from '@shared/types'
+import { joinStamp, splitStamp } from '../lib/date'
 import { DatePicker } from './DatePicker'
 import { TimePicker } from './TimePicker'
+
+/** 只选了日期没选时刻时的默认提醒时刻 —— 半夜叫人起床没有意义。 */
+const DEFAULT_REMIND_CLOCK = '09:00'
 
 const REPEAT_CHOICES: { value: RepeatPeriod; label: string }[] = [
   { value: 'none', label: '不循环' },
@@ -35,6 +39,12 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
   const [repeatRule, setRepeatRule] = useState(task.repeat_rule ?? '')
   // T4：等待中可设「恢复于」（到期由 resume_due_today 自动回待办）
   const [resume, setResume] = useState(task.resume_at ?? '')
+  /**
+   * 提醒时刻。此前没有任何界面入口 —— 只有在快速捕获里写「明天3点」才能带上，
+   * 任务一建好就再也改不了。这里补上，与「开始 / 截止」共用同一对自绘控件。
+   */
+  const [reminder, setReminder] = useState(() => splitStamp(task.reminder_at)[0])
+  const [reminderTime, setReminderTime] = useState(() => splitStamp(task.reminder_at)[1])
   // T3：段落级上下文（关联笔记段落）与「写复盘」回写
   const [contexts, setContexts] = useState<TaskNoteContext[]>([])
   const [noteList, setNoteList] = useState<Note[]>([])
@@ -87,10 +97,14 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
 
   const save = async (): Promise<void> => {
     setSaving(true)
+    // 提醒时刻：库列是 DATETIME，只给了日期就补默认时刻。日期为空即「不提醒」。
+    // 拆分与拼回都在 lib/date.ts，那里有单测钉住「往返不丢信息」。
+    const reminderAt = joinStamp(reminder, reminderTime, DEFAULT_REMIND_CLOCK)
     await onSave(task.id, {
       title,
       status,
       priority,
+      reminder_at: reminderAt,
       due_date: due || null,
       due_time: dueTime || null,
       start_date: start || null,
@@ -177,6 +191,21 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
               </span>
             </label>
           </div>
+
+          {/* 提醒时刻：与「截止」是两个字段 —— 截止决定进度条怎么算，提醒决定什么时候叫你。
+              可以早于截止，也可以完全没有截止。 */}
+          <label className="form-row">
+            <span>提醒</span>
+            <span className="form-row__pair">
+              <DatePicker value={reminder} onChange={setReminder} label="提醒日期" />
+              <TimePicker value={reminderTime} onChange={setReminderTime} label="提醒时间" />
+            </span>
+            <span>
+              {reminder
+                ? `到点提醒${reminderTime ? '' : `（默认 ${DEFAULT_REMIND_CLOCK}）`}`
+                : '留空则不提醒。到点弹出提醒卡片，可稍后 5 / 15 / 30 分钟。'}
+            </span>
+          </label>
 
           {status === 'waiting' && (
             <label className="form-row">

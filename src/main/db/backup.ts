@@ -7,6 +7,7 @@
  */
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { parseBackupStamp, pickBackupsToDelete, rankBackups } from '../../shared/backup-retention'
 import { closeDb, conn, dataDir, dbPath } from './connection'
 
 /** 保留的备份份数（对齐 BackupService.MAX_KEEP）。 */
@@ -24,15 +25,29 @@ export function backupDir(): string {
   return join(dataDir(), 'backups')
 }
 
-/** 只保留最近 keep 份（文件名带时间戳，按名倒序即时间倒序）。 */
+/**
+ * 只保留最近 keep 份。
+ *
+ * 判断「最近」用的是文件名尾部的 14 位时间戳，**不是整个文件名的字典序**。
+ * 字典序会先按 reason 前缀分组（auto-* 永远排在 pre-* 之前），把「保留最近 10 份」
+ * 变成「优先删掉自动备份」—— 而自动备份才是每次启动 / 跨天那份日常快照。
+ * 挑选逻辑在 shared/backup-retention.ts，那里有单测钉住。
+ */
 export function pruneBackups(dir: string, keep = BACKUP_KEEP): number {
   let removed = 0
   try {
     const files = readdirSync(dir)
-      .filter((f) => f.endsWith('.db'))
-      .sort()
-      .reverse()
-    for (const f of files.slice(keep)) {
+    // 认不出时间戳的（旧命名 / 被手工改过）用 mtime 兜底
+    const mtimes: Record<string, number> = {}
+    for (const f of files) {
+      if (!f.endsWith('.db') || parseBackupStamp(f)) continue
+      try {
+        mtimes[f] = statSync(join(dir, f)).mtimeMs
+      } catch {
+        mtimes[f] = 0
+      }
+    }
+    for (const f of pickBackupsToDelete(files, keep, mtimes)) {
       try {
         rmSync(join(dir, f), { force: true })
         removed += 1
@@ -73,15 +88,13 @@ export function listBackups(): BackupEntry[] {
   const dir = backupDir()
   if (!existsSync(dir)) return []
   try {
-    return readdirSync(dir)
-      .filter((f) => f.endsWith('.db'))
-      .sort()
-      .reverse()
-      .map((f) => {
-        const p = join(dir, f)
-        const st = statSync(p)
-        return { name: f, path: p, bytes: st.size, mtime: st.mtimeMs }
-      })
+    // 与 pruneBackups 用同一套排序：整串字典序会把 pre-* 排到更新的 auto-* 前面，
+    // 列表里的「最新」也会指错
+    return rankBackups(readdirSync(dir)).map((f) => {
+      const p = join(dir, f)
+      const st = statSync(p)
+      return { name: f, path: p, bytes: st.size, mtime: st.mtimeMs }
+    })
   } catch {
     return []
   }

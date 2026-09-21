@@ -219,8 +219,6 @@ export function MarkdownEditor({
 }: Props) {
   const onReadyRef = useRef(onReady)
   onReadyRef.current = onReady
-  const onAttachTaskRef = useRef(onAttachTask)
-  onAttachTaskRef.current = onAttachTask
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const titlesRef = useRef<string[]>(titles)
@@ -277,19 +275,10 @@ export function MarkdownEditor({
     viewRef.current = view
     onReadyRef.current?.(view)
 
-    // 选中文字后右键：把这一段交给上层去关联任务（没选中就不抢原生菜单）
-    const onContextMenu = (e: MouseEvent): void => {
-      const sel = view.state.selection.main
-      if (sel.empty) return
-      const text = view.state.sliceDoc(sel.from, sel.to).trim()
-      if (!text) return
-      e.preventDefault()
-      onAttachTaskRef.current?.({ text, blockKey: blockFingerprint(text), x: e.clientX, y: e.clientY })
-    }
-    view.dom.addEventListener('contextmenu', onContextMenu)
-
+    // 右键只由下面那一个 React onContextMenu 处理。
+    // 这里原先另挂了一份原生 contextmenu 监听来做「关联任务」，同一次右键会**两个菜单同时弹**
+    // （事件从 view.dom 冒泡到外层 div，两边各自 preventDefault + 各自开面板，位置完全重叠）。
     return () => {
-      view.dom.removeEventListener('contextmenu', onContextMenu)
       view.destroy()
       viewRef.current = null
     }
@@ -318,40 +307,64 @@ export function MarkdownEditor({
       onContextMenu={(e) => {
         const view = viewRef.current
         const sel = view ? view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to) : ''
-        if (!sel.trim() || !onCreateTask) return
+        // 唯一的右键入口：只要有一个回调可用就开菜单，两个回调都缺就交回原生菜单
+        if (!sel.trim() || (!onCreateTask && !onAttachTask)) return
         e.preventDefault()
         setMenu({ x: e.clientX, y: e.clientY, text: sel })
       }}
     >
-      {menu && onCreateTask && (
+      {menu && (onCreateTask || onAttachTask) && (
         <div
           className="popmenu"
           style={{ position: 'fixed', left: menu.x, top: menu.y, zIndex: 50 }}
           role="menu"
         >
-          <button
-            className="popmenu__item"
-            role="menuitem"
-            onClick={() => {
-              onCreateTask(menu.text, null)
-              setMenu(null)
-            }}
-          >
-            <span className="popmenu__tick" />
-            转为任务
-          </button>
-          <button
-            className="popmenu__item"
-            role="menuitem"
-            onClick={() => {
-              // 定位键取选中文本首行的指纹（对齐 Python 的 act2）
-              onCreateTask(menu.text, blockFingerprint(menu.text.split('\n')[0]))
-              setMenu(null)
-            }}
-          >
-            <span className="popmenu__tick" />
-            转为任务并关联段落
-          </button>
+          {onCreateTask && (
+            <button
+              className="popmenu__item"
+              role="menuitem"
+              onClick={() => {
+                onCreateTask(menu.text, null)
+                setMenu(null)
+              }}
+            >
+              <span className="popmenu__tick" />
+              转为任务
+            </button>
+          )}
+          {onCreateTask && (
+            <button
+              className="popmenu__item"
+              role="menuitem"
+              onClick={() => {
+                // 定位键取选中文本首行的指纹（对齐 Python 的 act2）
+                onCreateTask(menu.text, blockFingerprint(menu.text.split('\n')[0]))
+                setMenu(null)
+              }}
+            >
+              <span className="popmenu__tick" />
+              转为任务并关联段落
+            </button>
+          )}
+          {/* 「关联到已有任务」原先是另一份原生监听弹出的第二个菜单，现在并入这里 */}
+          {onAttachTask && (
+            <button
+              className="popmenu__item"
+              role="menuitem"
+              onClick={() => {
+                onAttachTask({
+                  text: menu.text,
+                  blockKey: blockFingerprint(menu.text),
+                  x: menu.x,
+                  y: menu.y,
+                })
+                setMenu(null)
+              }}
+            >
+              <span className="popmenu__tick" />
+              关联到已有任务…
+            </button>
+          )}
         </div>
       )}
     </div>

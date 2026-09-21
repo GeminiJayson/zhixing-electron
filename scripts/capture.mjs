@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 const require = createRequire(import.meta.url)
@@ -23,6 +23,19 @@ const subview = process.argv[5] ?? ''
 const clickSel = process.argv[6] ?? ''
 const PORT = 9223
 
+/**
+ * 库也要隔离。
+ *
+ * 这个脚本刻意要「真实数据」的截图，但**没有理由动真实库**：阶段 1 会把 theme_mode
+ * 写进 settings 表，而那是用户的真实数据（还与 Python 版共用）。以前它没设 ZHIXING_HOME，
+ * 于是跑一次截图就把用户的主题改掉了。
+ * 复制一份副本、把 ZHIXING_HOME 指过去 —— 截图看到的是同一份数据，改的却是副本。
+ */
+const tmpHome = join(root, '.screenshots', 'capture-home')
+rmSync(tmpHome, { recursive: true, force: true })
+mkdirSync(tmpHome, { recursive: true })
+copyFileSync(join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db'), join(tmpHome, 'zhixing.db'))
+
 const profileDir = join(root, '.screenshots', 'profile')
 rmSync(profileDir, { recursive: true, force: true })
 mkdirSync(profileDir, { recursive: true })
@@ -30,7 +43,7 @@ mkdirSync(profileDir, { recursive: true })
 const launch = () =>
   spawn(electronPath, ['.', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profileDir}`], {
     cwd: root,
-    env: { ...process.env },
+    env: { ...process.env, ZHIXING_HOME: tmpHome },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
 

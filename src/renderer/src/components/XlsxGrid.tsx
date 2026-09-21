@@ -14,6 +14,7 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import { AgGridReact } from 'ag-grid-react'
 import type { CellValueChangedEvent, ColDef, ICellRendererParams } from 'ag-grid-community'
 import { themeQuartz } from 'ag-grid-community'
+import { attachmentUrl } from '@shared/attachment-url'
 
 interface Props {
   rows: string[][]
@@ -28,15 +29,13 @@ export function isImageCell(v: string): boolean {
   return typeof v === 'string' && v.startsWith(IMG_PREFIX)
 }
 
-function toFileUrl(p: string): string {
-  return 'file://' + p.split('/').map(encodeURIComponent).join('/')
-}
-
 function ImageCell({ value }: ICellRendererParams): JSX.Element | null {
   const [big, setBig] = useState(false)
   if (typeof value !== 'string' || !isImageCell(value)) return null
   const path = value.slice(IMG_PREFIX.length)
-  const url = toFileUrl(path)
+  // 路径 → file URL 的拼装收在 shared/attachment-url.ts：原先这里和 RichTextEditor 各写一份，
+  // 且都在 Windows 反斜杠路径下产出无效 URL（file://C%3A%5C...）
+  const url = attachmentUrl(path)
   return (
     <>
       <img

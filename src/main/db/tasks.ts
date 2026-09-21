@@ -5,6 +5,8 @@ import { clampPriority } from '../../shared/priority'
 import { reindexTask, removeFromIndex } from './fts'
 import { extractLinks } from '../../shared/wiki'
 import { appendNote, createNote, getNote, resolveNoteTitle } from './notes'
+// 撤销「删除」需要从回收站恢复：trash.ts 只依赖 connection/fts，不会成环
+import { restoreTrash } from './trash'
 import { nextRecurrence } from '../../shared/recurrence'
 import type {
   Note,
@@ -367,6 +369,8 @@ export const EDITABLE_FIELDS = [
   'start_date',
   'due_time',
   'start_time',
+  // 提醒时刻：此前编辑面板根本没有这个字段，于是提醒只能靠快速捕获的「明天3点」带出来
+  'reminder_at',
   'repeat_period',
   'repeat_rule',
   'resume_at',
@@ -565,4 +569,64 @@ export function softDelete(id: number): number {
   })
   tx(ids)
   return ids.length
+}
+
+/**
+ * 批量软删除：逐个级联子树，整体一个事务。
+ *
+ * 渲染层原来是 \`for (id of ids) await deleteTask(id)\` —— 第 N 条失败时前 N-1 条已经落库，
+ * 一致性边界跑到了渲染进程里。收敛成一次 IPC，事务边界回到主进程。
+ * \`seen\` 不能省：两个选中的 id 可能同属一棵子树，重复收集会让返回计数虚高。
+ */
+export function batchDeleteTasks(ids: number[]): number {
+  const c = conn()
+  const stamp = nowStamp()
+  const all: number[] = []
+  const seen = new Set<number>()
+  const collect = (taskId: number): void => {
+    if (seen.has(taskId)) return
+    seen.add(taskId)
+    all.push(taskId)
+    const kids = c
+      .prepare('SELECT id FROM task WHERE parent_id = ? AND deleted_at IS NULL')
+      .all(taskId) as { id: number }[]
+    for (const k of kids) collect(k.id)
+  }
+  // 收集阶段只读，放事务外；写阶段才需要原子性
+  for (const id of ids) collect(id)
+  const stmt = c.prepare('UPDATE task SET deleted_at = ?, updated_at = ? WHERE id = ?')
+  const tx = c.transaction((rows: number[]) => {
+    for (const r of rows) {
+      stmt.run(stamp, stamp, r)
+      removeFromIndex('task', r)
+    }
+  })
+  tx(all)
+  return all.length
+}
+
+/**
+ * 撤销上一步操作（完成 / 取消完成 / 删除恢复），整批一个事务。
+ *
+ * 渲染层原本是 \`for (id of ids) { if (...) await restoreTrash(...) else ... }\` —— 任一条失败
+ * 即中断，而撤销条已经被清掉了：用户既看不到错误，也无法重试。三种动作按来源分派，
+ * 统一收进主进程的一次事务。prevStatus 存在时回写原状态，而不是简单翻转
+ * （否则原本 doing / waiting 的任务会被 toggge 成 todo）。
+ */
+export function batchUndoLast(
+  ids: number[],
+  action: 'toggle' | 'restore',
+  prevStatus: TaskStatus | null
+): number {
+  const c = conn()
+  const tx = c.transaction((list: number[]) => {
+    let n = 0
+    for (const id of list) {
+      if (action === 'restore') n += restoreTrash('task', id)
+      else if (prevStatus) n += setStatus(id, prevStatus) ? 1 : 0
+      else n += toggleTask(id) ? 1 : 0
+    }
+    return n
+  })
+  return tx(ids)
 }

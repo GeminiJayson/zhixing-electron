@@ -391,7 +391,13 @@ export function isGraphWatching(): boolean {
   return graphWatching
 }
 
-/** 构建并缓存一帧（图表打开时用这个，而不是裸 buildGraph）。 */
+/**
+ * 构建并缓存一帧 —— **只给全图视图用**。
+ *
+ * 它会同时覆盖模块级的 graphCache 与 graphParams，而 graphDelta() 正是拿这两个当
+ * 「上一帧全图」的基线去做 diff。所以任何**子图 / 过滤视图**都必须走裸 buildGraph：
+ * 一旦基线被换成子图，下一次写入算出来的增量就会把子图之外的节点当成「已删除」推给界面。
+ */
 export function buildGraphTracked(query: GraphQuery = {}): GraphPayload {
   const data = buildGraph(query)
   graphCache = data
@@ -501,7 +507,10 @@ export function graphNeighborhood(noteId: number, degree = 1): GraphPayload {
     }
     frontier = next
   }
-  return buildGraphTracked({ onlyIds: [...keep] })
+  // 这里曾经走 buildGraphTracked —— 于是「在图页点一下节点」就把全图基线换成了这一小块邻域，
+  // 之后任何写入触发的 graphDelta() 都在拿邻域帧 diff，界面上会闪出一批并不存在的增删。
+  // 邻域是**另一个视图**，不该动全图的缓存。
+  return buildGraph({ onlyIds: [...keep] })
 }
 
 // ---------------------------------------------------------------- 节点预览（G9）

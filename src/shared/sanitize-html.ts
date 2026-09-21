@@ -23,6 +23,9 @@ const ALLOWED_TAGS = new Set([
   'h6', 'hr', 'i', 'img', 'ins', 'li', 'mark', 'ol', 'p', 'pre', 's', 'small',
   'span', 'strike', 'strong', 'sub', 'sup', 'table', 'tbody', 'td', 'tfoot',
   'th', 'thead', 'tr', 'u', 'ul',
+  // Markdown 任务列表（marked 的 GFM 输出）是 <input type="checkbox" disabled>；
+  // 不放行它，笔记预览里的勾选框会整片消失。属性白名单见 TAG_ATTRS。
+  'input',
 ])
 
 /**
@@ -36,7 +39,7 @@ const DROP_WITH_CONTENT = new Set([
   'frameset', 'xml',
 ])
 
-const VOID_TAGS = new Set(['br', 'hr', 'img', 'col', 'area'])
+const VOID_TAGS = new Set(['br', 'hr', 'img', 'col', 'area', 'input'])
 
 /** 每个标签额外允许的属性；所有标签都另有 GLOBAL_ATTRS。 */
 const TAG_ATTRS: Record<string, string[]> = {
@@ -50,6 +53,9 @@ const TAG_ATTRS: Record<string, string[]> = {
   ol: ['start', 'type'],
   ul: ['type'],
   li: ['value'],
+  // 只放行这三样：type / checked / disabled 都不会发起请求，也不会提交表单。
+  // src、formaction 这类必须挡在外面。
+  input: ['type', 'checked', 'disabled'],
 }
 const GLOBAL_ATTRS = new Set(['title', 'dir', 'lang'])
 

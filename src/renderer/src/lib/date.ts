@@ -50,6 +50,25 @@ export function todayStr(): string {
 }
 
 /**
+ * DATETIME 串（`YYYY-MM-DD HH:MM:SS.000000`，reminder_at / resume_at 那一类）与界面上
+ * 「日期 + 时刻」两个控件之间的往返。
+ *
+ * 拆开是因为界面上从不直接编辑这个串：日期归 DatePicker、时刻归 TimePicker。
+ * 写回时时刻允许留空 —— 「只选了日期」是很自然的操作，此时用 fallback 兜底。
+ */
+export function splitStamp(v: string | null): [string, string] {
+  if (!v) return ['', '']
+  const m = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/.exec(v)
+  return m ? [m[1], m[2]] : [v.slice(0, 10), '']
+}
+
+/** splitStamp 的逆运算：日期为空即「没有这一刻」；时刻为空时用 fallback 补一个整点。 */
+export function joinStamp(date: string, time: string, fallback: string): string | null {
+  if (!date) return null
+  return `${date} ${time || fallback}:00.000000`
+}
+
+/**
  * 任务的时间进度与紧迫度色阶。
  *
  * 只有一头（缺开始或缺截止）时返回 null —— 没有起点就没有「进度」可言，

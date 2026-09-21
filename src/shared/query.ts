@@ -15,6 +15,9 @@
  *                        也可以写 `due<2026-10-01` 或 `due=none`（没有截止）
  *   `@today`            别名：截止就是今天
  */
+import { isTerminal } from './task'
+import type { TaskStatus } from './types'
+
 export interface ParsedQuery {
   text: string
   tag: string
@@ -43,6 +46,34 @@ export interface QueryContext {
   listNames?: Record<number, string>
   /** 当前日期 YYYY-MM-DD（便于测试注入） */
   today: string
+  /**
+   * 该任务的**有效完成态**（含 roll-up）。
+   *
+   * 列表里「子任务全部完成的父任务」显示为已完成，而 QueryTask 只是扁平一条、没有子嗣信息，
+   * 所以这份判断必须由调用方注入（TasksPage 本来就算了 effectiveDoneMap）。
+   * 不传则退化为「自身是否终态」。
+   */
+  doneOf?: (task: QueryTask) => boolean
+}
+
+/**
+ * due 允许出现的值。
+ *
+ * 校验放在**解析期**：原先解析照单全收、匹配期 resolveDueToken 返回 null 就 return false，
+ * 于是 \`due<瞎写\` 会把整张智能清单滤成空，而且一声不响。
+ * （overdue 是关键字，不经 resolveDueToken 折算，所以这里要单独列出来。）
+ */
+function isValidDueValue(value: string): boolean {
+  const v = value.trim().toLowerCase()
+  return (
+    v === 'today' ||
+    v === 'tomorrow' ||
+    v === 'yesterday' ||
+    v === 'overdue' ||
+    v === 'none' ||
+    v === 'null' ||
+    DATE_RE.test(v)
+  )
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -94,14 +125,19 @@ export function parseQuery(expr: string): ParsedQuery {
         if (Number.isFinite(n)) out.priority = { op: op as '>' | '>=' | '<' | '<=' | '=', value: n }
         else out.unknown.push(token)
       } else if (field === 'due' || field === 'reminder') {
-        out.due = { op: op as '<' | '<=' | '>' | '>=' | '=', value: value.trim().toLowerCase() }
+        const v = value.trim().toLowerCase()
+        // 认不出的值记进 unknown，交给 UI 提示 —— 而不是留到匹配期把清单滤空
+        if (isValidDueValue(v)) out.due = { op: op as '<' | '<=' | '>' | '>=' | '=', value: v }
+        else out.unknown.push(token)
       } else {
         out.unknown.push(token)
       }
       continue
     }
     if (token.startsWith('@')) {
-      out.due = { op: '=', value: token.slice(1).trim().toLowerCase() }
+      const v = token.slice(1).trim().toLowerCase()
+      if (isValidDueValue(v)) out.due = { op: '=', value: v }
+      else out.unknown.push(token)
       continue
     }
     const mm = /^([a-zA-Z]+):(.*)$/.exec(token)
@@ -116,7 +152,13 @@ export function parseQuery(expr: string): ParsedQuery {
       else out.unknown.push(token)
       continue
     }
-    // 裸词当全文搜索
+    // 裸词 done = 已完成。文档第 11 行承诺过这个写法，但此前它落进了下面的全文搜索 ——
+    // 用户以为筛出了已完成任务，其实是在搜标题里带「done」的任务。
+    if (token.toLowerCase() === 'done') {
+      out.notDone = false
+      continue
+    }
+    // 其余裸词当全文搜索
     out.text = out.text ? out.text + ' ' + token : token
   }
   return out
@@ -132,8 +174,11 @@ function cmp(a: string, op: string, b: string): boolean {
 
 /** 单条任务是否命中查询；`ctx` 提供标签、清单名与「今天」 */
 export function matchTask(task: QueryTask, q: ParsedQuery, ctx: QueryContext): boolean {
-  if (q.notDone === true && task.status === 'done') return false
-  if (q.notDone === false && task.status !== 'done') return false
+  // 完成态按「终态」判：abandoned 与 done 一样在界面上显示为已完成。
+  // 原先只认 status === 'done'，于是 !done 把 abandoned 当未完成 —— 与列表的结论正好相反。
+  const done = ctx.doneOf ? ctx.doneOf(task) : isTerminal((task.status ?? 'todo') as TaskStatus)
+  if (q.notDone === true && done) return false
+  if (q.notDone === false && !done) return false
   if (q.status && (task.status ?? 'todo') !== q.status) return false
 
   if (q.text) {
@@ -182,7 +227,12 @@ export function matchTask(task: QueryTask, q: ParsedQuery, ctx: QueryContext): b
 export function filterTasks<T extends QueryTask>(
   tasks: T[],
   expr: string,
-  ctx: Omit<QueryContext, 'today'> & { today: string; tagsOf?: (t: T) => string[] }
+  ctx: Omit<QueryContext, 'today' | 'doneOf'> & {
+    today: string
+    tagsOf?: (t: T) => string[]
+    /** 与 tagsOf 同理：完成态按**调用方**的任务类型逐个算（它才有 id / parent_id 去查 roll-up） */
+    doneOf?: (t: T) => boolean
+  }
 ): T[] {
   const q = parseQuery(expr)
   return tasks.filter((t) =>
@@ -191,6 +241,8 @@ export function filterTasks<T extends QueryTask>(
       listNames: ctx.listNames,
       // 标签是「每个任务各自的」：调用方给 tagsOf 就逐个取，否则用全局 tags
       tags: ctx.tagsOf ? ctx.tagsOf(t) : ctx.tags,
+      // 完成态由调用方注入（它有 effectiveDoneMap），否则退化为只看自身状态
+      doneOf: ctx.doneOf as ((t: QueryTask) => boolean) | undefined,
     })
   )
 }

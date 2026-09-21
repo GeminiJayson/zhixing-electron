@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, FolderTree, List } from '@renderer/lib/icons'
+import { isTerminal } from '@shared/task'
 import type { ListFolder, Task } from '@shared/types'
 
 /**
@@ -48,9 +49,6 @@ async function rememberRecent(key: string, id: number): Promise<void> {
   state[key] = [id, ...prev.filter((x) => x !== id)].slice(0, RECENT_LIMIT)
   await window.zhixing.db.setSetting('ui_state', JSON.stringify(state))
 }
-
-/** 任务是否终态（对齐 Task.is_done：done + abandoned 都不再作为父任务候选）。 */
-const isTerminal = (status: string): boolean => status === 'done' || status === 'abandoned'
 
 export function TargetSelector({ mode, onPick, onCancel }: Props) {
   const [q, setQ] = useState('')

@@ -1,0 +1,54 @@
+/* 提醒气泡：透明窗口 + 一张圆角卡片，挂在悬浮表情旁边。
+   与浮窗同一个理由，只对这一个 surface 生效 —— 主窗口若也透明，主题变量一起失效。 */
+html[data-surface='reminder'],
+html[data-surface='reminder'] body,
+html[data-surface='reminder'] #root {
+  background: transparent;
+}
+
+.rbug {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  /* 不留内边距：卡片直接铺满窗口，平台补的那层直角底就没有露出来的地方 */
+  padding: 0;
+}
+
+.rbug__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--accent-warm);
+  border-radius: var(--radius-lg);
+  /* 不投影：阴影会超出窗口被硬裁成矩形边，反而更像「第二层边框」（同 .widget__card） */
+  animation: toast-in var(--dur-fast) var(--ease-enter);
+}
+
+.rbug__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--accent-warm);
+  font-weight: 600;
+  font-size: var(--text-aux);
+}
+
+.rbug__title {
+  margin: 0;
+  font-size: var(--text-body);
+  word-break: break-word;
+}
+
+.rbug__meta {
+  margin: 0;
+  color: var(--fg-secondary);
+  font-size: var(--text-aux);
+}
+
+.rbug__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}

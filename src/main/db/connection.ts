@@ -151,6 +151,9 @@ function ensureAppExtensions(d: Database.Database): void {
   add('task', 'due_time', 'due_time TEXT')
   add('task', 'external_source', 'external_source TEXT')
   add('task', 'external_id', 'external_id TEXT')
+  // 标记「这条任务是**认领**来的」（同名匹配后贴上的外部身份），而不是外部自建的。
+  // 同步时两者待遇不同：认领来的只补空字段，否则用户手写的标题/备注会被外部数据抹掉。
+  add('task', 'external_linked', 'external_linked INTEGER')
   // 笔记的结构化属性（JSON 对象：{ "来源": "书籍", "评分": "5" }）
   add('note', 'props', 'props TEXT')
   // 工作流模板分类（对齐笔记树的「文件夹 → 笔记」两层）

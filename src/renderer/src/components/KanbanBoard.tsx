@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Plus } from '@renderer/lib/icons'
 import { priorityColor, priorityLabel } from '@shared/priority'
-import { STATUS_CHOICES } from '@shared/task'
+import { STATUS_CHOICES, isTerminal } from '@shared/task'
 import type { Task, TaskStatus } from '@shared/types'
 import { dueLabel } from '../lib/date'
 
@@ -25,7 +25,7 @@ export function KanbanBoard({ tasks, effective, expanded, onOpen, onToggleSubtre
   const [hoverCol, setHoverCol] = useState<TaskStatus | null>(null)
 
   const isDone = (t: Task): boolean =>
-    effective.get(t.id) ?? (t.status === 'done' || t.status === 'abandoned')
+    effective.get(t.id) ?? isTerminal(t.status)
 
   const childrenOf = (id: number): Task[] => tasks.filter((t) => t.parent_id === id && !isDone(t))
   const roots = tasks.filter((t) => t.parent_id === null)

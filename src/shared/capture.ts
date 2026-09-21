@@ -25,6 +25,17 @@ const PRIORITY_TOKEN: Record<string, number> = {
 
 const WEEKDAY_CN: Record<string, number> = { 一: 0, 二: 1, 三: 2, 四: 3, 五: 4, 六: 5, 日: 6, 天: 6 }
 
+/**
+ * 周短语：周X / 下周X / 下下周X。前缀「下」的个数就是偏移的周数（0 / 1 / 2）。
+ *
+ * 词法（parseCapture 的 DATE_WORDS）与解析（parseNaturalDate）**共用这一个常量**。
+ * 此前两边各写一份，而且写岔了：词法是 \`下下周?[一二三四五六日天]\`（需要**两个**「下」），
+ * 解析是 \`^(下)?周X$\`。于是——
+ *   「下周五」匹配不到 \`下下周?\`，退而匹配「周五」：日期算成本周五，「下」还留在标题里；
+ *   「下下周五」词法能匹配、解析层却不认：日期词被整段删掉，日期丢失。
+ */
+const WEEK_RE = /^(下{0,2})周([一二三四五六日天])$/
+
 const pad = (n: number): string => String(n).padStart(2, '0')
 const dayOf = (d: Date): string => d.toISOString().slice(0, 10)
 const parseDay = (s: string): Date => new Date(`${s}T00:00:00Z`)
@@ -69,14 +80,16 @@ export function parseNaturalDate(
     // 「周X / 下周X」按字面语义：周X 落在本周（已过则顺延到下周同一天），下周X 落在下一周。
     // 注：Python 的 parse_natural_date 把「下周X」实现成了「下一个 X」，与字面不符，
     // 这里按字面语义实现（差异已记入 docs/optimization-proposals.md）。
-    const wk = text.match(/^(下)?周([一二三四五六日天])$/)
+    const wk = text.match(WEEK_RE)
     if (wk) {
       const target = WEEKDAY_CN[wk[2]]
       // JS 的 0=周日 换算成 0=周一
       const todayWd = (t.getUTCDay() + 6) % 7
       const thisMonday = addDays(t, -todayWd)
-      const candidate = addDays(thisMonday, target + (wk[1] ? 7 : 0))
-      const past = !wk[1] && candidate.getTime() < t.getTime()
+      const weekOffset = wk[1].length // 0 / 1 / 2 个「下」
+      const candidate = addDays(thisMonday, target + weekOffset * 7)
+      // 只有无前缀的「周X」才需要「已过则顺延」；带「下」的已经指明了是哪一周
+      const past = weekOffset === 0 && candidate.getTime() < t.getTime()
       date = dayOf(past ? addDays(candidate, 7) : candidate)
     } else {
       const cn = text.match(/^(\d{1,2})月(\d{1,2})[日号]?$/)
@@ -116,7 +129,7 @@ export function parseCapture(input: string, today: string): ParsedCapture {
   if (!text) return result
 
   const DATE_WORDS =
-    /(今天|明天|后天|大后天|下下周?[一二三四五六日天]|周[一二三四五六日天]|\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}月\d{1,2}[日号]?|\d{1,2}[-/]\d{1,2})(\s*(?:凌晨|早上|上午|中午|下午|傍晚|晚上|夜里|夜晚)?\d{1,2}点(?:半|\d{1,2}分)?|\s*\d{1,2}:\d{2})?/
+    /(今天|明天|后天|大后天|下{0,2}周[一二三四五六日天]|\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}月\d{1,2}[日号]?|\d{1,2}[-/]\d{1,2})(\s*(?:凌晨|早上|上午|中午|下午|傍晚|晚上|夜里|夜晚)?\d{1,2}点(?:半|\d{1,2}分)?|\s*\d{1,2}:\d{2})?/
   const dm = text.match(DATE_WORDS)
   if (dm) {
     const parsed = parseNaturalDate((dm[1] + (dm[2] ?? '')).trim(), today)
