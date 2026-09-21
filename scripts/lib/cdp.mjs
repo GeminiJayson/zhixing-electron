@@ -50,7 +50,18 @@ export async function launchApp({
   port,
   home,
   match,
-  copyDb = true,
+  /**
+   * 是否把用户**真实库**拷一份来跑。默认 false —— 原因是一次踩出来的：
+   * 生产库里一旦有了真实数据（比如灌进去的种子数据），凡「照着列表里有什么来找自己那条」
+   * 的脚本就会开始失败，而「绿」也不再等价于「功能正常」，只是「库恰好长得合适」。
+   *
+   * 默认走夹具：给一个空目录，应用启动时会跑 seedIfEmpty()，生成一份固定基线
+   * （工作/生活两个分组 + 「我的清单」+ 2 条欢迎任务 + 1 篇欢迎笔记）。
+   * 确定、可复现、schema 永远跟着当前代码走，不必往仓库里塞二进制库。
+   *
+   * 确实需要用户真实数据的脚本（截图、导入导出之类）显式传 copyDb: true。
+   */
+  copyDb = false,
   tries = 70,
   settle = 3000,
   env = {},
@@ -129,6 +140,47 @@ export async function launchApp({
   // 接上目标 ≠ 界面画好了：React 首屏与数据加载还要一会儿。
   // 老脚本是在各自的样板区段里 await sleep(3000)，收到这里只留一处。
   if (settle > 0) await sleep(settle)
+  const evaluate = makeEvaluator(send)
+
+  // 夹具模式：seedIfEmpty() 只给一篇 markdown 欢迎笔记，
+  // 而有一批脚本要「找到一篇富文本笔记」「找到一篇 word 笔记」。
+  // 这里补齐每种格式一篇，标题带「夹具」前缀，都是确定性的。
+  if (!copyDb) {
+    try {
+      const FIXTURE = [
+        '(async () => {',
+        '  const db = window.zhixing.db',
+        '  const have = await db.notes(500)',
+        '  const missing = ["richtext", "word", "excel", "link"].filter((f) => !have.some((n) => n.format === f))',
+        '  if (!missing.length) return 0',
+        '  const folders = await db.noteFolders()',
+        '  const fid = folders.length ? folders[0].id : null',
+        '  const NAMES = { richtext: "富文本示例", word: "Word 文档示例", excel: "表格示例", link: "参考资料链接" }',
+        '  const BODY = { richtext: "夹具内容：富文本笔记", word: "C:/tmp/fixture.docx", excel: "C:/tmp/fixture.xlsx", link: "https://example.com/fixture" }',
+        '  for (const f of missing) await db.createNote("夹具：" + NAMES[f], fid, BODY[f], f)',
+        '  // 工作流：有一批脚本要断言「实例项也有编辑胶囊」，而它必须先有一个实例',
+        '  const tpls = await db.workflowTemplates()',
+        '  if (!tpls.length) {',
+        '    const saved = await db.saveWorkflowTemplate({',
+        '      name: "夹具：发布前置检查",',
+        '      description: "夹具模板：两步任务节点",',
+        '      start_policy: "first",',
+        '      nodes: [',
+        '        { title: "夹具步骤一：校验产物", action_kind: "task", order_index: 0 },',
+        '        { title: "夹具步骤二：更新说明", action_kind: "task", order_index: 1 }',
+        '      ]',
+        '    })',
+        '    if (saved && saved.ok && saved.templateId) await db.instantiateWorkflow(saved.templateId, "夹具实例", null, "first")',
+        '  }',
+        '  return missing.length',
+        '})()'
+      ].join('\n')
+      const done = await evaluate(FIXTURE, true)
+      if (done) console.log('【夹具】补齐了 ' + done + ' 种格式的示例笔记')
+    } catch (e) {
+      console.log('【夹具】补齐示例笔记失败（不影响启动）：' + (e && e.message))
+    }
+  }
 
   return {
     child,
@@ -137,7 +189,7 @@ export async function launchApp({
     /** 当前所有 CDP 目标（脚本用它判断有没有多出/收起独立窗口）。 */
     targets,
     /** 跑一段浏览器侧表达式，返回它的值。 */
-    evaluate: makeEvaluator(send),
+    evaluate,
     /**
      * 二次挂载到另一个目标（浮窗 / 提醒窗 / 条件窗…）。
      *

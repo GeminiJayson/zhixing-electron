@@ -634,3 +634,28 @@ describe('架构约束 · catch 不许悄悄吞掉原因', () => {
     }
   })
 })
+/**
+ * 第二十道护栏：E2E 默认必须跑夹具库，不许默认拷用户的生产库。
+ *
+ * 这条是被真实事故推出来的：脚本一直拷真实库来跑，等生产库里灌进 167 条种子数据之后，
+ * 凡「照着列表里有什么来找自己那条」的脚本开始成片失败 —— 而「绿」也就不再等价于
+ * 「功能正常」，只是「库恰好长得合适」。基线随用户数据漂移，报告出来的通过率没有意义。
+ *
+ * 夹具 = 给一个空目录，应用启动时 seedIfEmpty() 生成固定基线（两个分组 + 我的清单
+ * + 2 条欢迎任务 + 1 篇欢迎笔记），lib 再补齐每种格式的示例笔记与一个工作流实例。
+ * 确实需要真实数据的脚本要**显式**传 copyDb: true。
+ */
+describe('架构约束 · E2E 默认跑夹具库', () => {
+  it('launchApp 的默认必须是夹具（copyDb = false）', () => {
+    const lib = readFileSync(join(process.cwd(), 'scripts', 'lib', 'cdp.mjs'), 'utf8')
+    expect(lib, '默认改回拷生产库，基线就会重新随用户数据漂移').toContain('copyDb = false')
+    expect(lib.includes('copyDb = true,'), '只有脚本显式传参时才允许拷真实库').toBe(false)
+  })
+
+  it('夹具要覆盖脚本依赖的那几样内容', () => {
+    const lib = readFileSync(join(process.cwd(), 'scripts', 'lib', 'cdp.mjs'), 'utf8')
+    // 一批脚本要「找到一篇富文本/word 笔记」，另一批要「实例项也有编辑胶囊」
+    expect(lib, '夹具没有补齐笔记格式').toContain('richtext')
+    expect(lib, '夹具没有造工作流实例').toContain('instantiateWorkflow')
+  })
+})

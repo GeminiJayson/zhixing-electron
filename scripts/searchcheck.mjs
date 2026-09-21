@@ -27,7 +27,8 @@ const BROWSER = [
   '  const db = window.zhixing.db',
   '  const stamp = String(Date.now()).slice(-6)',
   '  const out = { stamp: stamp }',
-  '  const folders = await db.listFolders()',
+  '  // 建笔记要的是笔记文件夹 id；用 listFolders() 拿到的是清单文件夹，在生产库上因为两边 id 恰好撞上而侥幸通过',
+  '  const folders = await db.noteFolders()',
   '  const f = folders.find((x) => x.kind === "note") || folders[0] || null',
   '  const folderId = f ? f.id : null',
   '  const linked = async (taskId) => (await db.linkedNotes(taskId)).length',
@@ -53,8 +54,11 @@ const BROWSER = [
   '  const crossTitles = ((hitCross && hitCross.task) || []).map((x) => x.title)',
   '  out.crossTokenHits = crossTitles.length',
   '  out.crossTokenFoundOurs = crossTitles.some((s) => s.indexOf(stamp) >= 0)',
+  // 自查：造一条含成词的内容再搜它，别去搜「库里碰巧存在的词」——
+  // 那种断言会随库的状态漂移（曾经搜的是种子数据里的词，夹具模式下必然失败）
+  '  await db.createNote("检索自查" + stamp, folderId, "一致性收口验证内容 " + stamp, "markdown")',
   '  const hitWord = await db.globalSearch("收口")',
-  '  out.wordHits = ((hitWord && hitWord.task) || []).length',
+  '  out.wordHits = (((hitWord && hitWord.note) || []).length) + (((hitWord && hitWord.task) || []).length)',
   '  const hitNone = await db.globalSearch("这个串一定不存在zz" + stamp)',
   '  out.noneHits = ((hitNone && hitNone.task) || []).length',
   '',

@@ -89,7 +89,25 @@ remindercheck 与原版**逐条一致**（见下）。当前棘轮值 **43**。
 lib 这轮加了 `attach(matchFn)`：按谓词找目标 → 连上 → 给一个求值器。
 有一批脚本要同时看主窗口、浮窗和提醒气泡，老写法是各自抄一遍 connect()。
 
-**一个必须单独记下的发现：种子数据污染了 E2E 的基线。**
+**已处理：种子数据污染 E2E 基线这件事。**
+E2E 现在**默认跑夹具库**（不拷用户生产库）：给一个空目录，应用启动时 seedIfEmpty() 生成固定基线，
+lib 再补齐每种格式一篇示例笔记与一个工作流实例。确实需要真实数据的脚本要显式传 copyDb: true。
+护栏 ⑳ 把「默认必须是夹具」和「夹具要覆盖哪些内容」都钉住了。
+
+效果（同一批脚本，夹具模式下与原版基线对照）：
+remindercheck **18/18**（被种子数据打到 13/18，现在完全恢复）、reminderstylecheck 11/11、
+aiui 28/28、confirmcheck 7/7、reminderpolicycheck 7/7、attachmentcheck 14/14、
+taskarchivecheck 13/13、listguardcheck 4/4、noteeditguard 5/5、notelinkcheck 7/7、searchcheck 7/7；
+wfgroupcheck **6/6**（原版只有 5/6 —— 因为原库里压根没有工作流实例，
+「实例项也有编辑胶囊」那条根本无从跑到；夹具补了实例之后它才真的被验证）。
+
+**夹具顺带照出两个我自己的潜伏缺陷**（都在生产库上因为 id 恰好撞上而侥幸通过）：
+- notelinkcheck / searchcheck 建笔记时用了 listFolders() 拿「清单文件夹」的 id 当「笔记文件夹」id，
+  空库上立刻 FOREIGN KEY 失败。
+- searchcheck 有一条断言在搜「库里碰巧存在的词」（其实是我种子数据里的词），
+  夹具模式下必然为红。已改成搜自己造的内容。
+
+**以下是这次事故的原始记录（留作背景）。**
 E2E 脚本会拷一份真实库来跑（launchApp 的 copyDb）。生产库现在有我灌进去的 167 条任务，
 而 remindercheck 是照着「列表里有什么」来找自己那条任务的 —— 于是它从 18/18 掉到 13/18。
 **证据是：把迁移回退成原版，失败项与详情字符串一模一样**，所以这不是迁移回归，
