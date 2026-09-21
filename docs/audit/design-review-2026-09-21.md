@@ -27,6 +27,7 @@
 | 重复实现：ZIP/CRC32、浮窗保存 | （未在本轮单独修，见文末技术债） | — |
 | 静默失败（fts/removeGraphEdge/graphPreview） | 统一出口 quietFailure：行为不变，但必须留下带上下文的记录；另修 4 条用户操作路径（快捷键注册 / 导出遍历 / 附件大小 / 三处列表加载） | 单测 3 项 + 护栏 ⑲（变异验证：真空 catch 即变红） |
 | 死代码 / 不可达分支 | （未在本轮单独修，见文末技术债） | — |
+| 自身 URL 判定用 startsWith 前缀比较 | 判定抽到 shared/app-url.ts 做精确比较（协议+主机+路径）；dev 分支改比 origin | 单测 8 项（先红后绿 + 变异验证）+ 新增护栏 |
 | 外部同步覆盖用户内容 | 抽 task-sync-plan.ts，认领来的只补空字段 | 单测 7 项 + E2E 20/20 |
 | 笔记页切走丢编辑 | 卸载时 flush（空依赖 effect + ref，避开每字一次的重跑） | E2E 5 项（先红后绿） |
 | 两套 HTML 消毒 | 删 MarkdownView 黑名单，统一 shared 白名单；白名单补 input（限定属性） | 单测 16 项 + 护栏 ⑤ |
@@ -52,8 +53,8 @@
 
 ### 累计证据
 
-- 单元测试 **340 项** / 33 个文件
-- **16 道架构护栏**（src/shared/architecture.test.ts，28 条断言）—— 其中 4 道做过变异验证（把缺陷改回去，护栏确实变红）
+- 单元测试 **378 项** / 37 个文件（2026-09-22 复核时的现值）
+- **21 道架构护栏**（src/shared/architecture.test.ts，39 条断言）—— 其中 6 道做过变异验证（把缺陷改回去，护栏确实变红）
 - 端到端：remindercheck 18/18、listguardcheck 4/4、noteeditguard 5/5、tasksynccheck 20/20、dialogcheck 10/10、rollcheck 25/25、reminderstylecheck 11/11、reminderpolicycheck 7/7、notelinkcheck 7/7
 
 ---
@@ -307,12 +308,21 @@ applyMru 的 sort+reverse、listTasksByList 漏 start_time/due_time、图谱增�
 - 修复：认领时落 `external_linked` 标记，后续只补空字段或仅同步 status。
 - 复核：未核实
 
-### [严重] isAppOwnUrl 用 startsWith 前缀比较 URL
+### [严重→中] isAppOwnUrl 用 startsWith 前缀比较 URL —— **已修（2026-09-22）**
 - 证据：`security.ts:38-41` 对 devUrl 与 `pathToFileURL(...).href` 都用 `startsWith`；`will-navigate`（`:49-53`）命中即放行。
 - 影响：`http://localhost:5173.evil.com` 以 devUrl 为前缀被当作自身页面放行，外部页面可拿到该窗口的 preload 与全部 IPC。
 - 严重度校准：**限开发模式**（`ELECTRON_RENDERER_URL` 仅在 dev 设置），生产走 file URL 分支，前缀绕过难以利用 —— 父 agent 从「严重」下调为「中」。
-- 修复：用 `new URL(url).origin` 或精确路径比较。
-- 复核：✓ 已核实（上一轮读过该函数原文）
+- 修复：判定抽到 `src/shared/app-url.ts` 做**精确比较**（protocol + host + pathname），
+  `security.ts` 只负责把 devUrl 与入口 file URL 喂进去。
+- 补充（本次收口时才发现，原条目漏了）：**打包分支也中**。
+  `url.startsWith(pathToFileURL(…index.html).href)` 会把 `file:///…/renderer/index.html.evil` 一起放行 ——
+  所以这不是「限开发模式」，只是生产下要恰好出现一个以入口路径为前缀的文件 URL 才可达。
+  降级为「中」的判断本身没错，但理由要更正。
+- 修复前的判定一直留在原地：条目降级后**没有被真正修掉**，状态表里也没有它的行 —— 这正是
+  「按严重度排序的收口」会漏掉的东西：一条被降级的条目，既不在「严重」的必做清单里，
+  也不会有人再回头看一眼。
+- 复核：✓ 已核实（本次回代码确认两处 `startsWith` 原样未动；单测 8 项先红后绿 + 变异验证，
+  另有护栏「自身 URL 判定必须是精确比较」做变异验证）
 
 ### [高] 外部同步整批 upsert 无事务，定时路径的 rejection 无人处理
 - 证据：`task-sync.ts:320-327` 循环写库无 transaction；`main/index.ts:1656-1657` `void runTaskSync()` 无 catch；失败时 `remember()`（`task-sync.ts:145-147`）不执行。

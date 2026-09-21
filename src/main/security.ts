@@ -12,6 +12,7 @@
 import { shell, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { isAppOwnUrl as isAppOwnPageUrl } from '../shared/app-url'
 
 /** 允许交给系统处理的协议；其余（file:、javascript:、ms-msdt:、smb: …）一律拒绝。 */
 const ALLOWED_PROTOCOLS = new Set(['http:', 'https:', 'mailto:'])
@@ -34,11 +35,13 @@ export function openExternalSafely(raw: string): void {
   console.warn('[security] 已拦截非白名单协议的对外打开请求：', raw)
 }
 
-/** 应用自身入口（打包后用 loadFile 加载，dev 下是 vite server）。 */
+/** 应用自身入口（打包后用 loadFile 加载，dev 下是 vite server）。
+ *  判定本身在 shared/app-url.ts —— 那里是纯函数，能单测；这里只负责把两个上下文喂进去。 */
 function isAppOwnUrl(url: string): boolean {
-  const devUrl = process.env.ELECTRON_RENDERER_URL
-  if (devUrl && url.startsWith(devUrl)) return true
-  return url.startsWith(pathToFileURL(join(__dirname, '../renderer/index.html')).href)
+  return isAppOwnPageUrl(url, {
+    devUrl: process.env.ELECTRON_RENDERER_URL,
+    htmlHref: pathToFileURL(join(__dirname, '../renderer/index.html')).href
+  })
 }
 
 /** 给一个窗口装上导航、弹窗、webview 三道防线。 */

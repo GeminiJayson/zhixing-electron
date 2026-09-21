@@ -713,3 +713,33 @@ describe('架构约束 · INSERT 的列数与值数必须一致', () => {
     expect(offenders, 'INSERT 的列与值个数不一致，执行到就会抛 SqliteError').toEqual([])
   })
 })
+
+/**
+ * 架构约束：判断「这个 URL 是不是应用自己的页面」必须做精确比较。
+ *
+ * 这条判定守着 will-navigate —— 命中就放行。原实现是 url.startsWith(自身 URL)，于是
+ *   http://localhost:5173.evil.com/    （dev 分支）
+ *   file:///…/renderer/index.html.evil （**打包分支也中**）
+ * 都以前缀命中被放行，外部页面会进到一个带着 preload 与全部 IPC 的窗口里。
+ *
+ * 单独写护栏而不是只留单测，是因为这个函数太容易被"顺手简化"回前缀比较：
+ * startsWith 看起来等价，而唯一能拦住的证据是那两个畸形 URL。
+ */
+describe('架构约束 · 自身 URL 判定必须是精确比较', () => {
+  // 只看代码，注释里为解释这个缺陷提到 startsWith 不该算违规
+  const code = (rel: string): string =>
+    readFileSync(join(process.cwd(), rel), 'utf8')
+      .split('\n')
+      .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
+      .join('\n')
+  const read = (rel: string): string => readFileSync(join(process.cwd(), rel), 'utf8')
+
+  it('security.ts 与 shared/app-url.ts 里都不许出现 startsWith', () => {
+    const offenders = ['src/main/security.ts', 'src/shared/app-url.ts'].filter((f) => code(f).includes('startsWith'))
+    expect(offenders, 'URL 前缀匹配会被 localhost:5173.evil.com / index.html.evil 绕过').toEqual([])
+  })
+
+  it('security.ts 的判定必须来自 shared/app-url，不许就地实现', () => {
+    expect(read('src/main/security.ts')).toContain("from '../shared/app-url'")
+  })
+})
