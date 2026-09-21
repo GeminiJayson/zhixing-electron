@@ -7,6 +7,7 @@
  */
 import { conn } from './connection'
 import { queryTerms, tokenize } from './fts-query'
+import { quietFailure } from '../../shared/quiet-failure'
 
 // 分词与查询表达式统一放在 fts-query.ts（可在 node 环境单测），这里只负责索引读写
 export { queryTerms, tokenize }
@@ -100,7 +101,9 @@ export function searchIndex(kind: Kind, q: string, limit = 50): [number, number]
       )
       .all(expr, limit) as Record<string, number>[]
     return rows.map((r) => [r[idCol], r.r] as [number, number])
-  } catch {
+  } catch (e) {
+    // 检索失败不能把界面带崩，但也不能一点痕迹不留 —— 否则「查不到」与「出错」长得一样
+    quietFailure('全文检索', e, 'kind=' + kind + ' q=' + q)
     return []
   }
 }

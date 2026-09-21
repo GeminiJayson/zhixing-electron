@@ -548,3 +548,89 @@ describe('架构约束 · 笔记出现后任务正文要能补链', () => {
     expect(read('src/preload/index.ts')).toContain('linkTaskWikiNotes')
   })
 })
+
+/**
+ * 第十九道护栏：catch 不许悄悄吞掉原因。
+ *
+ * 审计把静默失败列为中优先项（数据层 11 / 页面层 8 / 主进程 10 处）：catch 之后直接
+ * 返回 [] / false / 兜底文案，上层分不清「本来就没有」与「出错了」。
+ *
+ * 三层判据，从宽到严：
+ *  A. 全局：不许存在真空 catch（既无代码也无注释）。
+ *  B. 命名文件：每个 catch 要么用上错误对象，要么经 quietFailure 报告。
+ *  C. 点名过的用户操作路径：必须留下那条记录（这几处曾经是「用户操作悄悄失败」）。
+ *
+ * C 的清单是要维护的：新增一条用户操作路径时把它加进来，别指望人去记。
+ */
+describe('架构约束 · catch 不许悄悄吞掉原因', () => {
+  const read = (p: string): string => readFileSync(join(process.cwd(), p), 'utf8')
+
+  /** 从 catch 的 { 开始配平花括号，取出整块正文。 */
+  const catchBlocks = (src: string): string[] => {
+    const out: string[] = []
+    const re = /\}\s*catch\s*(?:\(([^)]*)\))?\s*\{/g
+    let m: RegExpExecArray | null
+    while ((m = re.exec(src)) !== null) {
+      let i = m.index + m[0].length
+      let depth = 1
+      const start = i
+      while (i < src.length && depth > 0) {
+        if (src[i] === '{') depth++
+        else if (src[i] === '}') depth--
+        i++
+      }
+      out.push(src.slice(start, i - 1))
+    }
+    return out
+  }
+
+  const walk = (dir: string, out: string[] = []): string[] => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name)
+      if (e.isDirectory()) {
+        if (e.name !== 'node_modules' && e.name !== 'vendor') walk(p, out)
+      } else if (/\.(ts|tsx)$/.test(e.name) && !e.name.includes('.test.')) out.push(p)
+    }
+    return out
+  }
+
+  it('A. 不许有真空 catch（既无代码也无注释）', () => {
+    const offenders: string[] = []
+    for (const f of [...walk(join(process.cwd(), 'src', 'main')), ...walk(join(process.cwd(), 'src', 'renderer', 'src'))]) {
+      for (const b of catchBlocks(readFileSync(f, 'utf8'))) {
+        if (b.trim() === '') offenders.push(f.replace(process.cwd(), ''))
+      }
+    }
+    expect(offenders, '空 catch 是最纯的静默失败，至少写清为什么可以忽略').toEqual([])
+  })
+
+  it('B. 命名文件的每个 catch 都要用上错误对象或经 quietFailure 报告', () => {
+    for (const f of ['src/main/db/fts.ts', 'src/main/db/graph.ts', 'src/main/db/export.ts']) {
+      const blocks = catchBlocks(read(f))
+      expect(blocks.length, f + ' 里应该还有 catch，锚点可能失效了').toBeGreaterThan(0)
+      for (const b of blocks) {
+        const reported = b.includes('quietFailure') || /\b(e|err|error)\b/.test(b)
+        expect(reported, f + ' 里这段 catch 把原因丢掉了：' + b.trim().slice(0, 60)).toBe(true)
+      }
+    }
+  })
+
+  it('C. 点名过的用户操作路径必须留下记录', () => {
+    const REQUIRED: [string, string][] = [
+      // 设了快捷键却什么也不发生
+      ['src/main/index.ts', '注册全局快捷键'],
+      // 导出会静默少文件
+      ['src/main/db/export.ts', '导出时遍历目录'],
+      // 附件列表显示成 0 字节，像文件坏了
+      ['src/main/db/attachments.ts', '读取附件大小'],
+      // 下面四处：加载失败会显示成「空列表」，看起来像数据没了
+      ['src/renderer/src/pages/TasksPage.tsx', '读取智能清单'],
+      ['src/renderer/src/components/WorkflowConditionEditor.tsx', '读取任务候选'],
+      ['src/renderer/src/pages/WorkflowPage.tsx', '读取笔记候选'],
+      ['src/renderer/src/pages/SettingsPage.tsx', '读取附件统计']
+    ]
+    for (const [f, scope] of REQUIRED) {
+      expect(read(f), f + ' 里少了 quietFailure 记录：' + scope).toContain(scope)
+    }
+  })
+})

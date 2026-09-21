@@ -25,7 +25,7 @@
 | listTasksByList 漏 start_time/due_time | （未在本轮单独修，见文末技术债） | — |
 | 图谱增量实为全量重建 | （未在本轮单独修，见文末技术债） | — |
 | 重复实现：ZIP/CRC32、浮窗保存 | （未在本轮单独修，见文末技术债） | — |
-| 静默失败（fts/removeGraphEdge/graphPreview） | （未在本轮单独修，见文末技术债） | — |
+| 静默失败（fts/removeGraphEdge/graphPreview） | 统一出口 quietFailure：行为不变，但必须留下带上下文的记录；另修 4 条用户操作路径（快捷键注册 / 导出遍历 / 附件大小 / 三处列表加载） | 单测 3 项 + 护栏 ⑲（变异验证：真空 catch 即变红） |
 | 死代码 / 不可达分支 | （未在本轮单独修，见文末技术债） | — |
 | 外部同步覆盖用户内容 | 抽 task-sync-plan.ts，认领来的只补空字段 | 单测 7 项 + E2E 20/20 |
 | 笔记页切走丢编辑 | 卸载时 flush（空依赖 effect + ref，避开每字一次的重跑） | E2E 5 项（先红后绿） |
@@ -108,7 +108,22 @@ reminderpolicycheck，以及回退掉的 aiui / confirmcheck / wfdialog / wfgrou
 让整批脚本看起来「全挂」。验证一律改成把输出写日志文件再读，别用管道截断。
 
 **2. 其余未单独修的中低优先项**（均不涉及数据安全，留待后续）：
-applyMru 的 sort+reverse、listTasksByList 漏 start_time/due_time、图谱增量实为全量重建、ZIP/CRC32 与浮窗保存的重复实现、fts/removeGraphEdge/graphPreview 的静默失败、若干死代码与不可达分支。
+applyMru 的 sort+reverse、listTasksByList 漏 start_time/due_time、图谱增量实为全量重建、ZIP/CRC32 与浮窗保存的重复实现、若干死代码与不可达分支。
+
+**3. 静默失败（已完成一部分）**
+
+命名点名的三处（fts.searchIndex / graph.removeGraphEdge / graph.graphPreview）已接统一出口
+`quietFailure`：行为保持不变，但失败必然留下一条带上下文的记录（哪个查询、哪条连线、哪个节点）。
+
+另外挑了 4 条**会让用户操作悄悄失败**的路径一起修：注册全局快捷键（设了没反应）、
+导出时遍历目录（导出静默少文件）、读取附件大小（显示成 0 字节像文件坏了）、以及三处
+渲染层候选列表（加载失败显示成「空列表」，看起来像数据没了）。
+
+全量普查的结果：`src/main` + `src/renderer/src` 里**连错误对象都不引用**的 catch 共 34 处，
+其中多数是良性兜底（localStorage 解析失败取默认值、剪贴板读不到取空串、取色取不到用灰色）。
+这些没有逐个改 —— 改法本身不是「加日志」而是「决定要不要让用户知道」，属于产品判断，
+留给后续。护栏 ⑲ 钉住了三条：不许有真空 catch、命名文件的 catch 不许丢掉原因、
+点名过的用户操作路径必须留痕。
 
 ---
 

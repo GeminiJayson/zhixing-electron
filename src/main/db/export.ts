@@ -4,6 +4,7 @@ import { openExternalSafely } from '../security'
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import type { Dirent } from 'node:fs'
 import { join } from 'node:path'
+import { quietFailure } from '../../shared/quiet-failure'
 import { deflateRawSync } from 'node:zlib'
 import { conn } from './connection'
 import { autoBackup } from './backup'
@@ -417,7 +418,9 @@ function collectMarkdownFiles(dir: string): string[] {
     let entries: Dirent[]
     try {
       entries = readdirSync(cur, { withFileTypes: true })
-    } catch {
+    } catch (e) {
+      // 读不了的目录会被整段跳过：导出会**静默少文件**，用户以为导全了
+      quietFailure('导出时遍历目录', e, cur)
       return
     }
     for (const ent of entries) {

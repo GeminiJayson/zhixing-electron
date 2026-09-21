@@ -64,6 +64,7 @@ import {
   layoutWorkflow,
   type WorkflowRankDir,
 } from '../lib/workflow-layout'
+import { quietFailure } from '@shared/quiet-failure'
 
 interface Props {
   onNotice: (message: string) => void
@@ -296,7 +297,9 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     void (async () => {
       try {
         setNoteChoices(await window.zhixing.db.recentNotes(NOTE_CHOICE_LIMIT))
-      } catch {
+      } catch (e) {
+        // SOP 文档候选会变空，看起来像「一篇笔记都没有」
+        quietFailure('读取笔记候选（SOP 文档）', e)
         setNoteChoices([])
       }
     })()

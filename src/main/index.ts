@@ -22,6 +22,7 @@ import {
   buildDocxParagraphs,
 } from './docx-export'
 import { release } from 'node:os'
+import { quietFailure } from '../shared/quiet-failure'
 import { extractDeepLink, parseDeepLink, toAccelerator } from '../shared/deep-link'
 import { BLOUB_DEFAULT_SHAPE, BLOUB_SHAPES, normalizeBloubShape } from '../shared/bloub'
 import { resolveThemePack } from '../shared/theme-packs'
@@ -1879,7 +1880,9 @@ app.whenReady().then(() => {
       const ok = globalShortcut.register(accel, () => undefined)
       if (ok) globalShortcut.unregister(accel)
       return ok
-    } catch {
+    } catch (e) {
+      // 注册失败会让用户「设了快捷键却什么也不发生」，必须留下是哪一组
+      quietFailure('注册全局快捷键', e, accel)
       return false
     }
   })

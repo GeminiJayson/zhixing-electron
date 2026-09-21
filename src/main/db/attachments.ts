@@ -9,6 +9,7 @@
  */
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
+import { quietFailure } from '../../shared/quiet-failure'
 import { conn, dataDir, nowStamp } from './connection'
 
 export interface AttachmentRow {
@@ -44,7 +45,9 @@ function safeName(src: string): string {
 function sizeOf(path: string): number {
   try {
     return statSync(path).size
-  } catch {
+  } catch (e) {
+    // 列表里会显示成 0 字节，看起来像文件坏了；留一条能对上路径的记录
+    quietFailure('读取附件大小', e, path)
     return 0
   }
 }

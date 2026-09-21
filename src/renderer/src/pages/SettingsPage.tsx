@@ -15,6 +15,7 @@ import { useDialog } from '../components/Dialogs'
 import type { AppInfo } from '@shared/types'
 import { RecycleBin } from '../components/RecycleBin'
 import { TagManager } from '../components/TagManager'
+import { quietFailure } from '@shared/quiet-failure'
 
 interface Props {
   onNotice: (message: string) => void
@@ -261,7 +262,9 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
   const refreshAttachments = useCallback(async (): Promise<void> => {
     try {
       setAttStats(await window.zhixing.db.attachmentStats())
-    } catch {
+    } catch (e) {
+      // 附件统计整块消失，用户以为没有附件
+      quietFailure('读取附件统计', e)
       setAttStats(null)
     }
   }, [])

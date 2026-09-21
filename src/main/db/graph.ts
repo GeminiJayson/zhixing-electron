@@ -9,6 +9,7 @@ import { conn } from './connection'
 import { attachTaskNote, detachTaskNote } from './tasks'
 import { reparentTask } from './task-ops'
 import { saveNote } from './notes'
+import { quietFailure } from '../../shared/quiet-failure'
 
 // ---------------------------------------------------------------- 图谱
 
@@ -648,8 +649,9 @@ export function graphPreview(node: GraphNodePayload): string {
       lines.push('双击跳转定位到该段落')
       return lines.join('\n')
     }
-  } catch {
-    // 预览失败不该把侧栏带崩（对齐 Python 的 except → 兜底文本）
+  } catch (e) {
+    // 预览失败不该把侧栏带崩（对齐 Python 的 except → 兜底文本），但要留下是哪个节点
+    quietFailure('图谱预览', e, 'kind=' + node.kind + ' id=' + node.id)
   }
   return '类型：' + node.kind + '\n链接数：' + node.degree
 }
@@ -879,9 +881,17 @@ export function removeGraphEdge(
       const noteRef = srcKind === 'note' ? srcRef : dstRef
       return saveNote(noteRef, { folder_id: null }) !== null
     }
+    // 端点组合没被覆盖：这是实现缺口，不是「没有这条边」，不能默默返回 false
+    quietFailure('删除连线', new Error('未支持的端点组合'), srcKind + ' × ' + dstKind)
     return false
-  } catch {
-    // 删除失败不该把界面带崩（对齐 Python 的 except → 提示）
+  } catch (e) {
+    // 删除失败不该把界面带崩（对齐 Python 的 except → 提示）；
+    // 渲染层会提示「删除失败」，但它分不清「失败」与「已被移除」，真正的原因只在这里
+    quietFailure(
+      '删除连线',
+      e,
+      srcKind + '#' + srcRef + ' → ' + dstKind + '#' + dstRef + ' (' + edgeKind + ')'
+    )
     return false
   }
 }

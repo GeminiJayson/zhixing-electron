@@ -7,6 +7,7 @@ import {
   type ConditionConfig,
   type ConditionSource,
 } from '@shared/workflow-condition'
+import { quietFailure } from '@shared/quiet-failure'
 
 interface Props {
   /** 节点的 action_value（条件配置的 JSON 字符串） */
@@ -35,7 +36,9 @@ export function WorkflowConditionEditor({ value, onChange }: Props) {
       try {
         const rows = await window.zhixing.db.tasks(200)
         setTasks(rows.map((t) => ({ id: t.id, title: t.title })))
-      } catch {
+      } catch (e) {
+        // 下拉会变空，用户只能手填 id，却不知道为什么
+        quietFailure('读取任务候选（条件节点）', e)
         setTasks([])
       }
     })()

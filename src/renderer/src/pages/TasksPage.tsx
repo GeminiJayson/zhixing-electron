@@ -25,6 +25,7 @@ import { TaskEditor } from '../components/TaskEditor'
 import { TaskRow } from '../components/TaskRow'
 import { Toolbar } from '../components/Toolbar'
 import { dueLabel } from '../lib/date'
+import { quietFailure } from '@shared/quiet-failure'
 
 interface Props {
   onChanged: () => Promise<void>
@@ -196,7 +197,9 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
   const loadSavedQueries = useCallback(async (): Promise<void> => {
     try {
       setSavedQueries(await window.zhixing.db.savedQueries())
-    } catch {
+    } catch (e) {
+      // 读失败会显示成「一个智能清单都没有」，看起来像数据没了
+      quietFailure('读取智能清单', e)
       setSavedQueries([])
     }
   }, [])
