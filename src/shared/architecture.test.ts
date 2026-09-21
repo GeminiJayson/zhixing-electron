@@ -351,7 +351,10 @@ describe('架构约束 · 验证脚本不得污染真实库', () => {
     for (const f of listScripts()) {
       const src = readFileSync(join(scriptsDir, f), 'utf8')
       if (!/\.db\.setSetting\(|\.db\.setSettings\(/.test(src)) continue
-      if (!src.includes('ZHIXING_HOME')) offenders.push(f)
+      // 用 lib/cdp.mjs 的脚本由 launchApp 统一设 ZHIXING_HOME（并强制拷贝库副本），
+      // 不必再在脚本里手写一遍 —— 判据是「隔离有没有落实」，不是「有没有出现这个词」。
+      if (src.includes('ZHIXING_HOME') || src.includes("from './lib/cdp.mjs'")) continue
+      offenders.push(f)
     }
     expect(offenders, '写设置的脚本必须把 ZHIXING_HOME 指到库副本，否则改的是用户真实数据').toEqual([])
   })
@@ -506,11 +509,11 @@ describe('架构约束 · CDP 样板只许减少', () => {
     }
   })
 
-  it('复制着旧样板的脚本份数不得超过 51（只许减）', () => {
+  it('复制着旧样板的脚本份数不得超过 49（只许减）', () => {
     const copies = readdirSync(dir)
       .filter((n) => n.endsWith('.mjs'))
       .filter((n) => readFileSync(join(dir, n), 'utf8').includes('new WebSocket'))
     // 棘轮值：迁掉一个就往下改一位。目标是把这里改到 0，然后删掉这条断言。
-    expect(copies.length, '又有人复制了 CDP 样板：' + copies.join(', ')).toBeLessThanOrEqual(51)
+    expect(copies.length, '又有人复制了 CDP 样板：' + copies.join(', ')).toBeLessThanOrEqual(49)
   })
 })

@@ -18,7 +18,7 @@ import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { copyFileSync, mkdirSync, rmSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, rmSync } from 'node:fs'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 const require = createRequire(import.meta.url)
@@ -42,6 +42,7 @@ export { sleep }
  * @param match 选哪个 CDP 目标；默认挑主界面那个 page
  * @param copyDb 是否先把真实库拷一份过去（脚本一律不该写真实库）
  * @param tries 等窗口的轮次，每轮 500ms
+ * @param settle 接上目标后再等多久（毫秒），让首屏画完
  * @param env 追加/覆盖的环境变量
  * @param onWait 每轮的进度回调
  */
@@ -51,12 +52,23 @@ export async function launchApp({
   match,
   copyDb = true,
   tries = 70,
+  settle = 3000,
   env = {},
   onWait = (i) => {
     if (i % 4 === 0) console.log('【等窗口】' + Math.round(i * 0.5) + 's')
   }
 }) {
-  rmSync(home, { recursive: true, force: true })
+  // 上一个实例可能还没完全释放 profile 目录（Electron 有好几个子进程），
+  // 直接 rmSync 会 EBUSY/EPERM 把脚本崩在开头 —— 重试几次，实在不行就用旧目录继续跑。
+  for (let i = 0; i < 6; i++) {
+    try {
+      rmSync(home, { recursive: true, force: true })
+      break
+    } catch (e) {
+      if (i === 5) console.log('  · 清理临时目录失败（' + (e && e.code) + '），沿用旧目录继续')
+      else await sleep(400)
+    }
+  }
   mkdirSync(home, { recursive: true })
   if (copyDb) {
     copyFileSync(join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db'), join(home, 'zhixing.db'))
@@ -94,6 +106,8 @@ export async function launchApp({
       await new Promise((res) => ws.addEventListener('open', res, { once: true }))
       send = makeSend(ws)
       await send('Runtime.enable')
+      // 老脚本的 attach() 都顺手开了 Page 域，保持一致（截图 / 导航事件依赖它）
+      await send('Page.enable')
     } else {
       onWait(i)
       await sleep(500)
@@ -103,6 +117,9 @@ export async function launchApp({
     child.kill()
     throw new Error('等不到 CDP 目标（已等 ' + tries * 0.5 + 's）')
   }
+  // 接上目标 ≠ 界面画好了：React 首屏与数据加载还要一会儿。
+  // 老脚本是在各自的样板区段里 await sleep(3000)，收到这里只留一处。
+  if (settle > 0) await sleep(settle)
 
   return {
     child,
@@ -129,8 +146,29 @@ export async function launchApp({
       } catch {
         // 已经断了就算了
       }
-      child.kill()
-      await sleep(400)
+      // child.kill() 只杀主进程，渲染/GPU 子进程会继续占着 profile 目录，
+      // 下一个脚本开头清理临时目录就会失败。Windows 上按进程树杀干净。
+      if (process.platform === 'win32') {
+        // 必须用绝对路径：脚本运行环境的 PATH 里未必有 System32，
+        // 直接 spawn('taskkill') 会 ENOENT —— 而且没挂 error 监听的话，
+        // 未处理的 'error' 事件会把进程整个崩掉（断言全过、退出码却是 1）。
+        const tk = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'taskkill.exe')
+        if (existsSync(tk)) {
+          try {
+            spawn(tk, ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' }).on(
+              'error',
+              () => child.kill()
+            )
+          } catch {
+            child.kill()
+          }
+        } else {
+          child.kill()
+        }
+      } else {
+        child.kill()
+      }
+      await sleep(800)
     }
   }
 }

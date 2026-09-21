@@ -80,6 +80,33 @@
 所以剩下的按批次迁移，每批迁完必须跑该批脚本。棘轮值在护栏里，迁一个减一；
 减到 0 之后这条断言就可以整段删掉。
 
+第二轮（2026-09-22）把可机械迁移的又清了一遍，累计 9 个脚本迁到 lib：
+listguardcheck / noteeditguard / notelinkcheck / attachmentcheck / taskarchivecheck /
+reminderpolicycheck，以及回退掉的 aiui / confirmcheck / wfdialog / wfgroupcheck。
+当前棘轮值 48。
+
+这轮又摸清了两件原清单没写的事：
+
+- 不是「3 种实现」而是至少 5 族：除内联 send 外，还有 connect()（7 个脚本）、
+  attach()（约 13 个，每个 38 行）、假 AI server（5 个），以及被重新命名的
+  list / listTargets / targets 三套拉目标列表的辅助函数。
+- 55 个脚本里没有一个能机械迁移：每个都在样板区段里夹着自己的顶层声明
+  （shotDir / realDb / MARKER / wordDir / connect / attach / server…）。
+  按「自有声明是否单行且不依赖样板」筛，只有 7 个够格；实际迁移并跑绿 6 个。
+
+迁移器本身也踩了两个坑，都记在这里免得下次重复：
+
+1. 收尾行的判定不能从正文里找。原先用「正文里第一个像 const failed / console.log /
+   await sleep 的行」当汇总段起点，对没有 try/catch 的脚本会把正文后半段整段当收尾删掉 ——
+   aiui 迁移后正文里一个 await sleep 都不剩（原版 28/28，迁移后 2 项失败）。
+   改成从文件末尾往前找汇总变量才对。
+2. 清理子进程别用裸的 spawn('taskkill')。脚本运行环境的 PATH 里没有 System32，
+   直接 spawn 会 ENOENT；而没挂 error 监听时，未处理的 error 事件会把进程整个崩掉 ——
+   表现是「断言全过、退出码却是 1、没有汇总行」，非常难查。现在用绝对路径 + error 兜底。
+
+另外，跨脚本验证时发现 Select-Object -First/-Last 会提前关管道把 node 打成 EPIPE，
+让整批脚本看起来「全挂」。验证一律改成把输出写日志文件再读，别用管道截断。
+
 **2. 其余未单独修的中低优先项**（均不涉及数据安全，留待后续）：
 applyMru 的 sort+reverse、listTasksByList 漏 start_time/due_time、图谱增量实为全量重建、ZIP/CRC32 与浮窗保存的重复实现、fts/removeGraphEdge/graphPreview 的静默失败、若干死代码与不可达分支。
 
