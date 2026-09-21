@@ -663,3 +663,53 @@ describe('架构约束 · E2E 默认跑夹具库', () => {
     expect(lib, '夹具没有造工作流实例').toContain('instantiateWorkflow')
   })
 })
+/**
+ * 第二十一道护栏：INSERT 的列数与值数必须一致。
+ *
+ * 这条是被一个真 bug 逼出来的：cloneTaskTree 的 INSERT 列了 17 列、VALUES 只给了 16 个值
+ * （少的是 repeat_rule 的占位符）。后果是**勾选一个循环任务直接抛**
+ * SqliteError: 16 values for 17 columns —— 克隆下一次子任务失败，用户根本勾不动重复任务。
+ *
+ * 为什么一直没人发现：SQLite 只在**执行到**这条语句时才报错，而写它的那条路径
+ * （顶层任务 + repeat_period != none）不是每次自测都会走到。静态数一遍括号就抓得住。
+ */
+describe('架构约束 · INSERT 的列数与值数必须一致', () => {
+  const dir = join(process.cwd(), 'src', 'main', 'db')
+  const grab = (s: string, start: number): { text: string; end: number } | null => {
+    let depth = 0
+    for (let i = start; i < s.length; i++) {
+      if (s[i] === '(') depth++
+      else if (s[i] === ')') {
+        depth--
+        if (depth === 0) return { text: s.slice(start + 1, i), end: i }
+      }
+    }
+    return null
+  }
+
+  it('每条 INSERT ... VALUES 的两边个数都要对得上', () => {
+    const offenders: string[] = []
+    for (const f of readdirSync(dir).filter((n) => n.endsWith('.ts') && !n.includes('.test.'))) {
+      const src = readFileSync(join(dir, f), 'utf8')
+      const re = /INSERT\s+(?:OR\s+\w+\s+)?INTO\s+(\w+)\s*\(/gi
+      let m: RegExpExecArray | null
+      while ((m = re.exec(src)) !== null) {
+        const line = src.slice(0, m.index).split('\n').length
+        const cols = grab(src, m.index + m[0].length - 1)
+        if (!cols) continue
+        const vIdx = src.indexOf('VALUES', cols.end)
+        if (vIdx < 0) continue
+        const after = src.slice(vIdx + 6).trimStart()
+        if (!after.startsWith('(')) continue // INSERT ... SELECT：值来自查询，不在这里数
+        const vals = grab(src, vIdx + 6 + (src.slice(vIdx + 6).length - after.length))
+        if (!vals) continue
+        // 值里带函数调用/子表达式的，逗号数不可靠，跳过
+        if (/[()]/.test(vals.text.replace(/\([^()]*\)/g, ''))) continue
+        const nc = cols.text.split(',').length
+        const nv = vals.text.split(',').length
+        if (nc !== nv) offenders.push(f + ':' + line + ' ' + m[1] + ' 列=' + nc + ' 值=' + nv)
+      }
+    }
+    expect(offenders, 'INSERT 的列与值个数不一致，执行到就会抛 SqliteError').toEqual([])
+  })
+})

@@ -199,10 +199,14 @@ export function cloneTaskTree(
 
   const info = c
     .prepare(
+      // 列有 17 个、值也必须 17 个。这里曾经少了一个 ?（repeat_rule 的占位符），
+      // 于是「勾选循环任务」直接抛 SqliteError: 16 values for 17 columns ——
+      // 克隆下一次子任务失败，用户根本勾不动重复任务。（注释只能写在这儿：
+      // 写进模板串里会被 SQLite 当成 SQL，报 near "/": syntax error。）
       `INSERT INTO task (title, notes_md, status, priority, due_date, start_date, start_time,
                          reminder_at, due_time, list_id, parent_id, repeat_period, repeat_rule,
                          streak, sort_key, created_at, updated_at)
-       VALUES (?, ?, 'todo', ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`
+       VALUES (?, ?, 'todo', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`
     )
     .run(
       src.title,
