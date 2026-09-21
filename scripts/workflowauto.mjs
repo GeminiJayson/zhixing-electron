@@ -16,122 +16,44 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { copyFileSync, existsSync, mkdirSync, rmSync } from 'node:fs'
-import { setTimeout as sleep } from 'node:timers/promises'
+import { ROOT, launchApp, createChecker, J, sleep } from './lib/cdp.mjs'
 
-const require = createRequire(import.meta.url)
-const electronPath = require('electron')
-const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const tmpHome = join(root, '.screenshots', 'wfauto-home')
-const PORT = 9231
-
-const realDb = join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db')
-if (!existsSync(realDb)) {
-  console.error('✗ 找不到真实库：' + realDb)
-  process.exit(1)
-}
-rmSync(tmpHome, { recursive: true, force: true })
-mkdirSync(tmpHome, { recursive: true })
-copyFileSync(realDb, join(tmpHome, 'zhixing.db'))
-
-/**
- * 注入系统 PATH：DSH 的 pwsh 工具环境只带它自己的 bin 目录，
- * 从这种环境启动的 Electron 里 `cmd.exe` / `powershell.exe` 会 ENOENT。
- * 这纯粹是验证环境的限制（用户正常启动应用时 PATH 是完整的），
- * 所以只在验证脚本里补，不去改产品代码。
- */
+const root = ROOT
+// 正文里要自己起一个子进程，PATH 需要这几条（lib 内部那份是给被测应用用的，不对外）
 const SYS_PATH = [
   'C:\\Windows\\System32',
   'C:\\Windows',
   'C:\\Windows\\System32\\Wbem',
-  'C:\\Windows\\System32\\WindowsPowerShell\\v1.0',
+  'C:\\Windows\\System32\\WindowsPowerShell\\v1.0'
 ].join(';')
+const require = createRequire(import.meta.url)
+const tmpHome = join(ROOT, '.screenshots', 'wfauto-home')
+const PORT = 9231
 
-const child = spawn(
-  electronPath,
-  ['.', `--remote-debugging-port=${PORT}`, `--user-data-dir=${join(tmpHome, 'profile')}`],
-  {
-    cwd: root,
-    env: { ...process.env, PATH: `${SYS_PATH};${process.env.PATH ?? ''}`, ZHIXING_HOME: tmpHome },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  }
-)
-
-const attach = async () => {
-  let page = null
-  for (let i = 0; i < 60 && !page; i++) {
-    try {
-      const list = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()
-      page = list.find((t) => t.type === 'page')
-    } catch {
-      /* 等待 */
-    }
-    if (!page) await sleep(500)
-  }
-  if (!page) return null
-  const ws = new WebSocket(page.webSocketDebuggerUrl)
-  await new Promise((res, rej) => {
-    ws.addEventListener('open', res, { once: true })
-    ws.addEventListener('error', rej, { once: true })
-  })
-  const send = (method, params = {}) =>
-    new Promise((resolve) => {
-      const id = Math.floor(Math.random() * 1e6)
-      const h = (ev) => {
-        const m = JSON.parse(ev.data)
-        if (m.id !== id) return
-        ws.removeEventListener('message', h)
-        resolve(m)
-      }
-      ws.addEventListener('message', h)
-      ws.send(JSON.stringify({ id, method, params }))
-    })
-  await send('Runtime.enable')
-  const evaluate = async (expression) => {
-    const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })
-    if (r.result?.exceptionDetails)
-      throw new Error(r.result.exceptionDetails.exception?.description ?? 'eval failed')
-    return r.result?.result?.value
-  }
-  return { ws, evaluate }
-}
-
-const conn = await attach()
-if (!conn) {
-  console.error('✗ 无法连接渲染进程')
-  child.kill()
-  process.exit(1)
-}
-await sleep(3000)
-
-const results = []
-const check = (name, ok, detail = '') => {
-  results.push([name, ok])
-  console.log(`${ok ? '✓' : '✗'} ${name}${detail ? ' — ' + detail : ''}`)
-}
-const J = (v) => JSON.stringify(v)
-
+const app = await launchApp({ port: PORT, home: tmpHome })
+const { check, finish, results } = createChecker()
 /** 轮询等异步泵推进到位。 */
 const waitFor = async (expr, predicate, timeout = 20000) => {
   const t0 = Date.now()
   let last
   while (Date.now() - t0 < timeout) {
-    last = await conn.evaluate(expr)
+    last = await app.evaluate(expr)
     if (predicate(last)) return last
     await sleep(250)
   }
   return last
 }
 
-const info = await conn.evaluate('window.zhixing.db.info()')
+const info = await app.evaluate('window.zhixing.db.info()')
 check('数据库指向副本库', String(info.path).startsWith(tmpHome), info.path)
 
 // 拿两条真实笔记做 SOP 绑定
-const notes = await conn.evaluate('window.zhixing.db.recentNotes(4)')
+const notes = await app.evaluate('window.zhixing.db.recentNotes(4)')
 const sopIds = (notes ?? []).slice(0, 2).map((n) => n.id)
 check('取到两条笔记用于 SOP', sopIds.length === 2, J(sopIds))
 
 // ---------------------------------------------------------------- 1) SOP 多绑定
-const sop = await conn.evaluate(
+const sop = await app.evaluate(
   `window.zhixing.db.saveWorkflowTemplate({ name: '验证-多SOP', nodes: [{ title: '带SOP的步骤', note_ids: ${J(sopIds)} }] }).then(r => r.ok ? window.zhixing.db.workflowTemplate(r.templateId) : r)`
 )
 const sopNode = sop?.nodes?.[0]
@@ -148,7 +70,7 @@ check(
 
 // ---------------------------------------------------------------- 2) 命令自动执行
 // 命令成功（退出码 7 == 期望 7）→ 自动推进到人工任务
-const cmdTpl = await conn.evaluate(
+const cmdTpl = await app.evaluate(
   `window.zhixing.db.saveWorkflowTemplate({ name: '验证-命令自动跑', start_policy: 'first', nodes: [
       { title: '跑个命令', order_index: 0, action_kind: 'command', action_value: 'cmd.exe /c exit 7', action_expect: '7' },
       { title: '人工确认', order_index: 1 }
@@ -156,7 +78,7 @@ const cmdTpl = await conn.evaluate(
 )
 check('命令模板保存成功', cmdTpl?.nodes?.length === 2, J(cmdTpl?.problems ?? ''))
 
-const cmdInst = await conn.evaluate(
+const cmdInst = await app.evaluate(
   `window.zhixing.db.instantiateWorkflow(${cmdTpl.id}, null, null, 'first')`
 )
 const cmdSettled = await waitFor(
@@ -181,13 +103,13 @@ check(
 )
 
 // ---------------------------------------------------------------- 3) 失败停在原地 + 重试
-const badTpl = await conn.evaluate(
+const badTpl = await app.evaluate(
   `window.zhixing.db.saveWorkflowTemplate({ name: '验证-返回值不对', start_policy: 'first', nodes: [
       { title: '必然失败', order_index: 0, action_kind: 'command', action_value: 'cmd.exe /c exit 3', action_expect: '0' },
       { title: '后面这步', order_index: 1 }
     ] }).then(r => r.ok ? window.zhixing.db.workflowTemplate(r.templateId) : r)`
 )
-const badInst = await conn.evaluate(
+const badInst = await app.evaluate(
   `window.zhixing.db.instantiateWorkflow(${badTpl.id}, null, null, 'first')`
 )
 const badSettled = await waitFor(
@@ -206,7 +128,7 @@ check(
 )
 
 // 重试：同一条件必然再次失败，但必须真的重跑（at 变新），实例仍在 running
-const retried = await conn.evaluate(`window.zhixing.db.retryWorkflowStep(${badInst.id})`)
+const retried = await app.evaluate(`window.zhixing.db.retryWorkflowStep(${badInst.id})`)
 const retrySettled = await waitFor(
   `window.zhixing.db.workflowInstance(${badInst.id})`,
   (i) =>
@@ -222,13 +144,13 @@ check(
 )
 
 // 期望值与命令一致时，同一条命令能跑通 —— 证明失败判据来自期望值而不是命令本身
-const okTpl = await conn.evaluate(
+const okTpl = await app.evaluate(
   `window.zhixing.db.saveWorkflowTemplate({ name: '验证-期望值一致', start_policy: 'first', nodes: [
       { title: '退出码3', order_index: 0, action_kind: 'command', action_value: 'cmd.exe /c exit 3', action_expect: '3' },
       { title: '后面这步', order_index: 1 }
     ] }).then(r => r.ok ? window.zhixing.db.workflowTemplate(r.templateId) : r)`
 )
-const okInst = await conn.evaluate(
+const okInst = await app.evaluate(
   `window.zhixing.db.instantiateWorkflow(${okTpl.id}, null, null, 'first')`
 )
 const okSettled = await waitFor(
@@ -243,7 +165,7 @@ check(
 
 // ---------------------------------------------------------------- 4) 条件读上一步结果
 // 命令成功 → 条件（上一步成功）成立 → 跳到「分支目标」，跳过顺序上的那一步
-const condTpl = await conn.evaluate(
+const condTpl = await app.evaluate(
   `window.zhixing.db.saveWorkflowTemplate({ name: '验证-结果传给条件', start_policy: 'first', nodes: [
       { title: '命令', order_index: 0, action_kind: 'command', action_value: 'cmd.exe /c exit 0', action_expect: '0' },
       { title: '判断上一步', order_index: 1, action_kind: 'condition', action_value: JSON.stringify({ kind: 'prev', expectOk: true }) },
@@ -253,10 +175,10 @@ const condTpl = await conn.evaluate(
 )
 // 把条件的 branch 指向第 4 个节点
 const condNodes = condTpl.nodes
-await conn.evaluate(
+await app.evaluate(
   `window.zhixing.db.setWorkflowBranch(${condNodes[1].id}, ${condNodes[3].id})`
 )
-const condInst = await conn.evaluate(
+const condInst = await app.evaluate(
   `window.zhixing.db.instantiateWorkflow(${condTpl.id}, null, null, 'first')`
 )
 const condSettled = await waitFor(
@@ -276,7 +198,7 @@ check(
 )
 
 // 上一步成功、但条件期望「失败」→ 不成立 → 走顺序下一步
-const condTpl2 = await conn.evaluate(
+const condTpl2 = await app.evaluate(
   `window.zhixing.db.saveWorkflowTemplate({ name: '验证-条件不成立', start_policy: 'first', nodes: [
       { title: '命令', order_index: 0, action_kind: 'command', action_value: 'cmd.exe /c exit 0', action_expect: '0' },
       { title: '判断上一步', order_index: 1, action_kind: 'condition', action_value: JSON.stringify({ kind: 'prev', expectOk: false }) },
@@ -284,8 +206,8 @@ const condTpl2 = await conn.evaluate(
       { title: '分支目标', order_index: 3 }
     ] }).then(r => r.ok ? window.zhixing.db.workflowTemplate(r.templateId) : r)`
 )
-await conn.evaluate(`window.zhixing.db.setWorkflowBranch(${condTpl2.nodes[1].id}, ${condTpl2.nodes[3].id})`)
-const cond2Inst = await conn.evaluate(
+await app.evaluate(`window.zhixing.db.setWorkflowBranch(${condTpl2.nodes[1].id}, ${condTpl2.nodes[3].id})`)
+const cond2Inst = await app.evaluate(
   `window.zhixing.db.instantiateWorkflow(${condTpl2.id}, null, null, 'first')`
 )
 const cond2Settled = await waitFor(
@@ -299,13 +221,13 @@ check(
 )
 
 // ---------------------------------------------------------------- 5) 脚本步骤
-const scriptTpl = await conn.evaluate(
+const scriptTpl = await app.evaluate(
   `window.zhixing.db.saveWorkflowTemplate({ name: '验证-脚本', start_policy: 'first', nodes: [
       { title: '跑脚本', order_index: 0, action_kind: 'script', action_value: 'exit 5', action_expect: '5' },
       { title: '人工步', order_index: 1 }
     ] }).then(r => r.ok ? window.zhixing.db.workflowTemplate(r.templateId) : r)`
 )
-const scriptInst = await conn.evaluate(
+const scriptInst = await app.evaluate(
   `window.zhixing.db.instantiateWorkflow(${scriptTpl.id}, null, null, 'first')`
 )
 const scriptSettled = await waitFor(
@@ -325,11 +247,11 @@ check(
 )
 
 // ---------------------------------------------------------------- 6) 多 SOP 落到任务备注
-const sopInst = await conn.evaluate(
+const sopInst = await app.evaluate(
   `window.zhixing.db.instantiateWorkflow(${sop.id}, null, null, 'first')`
 )
 const sopTaskId = sopInst?.steps?.[0]?.task_id ?? null
-const sopTask = await conn.evaluate(
+const sopTask = await app.evaluate(
   `window.zhixing.db.tasks(500).then(rows => rows.find(r => r.id === ${sopTaskId}) ?? null)`
 )
 const links = (String(sopTask?.notes_md ?? '').match(/\[\[/g) ?? []).length
@@ -345,14 +267,14 @@ const runtimeCases = [
   { runtime: 'node', label: 'Node', script: 'process.exit(9)', expect: '9' },
 ]
 for (const c of runtimeCases) {
-  const tpl = await conn.evaluate(
+  const tpl = await app.evaluate(
     `window.zhixing.db.saveWorkflowTemplate({ name: ${J('验证-运行时-' + c.label)}, start_policy: 'first', nodes: [
         { title: '脚本', order_index: 0, action_kind: 'script', action_value: ${J(c.script)}, action_expect: ${J(c.expect)}, action_runtime: ${J(c.runtime)} },
         { title: '人工步', order_index: 1 }
       ] }).then(r => r.ok ? window.zhixing.db.workflowTemplate(r.templateId) : r)`
   )
   check(`${c.label} 运行环境已持久化`, tpl?.nodes?.[0]?.action_runtime === c.runtime, tpl?.nodes?.[0]?.action_runtime)
-  const inst = await conn.evaluate(`window.zhixing.db.instantiateWorkflow(${tpl.id}, null, null, 'first')`)
+  const inst = await app.evaluate(`window.zhixing.db.instantiateWorkflow(${tpl.id}, null, null, 'first')`)
   const settled = await waitFor(
     `window.zhixing.db.workflowInstance(${inst.id})`,
     (i) => i && i.last_result && i.last_result.state !== 'running',
@@ -368,13 +290,13 @@ for (const c of runtimeCases) {
 }
 
 // Python：本机没装解释器时，必须报出「试过哪些候选」而不是一句干巴巴的失败
-const pyTpl = await conn.evaluate(
+const pyTpl = await app.evaluate(
   `window.zhixing.db.saveWorkflowTemplate({ name: '验证-运行时-Python', start_policy: 'first', nodes: [
       { title: '脚本', order_index: 0, action_kind: 'script', action_value: 'import sys\\nsys.exit(0)', action_expect: '0', action_runtime: 'python' },
       { title: '人工步', order_index: 1 }
     ] }).then(r => r.ok ? window.zhixing.db.workflowTemplate(r.templateId) : r)`
 )
-const pyInst = await conn.evaluate(`window.zhixing.db.instantiateWorkflow(${pyTpl.id}, null, null, 'first')`)
+const pyInst = await app.evaluate(`window.zhixing.db.instantiateWorkflow(${pyTpl.id}, null, null, 'first')`)
 const pySettled = await waitFor(
   `window.zhixing.db.workflowInstance(${pyInst.id})`,
   (i) => i && i.last_result && i.last_result.state !== 'running',
@@ -404,21 +326,18 @@ runtimeTpls.push(pyTpl.id)
 
 // 清理：先中止这些实例（有 running 实例时模板拒绝删除），再删模板
 for (const id of [...[cmdInst, badInst, okInst, condInst, cond2Inst, scriptInst, sopInst], ...runtimeInsts]) {
-  await conn.evaluate(`window.zhixing.db.abortWorkflowInstance(${id.id})`)
+  await app.evaluate(`window.zhixing.db.abortWorkflowInstance(${id.id})`)
 }
 for (const id of [...[sop.id, cmdTpl.id, badTpl.id, okTpl.id, condTpl.id, condTpl2.id, scriptTpl.id], ...runtimeTpls]) {
-  await conn.evaluate(`window.zhixing.db.deleteWorkflowTemplate(${id})`)
+  await app.evaluate(`window.zhixing.db.deleteWorkflowTemplate(${id})`)
 }
-const leftovers = await conn.evaluate(
+const leftovers = await app.evaluate(
   "window.zhixing.db.workflowTemplates().then(rows => rows.filter(r => r.name.startsWith('验证-')).length)"
 )
 check('验证模板可删除', leftovers === 0, `left=${leftovers}`)
 
-conn.ws.close()
-child.kill()
+app.ws.close()
 await sleep(600)
-rmSync(tmpHome, { recursive: true, force: true })
+await app.close()
 
-const failed = results.filter(([, ok]) => !ok)
-console.log(`\n${results.length - failed.length}/${results.length} 项通过`)
-process.exit(failed.length ? 1 : 0)
+process.exit(finish())

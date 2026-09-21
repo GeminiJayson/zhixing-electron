@@ -13,46 +13,19 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { copyFileSync, mkdirSync, rmSync } from 'node:fs'
-import { setTimeout as sleep } from 'node:timers/promises'
+import { ROOT, launchApp, createChecker, J, sleep } from './lib/cdp.mjs'
 
+const root = ROOT
 const require = createRequire(import.meta.url)
-const electronPath = require('electron')
-const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const tmpHome = join(root, '.screenshots', 'progress-home')
+const tmpHome = join(ROOT, '.screenshots', 'progress-home')
 const PORT = 9331
-rmSync(tmpHome, { recursive: true, force: true })
-mkdirSync(tmpHome, { recursive: true })
-copyFileSync(join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db'), join(tmpHome, 'zhixing.db'))
 
-const SYS_PATH = ['C:\\Windows\\System32', 'C:\\Windows', 'C:\\Windows\\System32\\Wbem'].join(';')
-const child = spawn(electronPath, ['.', '--remote-debugging-port=' + PORT, '--user-data-dir=' + join(tmpHome, 'profile')], {
-  cwd: root,
-  env: { ...process.env, PATH: SYS_PATH + ';' + (process.env.PATH ?? ''), ZHIXING_HOME: tmpHome },
-  stdio: ['ignore', 'pipe', 'pipe'],
-})
-const list = async () => { try { return await (await fetch('http://127.0.0.1:' + PORT + '/json/list')).json() } catch { return [] } }
-const connect = async (t) => {
-  const ws = new WebSocket(t.webSocketDebuggerUrl)
-  await new Promise((res, rej) => { ws.addEventListener('open', res, { once: true }); ws.addEventListener('error', rej, { once: true }) })
-  const send = (m, p = {}) => new Promise((resolve) => { const id = Math.floor(Math.random() * 1e6); const h = (ev) => { const x = JSON.parse(ev.data); if (x.id !== id) return; ws.removeEventListener('message', h); resolve(x) }; ws.addEventListener('message', h); ws.send(JSON.stringify({ id, method: m, params: p })) })
-  await send('Runtime.enable')
-  const evaluate = async (expr) => { const r = await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true }); if (r.result?.exceptionDetails) throw new Error(r.result.exceptionDetails.exception?.description ?? 'eval failed'); return r.result?.result?.value }
-  return { send, evaluate }
-}
-
-let main = null
-for (let i = 0; i < 60 && !main; i++) { main = (await list()).find((t) => t.type === 'page'); if (!main) await sleep(500) }
-if (!main) { console.error('✗ 主窗口没起来'); child.kill(); process.exit(1) }
-const conn = await connect(main)
-await sleep(2600)
-
-const results = []
-const check = (name, ok, detail = '') => { results.push(ok); console.log((ok ? '✓ ' : '✗ ') + name + (detail ? ' — ' + detail : '')) }
-const J = (v) => JSON.stringify(v)
+const app = await launchApp({ port: PORT, home: tmpHome })
+const { check, finish, results } = createChecker()
 const mouse = (type, x, y, buttons) =>
-  conn.send('Input.dispatchMouseEvent', { type, x: Math.round(x), y: Math.round(y), button: type === 'mouseMoved' ? 'none' : 'left', buttons, clickCount: type === 'mouseMoved' ? 0 : 1 })
+  app.send('Input.dispatchMouseEvent', { type, x: Math.round(x), y: Math.round(y), button: type === 'mouseMoved' ? 'none' : 'left', buttons, clickCount: type === 'mouseMoved' ? 0 : 1 })
 const clickReal = async (expr) => {
-  const p = await conn.evaluate("(() => { const el = " + expr + "; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } })()")
+  const p = await app.evaluate("(() => { const el = " + expr + "; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } })()")
   if (!p) return false
   await mouse('mouseMoved', p.x, p.y, 0)
   await sleep(60)
@@ -64,7 +37,7 @@ const clickReal = async (expr) => {
 
 try {
   // ---- 1. 新建任务：开始时间 = 创建时刻
-  const created = await conn.evaluate("window.zhixing.db.createTask('进度条检查任务', null, null)")
+  const created = await app.evaluate("window.zhixing.db.createTask('进度条检查任务', null, null)")
   const now = new Date()
   const todayStr = now.toLocaleDateString('sv-SE')
   const hhmm = now.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })
@@ -79,11 +52,11 @@ try {
   check('开始时刻 = 创建时刻（误差 2 分钟内）', drift <= 2, J({ start_time: created?.start_time, now: hhmm, 分钟差: drift }))
 
   // ---- 2. 进度条与色阶
-  await conn.evaluate("document.querySelector('[data-nav-item=\"tasks\"]')?.click()")
+  await app.evaluate("document.querySelector('[data-nav-item=\"tasks\"]')?.click()")
   await sleep(1500)
   // 每句都带分号：这些片段是拼成一个表达式的，漏了分号会直接变成语法错误
   const probe = (token) =>
-    conn.evaluate(
+    app.evaluate(
       "(() => {" +
         "const row = [...document.querySelectorAll('.trow')].find((r) => r.querySelector('.trow__title')?.textContent === '进度条检查任务');" +
         "if (!row) return { found: false };" +
@@ -100,7 +73,7 @@ try {
       "})()"
     )
   // 进度需要一头一尾：新建任务只有开始时刻，所以先给它一个截止
-  const updated = await conn.evaluate(
+  const updated = await app.evaluate(
     "window.zhixing.db.updateTask(" + created.id + ", { due_date: '" + todayStr + "', due_time: '23:59' })"
   )
   console.log(
@@ -113,7 +86,7 @@ try {
   console.log('[buttons] ' + J(future.buttons))
   check('任务行上画出了进度条', future.found && future.hasBar, J({ hasBar: future.hasBar, cls: future.cls }))
   // 进度条应当从勾选框的位置开始，而不是行的最左边
-  const barGeo = await conn.evaluate(
+  const barGeo = await app.evaluate(
     "(() => { const row = [...document.querySelectorAll('.trow')].find((r) => r.querySelector('.trow__progress'));" +
       "if (!row) return { found: false };" +
       "const bar = row.querySelector('.trow__progress'); const check = row.querySelector('.check');" +
@@ -130,7 +103,7 @@ try {
   const justPast = new Date(now.getTime() - 60_000)
   const yesterday = new Date(now.getTime() - 86_400_000).toLocaleDateString('sv-SE')
   const pastClock = justPast.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })
-  await conn.evaluate(
+  await app.evaluate(
     "window.zhixing.db.updateTask(" + created.id + ", { start_date: '" + yesterday + "', start_time: '00:00', due_date: '" + todayStr + "', due_time: '" + pastClock + "' })"
   )
   await sleep(1600)
@@ -139,24 +112,24 @@ try {
   check('逾期色取的是 --danger', past.color === past.want, J({ color: past.color, want: past.want }))
 
   // ---- 3. 分钟精度能存下去 + 编辑弹窗有时刻输入
-  const back = await conn.evaluate("window.zhixing.db.updateTask(" + created.id + ", { due_date: '" + todayStr + "', due_time: '23:59' })")
+  const back = await app.evaluate("window.zhixing.db.updateTask(" + created.id + ", { due_date: '" + todayStr + "', due_time: '23:59' })")
   check('分钟精度能存下去（23:59 存进去读回来还是 23:59）', back?.due_time === '23:59', J({ due_time: back?.due_time }))
-  const cleared = await conn.evaluate("window.zhixing.db.updateTask(" + created.id + ", { due_time: null })")
+  const cleared = await app.evaluate("window.zhixing.db.updateTask(" + created.id + ", { due_time: null })")
   check('时刻可以清空（清空 = 只精确到天）', cleared?.due_time === null || cleared?.due_time === undefined, J({ due_time: cleared?.due_time }))
 
   // 操作按钮平时是收起的（悬浮才浮现），所以用程序化点击：它不受可见性影响
-  await conn.evaluate(
+  await app.evaluate(
     "(() => { const row = [...document.querySelectorAll('.trow')].find((r) => r.querySelector('.trow__title')?.textContent === '进度条检查任务'); const b = [...row.querySelectorAll('button')].find((x) => (x.getAttribute('aria-label') || '').includes('编辑')); b?.click() })()"
   )
   await sleep(1200)
-  const editor = await conn.evaluate("(() => { const m = document.querySelector('.modal[role=\"dialog\"]'); return { open: !!m, picks: m ? m.querySelectorAll('.timepick').length : 0, dates: m ? m.querySelectorAll('.datepick').length : 0 } })()")
+  const editor = await app.evaluate("(() => { const m = document.querySelector('.modal[role=\"dialog\"]'); return { open: !!m, picks: m ? m.querySelectorAll('.timepick').length : 0, dates: m ? m.querySelectorAll('.datepick').length : 0 } })()")
   check('编辑弹窗里开始与截止各有一个时刻选择器', editor.open && editor.picks === 2, J(editor))
   check('编辑弹窗里开始与截止各有一个日期选择器', editor.open && editor.dates === 2, J(editor))
 
   // ---- 自绘日期选择器：日历面板与格子尺寸
-  await conn.evaluate("document.querySelector('.modal .datepick').click()")
+  await app.evaluate("document.querySelector('.modal .datepick').click()")
   await sleep(700)
-  const cal = await conn.evaluate(
+  const cal = await app.evaluate(
     "(() => {" +
       "const el = document.querySelector('.popmenu--date');" +
       "if (!el) return { open: false };" +
@@ -177,14 +150,14 @@ try {
     J({ want: cal.want, sizes: cal.uniq })
   )
   // 翻月：标题里的月份应当变
-  await conn.evaluate("document.querySelector('.dpick__nav[aria-label=\"下个月\"]').click()")
+  await app.evaluate("document.querySelector('.dpick__nav[aria-label=\"下个月\"]').click()")
   await sleep(400)
-  const shifted = await conn.evaluate("document.querySelector('.dpick__title')?.textContent")
+  const shifted = await app.evaluate("document.querySelector('.dpick__title')?.textContent")
   check('翻月按钮切换了月份', shifted !== cal.title, J({ before: cal.title, after: shifted }))
   // 翻回本月再截图（给用户看日历）
-  await conn.evaluate("document.querySelector('.dpick__nav[aria-label=\"上个月\"]').click()")
+  await app.evaluate("document.querySelector('.dpick__nav[aria-label=\"上个月\"]').click()")
   await sleep(500)
-  const calShot = await conn.send('Page.captureScreenshot', { format: 'png' })
+  const calShot = await app.send('Page.captureScreenshot', { format: 'png' })
   const fs4 = await import('node:fs')
   const fs5 = await import('node:fs')
   fs4.writeFileSync(join(root, '.screenshots', 'datepicker-custom.png'), Buffer.from(calShot.result.data, 'base64'))
@@ -192,18 +165,18 @@ try {
 
   // 点「今天」应当**立刻**落库并收起（日历上点一下就完成选择，不必再等失焦）
   const todayIso = new Date().toLocaleDateString('sv-SE')
-  await conn.evaluate("document.querySelector('.dpick__foot button').click()")
+  await app.evaluate("document.querySelector('.dpick__foot button').click()")
   await sleep(600)
-  const dpAfter = await conn.evaluate("(() => ({ open: !!document.querySelector('.popmenu--date'), text: document.querySelector('.modal .datepick').textContent.trim() }))()")
+  const dpAfter = await app.evaluate("(() => ({ open: !!document.querySelector('.popmenu--date'), text: document.querySelector('.modal .datepick').textContent.trim() }))()")
   check('点「今天」后日历立刻消失', dpAfter.open === false, J(dpAfter))
   check('点「今天」把日期落了下去', dpAfter.text === todayIso, J({ got: dpAfter.text, want: todayIso }))
 
   // ---- 年月跳转：点标题切到两列，选完回到日历
-  await conn.evaluate("document.querySelector('.modal .datepick').click()")
+  await app.evaluate("document.querySelector('.modal .datepick').click()")
   await sleep(500)
-  await conn.evaluate("document.querySelector('.dpick__title').click()")
+  await app.evaluate("document.querySelector('.dpick__title').click()")
   await sleep(600)
-  const ym = await conn.evaluate(
+  const ym = await app.evaluate(
     "(() => {" +
       "const el = document.querySelector('.popmenu--date');" +
       "if (!el) return { open: false };" +
@@ -220,32 +193,32 @@ try {
   )
   check('点标题展开年月跳转（151 年 + 12 月）', ym.open === true && ym.years === 151 && ym.months === 12, J(ym))
   check('年月项高度 = 控件高度', ym.open === true && ym.minH === ym.want && ym.maxH === ym.want, J(ym))
-  const titleBefore = await conn.evaluate("document.querySelector('.dpick__title').textContent")
-  const ymShot = await conn.send('Page.captureScreenshot', { format: 'png' })
+  const titleBefore = await app.evaluate("document.querySelector('.dpick__title').textContent")
+  const ymShot = await app.send('Page.captureScreenshot', { format: 'png' })
   fs5.writeFileSync(join(root, '.screenshots', 'datepicker-yearmonth.png'), Buffer.from(ymShot.result.data, 'base64'))
   console.log('（截图 .screenshots/datepicker-yearmonth.png）')
-  await conn.evaluate("[...document.querySelectorAll('.dpick__ylist .popmenu__item')].find((b) => b.textContent.trim() === '2030 年').click()")
+  await app.evaluate("[...document.querySelectorAll('.dpick__ylist .popmenu__item')].find((b) => b.textContent.trim() === '2030 年').click()")
   await sleep(500)
-  const afterYear = await conn.evaluate("(() => ({ title: document.querySelector('.dpick__title')?.textContent, grid: !!document.querySelector('.dpick__grid') }))()")
+  const afterYear = await app.evaluate("(() => ({ title: document.querySelector('.dpick__title')?.textContent, grid: !!document.querySelector('.dpick__grid') }))()")
   check(
     '选年份后仍留在年月视图，且年月已落到面板上',
     afterYear.grid === false && String(afterYear.title).includes('2030'),
     J({ titleBefore, afterYear })
   )
   // 「落到日期选择器」= 值本身跟着变（保留原来那一天）
-  const valAfterYear = await conn.evaluate("document.querySelector('.modal .datepick').textContent.trim()")
+  const valAfterYear = await app.evaluate("document.querySelector('.modal .datepick').textContent.trim()")
   check('选年份后值也回填了（保留原来那一天）', valAfterYear.startsWith('2030-'), J(valAfterYear))
   // 选月份同样不退回，标题继续跟着走
-  await conn.evaluate("[...document.querySelectorAll('.dpick__mlist .popmenu__item')].find((b) => b.textContent.trim() === '3 月').click()")
+  await app.evaluate("[...document.querySelectorAll('.dpick__mlist .popmenu__item')].find((b) => b.textContent.trim() === '3 月').click()")
   await sleep(500)
-  const afterMonth = await conn.evaluate("(() => ({ title: document.querySelector('.dpick__title')?.textContent, grid: !!document.querySelector('.dpick__grid') }))()")
+  const afterMonth = await app.evaluate("(() => ({ title: document.querySelector('.dpick__title')?.textContent, grid: !!document.querySelector('.dpick__grid') }))()")
   check(
     '选月份后仍留在年月视图，标题也更新',
     afterMonth.grid === false && String(afterMonth.title).includes('2030') && String(afterMonth.title).includes('3 月'),
     J(afterMonth)
   )
   // 走「返回日历」才切回日期网格
-  const dbg = await conn.evaluate(
+  const dbg = await app.evaluate(
     "(() => {" +
       "const btns = [...document.querySelectorAll('.dpick__pick .dpick__foot button')];" +
       "const el = btns[0];" +
@@ -259,25 +232,25 @@ try {
   // 用真实鼠标：程序化 click() 不派发 mousedown，「点面板里却把面板关掉」这类 bug 只有真鼠标能抓到
   await clickReal("[...document.querySelectorAll('.dpick__pick .dpick__foot button')][0]")
   await sleep(500)
-  const backToDay = await conn.evaluate("(() => ({ grid: !!document.querySelector('.dpick__grid'), pick: !!document.querySelector('.dpick__pick'), panel: !!document.querySelector('.popmenu--date'), title: document.querySelector('.dpick__title')?.textContent }))()")
+  const backToDay = await app.evaluate("(() => ({ grid: !!document.querySelector('.dpick__grid'), pick: !!document.querySelector('.dpick__pick'), panel: !!document.querySelector('.popmenu--date'), title: document.querySelector('.dpick__title')?.textContent }))()")
   check('点「返回日历」切回日期网格，月份仍是刚选的', backToDay.grid === true && String(backToDay.title).includes('2030'), J(backToDay))
-  const backToDayValue = await conn.evaluate("document.querySelector('.modal .datepick').textContent.trim()")
+  const backToDayValue = await app.evaluate("document.querySelector('.modal .datepick').textContent.trim()")
   // ---- 真实鼠标点某一天：面板必须关掉且不弹回来（用户报的「反而重新唤起」）
   // 先把面板关干净：**必须用真实鼠标** —— 程序化 click() 不派发 mousedown，
   // 而「点外面收起」正挂在 mousedown 的捕获阶段上，用 click() 根本关不掉（踩过这个坑）
-  if (await conn.evaluate("!!document.querySelector('.popmenu--date')")) {
+  if (await app.evaluate("!!document.querySelector('.popmenu--date')")) {
     await clickReal("document.querySelector('.modal__head')")
     await sleep(500)
   }
-  await conn.evaluate("document.querySelector('.modal .datepick').click()")
+  await app.evaluate("document.querySelector('.modal .datepick').click()")
   await sleep(700)
-  const openedForDay = await conn.evaluate("!!document.querySelector('.popmenu--date')")
+  const openedForDay = await app.evaluate("!!document.querySelector('.popmenu--date')")
   check('先确认日期面板真的打开了（防假阳性）', openedForDay === true, J(openedForDay))
-  const dayPoint = await conn.evaluate(
+  const dayPoint = await app.evaluate(
     "(() => { const b = [...document.querySelectorAll('.dpick__day')].find((x) => x.textContent.trim() === '15'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()"
   )
   // 装页面级异常捕获：如果 setOpen(false) 没生效是因为渲染抛错，这里能看见
-  await conn.evaluate(
+  await app.evaluate(
     "(() => { localStorage.removeItem('__err');" +
       "window.addEventListener('error', (e) => localStorage.setItem('__err', String((e.error && e.error.stack) || e.message).slice(0, 700)));" +
       "window.addEventListener('unhandledrejection', (e) => localStorage.setItem('__err', 'rejection: ' + String((e.reason && e.reason.stack) || e.reason).slice(0, 700))); })()"
@@ -291,7 +264,7 @@ try {
     await mouse('mouseReleased', dayPoint.x, dayPoint.y, 0)
     await sleep(800)
   }
-  const afterDay = await conn.evaluate(
+  const afterDay = await app.evaluate(
     "(() => { const b = document.querySelector('.modal .datepick'); return { open: !!document.querySelector('.popmenu--date'), text: b.textContent.trim() }; })()"
   )
   console.log('[真实点日期后] ' + J(afterDay))
@@ -299,10 +272,10 @@ try {
   check('真实鼠标点日期后，值落到了那一天', afterDay.text.endsWith('-15'), J(afterDay))
 
   // 点外面只是收起，不改值 —— 基准取「点外面前」的值（前面刚用真实鼠标点过 15 号）
-  const valueBeforeOutside = await conn.evaluate("document.querySelector('.modal .datepick').textContent.trim()")
+  const valueBeforeOutside = await app.evaluate("document.querySelector('.modal .datepick').textContent.trim()")
   await clickReal("document.querySelector('.modal__head')")
   await sleep(600)
-  const stillToday = await conn.evaluate("document.querySelector('.modal .datepick').textContent.trim()")
+  const stillToday = await app.evaluate("document.querySelector('.modal .datepick').textContent.trim()")
   // 这一步只验证「点外面只是收起」—— 值在更早的年月操作里已经被改过了，
   // 所以比对的是「点外面前后是否一致」，而不是跟最初的今天比
   check('点外面收起时不会改动已选日期', stillToday === valueBeforeOutside, J({ got: stillToday, want: valueBeforeOutside }))
@@ -310,7 +283,7 @@ try {
   // ---- 自绘的时刻选择器：项高必须与控件高度一致（原生面板做不到这件事）
   await clickReal("document.querySelector('.modal .timepick')")
   await sleep(700)
-  const menu = await conn.evaluate(
+  const menu = await app.evaluate(
     "(() => {" +
       "const el = document.querySelector('.popmenu--time');" +
       "if (!el) return { open: false };" +
@@ -329,19 +302,19 @@ try {
     menu.open === true && menu.min === menu.want && menu.max === menu.want,
     J(menu)
   )
-  await conn.evaluate("[...document.querySelectorAll('.popmenu--time .popmenu__item')].find((b) => b.textContent.trim() === '07')?.click()")
+  await app.evaluate("[...document.querySelectorAll('.popmenu--time .popmenu__item')].find((b) => b.textContent.trim() === '07')?.click()")
   await sleep(600)
-  const picked = await conn.evaluate("document.querySelector('.modal .timepick').textContent.trim()")
+  const picked = await app.evaluate("document.querySelector('.modal .timepick').textContent.trim()")
   check('点选后按钮上立刻预览（此时还没落库）', picked.includes('07'), J(picked))
 
   // 只选小时，然后失焦：面板应当自己消失，并把选到的时刻回填（而不是丢掉）
-  await conn.evaluate("[...document.querySelectorAll('.popmenu--time .popmenu__item')].find((b) => b.textContent.trim() === '09')?.click()")
+  await app.evaluate("[...document.querySelectorAll('.popmenu--time .popmenu__item')].find((b) => b.textContent.trim() === '09')?.click()")
   await sleep(400)
-  const midPreview = await conn.evaluate("document.querySelector('.modal .timepick').textContent.trim()")
+  const midPreview = await app.evaluate("document.querySelector('.modal .timepick').textContent.trim()")
   check('只选一半也会实时预览（09:00）', midPreview.includes('09'), J(midPreview))
   await clickReal("document.querySelector('.modal__head')")
   await sleep(600)
-  const blurred = await conn.evaluate("(() => ({ open: !!document.querySelector('.popmenu--time'), text: document.querySelector('.modal .timepick').textContent.trim() }))()")
+  const blurred = await app.evaluate("(() => ({ open: !!document.querySelector('.popmenu--time'), text: document.querySelector('.modal .timepick').textContent.trim() }))()")
   check('失焦后面板自己消失', blurred.open === false, J(blurred))
   check('失焦时把选到的时刻回填了', blurred.text.includes('09'), J(blurred))
 
@@ -350,11 +323,11 @@ try {
   await sleep(500)
   await clickReal("document.querySelector('.modal__head')")
   await sleep(500)
-  const untouched = await conn.evaluate("document.querySelector('.modal .timepick').textContent.trim()")
+  const untouched = await app.evaluate("document.querySelector('.modal .timepick').textContent.trim()")
   check('什么都没选就关掉，原值不变', untouched === blurred.text, J({ before: blurred.text, after: untouched }))
 
   // ---- 表单栅格：状态 / 优先级 / 循环 同一行，开始 / 截止 下一行
-  const grid = await conn.evaluate(
+  const grid = await app.evaluate(
     "(() => {" +
       "const m = document.querySelector('.modal[role=\"dialog\"]');" +
       "const tops = (sel) => [...m.querySelectorAll(sel)].map((el) => Math.round(el.getBoundingClientRect().top));" +
@@ -371,14 +344,14 @@ try {
   // 再点开一次截个图（给用户看项高）
   await clickReal("document.querySelector('.modal .timepick')")
   await sleep(700)
-  const tpShot = await conn.send('Page.captureScreenshot', { format: 'png' })
+  const tpShot = await app.send('Page.captureScreenshot', { format: 'png' })
   const fs3 = await import('node:fs')
   fs3.writeFileSync(join(root, '.screenshots', 'timepicker-custom.png'), Buffer.from(tpShot.result.data, 'base64'))
   console.log('（截图 .screenshots/timepicker-custom.png）')
 
   // 日期 / 时间原生输入的内在高度比 --control-h 高，只给 min-height 压不住 ——
   // 这一条盯着它们与同行的其它控件严格等高
-  const heights = await conn.evaluate(
+  const heights = await app.evaluate(
     "(() => {" +
       "const m = document.querySelector('.modal[role=\"dialog\"]');" +
       "const probe = document.createElement('div');" +
@@ -394,7 +367,7 @@ try {
   check('自绘时刻选择器的高度 = 控件高度', heights.times.length === 2 && heights.times.every((x) => x === heights.want), J(heights))
 
   // 弹窗里所有控件的实测高度：只比 date/time 是看不出「与整体不一致」的
-  const all = await conn.evaluate(
+  const all = await app.evaluate(
     "(() => {" +
       "const m = document.querySelector('.modal[role=\"dialog\"]');" +
       "const probe = document.createElement('div');" +
@@ -413,17 +386,14 @@ try {
   )
   console.log('[控件高度] want=' + all.want)
   for (const r of all.rows) console.log('   ' + r.h + '	' + r.fs + '	' + r.kind + '  .' + r.cls)
-  const box = await conn.evaluate("(() => { const m = document.querySelector('.modal[role=\"dialog\"]'); const r = m.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height } })()")
-  const shot = await conn.send('Page.captureScreenshot', { format: 'png', clip: { ...box, scale: 2 } })
+  const box = await app.evaluate("(() => { const m = document.querySelector('.modal[role=\"dialog\"]'); const r = m.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height } })()")
+  const shot = await app.send('Page.captureScreenshot', { format: 'png', clip: { ...box, scale: 2 } })
   const fs2 = await import('node:fs')
   fs2.writeFileSync(join(root, '.screenshots', 'task-editor-heights.png'), Buffer.from(shot.result.data, 'base64'))
   console.log('（截图 .screenshots/task-editor-heights.png）')
 } catch (err) {
   check('脚本跑完', false, err instanceof Error ? err.message : String(err))
 }
-
-const failed = results.filter((r) => !r).length
-console.log('\n' + (failed ? '✗ ' + failed + ' 项未通过' : '✓ 全部通过') + '（' + results.length + ' 项）')
 await sleep(300)
-child.kill()
-process.exit(failed ? 1 : 0)
+await app.close()
+process.exit(finish())
