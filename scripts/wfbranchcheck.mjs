@@ -16,98 +16,23 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { copyFileSync, existsSync, mkdirSync, rmSync } from 'node:fs'
-import { setTimeout as sleep } from 'node:timers/promises'
+import { ROOT, launchApp, createChecker, J, sleep } from './lib/cdp.mjs'
 
+const root = ROOT
 const require = createRequire(import.meta.url)
-const electronPath = require('electron')
-const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const tmpHome = join(root, '.screenshots', 'wfbranch-home')
+const tmpHome = join(ROOT, '.screenshots', 'wfbranch-home')
 const PORT = 9257
 
-const realDb = join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db')
-if (!existsSync(realDb)) {
-  console.error('✗ 找不到真实库：' + realDb)
-  process.exit(1)
-}
-rmSync(tmpHome, { recursive: true, force: true })
-mkdirSync(tmpHome, { recursive: true })
-copyFileSync(realDb, join(tmpHome, 'zhixing.db'))
-
-const SYS_PATH = ['C:\\Windows\\System32', 'C:\\Windows', 'C:\\Windows\\System32\\Wbem'].join(';')
-const child = spawn(
-  electronPath,
-  ['.', '--remote-debugging-port=' + PORT, '--user-data-dir=' + join(tmpHome, 'profile')],
-  {
-    cwd: root,
-    env: { ...process.env, PATH: SYS_PATH + ';' + (process.env.PATH ?? ''), ZHIXING_HOME: tmpHome },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  }
-)
-
-const list = async () => {
-  try {
-    return await (await fetch('http://127.0.0.1:' + PORT + '/json/list')).json()
-  } catch {
-    return []
-  }
-}
-
-const connect = async (target) => {
-  const ws = new WebSocket(target.webSocketDebuggerUrl)
-  await new Promise((res, rej) => {
-    ws.addEventListener('open', res, { once: true })
-    ws.addEventListener('error', rej, { once: true })
-  })
-  const send = (method, params = {}) =>
-    new Promise((resolve) => {
-      const id = Math.floor(Math.random() * 1e6)
-      const h = (ev) => {
-        const m = JSON.parse(ev.data)
-        if (m.id !== id) return
-        ws.removeEventListener('message', h)
-        resolve(m)
-      }
-      ws.addEventListener('message', h)
-      ws.send(JSON.stringify({ id, method, params }))
-    })
-  await send('Runtime.enable')
-  const evaluate = async (expression, awaitPromise = true) => {
-    const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise })
-    if (r.result?.exceptionDetails)
-      throw new Error(r.result.exceptionDetails.exception?.description ?? 'eval failed')
-    return r.result?.result?.value
-  }
-  return { ws, send, evaluate }
-}
-
-let main = null
-for (let i = 0; i < 60 && !main; i++) {
-  const pages = await list()
-  main = pages.find((t) => t.type === 'page')
-  if (!main) await sleep(500)
-}
-if (!main) {
-  console.error('✗ 主窗口没起来')
-  child.kill()
-  process.exit(1)
-}
-const conn = await connect(main)
-await sleep(2500)
-
-const results = []
-const check = (name, ok, detail = '') => {
-  results.push([name, ok])
-  console.log((ok ? '✓ ' : '✗ ') + name + (detail ? ' — ' + detail : ''))
-}
-const J = (v) => JSON.stringify(v)
+const app = await launchApp({ port: PORT, home: tmpHome })
+const { check, finish, results } = createChecker()
 const STAMP = 'WB' + Date.now().toString(36)
 
 try {
   // ------------------------------------------------ 1. 建模板：条件节点两条分支
   // 新节点用负临时 id，saveWorkflowTemplate 会把分支引用重映射成真实 id
-  const task = await conn.evaluate(`window.zhixing.db.createTask(${J(STAMP + ' 条件任务')})`)
+  const task = await app.evaluate(`window.zhixing.db.createTask(${J(STAMP + ' 条件任务')})`)
   const actionValue = JSON.stringify({ kind: 'task', taskId: task.id, expectDone: true })
-  const tpl = await conn.evaluate(
+  const tpl = await app.evaluate(
     `window.zhixing.db.saveWorkflowTemplate({ name: ${J(STAMP + ' 双分支')}, start_policy: 'first', nodes: [
         { id: -1, title: '判断', order_index: 0, action_kind: 'condition', action_value: ${J(actionValue)}, branch_node_id: -2, branch_false_node_id: -3 },
         { id: -2, title: '满足目标', order_index: 1 },
@@ -125,7 +50,7 @@ try {
   )
 
   // ------------------------------------------------ 2. 推进：不成立走 false、成立走 true
-  const instFalse = await conn.evaluate(
+  const instFalse = await app.evaluate(
     `window.zhixing.db.instantiateWorkflow(${tpl.id}, ${J(STAMP + ' 不成立')}, null, 'first')`
   )
   check(
@@ -134,8 +59,8 @@ try {
     J(instFalse?.steps?.map((s) => s.title))
   )
 
-  await conn.evaluate(`window.zhixing.db.toggleTask(${task.id})`)
-  const instTrue = await conn.evaluate(
+  await app.evaluate(`window.zhixing.db.toggleTask(${task.id})`)
+  const instTrue = await app.evaluate(
     `window.zhixing.db.instantiateWorkflow(${tpl.id}, ${J(STAMP + ' 成立')}, null, 'first')`
   )
   check(
@@ -145,29 +70,29 @@ try {
   )
 
   // ------------------------------------------------ 3. 实例再次运行 / 删除
-  const rerun = await conn.evaluate(`window.zhixing.db.rerunWorkflowInstance(${instFalse.id})`)
+  const rerun = await app.evaluate(`window.zhixing.db.rerunWorkflowInstance(${instFalse.id})`)
   check(
     '再次运行新开一个实例（旧实例保留）',
     Boolean(rerun) && rerun.id !== instFalse.id,
     J({ old: instFalse.id, next: rerun?.id })
   )
-  const stillOld = await conn.evaluate(`window.zhixing.db.workflowInstance(${instFalse.id})`)
+  const stillOld = await app.evaluate(`window.zhixing.db.workflowInstance(${instFalse.id})`)
   check('旧实例记录仍在', stillOld?.id === instFalse.id)
 
   const rerunTaskId = rerun?.steps?.[0]?.task_id ?? 0
-  const delOk = await conn.evaluate(`window.zhixing.db.deleteWorkflowInstance(${rerun.id})`)
-  const gone = await conn.evaluate(`window.zhixing.db.workflowInstance(${rerun.id})`)
-  const tplAlive = await conn.evaluate(`window.zhixing.db.workflowTemplate(${tpl.id})`)
+  const delOk = await app.evaluate(`window.zhixing.db.deleteWorkflowInstance(${rerun.id})`)
+  const gone = await app.evaluate(`window.zhixing.db.workflowInstance(${rerun.id})`)
+  const tplAlive = await app.evaluate(`window.zhixing.db.workflowTemplate(${tpl.id})`)
   check('删除实例：实例没了、模板还在', delOk === true && gone === null && tplAlive?.id === tpl.id)
-  const taskAlive = await conn.evaluate(
+  const taskAlive = await app.evaluate(
     `window.zhixing.db.tasks(500).then((rows) => rows.some((t) => t.id === ${rerunTaskId}))`
   )
   check('删除实例不删已生成的任务', taskAlive === true, J(rerunTaskId))
 
   // ------------------------------------------------ 4. 画布 UI
-  await conn.evaluate(`document.querySelector('[data-nav-item="workflow"]').click()`)
+  await app.evaluate(`document.querySelector('[data-nav-item="workflow"]').click()`)
   await sleep(1400)
-  const ui = await conn.evaluate(
+  const ui = await app.evaluate(
     `(() => {
        const on = document.querySelector('.wf-node--template.wf-node--on strong')
        const strip = document.querySelector('.wf-node__cond text')
@@ -196,7 +121,7 @@ try {
   check('模板栏分隔条存在', ui.splitter === 1, J(ui.splitter))
 
   // ------------------------------------------------ 5. 拖动分隔条改宽度
-  const drag = await conn.evaluate(
+  const drag = await app.evaluate(
     `(async () => {
        const el = document.querySelector('.wf-splitter')
        const aside = document.querySelector('.wf-side')
@@ -221,7 +146,7 @@ try {
   )
   // ------------------------------------------------ 6. 条件节点上「加一步」必须是分支步骤
   // 换一个「条件节点还没配任何分支」的模板：这时条件只有兜底出边
-  const tpl2 = await conn.evaluate(
+  const tpl2 = await app.evaluate(
     `window.zhixing.db.saveWorkflowTemplate({ name: ${J(STAMP + ' 加步骤')}, start_policy: 'first', nodes: [
         { title: '判断', order_index: 0, action_kind: 'condition', action_value: JSON.stringify({ kind: 'confirm', prompt: '继续吗？' }) },
         { title: '原有下一步', order_index: 1 },
@@ -231,12 +156,12 @@ try {
   check('第二个模板已建立', tpl2?.nodes?.length === 3, J(tpl2?.problems ?? ''))
 
   // 回到任务页再切回来，强制工作流页重新挂载并打开最新模板
-  await conn.evaluate(`document.querySelector('[data-nav-item="tasks"]').click()`)
+  await app.evaluate(`document.querySelector('[data-nav-item="tasks"]').click()`)
   await sleep(400)
-  await conn.evaluate(`document.querySelector('[data-nav-item="workflow"]').click()`)
+  await app.evaluate(`document.querySelector('[data-nav-item="workflow"]').click()`)
   await sleep(1300)
 
-  const draft = await conn.evaluate(
+  const draft = await app.evaluate(
     `(async () => {
        const wait = (ms) => new Promise((r) => setTimeout(r, ms))
        const svg = document.querySelector('.wf-canvas')
@@ -300,7 +225,7 @@ try {
 
   // ------------------------------------------------ 7. 连线几何：垂直入边、不贴边、不穿节点
   await sleep(600)
-  const geo = await conn.evaluate(
+  const geo = await app.evaluate(
     `(() => {
        const m = (g) => { const r = /translate\\(([-\\d.]+),([-\\d.]+)\\)/.exec(g.getAttribute('transform') || ''); return r ? { x: +r[1], y: +r[2] } : { x: 0, y: 0 } }
        return {
@@ -392,8 +317,5 @@ try {
 } catch (err) {
   check('脚本执行完成', false, err instanceof Error ? err.message : String(err))
 }
-
-const failed = results.filter(([, ok]) => !ok)
-console.log('\n' + (failed.length ? '✗ ' + failed.length + ' 项未通过' : '✓ 全部通过') + `（${results.length} 项）`)
-child.kill()
-process.exit(failed.length ? 1 : 0)
+await app.close()
+process.exit(finish())

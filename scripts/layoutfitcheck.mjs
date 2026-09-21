@@ -17,94 +17,20 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { setTimeout as sleep } from 'node:timers/promises'
+import { ROOT, launchApp, createChecker, J, sleep } from './lib/cdp.mjs'
 
+const root = ROOT
 const require = createRequire(import.meta.url)
-const electronPath = require('electron')
-const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const tmpHome = join(root, '.screenshots', 'layoutfit-home')
-const shotDir = join(root, '.screenshots')
+const tmpHome = join(ROOT, '.screenshots', 'layoutfit-home')
 const PORT = 9291
+const shotDir = join(root, '.screenshots')
 
-const realDb = join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db')
-if (!existsSync(realDb)) {
-  console.error('✗ 找不到真实库：' + realDb)
-  process.exit(1)
-}
-rmSync(tmpHome, { recursive: true, force: true })
-mkdirSync(tmpHome, { recursive: true })
-copyFileSync(realDb, join(tmpHome, 'zhixing.db'))
-
-const SYS_PATH = ['C:\\Windows\\System32', 'C:\\Windows', 'C:\\Windows\\System32\\Wbem'].join(';')
-const child = spawn(
-  electronPath,
-  ['.', '--remote-debugging-port=' + PORT, '--user-data-dir=' + join(tmpHome, 'profile')],
-  {
-    cwd: root,
-    env: { ...process.env, PATH: SYS_PATH + ';' + (process.env.PATH ?? ''), ZHIXING_HOME: tmpHome },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  }
-)
-
-const list = async () => {
-  try {
-    return await (await fetch('http://127.0.0.1:' + PORT + '/json/list')).json()
-  } catch {
-    return []
-  }
-}
-const connect = async (target) => {
-  const ws = new WebSocket(target.webSocketDebuggerUrl)
-  await new Promise((res, rej) => {
-    ws.addEventListener('open', res, { once: true })
-    ws.addEventListener('error', rej, { once: true })
-  })
-  const send = (method, params = {}) =>
-    new Promise((resolve) => {
-      const id = Math.floor(Math.random() * 1e6)
-      const h = (ev) => {
-        const m = JSON.parse(ev.data)
-        if (m.id !== id) return
-        ws.removeEventListener('message', h)
-        resolve(m)
-      }
-      ws.addEventListener('message', h)
-      ws.send(JSON.stringify({ id, method, params }))
-    })
-  await send('Runtime.enable')
-  const evaluate = async (expression) => {
-    const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })
-    if (r.result?.exceptionDetails)
-      throw new Error(r.result.exceptionDetails.exception?.description ?? 'eval failed')
-    return r.result?.result?.value
-  }
-  return { send, evaluate }
-}
-
-let main = null
-for (let i = 0; i < 60 && !main; i++) {
-  const pages = await list()
-  main = pages.find((t) => t.type === 'page')
-  if (!main) await sleep(500)
-}
-if (!main) {
-  console.error('✗ 主窗口没起来')
-  child.kill()
-  process.exit(1)
-}
-const conn = await connect(main)
-await sleep(2500)
-
-const results = []
-const check = (name, ok, detail = '') => {
-  results.push({ name, ok })
-  console.log((ok ? '✓ ' : '✗ ') + name + (detail ? ' — ' + detail : ''))
-}
-const J = (v) => JSON.stringify(v)
+const app = await launchApp({ port: PORT, home: tmpHome })
+const { check, finish, results } = createChecker()
 const STAMP = 'LF' + Date.now().toString(36)
 
 const mouse = (type, x, y, buttons) =>
-  conn.send('Input.dispatchMouseEvent', {
+  app.send('Input.dispatchMouseEvent', {
     type,
     x: Math.round(x),
     y: Math.round(y),
@@ -116,7 +42,7 @@ const mouse = (type, x, y, buttons) =>
 try {
   /** 测量 Office 编辑区：外层容器是否铺满父容器、内部编辑器是否吃掉剩余高度。 */
   const measureOffice = () =>
-    conn.evaluate(`(() => {
+    app.evaluate(`(() => {
        const office = document.querySelector('.editor__office')
        if (!office) return { missing: true }
        const cs = getComputedStyle(office)
@@ -142,7 +68,7 @@ try {
      })()`)
 
   const makeNote = async (title, ext, format) => {
-    const note = await conn.evaluate(
+    const note = await app.evaluate(
       `window.zhixing.db.createNote(${J(title)}, null, ${J('C:\\tmp\\' + STAMP + ext)}).then((n) => n && window.zhixing.db.saveNote(n.id, { format: ${J(format)} }).then((x) => x && x.id))`
     )
     return note
@@ -153,10 +79,10 @@ try {
   const excelId = await makeNote(excelTitle, '.xlsx', 'excel')
   check('已建 Word / Excel 笔记', Boolean(wordId) && Boolean(excelId), J({ wordId, excelId }))
 
-  await conn.evaluate(`document.querySelector('[data-nav-item="notes"]').click()`)
+  await app.evaluate(`document.querySelector('[data-nav-item="notes"]').click()`)
   await sleep(1200)
   const openNote = (title) =>
-    conn.evaluate(`(() => {
+    app.evaluate(`(() => {
        const btn = [...document.querySelectorAll('.ntree__note')].find((b) => b.querySelector('.ntree__title')?.textContent === ${J(title)})
        if (!btn) return false
        btn.click()
@@ -202,13 +128,13 @@ try {
     J({ gridWidth: excel.gridWidth, bodyInnerWidth: excel.bodyInnerWidth })
   )
 
-  const noteShot = await conn.send('Page.captureScreenshot', { format: 'png' })
+  const noteShot = await app.send('Page.captureScreenshot', { format: 'png' })
   writeFileSync(join(shotDir, 'layoutfit-notes.png'), Buffer.from(noteShot.result.data, 'base64'))
 
   // ------------------------------------------------ 3. 工作流行尾按钮组不占位
-  await conn.evaluate(`document.querySelector('[data-nav-item="workflow"]').click()`)
+  await app.evaluate(`document.querySelector('[data-nav-item="workflow"]').click()`)
   await sleep(1400)
-  const beforeWidth = await conn.evaluate(
+  const beforeWidth = await app.evaluate(
     `(() => {
        const ops = document.querySelector('.wf-node--template .wf-node__ops')
        const label = document.querySelector('.wf-node--template .wf-node__label')
@@ -227,7 +153,7 @@ try {
     J(beforeWidth)
   )
 
-  const rowPoint = await conn.evaluate(
+  const rowPoint = await app.evaluate(
     `(() => {
        const row = document.querySelector('.wf-node--template')
        if (!row) return null
@@ -238,7 +164,7 @@ try {
   await mouse('mouseMoved', rowPoint.x, rowPoint.y, 0)
   // 展开是 max-width 的过渡动画，多等一会儿再量，免得量到动画中间态
   await sleep(600)
-  const afterWidth = await conn.evaluate(
+  const afterWidth = await app.evaluate(
     `(() => {
        const ops = document.querySelector('.wf-node--template .wf-node__ops')
        const label = document.querySelector('.wf-node--template .wf-node__label')
@@ -258,10 +184,10 @@ try {
     J({ before: beforeWidth, after: afterWidth })
   )
 
-  const wfShot = await conn.evaluate(
+  const wfShot = await app.evaluate(
     `(() => { const r = document.querySelector('.wf-wrap').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(Math.min(r.width, 420)), h: Math.round(Math.min(r.height, 420)) } })()`
   )
-  const shot = await conn.send('Page.captureScreenshot', {
+  const shot = await app.send('Page.captureScreenshot', {
     format: 'png',
     clip: { x: wfShot.x, y: wfShot.y, width: wfShot.w, height: wfShot.h, scale: 1.6 },
   })
@@ -271,9 +197,6 @@ try {
   check('脚本执行完成', false, err instanceof Error ? err.message : String(err))
 }
 
-await conn.evaluate(`document.querySelector('[data-nav-item="notes"]').click()`).catch(() => {})
-
-const failed = results.filter((r) => !r.ok)
-console.log('\n' + (failed.length ? '✗ ' + failed.length + ' 项未通过' : '✓ 全部通过') + `（${results.length} 项）`)
-child.kill()
-process.exit(failed.length ? 1 : 0)
+await app.evaluate(`document.querySelector('[data-nav-item="notes"]').click()`).catch(() => {})
+await app.close()
+process.exit(finish())
