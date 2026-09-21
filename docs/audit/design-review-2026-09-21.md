@@ -83,7 +83,19 @@
 第二轮（2026-09-22）把可机械迁移的又清了一遍，累计 **12 个脚本**迁到 lib：
 listguardcheck / noteeditguard / notelinkcheck / attachmentcheck / taskarchivecheck /
 reminderpolicycheck / aiui / confirmcheck / wfgroupcheck（后三个是回退后重做并跑绿）。
-当前棘轮值 **45**。
+第三轮又拿下两个双窗口脚本（需要 lib 的二次挂载能力）：reminderstylecheck 11/11（与原版一致）、
+remindercheck 与原版**逐条一致**（见下）。当前棘轮值 **43**。
+
+lib 这轮加了 `attach(matchFn)`：按谓词找目标 → 连上 → 给一个求值器。
+有一批脚本要同时看主窗口、浮窗和提醒气泡，老写法是各自抄一遍 connect()。
+
+**一个必须单独记下的发现：种子数据污染了 E2E 的基线。**
+E2E 脚本会拷一份真实库来跑（launchApp 的 copyDb）。生产库现在有我灌进去的 167 条任务，
+而 remindercheck 是照着「列表里有什么」来找自己那条任务的 —— 于是它从 18/18 掉到 13/18。
+**证据是：把迁移回退成原版，失败项与详情字符串一模一样**，所以这不是迁移回归，
+是「脚本假设库里几乎是空的」这个前提被打破了。受影响的不会只有它一个，
+凡是按列表内容/下标取值的脚本都可能如此；要修的是脚本（改成按标题精确定位），
+或者让 E2E 跑在一份**固定的夹具库**上而不是拷生产库。
 
 同批的 aiui(28/28) / confirmcheck(7/7) / wfgroupcheck(6/6) 与原版基线逐一对照：
 前两个分数一致，wfgroupcheck 反而比原版多过一项（原版 5/6，「实例项也有编辑胶囊」当时失败）——

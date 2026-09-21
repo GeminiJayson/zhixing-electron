@@ -137,17 +137,38 @@ export async function launchApp({
     /** 当前所有 CDP 目标（脚本用它判断有没有多出/收起独立窗口）。 */
     targets,
     /** 跑一段浏览器侧表达式，返回它的值。 */
-    evaluate: async (expr, quiet) => {
-      if (!quiet) console.log('  · eval ' + String(expr).replace(/\s+/g, ' ').slice(0, 66))
-      const r = await send('Runtime.evaluate', {
-        expression: expr,
-        returnByValue: true,
-        awaitPromise: true
-      })
-      if (r.result?.exceptionDetails) {
-        throw new Error(r.result.exceptionDetails.exception?.description ?? 'eval 失败')
+    evaluate: makeEvaluator(send),
+    /**
+     * 二次挂载到另一个目标（浮窗 / 提醒窗 / 条件窗…）。
+     *
+     * 有一批脚本要同时看主窗口和独立窗口：先把 widget 关掉让提醒走主窗口卡片，
+     * 再切回 widget 去挂 reminder=1 那个页面。老写法是各自抄一遍 connect()，
+     * 这里统一成「按谓词找目标 → 连上 → 给一个求值器」。
+     *
+     * @param matchFn 目标谓词，入参是 /json/list 的一项
+     * @param settle 挂上之后再等多久（毫秒）
+     */
+    attach: async (matchFn, opts = {}) => {
+      const t = (await targets()).find(matchFn)
+      if (!t) throw new Error('找不到要挂载的 CDP 目标')
+      const w = new WebSocket(t.webSocketDebuggerUrl)
+      await new Promise((res) => w.addEventListener('open', res, { once: true }))
+      const s = makeSend(w)
+      await s('Runtime.enable')
+      await s('Page.enable')
+      if (opts.settle > 0) await sleep(opts.settle)
+      return {
+        ws: w,
+        send: s,
+        evaluate: makeEvaluator(s),
+        close: () => {
+          try {
+            w.close()
+          } catch {
+            // 已经断了就算了
+          }
+        }
       }
-      return r.result?.result?.value
     },
     close: async () => {
       try {
@@ -201,6 +222,22 @@ function makeSend(ws) {
       ws.addEventListener('message', h)
       ws.send(JSON.stringify({ id, method, params }))
     })
+}
+
+/** 从一条 send 造一个求值器 —— 主连接与二次挂载共用同一套语义。 */
+function makeEvaluator(send) {
+  return async (expr, quiet) => {
+    if (!quiet) console.log('  · eval ' + String(expr).replace(/\s+/g, ' ').slice(0, 66))
+    const r = await send('Runtime.evaluate', {
+      expression: expr,
+      returnByValue: true,
+      awaitPromise: true
+    })
+    if (r.result?.exceptionDetails) {
+      throw new Error(r.result.exceptionDetails.exception?.description ?? 'eval 失败')
+    }
+    return r.result?.result?.value
+  }
 }
 
 /**
