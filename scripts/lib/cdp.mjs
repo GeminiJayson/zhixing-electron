@@ -27,7 +27,16 @@ const require = createRequire(import.meta.url)
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
 /** 收紧 PATH：Electron 起来时别被外部 node/python 干扰。 */
-const SYS_PATH = ['C:\\Windows\\System32', 'C:\\Windows', 'C:\\Windows\\System32\\Wbem'].join(';')
+// 收紧 PATH：只留系统目录，免得外部 node/python 干扰被测应用。
+// powershell.exe 住在 WindowsPowerShell\v1.0 这一层，**必须带上** ——
+// 应用读「当前选中的文字」是模拟 Ctrl+C（SendKeys）实现的，而它是用裸名
+// spawn('powershell.exe')：PATH 里找不到就直接失败，表现是捕获窗口里永远空着。
+const SYS_PATH = [
+  'C:\\Windows\\System32',
+  'C:\\Windows',
+  'C:\\Windows\\System32\\Wbem',
+  'C:\\Windows\\System32\\WindowsPowerShell\\v1.0'
+].join(';')
 
 /** 独立小窗口（小组件/提醒/条件/捕获）不是主界面，默认不作为目标。 */
 export const AUX_TARGET = /[?&](widget|reminder|condition|capture)=1/

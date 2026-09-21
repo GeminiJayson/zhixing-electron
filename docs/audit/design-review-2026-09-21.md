@@ -83,6 +83,25 @@
 第二轮（2026-09-22）把可机械迁移的又清了一遍，累计 **12 个脚本**迁到 lib：
 listguardcheck / noteeditguard / notelinkcheck / attachmentcheck / taskarchivecheck /
 reminderpolicycheck / aiui / confirmcheck / wfgroupcheck（后三个是回退后重做并跑绿）。
+第四轮（condwincheck 14/14、selectioncheck 9/9，均与原版基线一致）。当前棘轮值 **40**。
+
+这一轮揪出 lib 自己的一个**真 bug**，值得单独记：
+lib 为了「别让外部 node/python 干扰被测应用」把 PATH 收紧成三条系统目录，**漏了
+WindowsPowerShell\v1.0**。而应用读「当前选中的文字」是靠模拟 Ctrl+C（SendKeys）实现的，
+内部用**裸名** spawn('powershell.exe') —— PATH 里找不到它就直接失败，
+表现是捕获窗口里永远空着。原脚本的 SYS_PATH 里本来是有这一条的。
+影响面不小：凡被测功能内部要起 PowerShell 的都中招（选字、工作流的 powershell 脚本步骤等）。
+教训：给被测进程收紧环境是好事，但**收得太狠会把被测代码的依赖一起砍掉**，
+而且失败是静默的（应用照常启动、界面照常，只有那一个功能失灵）。
+
+另外修了 selectioncheck 里一处「靠坐标抢 OS 焦点」的脆弱写法：它往硬编码的 (30, 320)
+发真实鼠标点击，落在哪取决于侧栏有多少内容 —— 用户库内容多时是空白，夹具库内容少时
+落到导航项上把页面切走。仍然保留点击（SendKeys 需要 OS 焦点），但点完确认还停在原页面。
+
+护栏 ⑯ 的判据也放宽了一处：原判「迁到 lib 的脚本不许出现 Runtime.evaluate」，
+但 app.send('Runtime.evaluate', …) 是 lib 提供的接口、用来「发了不等」是正当用法
+（condwincheck 就这么 fire 实例化）。改成禁止**手写 send 配对**的特征（自己监听 message 按 id 配对）。
+
 第三轮又拿下两个双窗口脚本（需要 lib 的二次挂载能力）：reminderstylecheck 11/11（与原版一致）、
 remindercheck 与原版**逐条一致**（见下）。当前棘轮值 **43**。
 

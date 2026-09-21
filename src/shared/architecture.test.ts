@@ -509,16 +509,20 @@ describe('架构约束 · CDP 样板只许减少', () => {
     for (const f of migrated) {
       const code = readFileSync(join(dir, f), 'utf8')
       expect(code.includes('new WebSocket'), f + ' 已经用 lib 了，不该再自己 new WebSocket').toBe(false)
-      expect(code.includes('Runtime.evaluate'), f + ' 已经用 lib 了，不该再自己发 evaluate').toBe(false)
+      // 判据是「有没有自己手写 send 的配对逻辑」，不是「有没有出现 Runtime.evaluate」——
+      // app.send('Runtime.evaluate', …) 是 lib 提供的接口，用来「发了不等」是正当用法
+      //（condwincheck 就是这么 fire 实例化的）。手写配对的标志是自己在监听 message 并按 id 配对。
+      expect(code.includes("addEventListener('message'"), f + ' 已经用 lib 了，不该再自己手写 send 配对').toBe(false)
+      expect(code.includes('x.id !== id'), f + ' 已经用 lib 了，不该再自己手写 send 配对').toBe(false)
     }
   })
 
-  it('复制着旧样板的脚本份数不得超过 42（只许减）', () => {
+  it('复制着旧样板的脚本份数不得超过 40（只许减）', () => {
     const copies = readdirSync(dir)
       .filter((n) => n.endsWith('.mjs') && !n.startsWith('.'))
       .filter((n) => readFileSync(join(dir, n), 'utf8').includes('new WebSocket'))
     // 棘轮值：迁掉一个就往下改一位。目标是把这里改到 0，然后删掉这条断言。
-    expect(copies.length, '又有人复制了 CDP 样板：' + copies.join(', ')).toBeLessThanOrEqual(42)
+    expect(copies.length, '又有人复制了 CDP 样板：' + copies.join(', ')).toBeLessThanOrEqual(40)
   })
 })
 /**

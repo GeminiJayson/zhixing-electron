@@ -17,83 +17,17 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { setTimeout as sleep } from 'node:timers/promises'
+import { ROOT, launchApp, createChecker, J, sleep } from './lib/cdp.mjs'
 
-const require = createRequire(import.meta.url)
-const electronPath = require('electron')
-const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const tmpHome = join(root, '.screenshots', 'sel-home')
+// 老脚本里的 root 一律指向仓库根，原样保留的自有声明就能继续用
+const root = ROOT
 const shotDir = join(root, '.screenshots')
-const PORT = 9254
 const PS = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'
-
 const realDb = join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db')
-if (!existsSync(realDb)) {
-  console.error('✗ 找不到真实库：' + realDb)
-  process.exit(1)
-}
-rmSync(tmpHome, { recursive: true, force: true })
-mkdirSync(tmpHome, { recursive: true })
-copyFileSync(realDb, join(tmpHome, 'zhixing.db'))
-
-const SYS_PATH = ['C:\\Windows\\System32', 'C:\\Windows', 'C:\\Windows\\System32\\Wbem', 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0'].join(';')
-const child = spawn(
-  electronPath,
-  ['.', '--remote-debugging-port=' + PORT, '--user-data-dir=' + join(tmpHome, 'profile')],
-  {
-    cwd: root,
-    env: { ...process.env, PATH: SYS_PATH + ';' + (process.env.PATH ?? ''), ZHIXING_HOME: tmpHome },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  }
-)
-
-const list = async () => {
-  try {
-    return await (await fetch('http://127.0.0.1:' + PORT + '/json/list')).json()
-  } catch {
-    return []
-  }
-}
-const connect = async (target) => {
-  const ws = new WebSocket(target.webSocketDebuggerUrl)
-  await new Promise((res, rej) => {
-    ws.addEventListener('open', res, { once: true })
-    ws.addEventListener('error', rej, { once: true })
-  })
-  const send = (method, params = {}) =>
-    new Promise((resolve) => {
-      const id = Math.floor(Math.random() * 1e6)
-      const h = (ev) => {
-        const m = JSON.parse(ev.data)
-        if (m.id !== id) return
-        ws.removeEventListener('message', h)
-        resolve(m)
-      }
-      ws.addEventListener('message', h)
-      ws.send(JSON.stringify({ id, method, params }))
-    })
-  await send('Runtime.enable')
-  await send('Page.enable')
-  const evaluate = async (expression) => {
-    const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })
-    if (r.result?.exceptionDetails)
-      throw new Error(r.result.exceptionDetails.exception?.description ?? 'eval failed')
-    return r.result?.result?.value
-  }
-  return { ws, send, evaluate }
-}
-
-// 收集主进程 stderr：窗口创建失败时会在这里留下痕迹
-child.stderr?.on('data', (b) => {
-  const s = String(b)
-  if (/error|Error|throw/.test(s)) console.error('[electron] ' + s.trim().slice(0, 300))
-})
-
-/**
- * SendKeys 是发给「当前前台窗口」的 —— 如果 Electron 不在前台，按键就打到别的应用上了。
- * 先在主窗口左侧空白处点一下，把焦点拿回来（点的是导航栏空白，不会触发任何控件）。
- */
 const focusWindow = async (c) => {
+  // SendKeys 必须发给「当前前台窗口」，所以这里要发一次真实鼠标点击抢焦点。
+  // 坐标是硬编码的：用户库内容多时它落在侧栏空白处，夹具库内容少时它会落在导航项上
+  // 把页面切走 —— 调用方因此在点完之后要确认还停在原页面（见下面的「回到笔记页」）。
   await c.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: 30, y: 320, button: 'left', clickCount: 1, buttons: 1 })
   await c.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 30, y: 320, button: 'left', clickCount: 1, buttons: 0 })
   await sleep(250)
@@ -106,28 +40,18 @@ const pressHotkey = (keys) => {
   })
 }
 
-let mainTarget = null
-for (let i = 0; i < 60 && !mainTarget; i++) {
-  mainTarget = (await list()).find((t) => t.type === 'page' && !String(t.url).includes('capture=1'))
-  if (!mainTarget) await sleep(500)
-}
-const conn = await connect(mainTarget)
-await sleep(3000)
+const tmpHome = join(ROOT, '.screenshots', 'sel-home')
+const PORT = 9254
 
-const results = []
-const check = (name, ok, detail = '') => {
-  results.push([name, ok])
-  console.log((ok ? '✓ ' : '✗ ') + name + (detail ? ' — ' + detail : ''))
-}
-const J = (v) => JSON.stringify(v)
-
+const app = await launchApp({ port: PORT, home: tmpHome })
+const { check, finish } = createChecker()
 /** 等捕获窗口出现并 attach，返回 { cw, text }（text 会等它填好） */
 const waitCaptureWindow = async (timeout = 15000) => {
   const t0 = Date.now()
   while (Date.now() - t0 < timeout) {
-    const win = (await list()).find((t) => String(t.url).includes('capture=1'))
+    const win = (await app.targets()).find((t) => String(t.url).includes('capture=1'))
     if (win) {
-      const cw = await connect(win)
+      const cw = await app.attach((x) => String(x.url).includes('capture=1'))
       let text = null
       for (let i = 0; i < 40; i++) {
         const v = await cw.evaluate("(document.querySelector('.capture__text') || {}).value ?? null")
@@ -145,11 +69,15 @@ const waitCaptureWindow = async (timeout = 15000) => {
 }
 
 // 主窗口：切到笔记页。**先夺回焦点、再选中文字** —— 反过来点一下会把选区取消掉
-await conn.evaluate("document.querySelector('[data-nav-item=notes]').click()")
+await app.evaluate("document.querySelector('[data-nav-item=notes]').click()")
 await sleep(1500)
-await focusWindow(conn)
+await focusWindow(app)
+// 抢焦点那一下可能落在导航项上（侧栏内容少时），把页面切走了 —— 切回笔记页再选，
+// 否则下面找不到 .ntree__search-input，而 OS 焦点已经拿到，不影响后续 SendKeys 复制。
+await app.evaluate("document.querySelector('[data-nav-item=notes]').click()")
+await sleep(1200)
 const SELECTED = 'SELECTED-TEXT-FOR-CHECK'
-const selected = await conn.evaluate(`(() => {
+const selected = await app.evaluate(`(() => {
   const el = document.querySelector('.ntree__search-input')
   if (!el) return false
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
@@ -186,7 +114,7 @@ check(
   JSON.stringify(fitted)
 )
 check('内容 = 当前选中的文字', captured?.text?.trim() === SELECTED, J(captured?.text))
-const mainHasPanel = await conn.evaluate("!!document.querySelector('.capture-host')")
+const mainHasPanel = await app.evaluate("!!document.querySelector('.capture-host')")
 check('主窗口里没有捕获面板', mainHasPanel === false, '')
 // 圆角窗口：页面底色必须透明，否则卡片圆角外会露一圈方角
 const bg = await captured?.cw.evaluate(`(() => ({
@@ -206,15 +134,15 @@ if (captured) {
 // ---------------- 场景 3：Esc 关窗
 await captured?.cw.evaluate("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
 await sleep(900)
-const gone = (await list()).every((t) => !String(t.url).includes('capture=1'))
+const gone = (await app.targets()).every((t) => !String(t.url).includes('capture=1'))
 check('Esc 关闭后窗口消失', gone, '')
 captured?.cw.ws.close()
 
 // ---------------- 场景 2：没有选区 + 剪贴板有旧内容 → 空
-await focusWindow(conn)
-await conn.evaluate("navigator.clipboard.writeText('OLD-CLIP-CONTENT').catch(() => 0)")
+await focusWindow(app)
+await app.evaluate("navigator.clipboard.writeText('OLD-CLIP-CONTENT').catch(() => 0)")
 await sleep(300)
-await conn.evaluate(`(() => {
+await app.evaluate(`(() => {
   const el = document.querySelector('.ntree__search-input')
   if (el) { const s = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; s.call(el, ''); el.dispatchEvent(new Event('input', { bubbles: true })); el.blur() }
   window.getSelection()?.removeAllRanges()
@@ -223,14 +151,6 @@ await sleep(300)
 await pressHotkey('^%n')
 const second = await waitCaptureWindow()
 check('没有选区时窗口仍然是空的（不误用旧剪贴板）', second?.text?.trim() === '', J(second?.text))
-second?.cw.ws.close()
+await app.close()
 
-conn.ws.close()
-child.kill()
-await sleep(500)
-rmSync(tmpHome, { recursive: true, force: true })
-
-const failed = results.filter(([, ok]) => !ok)
-console.log('')
-console.log((results.length - failed.length) + '/' + results.length + ' 项通过')
-process.exit(failed.length ? 1 : 0)
+process.exit(finish())
