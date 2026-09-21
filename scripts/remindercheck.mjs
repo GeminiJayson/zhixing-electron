@@ -201,6 +201,12 @@ try {
   await sleep(600)
 
   // ---------------------------------------------------------------- 悬浮表情气泡
+  // 这个脚本验的是**显式提醒时刻**那条路径：把自动规则关掉、清掉库里的遗留提醒，
+  // 否则「有截止日期的历史任务」也会按规则冒出来，用例就对不上数了
+  await main.evaluate("window.zhixing.db.setSettings({ reminder_rule_due_time: '0', reminder_rule_due_date: '0' })")
+  await main.evaluate("(async () => { const rows = await window.zhixing.db.tasks(); for (const t of rows) if (t.reminder_at) await window.zhixing.db.dismissReminder(t.id); return true })()")
+  await sleep(500)
+
   console.log('【步骤】让提醒走悬浮表情气泡')
   // 这一条必须在动浮窗**之前**查：气泡窗口是启动序列里就创建的（不等有提醒才建，
   // 否则首次推送会落在窗口加载完成之前、那一条就丢了）。

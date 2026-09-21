@@ -35,6 +35,7 @@ export let db: Database.Database | null = null
 export let openedPath = ''
 
 export const TASK_COLUMNS = `id, title, notes_md, status, priority, due_date, start_date, start_time, due_time, reminder_at,
+  reminder_fired, reminder_base,
   list_id, parent_id, repeat_period, repeat_rule, streak, sort_key, resume_at, last_reset_date,
   completed_at, created_at, updated_at`
 
@@ -154,6 +155,11 @@ function ensureAppExtensions(d: Database.Database): void {
   // 标记「这条任务是**认领**来的」（同名匹配后贴上的外部身份），而不是外部自建的。
   // 同步时两者待遇不同：认领来的只补空字段，否则用户手写的标题/备注会被外部数据抹掉。
   add('task', 'external_linked', 'external_linked INTEGER')
+  // 提醒的记账：已提醒次数，以及计数所依据的基准时刻。
+  // 有了它，一条任务才能「提醒 N 次、每 M 分钟一次」；基准变了就自动重新计数，
+  // 所以改了截止日期不会被旧计数卡住，也不必在每个写入路径上挂钩子。
+  add('task', 'reminder_fired', 'reminder_fired INTEGER')
+  add('task', 'reminder_base', 'reminder_base TEXT')
   // 笔记的结构化属性（JSON 对象：{ "来源": "书籍", "评分": "5" }）
   add('note', 'props', 'props TEXT')
   // 工作流模板分类（对齐笔记树的「文件夹 → 笔记」两层）

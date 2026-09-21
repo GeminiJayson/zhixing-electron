@@ -27,7 +27,8 @@ import { BLOUB_DEFAULT_SHAPE, BLOUB_SHAPES, normalizeBloubShape } from '../share
 import { resolveThemePack } from '../shared/theme-packs'
 import { initFileLog } from './log'
 import { hardenWindow } from './security'
-import { autoBackup, broadcastDataChanged, closeDb, currentSettings, dbPath, dbOpenError, dbReadonlyReason, dismissReminder, dueReminders, ensureDefaultSettings, listTodayTasks, open, registerDbHandlers, saveWidgetGeometry, saveWidgetBall, setDataChangedHook, snoozeReminder } from './db'
+import { autoBackup, broadcastDataChanged, closeDb, currentSettings, dbPath, dbOpenError, dbReadonlyReason, dueReminders, recordReminderFire, reminderPolicy, ensureDefaultSettings, listTodayTasks, open, registerDbHandlers, saveWidgetGeometry, saveWidgetBall, setDataChangedHook, snoozeReminder } from './db'
+import { decideReminder } from '../shared/reminder'
 import {
   cancelOrganizeLibrary,
   currentLibraryProgress,
@@ -1398,8 +1399,15 @@ function startReminderDispatch(): void {
         console.error('[reminder] 派发失败，本轮不作消费，下轮重试', err)
         return
       }
-      // 确认已经交出去（webContents.send 是同步入队）之后才消费：一次性的前提是它真的弹出来了
-      for (const t of rows) dismissReminder(t.id)
+      // 确认已经交出去（webContents.send 是同步入队）之后才记账：
+      // 记下「这是第几次」，次数用完才清掉显式的 reminder_at（一次性语义不变）。
+      // 自动提醒没有 reminder_at 可清，靠这个计数停下。
+      const policy = reminderPolicy()
+      const now = new Date()
+      for (const t of rows) {
+        const d = decideReminder(t, policy, now)
+        recordReminderFire(t.id, d.fired, d.base, d.done)
+      }
     } catch (err) {
       console.error('[reminder] 派发失败', err)
     }

@@ -1,6 +1,7 @@
 import { listSettings } from './settings'
 import type { AppSettings } from '../../shared/settings'
 import { nextDue } from '../../shared/recurrence'
+import { decideReminder, reminderBaseAt, type ReminderPolicy } from '../../shared/reminder'
 import { parseSettings } from '../../shared/settings'
 import type {
   Task,
@@ -103,24 +104,72 @@ export function pomodoroToday(): { minutes: number; sessions: number } {
   return { minutes: Number(row?.m ?? 0), sessions: Number(row?.c ?? 0) }
 }
 
-/**
- * 到点提醒：reminder_at 已过且未完成/放弃的任务。
- * 等待中的任务不打扰（手册 §5.3：等待中不弹到点提醒）。
- */
-export function dueReminders(): Task[] {
-  return conn()
-    .prepare(
-      `SELECT ${TASK_COLUMNS} FROM task
-        WHERE deleted_at IS NULL AND reminder_at IS NOT NULL AND reminder_at <= ?
-          AND status NOT IN ('done', 'abandoned', 'waiting')
-        ORDER BY reminder_at ASC`
-    )
-    .all(nowStamp()) as Task[]
+/** 当前提醒策略（提前量 / 自动规则 / 重复次数），来自设置。 */
+export function reminderPolicy(): ReminderPolicy {
+  const s = currentSettings()
+  return {
+    leadMinutes: s.reminder_lead_minutes,
+    forTimed: s.reminder_rule_due_time,
+    forUntimed: s.reminder_rule_due_date,
+    dayClock: s.reminder_day_clock,
+    priorityMin: s.reminder_rule_priority_min,
+    repeatCount: s.reminder_repeat_count,
+    repeatIntervalMinutes: s.reminder_repeat_interval_minutes,
+  }
 }
 
-/** 提醒已发出：清空 reminder_at（一次性语义，对齐 dismiss_reminder）。 */
+/**
+ * 到点提醒：按策略判定此刻该提醒哪些任务。
+ *
+ * 判据收在 shared/reminder.ts（纯函数，有单测）：基准时刻 = 手动设的提醒时刻，
+ * 或由截止时间/日期推出的时刻；再按「提前量 + 已提醒次数 × 间隔」算触发点。
+ * 这里只负责挑候选并过滤 —— 单条任务的全部判定都在那个纯函数里。
+ */
+export function dueReminders(now: Date = new Date()): Task[] {
+  const policy = reminderPolicy()
+  // 候选：非终态，且「有显式提醒时刻」或「有截止」（自动规则的来源）
+  const rows = conn()
+    .prepare(
+      `SELECT ${TASK_COLUMNS} FROM task
+        WHERE deleted_at IS NULL
+          AND status NOT IN ('done', 'abandoned', 'waiting')
+          AND (reminder_at IS NOT NULL OR due_date IS NOT NULL)
+        ORDER BY reminder_at ASC, due_date ASC`
+    )
+    .all() as Task[]
+  return rows.filter((t) => decideReminder(t, policy, now).fire)
+}
+
+/**
+ * 记一次提醒：写回已提醒次数与基准；次数用完就把**显式**的 reminder_at 清掉（一次性语义不变）。
+ * 自动提醒（没有 reminder_at）靠次数停下，不需要清任何字段。
+ */
+export function recordReminderFire(id: number, fired: number, base: string, done: boolean): void {
+  const c = conn()
+  const row = c.prepare('SELECT reminder_at FROM task WHERE id = ?').get(id) as
+    | { reminder_at: string | null }
+    | undefined
+  const clear = done && !!row?.reminder_at
+  c.prepare(
+    `UPDATE task SET reminder_fired = ?, reminder_base = ?, reminder_at = ?, updated_at = ? WHERE id = ?`
+  ).run(fired, base, clear ? null : (row?.reminder_at ?? null), nowStamp(), id)
+}
+
+/**
+ * 用户处理过了（知道了 / 查看）：清掉显式提醒时刻，并把计数推到「已用完」。
+ *
+ * 那个计数不能省：自动提醒（没有 reminder_at）没有字段可清，若不记「已处理」，
+ * 下一轮会按剩余次数继续弹 —— 用户明明已经看过了。
+ */
 export function dismissReminder(taskId: number): Task | null {
-  conn().prepare('UPDATE task SET reminder_at = NULL, updated_at = ? WHERE id = ?').run(nowStamp(), taskId)
+  const t = getTask(taskId)
+  if (!t) return null
+  const policy = reminderPolicy()
+  conn()
+    .prepare(
+      'UPDATE task SET reminder_at = NULL, reminder_fired = ?, reminder_base = ?, updated_at = ? WHERE id = ?'
+    )
+    .run(Math.max(1, policy.repeatCount), reminderBaseAt(t, policy), nowStamp(), taskId)
   return getTask(taskId)
 }
 

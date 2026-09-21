@@ -18,6 +18,10 @@ export interface Task {
   /** 截止时刻 HH:MM（空 = 当天结束前都算没到期） */
   due_time: string | null
   reminder_at: string | null
+  /** 已提醒次数（提醒次数设置的记账） */
+  reminder_fired: number | null
+  /** 计数所依据的基准时刻；基准变了就重新计数 */
+  reminder_base: string | null
   list_id: number | null
   parent_id: number | null
   repeat_period: RepeatPeriod

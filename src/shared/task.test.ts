@@ -21,6 +21,8 @@ const mk = (id: number, parent: number | null, status: Task['status'], extra: Pa
     start_time: null,
     due_time: null,
     reminder_at: null,
+    reminder_fired: null,
+    reminder_base: null,
     list_id: null,
     parent_id: parent,
     repeat_period: 'none',

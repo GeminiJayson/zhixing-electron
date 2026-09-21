@@ -125,16 +125,17 @@ describe('架构约束 · 已知的多步写必须包事务', () => {
  * （activeReminders 非空 → 下一轮 tick 直接 return）。这条断言把顺序钉住。
  */
 describe('架构约束 · 提醒必须先派发后消费', () => {
-  it('startReminderDispatch 体内 dispatchReminders 在 dismissReminder 之前', () => {
+  it('startReminderDispatch 体内 dispatchReminders 在记账之前', () => {
     const source = readFileSync(join(process.cwd(), 'src/main/index.ts'), 'utf8')
     const at = source.indexOf('function startReminderDispatch')
     expect(at, '找不到 startReminderDispatch').toBeGreaterThan(-1)
     const body = source.slice(at, source.indexOf('\n}', at))
     const push = body.indexOf('dispatchReminders()')
-    const consume = body.indexOf('dismissReminder(')
+    // 记账 = 写回「第几次提醒」并在次数用完时清 reminder_at。它同样不可回滚。
+    const consume = body.indexOf('recordReminderFire(')
     expect(push, '体内应有 dispatchReminders()').toBeGreaterThan(-1)
-    expect(consume, '体内应有 dismissReminder(').toBeGreaterThan(-1)
-    expect(push, '必须先派发、后消费').toBeLessThan(consume)
+    expect(consume, '体内应有 recordReminderFire(').toBeGreaterThan(-1)
+    expect(push, '必须先派发、后记账').toBeLessThan(consume)
   })
 })
 

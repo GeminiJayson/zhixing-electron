@@ -26,6 +26,21 @@ export interface AppSettings {
   reminder_enabled: boolean
   /** 到点时是否发**系统通知**（主窗口收进托盘时也能提醒） */
   reminder_notify: boolean
+  // ---- 提醒策略：提前量、自动提醒规则、重复次数 ----
+  /** 提前量（分钟）：自动提醒按「基准时刻 − 提前量」触发 */
+  reminder_lead_minutes: number
+  /** 规则一：有截止**时刻**的任务自动提醒 */
+  reminder_rule_due_time: boolean
+  /** 规则二：只有截止**日期**的任务，在当天 reminder_day_clock 提醒 */
+  reminder_rule_due_date: boolean
+  /** 规则二用的当天时刻（HH:MM） */
+  reminder_day_clock: string
+  /** 规则三：只自动提醒优先级 ≥ 此值的任务（0 = 不限） */
+  reminder_rule_priority_min: number
+  /** 同一条任务最多提醒几次（1 = 只提醒一次，即旧行为） */
+  reminder_repeat_count: number
+  /** 重复提醒的间隔（分钟） */
+  reminder_repeat_interval_minutes: number
   calendar_show_done: boolean
   recycle_retention_days: number
   widget_enabled: boolean
@@ -93,6 +108,12 @@ const bool = (raw: string | undefined, fallback: boolean): boolean =>
 const str = (raw: string | undefined, fallback: string): string =>
   raw === undefined || raw === '' ? fallback : raw
 
+/** HH:MM（24 小时制）；认不出就回退默认时刻。 */
+const clock = (raw: string | undefined, fallback: string): string => {
+  const v = (raw ?? '').trim()
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(v) ? v : fallback
+}
+
 const oneOf = <T extends string>(raw: string | undefined, values: readonly T[], fallback: T): T =>
   values.includes(raw as T) ? (raw as T) : fallback
 
@@ -118,6 +139,15 @@ export function parseSettings(raw: Record<string, string> = {}): AppSettings {
     pomodoro_auto_break: bool(raw.pomodoro_auto_break, false),
     reminder_enabled: bool(raw.reminder_enabled, true),
     reminder_notify: bool(raw.reminder_notify, true),
+    reminder_lead_minutes: num(raw.reminder_lead_minutes, 0, 0, 1440),
+    reminder_rule_due_time: bool(raw.reminder_rule_due_time, true),
+    // 默认**关**：打开它等于把每一条「只有截止日期」的历史任务都变成提醒，
+    // 升级后立刻是一堆弹窗。有截止时刻的那条默认开 —— 显式写了时刻本就是要提醒。
+    reminder_rule_due_date: bool(raw.reminder_rule_due_date, false),
+    reminder_day_clock: clock(raw.reminder_day_clock, '09:00'),
+    reminder_rule_priority_min: num(raw.reminder_rule_priority_min, 0, 0, 8),
+    reminder_repeat_count: num(raw.reminder_repeat_count, 1, 1, 20),
+    reminder_repeat_interval_minutes: num(raw.reminder_repeat_interval_minutes, 10, 1, 240),
     calendar_show_done: bool(raw.calendar_show_done, false),
     recycle_retention_days: num(raw.recycle_retention_days, 30, 1, 365),
     widget_enabled: bool(raw.widget_enabled, true),
@@ -179,6 +209,13 @@ export const DEFAULT_SETTINGS: Record<string, string> = {
   pomodoro_focus_min: '25',
   pomodoro_break_min: '5',
   reminder_enabled: '1',
+  reminder_lead_minutes: '0',
+  reminder_rule_due_time: '1',
+  reminder_rule_due_date: '0',
+  reminder_day_clock: '09:00',
+  reminder_rule_priority_min: '0',
+  reminder_repeat_count: '1',
+  reminder_repeat_interval_minutes: '10',
   capture_hotkey: 'ctrl+shift+s',
   quick_capture_hotkey: 'ctrl+alt+n',
   widget_hotkey: 'ctrl+shift+d',

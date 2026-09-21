@@ -5,7 +5,7 @@
  * 此前 list_folder 表只有 quickAdd 的隐式写入：任务没有分组视图、不能按清单浏览或移动，
  * 与 Python 版的列表数据模型实际不可互操作。
  */
-import { conn, nowStamp } from './connection'
+import { conn, nowStamp, TASK_COLUMNS } from './connection'
 import { batchMove } from './task-ops'
 import type { ListFolder, Task } from '../../shared/types'
 
@@ -99,9 +99,10 @@ export function listTasksByList(listId: number | null): Task[] {
         ' UNION' +
         ' SELECT t.id FROM task t JOIN seed ON t.parent_id = seed.id WHERE t.deleted_at IS NULL' +
         ')' +
-        ' SELECT id, title, notes_md, status, priority, due_date, start_date, reminder_at,' +
-        ' list_id, parent_id, repeat_period, repeat_rule, streak, sort_key, resume_at,' +
-        ' last_reset_date, completed_at, created_at, updated_at' +
+        // 复用权威列清单：此前这里是手抄的一份，漏了 start_time / due_time，
+        // 于是清单视图里 TaskRow 拿不到这两个字段、进度条退化成 00:00–23:59
+        ' SELECT ' +
+        TASK_COLUMNS +
         ' FROM task WHERE id IN (SELECT id FROM seed)' +
         ' ORDER BY sort_key ASC, id ASC'
     )

@@ -761,6 +761,84 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                 onChange={(e) => void update('reminder_enabled', e.target.checked ? '1' : '0')}
               />
             </label>
+            {settings.reminder_enabled && (
+              <div className="set-sub">
+                <p className="u-aux">
+                  下面三项决定「哪些任务会自动提醒」。手动在任务里设过提醒时刻的，一律以手动为准。
+                </p>
+                <label className="set-row">
+                  <span>提前提醒</span>
+                  <input
+                    type="number"
+                    className="field field--num"
+                    min={0}
+                    max={1440}
+                    step={5}
+                    value={settings.reminder_lead_minutes}
+                    onChange={(e) => void update('reminder_lead_minutes', e.target.value)}
+                  />
+                  <span className="u-aux">分钟（0 = 到点才提醒）</span>
+                </label>
+                <label className="set-row">
+                  <span>有截止时刻的任务自动提醒</span>
+                  <input
+                    type="checkbox"
+                    checked={settings.reminder_rule_due_time}
+                    onChange={(e) => void update('reminder_rule_due_time', e.target.checked ? '1' : '0')}
+                  />
+                </label>
+                <label className="set-row">
+                  <span>只有截止日期的任务当天提醒</span>
+                  <input
+                    type="checkbox"
+                    checked={settings.reminder_rule_due_date}
+                    onChange={(e) => void update('reminder_rule_due_date', e.target.checked ? '1' : '0')}
+                  />
+                  <input
+                    type="time"
+                    className="field"
+                    value={settings.reminder_day_clock}
+                    onChange={(e) => void update('reminder_day_clock', e.target.value)}
+                  />
+                </label>
+                <label className="set-row">
+                  <span>只自动提醒优先级 ≥</span>
+                  <input
+                    type="number"
+                    className="field field--num"
+                    min={0}
+                    max={8}
+                    value={settings.reminder_rule_priority_min}
+                    onChange={(e) => void update('reminder_rule_priority_min', e.target.value)}
+                  />
+                  <span className="u-aux">0 = 不限</span>
+                </label>
+                <label className="set-row">
+                  <span>每条最多提醒</span>
+                  <input
+                    type="number"
+                    className="field field--num"
+                    min={1}
+                    max={20}
+                    value={settings.reminder_repeat_count}
+                    onChange={(e) => void update('reminder_repeat_count', e.target.value)}
+                  />
+                  <span className="u-aux">次</span>
+                </label>
+                <label className="set-row">
+                  <span>重复间隔</span>
+                  <input
+                    type="number"
+                    className="field field--num"
+                    min={1}
+                    max={240}
+                    value={settings.reminder_repeat_interval_minutes}
+                    onChange={(e) => void update('reminder_repeat_interval_minutes', e.target.value)}
+                  />
+                  <span className="u-aux">分钟</span>
+                </label>
+              </div>
+            )}
             <label className="set-row">
               <span>剪贴板监听</span>
               <input
