@@ -846,3 +846,16 @@
 .ntree__type--link {
   color: var(--accent-warm);
 }
+
+/* 单元格里的图片：缩略图展示，原图数据仍完整保存在附件里 */
+.xlsx-cell-img {
+  max-height: 22px;
+  max-width: 100%;
+  vertical-align: middle;
+  border-radius: 2px;
+  cursor: zoom-in;
+}
+/* ag-grid 容器：撑满编辑区 */
+.xlsx-ag {
+  min-height: 240px;
+}

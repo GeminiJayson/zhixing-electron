@@ -1,6 +1,6 @@
 import type { EditorView } from '@codemirror/view'
 import { sanitizeHtml } from '@shared/sanitize-html'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import { ExternalLink, FileText, Morph, IconData, Link2, Plus, Sparkles, Trash2, UserPlus } from '@renderer/lib/icons'
 import { subscribeDomain } from '@shared/events'
@@ -11,6 +11,8 @@ import { parseLinkItems, type NoteLinkItem } from '@shared/note-links'
 import { t } from '../i18n'
 import { MarkdownEditor, RichTextEditor, blockFingerprint, locateBlockInView } from '../components/MarkdownEditor'
 import { MarkdownView } from '../components/MarkdownView'
+// Excel 网格懒加载：ag-grid 体积可观，只有真的打开 Excel 笔记才下载
+const XlsxGrid = lazy(() => import('../components/XlsxGrid'))
 import { NoteHistory } from '../components/NoteHistory'
 import { NoteTree, type NoteFormat } from '../components/NoteTree'
 import { Toolbar } from '../components/Toolbar'
@@ -1129,28 +1131,11 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
                     </div>
                   ) : (
                     <div className="editor__office-body">
-                      <table className="xlsx-grid">
-                        <tbody>
-                          {excelRows.map((row, ri) => (
-                            <tr key={ri}>
-                              {row.map((cell, ci) => (
-                                <td
-                                  key={ci}
-                                  contentEditable
-                                  suppressContentEditableWarning
-                                  onBlur={(ev) => {
-                                    const next = excelRows.map((r) => [...r])
-                                    next[ri][ci] = ev.currentTarget.textContent ?? ''
-                                    scheduleExcelSave(next)
-                                  }}
-                                >
-                                  {cell}
-                                </td>
-                              ))}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                      {/* ag-grid 走懒加载：它的体积可观，只有真的打开 Excel 笔记才会下载。
+                          虚拟滚动是这里的关键 —— 几千行也只渲染可见的那几十行。 */}
+                      <Suspense fallback={<p className="u-aux">正在加载表格…</p>}>
+                        <XlsxGrid rows={excelRows} onChange={scheduleExcelSave} />
+                      </Suspense>
                     </div>
                   )}
                 </div>
