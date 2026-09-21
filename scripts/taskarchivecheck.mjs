@@ -108,6 +108,20 @@ for (let i = 0; i < 7; i++) { await sleep(500); if (i % 2 === 1) console.log('  
   check('任务页出现「＋ 清单」与「清单设置」', ui.hasNew === true && ui.hasEdit === true, J(ui))
 
   console.log('【步骤】Word 导出')
+  // Word 笔记的编辑区头部要有「导出 .docx」按钮（上一轮只做了通道，没有入口）
+  await evaluate(`document.querySelector('[data-nav-item="notes"]')?.click()`)
+  await sleep(2200)
+  let wordBtn = null
+  for (let i = 0; i < 8; i++) {
+    await evaluate('document.querySelectorAll(\'.ntree__note\')[' + i + ']?.click()')
+    await sleep(1200)
+    wordBtn = await evaluate(`(() => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim() === '导出 .docx'); return b ? { found: true, disabled: b.disabled } : null })()`)
+    if (wordBtn) break
+  }
+  check('Word 笔记的编辑区出现了「导出 .docx」按钮', wordBtn?.found === true && wordBtn.disabled === false, J(wordBtn))
+  await evaluate(`document.querySelector('[data-nav-item="tasks"]')?.click()`)
+  await sleep(1200)
+
   // ---- Word 导出：转出 .docx，且**原文件一字未动**
   const wordOut = await evaluate(`(async () => {
     const res = await window.zhixing.db.exportDocx('C:/tmp/知行导出验证/原文.docx', '<h1>标题</h1><p>正文<strong>加粗</strong></p><ul><li>一项</li></ul>', '我的文档')

@@ -1110,6 +1110,21 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
                       {current.format === 'word' ? 'Word 可编辑（自动写回 .docx）' : 'Excel 可编辑（自动写回 .xlsx）'}
                       {officeEdit?.message ? ` · ${officeEdit.message}` : ''}
                     </span>
+                    {current.format === 'word' && (
+                      <button
+                        className="text-btn"
+                        title="把当前编辑内容导出成新的 .docx（原文件保持不动）"
+                        onClick={() => {
+                          void window.zhixing.db
+                            .exportDocx(content, officeEdit?.html ?? '', current.title)
+                            .then((r) =>
+                              onNotice(r.ok ? '已导出到 ' + (r.path ?? '') : '导出失败：' + (r.message ?? ''))
+                            )
+                        }}
+                      >
+                        导出 .docx
+                      </button>
+                    )}
                     <button
                       className="text-btn"
                       onClick={() =>
