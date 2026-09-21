@@ -34,7 +34,7 @@
 | 下周X 解析串台 | 词法与解析共用 WEEK_RE | 单测 4 项（先红 3 项） |
 | 完成态 4 份实现（实际 9 处） | 全部收敛到 isTerminal + doneOf | 单测 3 项 + 护栏 ⑩ |
 | 查询静默空集 / 裸词 done | 解析期校验 due 并记 unknown；裸词 done 落地 | 单测 3 项 |
-| 布局方向重置模板 | openTemplate 用 ref 读 rankdir，去掉依赖 | 类型 + 构建（**验证较弱**） |
+| 布局方向重置模板 | openTemplate 用 ref 读 rankdir，依赖砍成空数组 | 护栏「切换布局方向不得重置当前模板」（2 条断言，变异验证：把 rankdir 加回依赖即变红） |
 | 右键两个重叠菜单 | 删原生监听，合并为一个菜单 | 护栏 ⑪ + 笔记页回归 |
 | 脚本：CDP 样板 47 份 | **大部分**：抽出 scripts/lib/cdp.mjs；棘轮 20 → 15（本轮净迁 5 个，逐条与原版对照后只留跑得动的）；迁移器本身入库并修掉 3 个缺陷；lib 的 CDP 超时 15s → 45s（可配） | 5 个迁移脚本各自跑绿 + 10 个逐条对照的原版基线表 + 护栏 ⑯（变异验证）+ 单测 29 条 |
 | 脚本：seedmonitor 统计失败却永不失败 | 末尾补 process.exit(problems.length ? 1 : 0) | 护栏 ⑭（变异验证：去掉退出码即变红） |
@@ -54,7 +54,7 @@
 ### 累计证据
 
 - 单元测试 **394 项** / 37 个文件（2026-09-22 复核时的现值）
-- **21 道架构护栏**（src/shared/architecture.test.ts，39 条断言）—— 其中 6 道做过变异验证（把缺陷改回去，护栏确实变红）
+- **22 道架构护栏**（src/shared/architecture.test.ts，41 条断言）—— 其中 7 道做过变异验证（把缺陷改回去，护栏确实变红）
 - 端到端：remindercheck 18/18、listguardcheck 4/4、noteeditguard 5/5、tasksynccheck 20/20、dialogcheck 10/10、rollcheck 25/25、reminderstylecheck 11/11、reminderpolicycheck 7/7、notelinkcheck 7/7
 
 ---

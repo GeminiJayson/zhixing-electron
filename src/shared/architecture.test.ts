@@ -756,3 +756,29 @@ describe('架构约束 · 自身 URL 判定必须是精确比较', () => {
     expect(read('src/main/security.ts')).toContain("from '../shared/app-url'")
   })
 })
+
+/**
+ * 布局方向只用于「打开模板时按当前方向排一次」。原实现把 rankdir 放进了 openTemplate
+ * 的 useCallback 依赖，而下面的初始化 effect 又依赖 openTemplate —— 于是**切换方向就会
+ * 重跑初始化**，把用户正在看的模板换成列表里的第一个。修法是用 ref 读最新方向。
+ *
+ * 之所以写成断言而不是只留注释：把 rankdir 加回依赖数组看起来正是「补全依赖」的规范操作，
+ * 只有这条回归断言能拦住它。
+ */
+describe('架构约束 · 切换布局方向不得重置当前模板', () => {
+  const src = readFileSync(join(process.cwd(), 'src/renderer/src/pages/WorkflowPage.tsx'), 'utf8')
+  const grab = (): RegExpExecArray | null =>
+    /const openTemplate = useCallback\(([\s\S]*?)\n  \}, \[([^\]]*)\]\)/.exec(src)
+
+  it('openTemplate 的依赖里不许有 rankdir', () => {
+    const m = grab()
+    if (!m) throw new Error('没找到 openTemplate 的 useCallback')
+    expect(m[2], 'rankdir 回到依赖里 → 切换方向会重跑初始化、把当前模板换成列表第一个').not.toContain('rankdir')
+  })
+
+  it('openTemplate 里读的是 rankdirRef.current', () => {
+    const m = grab()
+    if (!m) throw new Error('没找到 openTemplate 的 useCallback')
+    expect(m[1]).toContain('rankdirRef.current')
+  })
+})
