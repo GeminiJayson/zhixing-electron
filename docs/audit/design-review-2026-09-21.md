@@ -495,7 +495,15 @@ applyMru 的 sort+reverse、listTasksByList 漏 start_time/due_time、图谱增�
 - 证据：\`lib/usePanZoom.ts:74\`；\`GraphPage.tsx:701\`、\`WorkflowPage.tsx:441\` 同样。
 - 复核：未核实（与第三节同源，两组独立发现）
 
-### [中] 主题包默认值两处且不一致，未知包名静默换主题
+### [中] 主题包默认值两处且不一致，未知包名静默换主题 —— **已修（2026-09-22）**
+
+以 Python 版为准统一到「青竹」（core/constants.py、settings.py、fluent_bridge.py 三处都是它，
+accent #0D9488），并加 src/shared/theme-default.test.ts 把 DEFAULT_THEME_PACK、
+DEFAULT_SETTINGS.theme_pack、parseSettings({}).theme_pack 三个值钉在一起。
+
+以前没暴露的原因值得记：E2E 跑在用户库上，而库里存着 theme_pack=墨黑，
+于是 themecheck 里「默认主题包是墨黑」的断言一直是「过」的 —— 它测的是用户的设置，
+不是代码的默认值。E2E 改成跑夹具库（空库）之后立刻现形。
 - 证据：\`shared/settings.ts:106/176\` 默认 \`'青竹'\`；\`shared/theme-packs.ts:91\` DEFAULT_THEME_PACK=\`'墨黑'\`。两版共用同一只 settings 表。
 - 复核：未核实
 

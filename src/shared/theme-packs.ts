@@ -88,7 +88,19 @@ export const THEME_PACKS: Record<string, ThemePack> = {
 
 export const THEME_PACK_NAMES: string[] = ["冰川蓝", "墨黑", "奶咖棕", "暖沙", "暮色", "柠檬黄", "樱花粉", "海盐蓝", "莓果粉", "薄荷绿", "薰衣草紫", "蜜桃橘", "青竹", "香芋紫"]
 
-export const DEFAULT_THEME_PACK = '墨黑'
+/**
+ * 默认主题包。
+ *
+ * 这个值必须和 settings.ts 的 DEFAULT_SETTINGS.theme_pack 一致，也必须和 Python 版一致
+ * （core/constants.py 与 settings.py 都是「青竹」，accent #0D9488）—— 两版共用同一张 settings 表，
+ * 默认值不一致会让同一个库被两个客户端先后打开时表现跳变。
+ *
+ * 这里曾经写的是「墨黑」，与 settings.ts 的「青竹」并存了很久；两侧都有各自的使用者，
+ * 谁也没发现。是 E2E 改成跑夹具库（空库）之后才暴露的：themecheck 断言默认是墨黑，
+ * 而它此前一直是通过读用户库里存的 theme_pack=墨黑 才「过」的。
+ * 现在由 settings.test.ts 里的一条断言把这两个值钉在一起，防止再次分叉。
+ */
+export const DEFAULT_THEME_PACK = '青竹'
 
 export function resolveThemePack(name: string | undefined): ThemePack {
   return THEME_PACKS[name ?? ''] ?? THEME_PACKS[DEFAULT_THEME_PACK]

@@ -7,14 +7,13 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { copyFileSync, existsSync, mkdirSync, rmSync } from 'node:fs'
-import { setTimeout as sleep } from 'node:timers/promises'
+import { ROOT, launchApp, createChecker, J, sleep } from './lib/cdp.mjs'
+
+// 老脚本里的 root 一律指向仓库根，原样保留的自有声明就能继续用
+const root = ROOT
+// sql() 助手内部用 require('node:sqlite')，这行不能少：
+// 少了它，顶层 await + 全局 require 会让 Node 报 ERR_AMBIGUOUS_MODULE_SYNTAX
 const require = createRequire(import.meta.url)
-const electronPath = require('electron')
-const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const repoRoot = join(root, '..')
-const backup = join(repoRoot, 'backups', 'electron-migration', 'zhixing-before-electron-write.db')
-const tmpHome = join(root, '.screenshots', 'theme-home')
-const PORT = 9240
 const sql = (f, q) => {
   // 原来走 `execFileSync('sqlite3', ...)` —— 那要系统装了 CLI 才有，本机与 CI 都没有，
   // 于是脚本一跑到 sql() 就 ENOENT 崩掉，后面的断言根本没机会执行（这也是污染长期没被发现的原因）。
@@ -27,62 +26,28 @@ const sql = (f, q) => {
     db.close()
   }
 }
-// 迁移前那份备份早已从工作区清掉 —— 缺了就退回「当前正式库的副本」。
-// 这些脚本要的只是「一张有数据的库」，对来源不敏感；没有这层回退，它们一启动就退出。
-const liveDb = join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db')
-const seedDb = existsSync(backup) ? backup : liveDb
-if (!existsSync(seedDb)) {
-  console.error('✗ 既没有迁移前备份，也找不到 ' + liveDb)
-  process.exit(1)
-}
-console.log('【基库】' + (seedDb === backup ? '迁移前备份' : '当前正式库副本'))
-rmSync(tmpHome, { recursive: true, force: true })
-mkdirSync(tmpHome, { recursive: true })
-copyFileSync(seedDb, join(tmpHome, 'zhixing.db'))
-const child = spawn(electronPath, ['.', `--remote-debugging-port=${PORT}`, `--user-data-dir=${join(tmpHome, 'p')}`], {
-  cwd: root, env: { ...process.env, ZHIXING_HOME: tmpHome }, stdio: ['ignore', 'pipe', 'pipe'],
-})
-/** 每接一个 page target（主窗口 / 浮窗）就给一份独立求值器。 */
-const attach = async (target) => {
-  const ws = new WebSocket(target.webSocketDebuggerUrl)
-  await new Promise((r) => ws.addEventListener('open', r, { once: true }))
-  const send = (m, p = {}) => new Promise((resolve) => {
-    const id = Math.floor(Math.random() * 1e6)
-    const h = (ev) => { const x = JSON.parse(ev.data); if (x.id !== id) return; ws.removeEventListener('message', h); resolve(x) }
-    ws.addEventListener('message', h); ws.send(JSON.stringify({ id, method: m, params: p })) })
-  await send('Runtime.enable')
-  const ev = async (e) => {
-    const r = await send('Runtime.evaluate', { expression: e, returnByValue: true, awaitPromise: true })
-    if (r.result?.exceptionDetails) throw new Error(r.result.exceptionDetails.exception?.description ?? 'fail')
-    return r.result?.result?.value }
-  return { ws, ev }
-}
-// 浮窗是第二个 page target：主题检查要同时盯着主窗口和浮窗
-let targets = []
-for (let i = 0; i < 40 && targets.length < 2; i++) {
-  await sleep(500)
-  try { targets = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).filter((t) => t.type === 'page') } catch {}
-}
-const mainTarget = targets.find((t) => !t.url.includes('widget=1'))
-const widgetTarget = targets.find((t) => t.url.includes('widget=1'))
-if (!mainTarget || !widgetTarget) { console.error('✗ 无法连接（主窗口/浮窗）'); child.kill(); process.exit(1) }
-const { ws, ev } = await attach(mainTarget)
-const widget = await attach(widgetTarget)
-await sleep(2600)
-const results = []
-const check = (n, ok, d = '') => { results.push([n, ok]); console.log(`${ok ? '✓' : '✗'} ${n}${d ? ' — ' + d : ''}`) }
-const token = (name) => ev(`getComputedStyle(document.documentElement).getPropertyValue('${name}').trim()`)
-const wToken = (name) => widget.ev(`getComputedStyle(document.documentElement).getPropertyValue('${name}').trim()`)
 
-// 初始：墨黑 + light
+const tmpHome = join(ROOT, '.screenshots', 'theme-home')
+const PORT = 9240
+
+const app = await launchApp({ port: PORT, home: tmpHome })
+const { check, finish } = createChecker()
+/** 主窗口求值器：老脚本里叫 ev，保留这个名字少改正文。 */
+const ev = app.evaluate
+/** 浮窗是第二个 page target：主题检查要同时盯着主窗口和浮窗。 */
+const widget = await app.attach((x) => x.type === 'page' && x.url.includes('widget=1'))
+const token = (name) => ev(`getComputedStyle(document.documentElement).getPropertyValue('${name}').trim()`)
+const wToken = (name) => widget.evaluate(`getComputedStyle(document.documentElement).getPropertyValue('${name}').trim()`)
+
+// 初始：默认包（青竹）+ light —— 默认值以 settings/theme-packs 的单一来源为准
 const canvas0 = await token('--bg-canvas')
-check('默认主题包（墨黑）的 canvas 生效', canvas0.toLowerCase() === '#f5f5f5', canvas0)
+check('默认主题包（青竹）的 canvas 生效', canvas0.toLowerCase() === '#f4faf8', canvas0)
 const bodyBg0 = await ev(`getComputedStyle(document.body).backgroundColor`)
-check('主窗口底色由主题变量驱动（不是透明的窗口底色）', bodyBg0 === 'rgb(245, 245, 245)', bodyBg0)
+check('主窗口底色由主题变量驱动（不是透明的窗口底色）', bodyBg0 === 'rgb(244, 250, 248)', bodyBg0)
 const accent0 = await token('--accent')
-check('强调色独立生效', accent0.toLowerCase() === '#2563eb', accent0)
+check('强调色独立生效', accent0.toLowerCase() === '#0d9488', accent0)
 const wCanvas0 = await wToken('--bg-canvas')
-check('浮窗初始与主窗口同为默认主题包浅色', wCanvas0.toLowerCase() === '#f5f5f5', wCanvas0)
+check('浮窗初始与主窗口同为默认主题包浅色', wCanvas0.toLowerCase() === '#f4faf8', wCanvas0)
 
 // 切到设置页并换主题包
 await ev(`document.querySelector('[data-nav-item="settings"]')?.click()`)
@@ -113,9 +78,9 @@ const warm = await token('--accent-warm')
 check('语义色（暖色）取该包 dark 的取值', warm.toLowerCase() === '#f3b58a', warm)
 
 // --- 桌面浮窗（?widget=1 的第二窗口）：换包 / 切明暗要跟着主窗口一起走 ---
-const wSurface = await widget.ev(`document.documentElement.dataset.surface`)
+const wSurface = await widget.evaluate(`document.documentElement.dataset.surface`)
 check('浮窗连的是 widget 视图', wSurface === 'widget', String(wSurface))
-const wBodyBg = await widget.ev(`getComputedStyle(document.body).backgroundColor`)
+const wBodyBg = await widget.evaluate(`getComputedStyle(document.body).backgroundColor`)
 check('浮窗保持透明（透明窗口依赖它）', wBodyBg === 'rgba(0, 0, 0, 0)', wBodyBg)
 const wCanvas1 = await wToken('--bg-canvas')
 check('换主题包后浮窗同色', wCanvas1.toLowerCase() === canvas2.toLowerCase(), wCanvas1)
@@ -131,15 +96,10 @@ const wCanvas2 = await wToken('--bg-canvas')
 check('浮窗同步切回浅色', wCanvas2.toLowerCase() === '#fdf3f6', wCanvas2)
 
 // 持久化：theme_pack 落库
-ws.close()
-widget.ws.close()
-child.kill()
+await app.close()
 await sleep(600)
 const tmpDb = join(tmpHome, 'zhixing.db')
 check('主题包已写入 settings 表', sql(tmpDb, "SELECT value FROM settings WHERE key = 'theme_pack';") === '樱花粉')
 const realDb = join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db')
 check('真实库的主题包未被改动', sql(realDb, "SELECT value FROM settings WHERE key = 'theme_pack';") === '墨黑')
-rmSync(tmpHome, { recursive: true, force: true })
-const failed = results.filter(([, ok]) => !ok).length
-console.log(`\n${results.length - failed}/${results.length} 项通过`)
-process.exit(failed ? 1 : 0)
+process.exit(finish())

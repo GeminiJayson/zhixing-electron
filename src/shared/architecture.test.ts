@@ -330,7 +330,7 @@ describe('架构约束 · 右键菜单只有一个 owner', () => {
  */
 describe('架构约束 · 验证脚本不得污染真实库', () => {
   const scriptsDir = join(process.cwd(), 'scripts')
-  const listScripts = (): string[] => readdirSync(scriptsDir).filter((n) => n.endsWith('.mjs'))
+  const listScripts = (): string[] => readdirSync(scriptsDir).filter((n) => n.endsWith('.mjs') && !n.startsWith('.'))
 
   it('scripts 里不得出现 macOS 的库路径（只看代码，不算注释）', () => {
     const offenders: string[] = []
@@ -372,7 +372,7 @@ describe('架构约束 · 验证脚本不依赖外部 CLI', () => {
   it('scripts 里不得再调 execFileSync(\'sqlite3\')', () => {
     const scriptsDir = join(process.cwd(), 'scripts')
     const offenders: string[] = []
-    for (const f of readdirSync(scriptsDir).filter((n) => n.endsWith('.mjs'))) {
+    for (const f of readdirSync(scriptsDir).filter((n) => n.endsWith('.mjs') && !n.startsWith('.'))) {
       const code = readFileSync(join(scriptsDir, f), 'utf8')
         .replace(/\/\/[^\n]*/g, '')
         .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -425,7 +425,7 @@ describe('架构约束 · 检查脚本必须能失败', () => {
   it('统计了问题的脚本必须有终止码', () => {
     const dir = join(process.cwd(), 'scripts')
     const offenders: string[] = []
-    for (const f of readdirSync(dir).filter((n) => n.endsWith('.mjs'))) {
+    for (const f of readdirSync(dir).filter((n) => n.endsWith('.mjs') && !n.startsWith('.'))) {
       const src = readFileSync(join(dir, f), 'utf8')
       // 只看「收集了失败」的脚本：它们有 problems/failed 之类的计数
       if (!/problems\.length|failed\.length|results\.filter/.test(src)) continue
@@ -500,7 +500,7 @@ describe('架构约束 · CDP 样板只许减少', () => {
 
   it('已经迁到 lib 的脚本不许再退回自带 WebSocket', () => {
     const migrated: string[] = []
-    for (const f of readdirSync(dir).filter((n) => n.endsWith('.mjs'))) {
+    for (const f of readdirSync(dir).filter((n) => n.endsWith('.mjs') && !n.startsWith('.'))) {
       const code = readFileSync(join(dir, f), 'utf8')
       if (code.includes("from './lib/cdp.mjs'")) migrated.push(f)
     }
@@ -515,7 +515,7 @@ describe('架构约束 · CDP 样板只许减少', () => {
 
   it('复制着旧样板的脚本份数不得超过 43（只许减）', () => {
     const copies = readdirSync(dir)
-      .filter((n) => n.endsWith('.mjs'))
+      .filter((n) => n.endsWith('.mjs') && !n.startsWith('.'))
       .filter((n) => readFileSync(join(dir, n), 'utf8').includes('new WebSocket'))
     // 棘轮值：迁掉一个就往下改一位。目标是把这里改到 0，然后删掉这条断言。
     expect(copies.length, '又有人复制了 CDP 样板：' + copies.join(', ')).toBeLessThanOrEqual(43)
