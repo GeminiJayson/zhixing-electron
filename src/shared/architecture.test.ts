@@ -465,3 +465,52 @@ describe('架构约束 · 任务↔笔记关联必须能掉链', () => {
     expect(read('src/main/db/connection.ts')).toContain("add('task_note_link', 'source'")
   })
 })
+/**
+ * 第十六道护栏：CDP 样板只许减少，不许再长。
+ *
+ * 审计里这是严重项：同一套「拉起 Electron → 连 CDP → send → evaluate → check」
+ * 曾在 50 多个脚本里逐字复制，且已经分叉 —— rollcheck 只修了其中一份，
+ * 其余同款缺陷就一直留着。样板每多一份，修一处就要想「还有几份没改」。
+ *
+ * 这一轮只做到「抽出 scripts/lib/cdp.mjs + 迁移能验证的脚本」，没有硬套批量替换：
+ * 普查显示 55 个脚本里只剩 7 个还能被机械识别成同一形状，试改 11 个就有 6 个
+ * 在样板区段里藏着自己的常量（MARKER / shotDir / root）或第三种 connect() 实现。
+ * 盲改只会把 44 个本机验不了的脚本改坏，所以留一条棘轮把现状钉住：
+ * 份数只许往下走，迁移一个就把下面的数字减一。
+ */
+describe('架构约束 · CDP 样板只许减少', () => {
+  const dir = join(process.cwd(), 'scripts')
+
+  it('lib 里必须有完整的一份实现（连接 / id 配对 / 超时 / evaluate）', () => {
+    const lib = readFileSync(join(dir, 'lib', 'cdp.mjs'), 'utf8')
+    // 判据用结构，不用提示语原文 —— 旧样板里的超时文案已经分了三种，
+    // 拿某一种去比，这条断言会变成永远为真的空话。
+    expect(lib, 'lib 里没有建立连接').toContain('new WebSocket')
+    expect(lib, 'lib 里没有按消息 id 配对').toContain('x.id !== id')
+    expect(lib, 'lib 里没有超时').toContain('setTimeout')
+    expect(lib, 'lib 里没有 evaluate').toContain('Runtime.evaluate')
+  })
+
+  it('已经迁到 lib 的脚本不许再退回自带 WebSocket', () => {
+    const migrated: string[] = []
+    for (const f of readdirSync(dir).filter((n) => n.endsWith('.mjs'))) {
+      const code = readFileSync(join(dir, f), 'utf8')
+      if (code.includes("from './lib/cdp.mjs'")) migrated.push(f)
+    }
+    // 迁到库上的脚本至少要凑够本轮验过的那几个，否则有人可能整批退回
+    expect(migrated.length, '迁到 lib/cdp.mjs 的脚本太少了').toBeGreaterThanOrEqual(3)
+    for (const f of migrated) {
+      const code = readFileSync(join(dir, f), 'utf8')
+      expect(code.includes('new WebSocket'), f + ' 已经用 lib 了，不该再自己 new WebSocket').toBe(false)
+      expect(code.includes('Runtime.evaluate'), f + ' 已经用 lib 了，不该再自己发 evaluate').toBe(false)
+    }
+  })
+
+  it('复制着旧样板的脚本份数不得超过 51（只许减）', () => {
+    const copies = readdirSync(dir)
+      .filter((n) => n.endsWith('.mjs'))
+      .filter((n) => readFileSync(join(dir, n), 'utf8').includes('new WebSocket'))
+    // 棘轮值：迁掉一个就往下改一位。目标是把这里改到 0，然后删掉这条断言。
+    expect(copies.length, '又有人复制了 CDP 样板：' + copies.join(', ')).toBeLessThanOrEqual(51)
+  })
+})

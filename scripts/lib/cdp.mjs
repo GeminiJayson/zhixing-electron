@@ -1,0 +1,195 @@
+/**
+ * 端到端脚本共用的 CDP 骨架。
+ *
+ * 来由：这套「拉起 Electron → 连 CDP → send → evaluate → check → 收尾退出」
+ * 曾在 50 多个脚本里逐字复制，并且已经分叉成几种实现 ——
+ * rollcheck 只修了其中一份，其余同款缺陷就一直留着。
+ * 样板每多一份，修一处就要想「还有几份没改」；收到这里之后只有一处要改。
+ *
+ * 用法：
+ *   import { launchApp, createChecker } from './lib/cdp.mjs'
+ *   const app = await launchApp({ port: 9399, home: join(root, '.screenshots', 'xxx-home') })
+ *   const { check, finish } = createChecker()
+ *   ...
+ *   await app.close()
+ *   process.exit(finish())
+ */
+import { spawn } from 'node:child_process'
+import { createRequire } from 'node:module'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
+import { copyFileSync, mkdirSync, rmSync } from 'node:fs'
+import { setTimeout as sleep } from 'node:timers/promises'
+
+const require = createRequire(import.meta.url)
+
+/** 仓库根目录（scripts/lib 往上两级）。 */
+export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
+
+/** 收紧 PATH：Electron 起来时别被外部 node/python 干扰。 */
+const SYS_PATH = ['C:\\Windows\\System32', 'C:\\Windows', 'C:\\Windows\\System32\\Wbem'].join(';')
+
+/** 独立小窗口（小组件/提醒/条件/捕获）不是主界面，默认不作为目标。 */
+export const AUX_TARGET = /[?&](widget|reminder|condition|capture)=1/
+
+export { sleep }
+
+/**
+ * 拉起应用并接上 CDP。
+ *
+ * @param port 调试端口；各脚本仍各自错开，避免并行时互相踩
+ * @param home ZHIXING_HOME 指向的临时数据目录，会先清空
+ * @param match 选哪个 CDP 目标；默认挑主界面那个 page
+ * @param copyDb 是否先把真实库拷一份过去（脚本一律不该写真实库）
+ * @param tries 等窗口的轮次，每轮 500ms
+ * @param env 追加/覆盖的环境变量
+ * @param onWait 每轮的进度回调
+ */
+export async function launchApp({
+  port,
+  home,
+  match,
+  copyDb = true,
+  tries = 70,
+  env = {},
+  onWait = (i) => {
+    if (i % 4 === 0) console.log('【等窗口】' + Math.round(i * 0.5) + 's')
+  }
+}) {
+  rmSync(home, { recursive: true, force: true })
+  mkdirSync(home, { recursive: true })
+  if (copyDb) {
+    copyFileSync(join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db'), join(home, 'zhixing.db'))
+  }
+  const child = spawn(
+    require('electron'),
+    ['.', '--remote-debugging-port=' + port, '--user-data-dir=' + join(home, 'profile')],
+    {
+      cwd: ROOT,
+      env: {
+        ...process.env,
+        PATH: SYS_PATH + ';' + (process.env.PATH ?? ''),
+        ZHIXING_HOME: home,
+        ...env
+      },
+      stdio: ['ignore', 'pipe', 'pipe']
+    }
+  )
+
+  const targets = async () => {
+    try {
+      return await (await fetch('http://127.0.0.1:' + port + '/json/list')).json()
+    } catch {
+      return []
+    }
+  }
+
+  const pick = match ?? ((x) => x.type === 'page' && !AUX_TARGET.test(x.url))
+  let send = null
+  let ws = null
+  for (let i = 0; i < tries && !send; i++) {
+    const t = (await targets()).find(pick)
+    if (t) {
+      ws = new WebSocket(t.webSocketDebuggerUrl)
+      await new Promise((res) => ws.addEventListener('open', res, { once: true }))
+      send = makeSend(ws)
+      await send('Runtime.enable')
+    } else {
+      onWait(i)
+      await sleep(500)
+    }
+  }
+  if (!send) {
+    child.kill()
+    throw new Error('等不到 CDP 目标（已等 ' + tries * 0.5 + 's）')
+  }
+
+  return {
+    child,
+    ws,
+    send,
+    /** 当前所有 CDP 目标（脚本用它判断有没有多出/收起独立窗口）。 */
+    targets,
+    /** 跑一段浏览器侧表达式，返回它的值。 */
+    evaluate: async (expr, quiet) => {
+      if (!quiet) console.log('  · eval ' + String(expr).replace(/\s+/g, ' ').slice(0, 66))
+      const r = await send('Runtime.evaluate', {
+        expression: expr,
+        returnByValue: true,
+        awaitPromise: true
+      })
+      if (r.result?.exceptionDetails) {
+        throw new Error(r.result.exceptionDetails.exception?.description ?? 'eval 失败')
+      }
+      return r.result?.result?.value
+    },
+    close: async () => {
+      try {
+        ws.close()
+      } catch {
+        // 已经断了就算了
+      }
+      child.kill()
+      await sleep(400)
+    }
+  }
+}
+
+/** 一条 send：按消息 id 配对；15s 不到就是超时，能直接看出卡在哪一条。 */
+function makeSend(ws) {
+  return (method, params = {}) =>
+    new Promise((resolve, reject) => {
+      const id = Math.floor(Math.random() * 1e6)
+      const timer = setTimeout(() => {
+        ws.removeEventListener('message', h)
+        reject(new Error('CDP 超时（15s）：' + method))
+      }, 15000)
+      const h = (ev) => {
+        const x = JSON.parse(ev.data)
+        if (x.id !== id) return
+        clearTimeout(timer)
+        ws.removeEventListener('message', h)
+        resolve(x)
+      }
+      ws.addEventListener('message', h)
+      ws.send(JSON.stringify({ id, method, params }))
+    })
+}
+
+/**
+ * 断言收集器：只记结果，收尾统一算账。
+ *
+ * 原先每个脚本各写一份，还分叉成「推 ok」和「推 [名字, ok]」两种 ——
+ * 只有后者能在失败时报出是哪一条。统一成后者：失败清单比一个数字有用得多。
+ */
+export function createChecker() {
+  const results = []
+  const check = (name, ok, detail = '') => {
+    results.push({ name, ok: !!ok, detail })
+    console.log((ok ? '✓ ' : '✗ ') + name + (detail ? ' — ' + detail : ''))
+    return ok
+  }
+  /** 打印总账，返回进程退出码（0 = 全过）。 */
+  const finish = () => {
+    const failed = results.filter((r) => !r.ok)
+    console.log('')
+    if (failed.length) {
+      console.log('✗ ' + failed.length + ' 项未通过：')
+      for (const f of failed) console.log('   - ' + f.name + (f.detail ? ' — ' + f.detail : ''))
+    } else {
+      console.log('✓ 全部通过（' + results.length + ' 项）')
+    }
+    return failed.length ? 1 : 0
+  }
+  return {
+    check,
+    finish,
+    results,
+    get failed() {
+      return results.filter((r) => !r.ok).length
+    }
+  }
+}
+
+/** 把值塞进浏览器侧表达式时统一转 JSON。 */
+export const J = (v) => JSON.stringify(v)

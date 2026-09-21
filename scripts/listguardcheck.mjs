@@ -8,87 +8,14 @@
  * 断言写成行为而不是实现细节：不管这里最终用的是菜单还是两个按钮，
  * 「取消重命名之后不得出现删除确认」都必须成立。
  */
-import { spawn } from 'node:child_process'
-import { createRequire } from 'node:module'
-import { fileURLToPath } from 'node:url'
-import { dirname, join } from 'node:path'
-import { copyFileSync, mkdirSync, rmSync } from 'node:fs'
-import { setTimeout as sleep } from 'node:timers/promises'
+import { join } from 'node:path'
+import { ROOT, launchApp, createChecker, J, sleep } from './lib/cdp.mjs'
 
-const require = createRequire(import.meta.url)
-const electronPath = require('electron')
-const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const tmpHome = join(root, '.screenshots', 'listguard-home')
+const tmpHome = join(ROOT, '.screenshots', 'listguard-home')
 const PORT = 9386
-rmSync(tmpHome, { recursive: true, force: true })
-mkdirSync(tmpHome, { recursive: true })
-copyFileSync(join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db'), join(tmpHome, 'zhixing.db'))
 
-const SYS_PATH = ['C:\\Windows\\System32', 'C:\\Windows', 'C:\\Windows\\System32\\Wbem'].join(';')
-console.log('【启动】拉起 Electron…')
-const child = spawn(
-  electronPath,
-  ['.', '--remote-debugging-port=' + PORT, '--user-data-dir=' + join(tmpHome, 'profile')],
-  {
-    cwd: root,
-    env: { ...process.env, PATH: SYS_PATH + ';' + (process.env.PATH ?? ''), ZHIXING_HOME: tmpHome },
-    stdio: ['ignore', 'pipe', 'pipe']
-  }
-)
-
-const listTargets = async () => {
-  try {
-    return await (await fetch('http://127.0.0.1:' + PORT + '/json/list')).json()
-  } catch {
-    return []
-  }
-}
-
-let main = null
-for (let i = 0; i < 70 && !main; i++) {
-  const all = await listTargets()
-  const t = all.find((x) => x.type === 'page' && !/[?&](widget|reminder|condition|capture)=1/.test(x.url))
-  if (t) {
-    const ws = new WebSocket(t.webSocketDebuggerUrl)
-    await new Promise((res) => ws.addEventListener('open', res, { once: true }))
-    const send = (m, p = {}) =>
-      new Promise((resolve, reject) => {
-        const id = Math.floor(Math.random() * 1e6)
-        const timer = setTimeout(() => {
-          ws.removeEventListener('message', h)
-          reject(new Error('CDP 超时（15s）：' + m))
-        }, 15000)
-        const h = (ev) => {
-          const x = JSON.parse(ev.data)
-          if (x.id !== id) return
-          clearTimeout(timer)
-          ws.removeEventListener('message', h)
-          resolve(x)
-        }
-        ws.addEventListener('message', h)
-        ws.send(JSON.stringify({ id, method: m, params: p }))
-      })
-    await send('Runtime.enable')
-    main = {
-      evaluate: async (expr, quiet) => {
-        if (!quiet) console.log('  · eval ' + String(expr).replace(/\s+/g, ' ').slice(0, 66))
-        const r = await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })
-        if (r.result?.exceptionDetails) throw new Error(r.result.exceptionDetails.exception?.description ?? 'eval 失败')
-        return r.result?.result?.value
-      }
-    }
-  } else {
-    if (i % 4 === 0) console.log('【等窗口】' + Math.round(i * 0.5) + 's')
-    await sleep(500)
-  }
-}
-
-const results = []
-const check = (n, ok, d = '') => {
-  results.push(ok)
-  console.log((ok ? '✓ ' : '✗ ') + n + (d ? ' — ' + d : ''))
-}
-const J = (v) => JSON.stringify(v)
+const app = await launchApp({ port: PORT, home: tmpHome })
+const { check, finish } = createChecker()
 
 /** 当前弹框（如果有）的标题与是否出现删除确认。 */
 const dialogState = `(() => {
@@ -103,10 +30,10 @@ try {
     if (i % 3 === 2) console.log('  ' + Math.round((i + 1) * 0.5) + 's')
   }
 
-  await main.evaluate("document.querySelector('[data-nav-item=\"tasks\"]')?.click()")
+  await app.evaluate("document.querySelector('[data-nav-item=\"tasks\"]')?.click()")
   await sleep(1500)
 
-  const listId = await main.evaluate(`(async () => {
+  const listId = await app.evaluate(`(async () => {
     const folders = await window.zhixing.db.listFolders()
     const one = folders.find((f) => f.kind === 'list')
     if (one) return one.id
@@ -115,7 +42,7 @@ try {
   })()`)
   check('拿到一张可操作的清单', typeof listId === 'number' && listId > 0, J(listId))
 
-  await main.evaluate(`(() => {
+  await app.evaluate(`(() => {
     const s = document.querySelector('select[aria-label="按清单筛选"]')
     const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set
     setter.call(s, '${listId}')
@@ -125,7 +52,7 @@ try {
   await sleep(900)
 
   // 点「清单设置」
-  const opened = await main.evaluate(`(() => {
+  const opened = await app.evaluate(`(() => {
     const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim() === '清单设置')
     if (!b) return 'no-button'
     b.click()
@@ -135,8 +62,8 @@ try {
   await sleep(800)
 
   // 进来之后是什么？菜单（新实现）还是改名对话框（旧实现）都接受，但必须能分辨
-  const first = await main.evaluate(dialogState)
-  const menuItems = await main.evaluate(
+  const first = await app.evaluate(dialogState)
+  const menuItems = await app.evaluate(
     "(() => [...document.querySelectorAll('.popmenu button, .popmenu__item')].map((b) => b.textContent.trim()))()"
   )
   console.log('  首个界面：' + J({ dialog: first, menu: menuItems }))
@@ -150,22 +77,22 @@ try {
 
   if (first.open && first.title.includes('重命名')) {
     // 旧实现：改名对话框直接出现 —— 点取消，然后检查有没有滑向删除
-    await main.evaluate(
+    await app.evaluate(
       "[...document.querySelectorAll('.modal__foot button')].find((b) => b.textContent.trim() === '取消')?.click()"
     )
   } else {
     // 新实现：菜单。点「重命名清单」，再在对话框里取消
-    await main.evaluate(
+    await app.evaluate(
       "[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === '重命名清单')?.click()"
     )
     await sleep(700)
-    await main.evaluate(
+    await app.evaluate(
       "[...document.querySelectorAll('.modal__foot button')].find((b) => b.textContent.trim() === '取消')?.click()"
     )
   }
   await sleep(900)
 
-  const after = await main.evaluate(dialogState)
+  const after = await app.evaluate(dialogState)
   check(
     '取消重命名之后不得出现「删除清单」确认',
     !(after.open && after.title.includes('删除')),
@@ -175,9 +102,5 @@ try {
 } catch (err) {
   check('脚本跑完', false, err instanceof Error ? err.message : String(err))
 }
-const failed = results.filter((r) => !r).length
-console.log('')
-console.log(failed ? '✗ ' + failed + ' 项未通过' : '✓ 全部通过（' + results.length + ' 项）')
-await sleep(400)
-child.kill()
-process.exit(failed ? 1 : 0)
+await app.close()
+process.exit(finish())

@@ -35,7 +35,9 @@
 | 查询静默空集 / 裸词 done | 解析期校验 due 并记 unknown；裸词 done 落地 | 单测 3 项 |
 | 布局方向重置模板 | openTemplate 用 ref 读 rankdir，去掉依赖 | 类型 + 构建（**验证较弱**） |
 | 右键两个重叠菜单 | 删原生监听，合并为一个菜单 | 护栏 ⑪ + 笔记页回归 |
-| 脚本：CDP 样板 47 份 | **未做**（见文末技术债） | — |
+| 脚本：CDP 样板 47 份 | **部分**：抽出 scripts/lib/cdp.mjs；迁移 3 个脚本并跑绿；加棘轮护栏 | E2E 4/4 + 5/5 + 7/7 + 护栏 ⑯（做过变异验证） |
+| 脚本：seedmonitor 统计失败却永不失败 | 末尾补 process.exit(problems.length ? 1 : 0) | 护栏 ⑭（变异验证：去掉退出码即变红） |
+| 任务↔笔记关联只增不删 | 记来源 + 按来源对账（一删一增同事务） | 单测 11 项 + E2E 7/7 + 护栏 ⑮ |
 | 脚本：5 个未隔离 ZHIXING_HOME | 其中只有 capture 真写库 → 复制库副本隔离 | **实测**：跑 dark 截图后真实库仍是 light |
 | 脚本：13 个 macOS 库路径 | 统一改 %APPDATA% | 护栏 ⑫ |
 | 脚本：Gitee 上传失败退出码 | 逐条收集失败，末尾 exit(1) | 语法检查（**E2E 未做**：需真实凭据） |
@@ -50,26 +52,36 @@
 
 ### 累计证据
 
-- 单元测试 **305 项** / 31 个文件
-- **12 道架构护栏**（src/shared/architecture.test.ts，19 条断言）
-- 端到端：remindercheck 18/18、listguardcheck 4/4、noteeditguard 5/5、tasksynccheck 20/20、dialogcheck 10/10、rollcheck 25/25
+- 单元测试 **340 项** / 33 个文件
+- **16 道架构护栏**（src/shared/architecture.test.ts，28 条断言）—— 其中 4 道做过变异验证（把缺陷改回去，护栏确实变红）
+- 端到端：remindercheck 18/18、listguardcheck 4/4、noteeditguard 5/5、tasksynccheck 20/20、dialogcheck 10/10、rollcheck 25/25、reminderstylecheck 11/11、reminderpolicycheck 7/7、notelinkcheck 7/7
 
 ---
 
 ## 技术债（本轮未做，已记录）
 
-**1. CDP 样板抽取（原清单「严重」）**
+**1. CDP 样板抽取（原清单「严重」）—— 做了一半，另一半是被证据挡住的**
 
-47–50 个脚本里逐字复制着同一套 WebSocket + send + evaluate + check 样板，且已分叉成 3 种实现。抽 scripts/lib/cdp.mjs 是正确的，但：
+已做：抽出 scripts/lib/cdp.mjs（launchApp / createChecker / targets / J / sleep），
+迁移并跑绿 3 个脚本（listguardcheck 4/4、noteeditguard 5/5、notelinkcheck 7/7），
+加了棘轮护栏 ⑯：样板份数只许减不许增，已迁到 lib 的脚本不得再自带 WebSocket，
+且 lib 必须保持完整实现（连接 / id 配对 / 超时 / evaluate，判据用结构而不是提示语原文）。
 
-- 它是**纯内部质量改进**，用户可感知行为不变；
-- 每个脚本迁移后都要跑一遍验证（约 40 秒 × 47），而 E2E 基线**刚刚才被解锁**（本轮之前大部分脚本根本跑不起来）；
-- 在没有稳定绿色基线的情况下做 47 个文件的机械重构，风险高于收益 —— 本轮已经因为「机械替换后没验证不变量」吃过一次教训。
+没做的那 51 个不是「懒得做」，是**盲改会改坏**。本轮实测：
 
-计划：先把 16 个脚本逐个跑绿建立基线，再抽模块，然后分批迁移（每批迁移后跑一遍该批）。验收标准是「不再有第二套 CDP 实现」，可用静态断言钉住（scripts 下不得出现 new WebSocket，lib 除外）。
+- 55 个脚本里只有 **7 个**还能被机械识别成同一形状，其余早已分叉成多种实现
+  （仅超时文案就有「CDP 超时（15s）：」「CDP 超时（15s 无响应）：」「CDP 超时: 」三种）；
+- 拿这 7 个 + 4 个手工锚点试批量改 11 个，**有 6 个在样板区段里藏着自己的东西**：
+  MARKER / shotDir / root 这类脚本自有常量，以及 bloubcheck 与 remindercheck 自己的
+  connect() 实现（第三种 CDP 连接方式）；
+- 11 个全部通过 node --check，但其中 2 个当场在 E2E 里报 ReferenceError ——
+  语法检查对这类错误是瞎的，是「每个都跑一遍」抓出来的。
+
+所以剩下的按批次迁移，每批迁完必须跑该批脚本。棘轮值在护栏里，迁一个减一；
+减到 0 之后这条断言就可以整段删掉。
 
 **2. 其余未单独修的中低优先项**（均不涉及数据安全，留待后续）：
-syncTaskNoteLinks 只增不删、applyMru 的 sort+reverse、listTasksByList 漏 start_time/due_time、图谱增量实为全量重建、ZIP/CRC32 与浮窗保存的重复实现、fts/removeGraphEdge/graphPreview 的静默失败、若干死代码与不可达分支。
+applyMru 的 sort+reverse、listTasksByList 漏 start_time/due_time、图谱增量实为全量重建、ZIP/CRC32 与浮窗保存的重复实现、fts/removeGraphEdge/graphPreview 的静默失败、若干死代码与不可达分支。
 
 ---
 
