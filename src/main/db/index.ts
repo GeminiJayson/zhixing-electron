@@ -42,8 +42,9 @@ import { listSettings, setSetting, setSettings, backupDatabase } from './setting
 import { autoBackup, listBackups, restoreBackup } from './backup'
 import { globalSearch, searchTouch } from './search'
 import { listFolders, listTasksByList, createListFolder, renameListFolder, deleteListFolder, moveTaskToList, defaultListId } from './lists'
+import { linkTaskWikiNotes } from './task-note-links'
 import { siblingsOf, isDescendantOf, reorderTask, moveTaskRelative, reparentTask, batchComplete, batchMove, batchSetDue, listTags, setTaskTags, ensureListId, quickAdd } from './task-ops'
-import { listTasks, listTodayTasks, recentNotes, noteCountMap, tagMap, listNotes, overview, toggleTask, cloneTaskTree, setPriority, setTitle, setStatus, setDueDate, nextSortKey, createTask, EDITABLE_FIELDS, updateTask, softDelete, batchDeleteTasks, batchUndoLast, syncTaskNoteLinks, attachTaskNote, detachTaskNote, listLinkedNotes, pauseTask, resumeTask, attachBlock, detachBlock, listLinkedContexts, contextsForNote, noteContextMap, writeNoteAfterDone, taskCandidates } from './tasks'
+import { listTasks, listTodayTasks, recentNotes, noteCountMap, tagMap, listNotes, overview, toggleTask, cloneTaskTree, setPriority, setTitle, setStatus, setDueDate, nextSortKey, createTask, EDITABLE_FIELDS, updateTask, softDelete, batchDeleteTasks, batchUndoLast, attachTaskNote, detachTaskNote, listLinkedNotes, pauseTask, resumeTask, attachBlock, detachBlock, listLinkedContexts, contextsForNote, noteContextMap, writeNoteAfterDone, taskCandidates } from './tasks'
 import { trashItems, restoreTrash, purgeTrash, emptyTrash, emptyAllTrash, purgeTrashOlderThan, tagsWithUsage, createTag, renameTag, deleteTag, batchDeleteTags, mergeTags } from './trash'
 import { attachmentStats, deleteAttachment, importAttachment, listAttachments, pruneAttachments } from './attachments'
 import { deleteSavedQuery, listSavedQueries, saveSavedQuery } from './queries'
@@ -149,6 +150,9 @@ const WRITE_DOMAINS: Record<string, DataDomain | DataDomain[]> = {
   'db:detachBlock': ['task', 'note'],
   // 任务↔笔记的归属关联（写 task_note_link）此前漏登记：行内 ⇄N 计数与图谱边不会跟着刷新
   'db:attachTaskNote': 'task',
+  // 显式重解析任务正文的 [[链接]]（对齐 Python 的 link_wiki_notes）：
+  // 新建/改名已会自动回绑，这个入口是给「修复上线前就写坏的历史数据」用的
+  'db:linkTaskWikiNotes': 'task',
   'db:detachTaskNote': 'task',
   // 建默认笔记文件夹会写 note_folder
   'db:ensureDefaultFolder': 'note',
@@ -353,6 +357,8 @@ export function registerDbHandlers(): void {
     writeNoteAfterDone(taskId, title)
   )
   handle('db:taskCandidates', (_e, q?: string, limit?: number) => taskCandidates(q ?? '', limit ?? 20))
+  handle('db:linkTaskWikiNotes', (_e, taskId: number) => linkTaskWikiNotes(taskId))
+
   handle('db:attachTaskNote', (_e, taskId: number, noteId: number) =>
     attachTaskNote(taskId, noteId)
   )

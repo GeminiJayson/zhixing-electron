@@ -445,7 +445,10 @@ describe('架构约束 · 检查脚本必须能失败', () => {
  */
 describe('架构约束 · 任务↔笔记关联必须能掉链', () => {
   const read = (p: string): string => readFileSync(join(process.cwd(), p), 'utf8')
-  const src = read('src/main/db/tasks.ts')
+  // 对账逻辑已挪到叶子模块 task-note-links.ts；写入点还剩 attachTaskNote 在 tasks.ts。
+  // 两处都要扫 —— 只扫一处正是「改了 A 忘了 B」的老毛病。
+  const WRITERS = ['src/main/db/task-note-links.ts', 'src/main/db/tasks.ts']
+  const src = WRITERS.map(read).join('\n')
 
   it('每条 INSERT 都要写明来源，否则对账时分不清该不该删', () => {
     for (const m of src.matchAll(/INSERT OR IGNORE INTO task_note_link[^`]*/g)) {
@@ -454,8 +457,9 @@ describe('架构约束 · 任务↔笔记关联必须能掉链', () => {
   })
 
   it('对账函数必须真的删行，而不是只往上加', () => {
-    const fn = src.slice(src.indexOf('export function syncTaskNoteLinks'))
-    const body = fn.slice(0, fn.indexOf('export function attachTaskNote'))
+    const links = read('src/main/db/task-note-links.ts')
+    const fn = links.slice(links.indexOf('export function syncTaskNoteLinks'))
+    const body = fn.slice(0, fn.indexOf('export function relinkTasksForTitle'))
     expect(body, 'syncTaskNoteLinks 里没有 DELETE，就又变回只增不减了').toContain(
       'DELETE FROM task_note_link'
     )
@@ -515,5 +519,32 @@ describe('架构约束 · CDP 样板只许减少', () => {
       .filter((n) => readFileSync(join(dir, n), 'utf8').includes('new WebSocket'))
     // 棘轮值：迁掉一个就往下改一位。目标是把这里改到 0，然后删掉这条断言。
     expect(copies.length, '又有人复制了 CDP 样板：' + copies.join(', ')).toBeLessThanOrEqual(49)
+  })
+})
+/**
+ * 第十七道护栏：笔记出现之后，任务正文里的 [[标题]] 必须能补上链。
+ *
+ * 缺陷原样：任务正文是**先**写的（那时笔记还不存在），syncTaskNoteLinks 解析不到标题
+ * 就不落链，而没有任何人事后再解析一遍 —— 用户看到「[[标题]] 明明写着、⇄N 却是 0」，
+ * 全程不报错。所以断言钉在「笔记侧有没有触发回绑」上，而不是钉某个函数的实现。
+ */
+describe('架构约束 · 笔记出现后任务正文要能补链', () => {
+  const read = (p: string): string => readFileSync(join(process.cwd(), p), 'utf8')
+
+  it('新建与改名两条路都要触发回绑', () => {
+    const s = read('src/main/db/notes.ts')
+    const hits = s.match(/relinkTasksForTitle\(/g) ?? []
+    expect(hits.length, 'notes.ts 至少要 3 处调用：新建 1 处 + 改名 2 处（旧标题掉链、新标题补链）').toBeGreaterThanOrEqual(3)
+  })
+
+  it('对账模块必须是叶子，不许反向依赖 notes/tasks（否则成环）', () => {
+    const s = read('src/main/db/task-note-links.ts')
+    expect(s.includes("from './notes'"), 'task-note-links 不能 import notes').toBe(false)
+    expect(s.includes("from './tasks'"), 'task-note-links 不能 import tasks').toBe(false)
+  })
+
+  it('修复历史数据的显式入口要挂到 IPC 上', () => {
+    expect(read('src/main/db/index.ts')).toContain("'db:linkTaskWikiNotes'")
+    expect(read('src/preload/index.ts')).toContain('linkTaskWikiNotes')
   })
 })

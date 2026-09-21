@@ -141,6 +141,9 @@ const api = {
     detachTaskNote: (taskId: number, noteId: number): Promise<number> =>
       ipcRenderer.invoke('db:detachTaskNote', taskId, noteId),
     linkedNotes: (taskId: number): Promise<unknown[]> => ipcRenderer.invoke('db:linkedNotes', taskId),
+      /** 显式重解析任务正文里的 [[链接]]（对齐 Python 的 link_wiki_notes，用于修历史数据） */
+      linkTaskWikiNotes: (taskId: number): Promise<number[]> =>
+        ipcRenderer.invoke('db:linkTaskWikiNotes', taskId),
     /** 命令面板统一搜索（前缀 + 过滤语法 + 命令注入 + MRU，与 Python 的 global_search 对齐） */
     globalSearch: (q: string): Promise<unknown> => ipcRenderer.invoke('db:globalSearch', q),
     /** 记一次命中（MRU）：命令面板选中 task/note/flash 条目时调用 */

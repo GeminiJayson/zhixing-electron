@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { countWords, extractLinks, snippetAround } from '../../shared/wiki'
+import { relinkTasksForTitle, resolveNoteTitle } from './task-note-links'
 import type {
   Backlink,
   Note,
@@ -24,19 +25,9 @@ export function getNote(id: number): Note | null {
   return (conn().prepare(`SELECT ${NOTE_COLUMNS} FROM note WHERE id = ?`).get(id) as Note | undefined) ?? null
 }
 
-/**
- * 按标题解析笔记 id（与 note_service.resolve → NoteRepository.by_title 同义）。
- *
- * Python 侧只做 title + 未删除过滤后取 `.first()`，**不排序**（N16）；
- * 原先按 pinned/updated_at 排序会让同标题多篇笔记时解析到「置顶/最新」那篇，
- * 与 Python 的返回口径不一致。这里退化为无排序取首行。
- */
-export function resolveNoteTitle(title: string): number | null {
-  const row = conn()
-    .prepare('SELECT id FROM note WHERE title = ? AND deleted_at IS NULL LIMIT 1')
-    .get(title) as { id: number } | undefined
-  return row?.id ?? null
-}
+// 按标题解析笔记 id 挪到 task-note-links.ts（那边要在笔记侧回调时用），这里原样再导出，
+// 免得已有的十几个 import 全改一遍。
+export { resolveNoteTitle } from './task-note-links'
 
 /**
  * 保存正文时按 [[标题]] 同步 note_link，语义等同 note_service._pipeline 的 diff：
@@ -136,6 +127,9 @@ export function saveNote(
     // 改名后，原先指向旧标题的链接跟随改名（对齐 links.rename_target）
     if (nextTitle !== before.title) {
       c.prepare('UPDATE note_link SET dst_title = ? WHERE dst_title = ?').run(nextTitle, before.title)
+      // 任务正文里写的还是旧标题的那些行：按旧标题掉链、按新标题补链
+      relinkTasksForTitle(before.title)
+      relinkTasksForTitle(nextTitle)
     }
     reindexNote(id)
     return getNote(id)
@@ -169,6 +163,8 @@ export function createNote(
   const id = Number(info.lastInsertRowid)
   if (contentMd) syncNoteLinks(id, contentMd)
   reindexNote(id)
+  // 任务正文可能是**先**写的（那时这篇笔记还不存在），此刻才有机会落链
+  relinkTasksForTitle(clean)
   return getNote(id)
 }
 
