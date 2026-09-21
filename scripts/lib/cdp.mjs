@@ -14,7 +14,7 @@
  *   await app.close()
  *   process.exit(finish())
  */
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -26,7 +26,6 @@ const require = createRequire(import.meta.url)
 /** 仓库根目录（scripts/lib 往上两级）。 */
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
-/** 收紧 PATH：Electron 起来时别被外部 node/python 干扰。 */
 // 收紧 PATH：只留系统目录，免得外部 node/python 干扰被测应用。
 // powershell.exe 住在 WindowsPowerShell\v1.0 这一层，**必须带上** ——
 // 应用读「当前选中的文字」是模拟 Ctrl+C（SendKeys）实现的，而它是用裸名
@@ -40,6 +39,44 @@ const SYS_PATH = [
 
 /** 独立小窗口（小组件/提醒/条件/捕获）不是主界面，默认不作为目标。 */
 export const AUX_TARGET = /[?&](widget|reminder|condition|capture)=1/
+
+/** 绝对路径的 powershell.exe：脚本运行环境的 PATH 里未必有 System32。 */
+const POWERSHELL = join(
+  process.env.SystemRoot ?? 'C:\\Windows',
+  'System32',
+  'WindowsPowerShell',
+  'v1.0',
+  'powershell.exe'
+)
+
+/**
+ * 清掉「带调试端口」的残留 Electron 实例，返回杀掉的个数。
+ *
+ * 崩掉的运行走不到 app.close()，那些实例会继续占着端口、临时目录，以及
+ * node_modules/electron/dist 下的原生模块 —— 后者会让 npm run rebuild 报
+ * EPERM: unlink better_sqlite3.node（我就是这么被坑了一次，还差点当成
+ * PowerShell 包 stderr 的假退出码放过去）。
+ *
+ * 判据是命令行里有 --remote-debugging-port：用户自己的知行没有这个参数，不会被误伤。
+ * 代价是**不能并行跑两个 E2E 脚本** —— 后启动的会把先启动的当成残留杀掉。
+ */
+export function killStaleDebugInstances() {
+  if (process.platform !== 'win32') return 0
+  if (!existsSync(POWERSHELL)) return 0
+  const ps =
+    'Get-CimInstance Win32_Process -Filter "Name = ' + String.fromCharCode(39) + 'electron.exe' + String.fromCharCode(39) + '"' +
+    ' | Where-Object { $_.CommandLine -like ' + String.fromCharCode(39) + '*--remote-debugging-port=*' + String.fromCharCode(39) + ' }' +
+    ' | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue; $_.ProcessId }'
+  try {
+    const out = execFileSync(POWERSHELL, ['-NoProfile', '-NonInteractive', '-Command', ps], {
+      encoding: 'utf8',
+      timeout: 20000
+    })
+    return out.split('\n').map((s) => s.trim()).filter(Boolean).length
+  } catch {
+    return 0
+  }
+}
 
 export { sleep }
 
@@ -83,10 +120,17 @@ export async function launchApp({
   profile = null,
   /** 夹具补齐（示例笔记 + 工作流实例）。脚本自己准备库时传 false，别去抢渲染线程。 */
   fixture = true,
+  /** 启动前清掉残留的调试实例（见 killStaleDebugInstances）。并行跑脚本时传 false。 */
+  killStale = true,
   onWait = (i) => {
     if (i % 4 === 0) console.log('【等窗口】' + Math.round(i * 0.5) + 's')
   }
 }) {
+  if (killStale) {
+    const n = killStaleDebugInstances()
+    if (n) console.log('【清理】杀掉 ' + n + ' 个残留的调试实例')
+    await sleep(300)
+  }
   if (clean) {
     // 上一个实例可能还没完全释放 profile 目录（Electron 有好几个子进程），
     // 直接 rmSync 会 EBUSY/EPERM 把脚本崩在开头 —— 重试几次，实在不行就沿用旧目录继续跑。
