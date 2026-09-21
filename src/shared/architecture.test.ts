@@ -517,12 +517,12 @@ describe('架构约束 · CDP 样板只许减少', () => {
     }
   })
 
-  it('复制着旧样板的脚本份数不得超过 30（只许减）', () => {
+  it('复制着旧样板的脚本份数不得超过 27（只许减）', () => {
     const copies = readdirSync(dir)
       .filter((n) => n.endsWith('.mjs') && !n.startsWith('.'))
       .filter((n) => readFileSync(join(dir, n), 'utf8').includes('new WebSocket'))
     // 棘轮值：迁掉一个就往下改一位。目标是把这里改到 0，然后删掉这条断言。
-    expect(copies.length, '又有人复制了 CDP 样板：' + copies.join(', ')).toBeLessThanOrEqual(30)
+    expect(copies.length, '又有人复制了 CDP 样板：' + copies.join(', ')).toBeLessThanOrEqual(27)
   })
 })
 /**

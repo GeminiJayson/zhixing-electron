@@ -11,61 +11,24 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { copyFileSync, existsSync, mkdirSync, rmSync } from 'node:fs'
-import { setTimeout as sleep } from 'node:timers/promises'
+import { ROOT, launchApp, createChecker, J, sleep } from './lib/cdp.mjs'
+
+// 老脚本里的 root / require 一律保留：原样带过来的自有声明（sql/dbFile 等）还依赖它们
+const root = ROOT
 const require = createRequire(import.meta.url)
-const electronPath = require('electron')
-const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const tmpHome = join(root, '.screenshots', 'graph-home')
+const tmpHome = join(ROOT, '.screenshots', 'graph-home')
 const PORT = 9237
-
-/** 副本库 = 当前真实库的拷贝：不碰用户数据，且 schema 与真实环境一致。 */
 const realDb = join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db')
-if (!existsSync(realDb)) { console.error('✗ 找不到真实库：' + realDb); process.exit(1) }
-rmSync(tmpHome, { recursive: true, force: true })
-mkdirSync(tmpHome, { recursive: true })
-copyFileSync(realDb, join(tmpHome, 'zhixing.db'))
 
-/** DSH 的 pwsh 环境没有系统 PATH，从它启动的 Electron 里连 cmd.exe 都找不到。 */
-const SYS_PATH = [
-  'C:\\Windows\\System32',
-  'C:\\Windows',
-  'C:\\Windows\\System32\\Wbem',
-  'C:\\Windows\\System32\\WindowsPowerShell\\v1.0',
-].join(';')
-
-const child = spawn(electronPath, ['.', `--remote-debugging-port=${PORT}`, `--user-data-dir=${join(tmpHome, 'p')}`], {
-  cwd: root,
-  env: { ...process.env, PATH: `${SYS_PATH};${process.env.PATH ?? ''}`, ZHIXING_HOME: tmpHome },
-  stdio: ['ignore', 'pipe', 'pipe'],
-})
-let page = null
-for (let i = 0; i < 40 && !page; i++) {
-  await sleep(500)
-  try { const l = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json(); page = l.find((t) => t.type === 'page') } catch {}
-}
-if (!page) { console.error('✗ 无法连接'); child.kill(); process.exit(1) }
-const ws = new WebSocket(page.webSocketDebuggerUrl)
-await new Promise((r) => ws.addEventListener('open', r, { once: true }))
-const send = (m, p = {}) => new Promise((resolve) => {
-  const id = Math.floor(Math.random() * 1e6)
-  const h = (ev) => { const x = JSON.parse(ev.data); if (x.id !== id) return; ws.removeEventListener('message', h); resolve(x) }
-  ws.addEventListener('message', h); ws.send(JSON.stringify({ id, method: m, params: p })) })
-await send('Runtime.enable')
-const ev = async (e) => {
-  const r = await send('Runtime.evaluate', { expression: e, returnByValue: true, awaitPromise: true })
-  if (r.result?.exceptionDetails) throw new Error(r.result.exceptionDetails.exception?.description ?? 'fail')
-  return r.result?.result?.value }
-await sleep(2500)
-const results = []
-const check = (n, ok, d = '') => { results.push([n, ok]); console.log(`${ok ? '✓' : '✗'} ${n}${d ? ' — ' + d : ''}`) }
-
+const app = await launchApp({ port: PORT, home: tmpHome })
+const { check, finish } = createChecker()
 // 进入图谱页
-await ev(`document.querySelector('[data-nav-item="graph"]')?.click()`);
+await app.evaluate(`document.querySelector('[data-nav-item="graph"]')?.click()`);
 await sleep(3000)
 
 // 按节点 id 匹配：label 会重复（例如多篇「未命名笔记」），用它比对会串节点
 const readPositions = () =>
-  ev(`JSON.stringify(Object.fromEntries([...document.querySelectorAll('.gnode')].map(g => {
+  app.evaluate(`JSON.stringify(Object.fromEntries([...document.querySelectorAll('.gnode')].map(g => {
     const m = /translate\\(([-\\d.]+),([-\\d.]+)\\)/.exec(g.getAttribute('transform') || '')
     return [g.getAttribute('data-node-id'), m ? [Number(m[1]), Number(m[2])] : null]
   })))`)
@@ -78,7 +41,7 @@ check('图谱渲染出节点', beforeCount > 3, `nodes=${beforeCount}`)
 // 注意方向：图谱**默认就包含任务节点**（buildGraph 的 includeTasks 默认为真），
 // 所以第一次点它是把任务节点**排除**掉（32 → 5）。这里只断言「集合确实变了」，
 // 不再假设增减方向 —— 本脚本真正要守的是下面那条「共有节点坐标保持」。
-await ev(`[...document.querySelectorAll('.text-btn')].find(b => b.textContent.includes('任务节点'))?.click()`)
+await app.evaluate(`[...document.querySelectorAll('.text-btn')].find(b => b.textContent.includes('任务节点'))?.click()`)
 await sleep(3000)
 const after = JSON.parse(await readPositions())
 const afterCount = Object.keys(after).length
@@ -105,9 +68,9 @@ check(
 )
 
 // 离开图谱再回来：模块级缓存应让位置继续保持
-await ev(`document.querySelector('[data-nav-item="tasks"]')?.click()`)
+await app.evaluate(`document.querySelector('[data-nav-item="tasks"]')?.click()`)
 await sleep(400)
-await ev(`document.querySelector('[data-nav-item="graph"]')?.click()`)
+await app.evaluate(`document.querySelector('[data-nav-item="graph"]')?.click()`)
 await sleep(2000)
 const back = JSON.parse(await readPositions())
 let backMax = 0
@@ -120,10 +83,7 @@ for (const [label, p1] of Object.entries(after)) {
 }
 check('切走再回来仍能复用坐标', backShared >= 3 && backMax < 120, `max=${backMax.toFixed(1)}px shared=${backShared}`)
 
-ws.close()
-child.kill()
 await sleep(500)
-rmSync(tmpHome, { recursive: true, force: true })
-const failed = results.filter(([, ok]) => !ok).length
-console.log(`\n${results.length - failed}/${results.length} 项通过`)
-process.exit(failed ? 1 : 0)
+
+await app.close()
+process.exit(finish())
