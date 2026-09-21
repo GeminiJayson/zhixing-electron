@@ -59,19 +59,20 @@
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
+  /* 换行后行高变大，图标与统计胶囊仍然垂直居中 —— 这是需求里点名要的 */
   align-items: center;
   gap: 6px;
   padding: 5px 8px;
   text-align: left;
-  overflow: hidden;
 }
+/* 名称吃掉剩余宽度；宽度不足时**换行**而不是省略号。
+   右边那串统计不许把它挤没，行内仍与名称居中对齐（.wf-node__label 是 flex + center）。 */
 .wf-node__label strong {
-  /* 名称吃掉剩余宽度并在必要时省略号；右边那串统计不许把它挤没 */
   flex: 1 1 auto;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
 }
 .wf-node__label > .u-aux {
   margin-left: auto;

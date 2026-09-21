@@ -64,12 +64,13 @@
   background: color-mix(in srgb, var(--accent) 18%, transparent);
   color: var(--fg-primary);
 }
+/* 标题在宽度不足时换行（而不是省略号）：树里的名字往往很长，省略号看不全 */
 .ntree__foldername {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
   font-size: var(--text-aux);
   font-weight: 600;
 }
@@ -102,12 +103,13 @@
   color: var(--accent-warm);
   margin: 0 0 0 0;
 }
+/* 同上：换行显示，行尾的按钮/胶囊仍与第一行居中对齐（容器 align-items: center） */
 .ntree__title {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
   font-size: var(--text-body);
 }
 /* 行内操作：不悬浮时**不占位**（否则会把右侧的笔记数挤到中间）。

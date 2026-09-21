@@ -65,6 +65,19 @@ try {
       break
     }
   }
+  // ---- 树标题：宽度不足时换行（而不是省略号），行内元素仍垂直居中
+  const treeCss = await evaluate(
+    "(() => { const t = document.querySelector('.ntree__title'); const f = document.querySelector('.ntree__foldername');" +
+      "if (!t) return { found: false };" +
+      "const cs = getComputedStyle(t);" +
+      "const row = t.closest('.ntree__note');" +
+      "const rowCs = row ? getComputedStyle(row) : null;" +
+      "return { found: true, titleWhite: cs.whiteSpace, titleWrap: cs.overflowWrap, folderWhite: f ? getComputedStyle(f).whiteSpace : null, rowAlign: rowCs ? rowCs.alignItems : null }; })()"
+  )
+  check('笔记标题改为换行（white-space: normal）', treeCss.titleWhite === 'normal', J(treeCss))
+  check('长词也能断行（overflow-wrap: anywhere）', String(treeCss.titleWrap).includes('anywhere'), J({ wrap: treeCss.titleWrap }))
+  check('文件夹名同样换行', treeCss.folderWhite === 'normal', J(treeCss))
+  check('行内元素垂直居中（align-items: center）', treeCss.rowAlign === 'center', J({ align: treeCss.rowAlign }))
   check('找到富文本笔记', rich, J({ rich }))
   check('工具栏用的是项目的 text-btn 按钮', (bar?.textBtns ?? 0) >= 14, J(bar))
   // Toolbar 会额外渲染一份「隐藏测量行」用于算宽度，所以标签会重复出现 —— 只看包含关系即可
