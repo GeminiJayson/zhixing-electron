@@ -526,6 +526,39 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     await refresh()
   }
 
+  /** 重新拉一次清单列表（增删改之后都要） */
+  const reloadFolders = useCallback(async (): Promise<void> => {
+    setFolders((await window.zhixing.db.listFolders()) as typeof folders)
+  }, [])
+
+  /** 新建清单：名字留空即取消 */
+  const newList = async (): Promise<void> => {
+    const name = await dialog.prompt({ title: '新建清单', label: '清单名称' })
+    if (!name?.trim()) return
+    await window.zhixing.db.createListFolder(name.trim(), 'list', null)
+    await reloadFolders()
+    onNotice('已新建清单「' + name.trim() + '」')
+  }
+
+  /** 重命名 / 删除当前筛选到的那张清单 */
+  const editList = async (): Promise<void> => {
+    const id = Number(listKey)
+    const cur = folders.find((f) => f.id === id)
+    if (!cur) return
+    const name = await dialog.prompt({ title: '重命名清单', label: '新名称', defaultValue: cur.name })
+    if (name?.trim() && name.trim() !== cur.name) {
+      await window.zhixing.db.renameListFolder(id, name.trim())
+      await reloadFolders()
+      onNotice('已重命名为「' + name.trim() + '」')
+      return
+    }
+    const ok = await dialog.confirm({ title: '删除清单', message: '删除「' + cur.name + '」？清单里的任务会回到收件箱。' })
+    if (!ok) return
+    await window.zhixing.db.deleteListFolder(id)
+    setListKey('')
+    await reloadFolders()
+    onNotice('已删除「' + cur.name + '」')
+  }
   /** 移动到清单（T1）：收件箱 = null；复用 moveTaskToList（对齐 move_to_list）。 */
   const handleMoveToList = async (ids: number[], listId: number | null): Promise<void> => {
     for (const id of ids) await window.zhixing.db.moveTaskToList(id, listId)
@@ -792,6 +825,18 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
                 </option>
               ))}
           </select>,
+          <button key="newlist" className="text-btn" title="新建清单" onClick={() => void newList()}>
+            ＋ 清单
+          </button>,
+          <button
+            key="editlist"
+            className="text-btn"
+            title="重命名 / 删除当前选中的清单"
+            disabled={!listKey || listKey === 'none'}
+            onClick={() => void editList()}
+          >
+            清单设置
+          </button>,
           <select
             key="smart"
             className="field field--compact"

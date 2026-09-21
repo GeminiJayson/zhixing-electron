@@ -65,6 +65,27 @@ try {
     cascade.beforeStatus === 'done' && cascade.afterStatus === 'todo',
     J(cascade)
   )
+  // ---- 清单分类可编辑：新建 → 改名 → 删除，走的是 UI 用的同一组 API
+  const listFlow = await evaluate(`(async () => {
+    const made = await window.zhixing.db.createListFolder('验证清单', 'list', null)
+    const id = made && (made.id !== undefined ? made.id : made)
+    const renamed = await window.zhixing.db.renameListFolder(id, '验证清单改名')
+    const after = (await window.zhixing.db.listFolders()).find((f) => f.id === id)
+    const removed = await window.zhixing.db.deleteListFolder(id)
+    const gone = (await window.zhixing.db.listFolders()).find((f) => f.id === id)
+    const dlg = typeof window.zhixing.db.renameListFolder
+    return { id, renamedChanges: renamed, name: after && after.name, removedChanges: removed, stillThere: !!gone, apiKind: dlg }
+  })()`)
+  check('能新建清单', listFlow.id !== undefined && listFlow.id !== null, J(listFlow))
+  check('能重命名清单', listFlow.name === '验证清单改名', J(listFlow))
+  check('能删除清单', listFlow.removedChanges !== 0 && listFlow.stillThere === false, J(listFlow))
+
+  // ---- 任务页上确实出现了管理入口
+  await evaluate("document.querySelector('[data-nav-item=\"tasks\"]')?.click()")
+  await sleep(2000)
+  const ui = await evaluate("(() => { const btns = [...document.querySelectorAll('button')].map((b) => b.textContent.trim()); return { hasNew: btns.includes('＋ 清单'), hasEdit: btns.includes('清单设置') } })()")
+  check('任务页出现「＋ 清单」与「清单设置」', ui.hasNew === true && ui.hasEdit === true, J(ui))
+
 } catch (err) {
   check('脚本跑完', false, err instanceof Error ? err.message : String(err))
 }
