@@ -46,6 +46,30 @@ try {
     check('落盘路径在 attachments 目录下', String(saved.path).includes('attachment'), J({ path: saved.path }))
     check('文件确实写到了磁盘', existsSync(saved.path), J({ exists: existsSync(saved.path) }))
   }
+  // ---- 工具栏：用的是项目的 Toolbar（panel 形态）+ text-btn，不是我临时写的那套
+  await evaluate("document.querySelector('[data-nav-item=\"notes\"]')?.click()")
+  await sleep(2200)
+  const tree = await evaluate("document.querySelectorAll('.ntree__note').length")
+  let rich = false
+  let bar = null
+  for (let i = 0; i < Math.min(tree, 8); i++) {
+    await evaluate("document.querySelectorAll('.ntree__note')[" + i + "]?.click()")
+    await sleep(1300)
+    if (await evaluate("!!document.querySelector('.rt-editor .ProseMirror')")) {
+      rich = true
+      bar = await evaluate(
+        "(() => { const t = document.querySelector('.rt-editor .toolbar, .rt-editor .tb, .rt-editor .toolbar__bar');" +
+          "const btns = document.querySelectorAll('.rt-editor .text-btn');" +
+          "return { textBtns: btns.length, labels: [...btns].map((b) => b.textContent.trim()), hasBar: !!t }; })()"
+      )
+      break
+    }
+  }
+  check('找到富文本笔记', rich, J({ rich }))
+  check('工具栏用的是项目的 text-btn 按钮', (bar?.textBtns ?? 0) >= 14, J(bar))
+  // Toolbar 会额外渲染一份「隐藏测量行」用于算宽度，所以标签会重复出现 —— 只看包含关系即可
+  check('工具栏含加粗 / 图片 / 文件按钮', ['B', '图片', '文件'].every((x) => (bar?.labels ?? []).includes(x)), J({ labels: bar?.labels }))
+
   const list2 = await evaluate("window.zhixing.db.attachments().then((a) => a.filter((x) => String(x.path).includes('thumb-test'))) ")
   check('附件表里有这条记录', Array.isArray(list2) && list2.length >= 1, J({ n: Array.isArray(list2) ? list2.length : null }))
 } catch (err) {

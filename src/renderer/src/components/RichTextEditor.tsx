@@ -4,6 +4,9 @@ import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import TextAlign from '@tiptap/extension-text-align'
 import Placeholder from '@tiptap/extension-placeholder'
+import FontSize from '@tiptap/extension-text-style/font-size'
+import Color from '@tiptap/extension-color'
+import { Toolbar } from './Toolbar'
 import { useDialog } from './Dialogs'
 
 interface RichProps {
@@ -94,6 +97,8 @@ export function RichTextEditor({ html, onChange, readOnly = false, placeholder, 
       StarterKit.configure({ heading: { levels: [1, 2, 3] }, link: { openOnClick: false, autolink: true } }),
       ImageWithAttach.configure({ inline: false, allowBase64: true }),
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
+      FontSize,
+      Color,
       Placeholder.configure({ placeholder: placeholder ?? '' }),
     ],
     content: html || '',
@@ -137,20 +142,6 @@ export function RichTextEditor({ html, onChange, readOnly = false, placeholder, 
   if (!editor) return <div className="rt-editor" />
 
   const chain = (): ReturnType<Editor['chain']> => editor.chain().focus()
-  const btn = (label: string, active: boolean, onClick: () => void, title: string): JSX.Element => (
-    <button
-      key={label}
-      type="button"
-      className={'tb' + (active ? ' tb--on' : '')}
-      title={title}
-      aria-label={title}
-      aria-pressed={active}
-      onClick={onClick}
-    >
-      {label}
-    </button>
-  )
-
   const insertLink = async (): Promise<void> => {
     const url = await dialog.prompt({ title: '插入链接', label: '网址或本地文件路径' })
     if (!url?.trim()) return
@@ -161,6 +152,19 @@ export function RichTextEditor({ html, onChange, readOnly = false, placeholder, 
     const label2 = text.trim() || target
     if (editor.state.selection.empty) chain().insertContent('<a href="' + target + '">' + label2 + '</a>').run()
     else chain().extendMarkRange('link').setLink({ href: target }).run()
+  }
+
+  /** 插入文件附件：沿用旧的 attachment:pick，把它挂成一段链接文字。 */
+  const insertFile = async (): Promise<void> => {
+    const id = noteIdRef.current
+    if (!id) return
+    const res = await window.zhixing.db.pickAttachment(id)
+    const paths = (res?.paths ?? []) as string[]
+    for (const p of paths) {
+      const name = p.split(/[\\/]/).pop() ?? p
+      const url = 'file://' + p.split('/').map(encodeURIComponent).join('/')
+      chain().insertContent('<a href="' + url + '">' + name + '</a>').run()
+    }
   }
 
   const insertImage = (): void => {
@@ -195,24 +199,92 @@ export function RichTextEditor({ html, onChange, readOnly = false, placeholder, 
   return (
     <div className="rt-editor">
       {!readOnly && (
-        <div className="rt-editor__bar" role="toolbar" aria-label="格式工具">
-          {btn('B', editor.isActive('bold'), () => chain().toggleBold().run(), '加粗')}
-          {btn('I', editor.isActive('italic'), () => chain().toggleItalic().run(), '斜体')}
-          {btn('U', editor.isActive('underline'), () => chain().toggleUnderline().run(), '下划线')}
-          {btn('S', editor.isActive('strike'), () => chain().toggleStrike().run(), '删除线')}
-          {btn('H1', editor.isActive('heading', { level: 1 }), () => chain().toggleHeading({ level: 1 }).run(), '一级标题')}
-          {btn('H2', editor.isActive('heading', { level: 2 }), () => chain().toggleHeading({ level: 2 }).run(), '二级标题')}
-          {btn('H3', editor.isActive('heading', { level: 3 }), () => chain().toggleHeading({ level: 3 }).run(), '三级标题')}
-          {btn('•', editor.isActive('bulletList'), () => chain().toggleBulletList().run(), '无序列表')}
-          {btn('1.', editor.isActive('orderedList'), () => chain().toggleOrderedList().run(), '有序列表')}
-          {btn('❝', editor.isActive('blockquote'), () => chain().toggleBlockquote().run(), '引用')}
-          {btn('<>', editor.isActive('codeBlock'), () => chain().toggleCodeBlock().run(), '代码块')}
-          {btn('⬅', editor.isActive({ textAlign: 'left' }), () => chain().setTextAlign('left').run(), '左对齐')}
-          {btn('↔', editor.isActive({ textAlign: 'center' }), () => chain().setTextAlign('center').run(), '居中')}
-          {btn('➡', editor.isActive({ textAlign: 'right' }), () => chain().setTextAlign('right').run(), '右对齐')}
-          {btn('🔗', editor.isActive('link'), () => void insertLink(), '插入链接')}
-          {btn('🖼', false, insertImage, '插入图片（正文存缩略图，原图存附件）')}
-        </div>
+        <Toolbar
+          variant="panel"
+          sticky={false}
+          filters={[
+            <select
+              key="size"
+              className="field field--compact"
+              title="字号"
+              aria-label="字号"
+              defaultValue=""
+              onChange={(e) => {
+                const v = e.target.value
+                if (v) chain().setFontSize(v + 'px').run()
+                e.target.value = ''
+              }}
+            >
+              <option value="">字号</option>
+              {[12, 14, 16, 18, 20, 24, 28].map((sz) => (
+                <option key={sz} value={String(sz)}>
+                  {sz}
+                </option>
+              ))}
+            </select>,
+            <input
+              key="color"
+              type="color"
+              title="文字颜色"
+              aria-label="文字颜色"
+              onChange={(e) => chain().setColor(e.target.value).run()}
+            />,
+          ]}
+          secondary={[
+            <button key="b" className="text-btn" title="加粗" onClick={() => chain().toggleBold().run()}>
+              B
+            </button>,
+            <button key="i" className="text-btn" title="斜体" onClick={() => chain().toggleItalic().run()}>
+              I
+            </button>,
+            <button key="u" className="text-btn" title="下划线" onClick={() => chain().toggleUnderline().run()}>
+              U
+            </button>,
+            <button key="s" className="text-btn" title="删除线" onClick={() => chain().toggleStrike().run()}>
+              S
+            </button>,
+            ...[1, 2, 3].map((lv) => (
+              <button
+                key={'h' + lv}
+                className="text-btn"
+                title={lv + ' 级标题'}
+                onClick={() => chain().toggleHeading({ level: lv as 1 | 2 | 3 }).run()}
+              >
+                H{lv}
+              </button>
+            )),
+            <button key="ul" className="text-btn" title="无序列表" onClick={() => chain().toggleBulletList().run()}>
+              • 列表
+            </button>,
+            <button key="ol" className="text-btn" title="有序列表" onClick={() => chain().toggleOrderedList().run()}>
+              1. 列表
+            </button>,
+            <button key="q" className="text-btn" title="引用" onClick={() => chain().toggleBlockquote().run()}>
+              引用
+            </button>,
+            <button key="code" className="text-btn" title="代码块" onClick={() => chain().toggleCodeBlock().run()}>
+              代码
+            </button>,
+            <button key="jl" className="text-btn" title="左对齐" onClick={() => chain().setTextAlign('left').run()}>
+              左
+            </button>,
+            <button key="jc" className="text-btn" title="居中" onClick={() => chain().setTextAlign('center').run()}>
+              中
+            </button>,
+            <button key="jr" className="text-btn" title="右对齐" onClick={() => chain().setTextAlign('right').run()}>
+              右
+            </button>,
+            <button key="link" className="text-btn" title="插入链接" onClick={() => void insertLink()}>
+              链接
+            </button>,
+            <button key="img" className="text-btn" title="插入图片" onClick={insertImage}>
+              图片
+            </button>,
+            <button key="file" className="text-btn" title="插入文件附件" onClick={() => void insertFile()}>
+              文件
+            </button>,
+          ]}
+        />
       )}
       <EditorContent className="rt-editor__body" editor={editor} />
       {preview && (
