@@ -1,5 +1,5 @@
 /**
- * Office 内嵌预览验证（O11）：docx/xlsx 解析为 HTML，非 Office 与缺失文件降级。
+ * Office 内嵌预览验证：docx/xlsx 解析为 HTML，非 Office 与缺失文件降级。
  * 用法：node scripts/officecheck.mjs
  */
 import { execFileSync, spawn } from 'node:child_process'
@@ -29,12 +29,12 @@ rmSync(tmpHome, { recursive: true, force: true })
 mkdirSync(fixtures, { recursive: true })
 copyFileSync(seedDb, join(tmpHome, 'zhixing.db'))
 
-// 用 Python 的 python-docx / openpyxl 造真实文档（与 Python 版预览同源）
-// 夹具生成脚本跟本脚本一起进仓库，别放 /tmp
+// 夹具用 Node 的 docx / xlsx 造真实 .docx / .xlsx（生成脚本随仓库走，别放 /tmp）。
+// 直接用当前 Node 进程执行生成脚本，不需要任何外部解释器。
 const docxFile = join(fixtures, '预览验证.docx')
 const xlsxFile = join(fixtures, '预览验证.xlsx')
-const fixturesScript = join(root, 'scripts', 'fixtures', 'gen-office-fixtures.py')
-execFileSync(join(repoRoot, '.venv/bin/python'), [fixturesScript, docxFile, xlsxFile])
+const fixturesScript = join(root, 'scripts', 'fixtures', 'gen-office-fixtures.mjs')
+execFileSync(process.execPath, [fixturesScript, docxFile, xlsxFile], { stdio: 'inherit' })
 
 const child = spawn(electronPath, ['.', `--remote-debugging-port=${PORT}`, `--user-data-dir=${join(tmpHome, 'p')}`], {
   cwd: root, env: { ...process.env, ZHIXING_HOME: tmpHome }, stdio: ['ignore', 'pipe', 'pipe'],

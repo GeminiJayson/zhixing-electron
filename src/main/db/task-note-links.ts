@@ -10,11 +10,10 @@ import { extractLinks } from '../../shared/wiki'
 import { planTaskNoteLinks, type LinkRow } from '../../shared/task-note-links'
 
 /**
- * 按标题解析笔记 id（与 note_service.resolve → NoteRepository.by_title 同义）。
+ * 按标题解析笔记 id：只按 title + 未删除过滤后取首行，**不排序**。
  *
- * Python 侧只做 title + 未删除过滤后取 first()，**不排序**（N16）；
- * 原先按 pinned/updated_at 排序会让同标题多篇笔记时解析到「置顶/最新」那篇，
- * 与 Python 的返回口径不一致。这里退化为无排序取首行。
+ * 若按 pinned/updated_at 排序，同标题多篇笔记时会解析到「置顶/最新」那篇；
+ * 这里明确退化为无排序取首行。
  */
 export function resolveNoteTitle(title: string): number | null {
   const row = conn()
@@ -34,8 +33,7 @@ function linkRows(taskId: number): LinkRow[] {
 }
 
 /**
- * 任务 notes_md 里的 [[笔记标题]] 与 task_note_link 对账
- * （对齐 task_service._sync_wiki_links 的「落链」，但补上它没有的「掉链」）。
+ * 任务 notes_md 里的 [[笔记标题]] 与 task_note_link 对账。
  *
  * 这张表原先只增不减：把 [[标题]] 从正文里删掉，行还留着 ——
  * 任务行的 ⇄N 计数和图谱里的任务-笔记边于是永远不消失。
@@ -90,7 +88,7 @@ export function relinkTasksForTitle(title: string): number {
 }
 
 /**
- * 显式重新解析某个任务的 [[链接]]（对齐 Python 的 task_service.link_wiki_notes，F4-3）。
+ * 显式重新解析某个任务的 [[链接]]。
  *
  * 有了 relinkTasksForTitle，新建/改名会自动补齐；这个入口是给**修历史数据**用的：
  * 修复上线之前就已经写坏的那些任务，只能靠它重跑一遍。

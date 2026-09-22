@@ -13,7 +13,7 @@ const BOXES: { key: QuadrantKey; label: string }[] = [
   { key: 'q4', label: '不重要不紧急' },
 ]
 
-/** 换象限时写入的 priority + due_date，与 task_page._on_quadrant_changed 逐值一致。 */
+/** 换象限时写入的 priority + due_date。 */
 export function quadrantAssignment(key: QuadrantKey, today: string): {
   priority: number
   due_date: string | null
@@ -42,7 +42,7 @@ interface Props {
 
 /**
  * 重要 × 紧急四象限。只有根任务归格；父行可展开出**未完成的直接子任务**，
- * 子任务自身的优先级/日期不参与归格（对齐 QuadrantView.load）。
+ * 子任务自身的优先级/日期不参与归格。
  */
 export function QuadrantBoard({
   tasks,

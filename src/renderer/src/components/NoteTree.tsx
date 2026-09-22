@@ -15,6 +15,7 @@ import {
 } from '@renderer/lib/icons'
 import type { Note, NoteFolder } from '@shared/types'
 import type { AiLibraryProgress } from '@shared/ai-note'
+import { inkOn } from '@shared/color'
 import { PopMenu } from './PopMenu'
 
 /** 新建笔记时可选的类型：原先在工具栏里选，现在放到「新建」动作里选 */
@@ -57,7 +58,7 @@ interface Props {
   onTogglePin: (id: number, pinned: boolean) => void
   onDeleteNote: (id: number) => void
   onContextMenuNote: (id: number, x: number, y: number) => void
-  /** 文件夹操作（对齐 note_page 的 _rename_folder_dialog / _delete_folder / move_folder） */
+  /** 文件夹操作 */
   onRenameFolder: (id: number, currentName: string) => void
   onDeleteFolder: (id: number) => void
   onMoveFolder: (id: number, parentId: number | null) => void
@@ -67,9 +68,11 @@ interface Props {
   onOrganizeLibrary?: () => void
   /** 把本地文件归档成当前笔记的附件 */
   onAddAttachment?: () => void
+  /** 每篇笔记的标签：行内显示小胶囊（最多两个，其余折成 +N） */
+  tagsOf?: (noteId: number) => { id: number; name: string; color: string }[]
 }
 
-/** 笔记树：文件夹层级 + 文件夹内笔记（对齐 note_page 的两栏左树）。 */
+/** 笔记树：文件夹层级 + 文件夹内笔记。 */
 export function NoteTree({
   notes,
   folders,
@@ -86,17 +89,18 @@ export function NoteTree({
   libJob = null,
   onOrganizeLibrary,
   onAddAttachment,
+  tagsOf = () => [],
 }: Props) {
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const [query, setQuery] = useState('')
   /** 树宽（可拖右边缘调整），默认与 CSS 里的 240px 一致 */
   const [treeWidth, setTreeWidth] = useState(240)
   const resizeRef = useRef<{ x: number; w: number } | null>(null)
-  /** 文件夹右键菜单（N-§1.3#12）：重命名 / 移动 / 删除 */
+  /** 文件夹右键菜单：重命名 / 移动 / 删除 */
   const [folderMenu, setFolderMenu] = useState<{ id: number; x: number; y: number } | null>(null)
   /** 「移动到…」二级菜单：列出可作为父级的文件夹 */
   const [moveMenu, setMoveMenu] = useState<{ id: number; x: number; y: number } | null>(null)
-  /** S22 文件夹深链目标：展开父链后高亮该文件夹并滚入视野，随后自动取消高亮 */
+  /** 文件夹深链目标：展开父链后高亮该文件夹并滚入视野，随后自动取消高亮 */
   const [folderFocus, setFolderFocus] = useState<number | null>(null)
   /** 新建类型菜单：点行内「新建」时弹出，选完类型才创建（替代工具栏里的格式下拉） */
   const [formatMenu, setFormatMenu] = useState<{ x: number; y: number; parentId: number | null } | null>(null)
@@ -107,7 +111,7 @@ export function NoteTree({
     setFormatMenu({ x: r.left, y: r.bottom + 4, parentId })
   }
 
-  // S22：文件夹深链（图谱双击文件夹）——展开父链（折叠时目标不渲染），登记待定位 id
+  // 文件夹深链（图谱双击文件夹）——展开父链（折叠时目标不渲染），登记待定位 id
   useEffect(() => {
     const onOpenFolder = (e: Event): void => {
       const id = Number((e as CustomEvent<{ id?: number }>).detail?.id)
@@ -153,6 +157,7 @@ export function NoteTree({
   const noteRow = (n: Note, depth: number, folderId: number | null): React.ReactNode => {
     const hit = matched === null || matched.has(n.id)
     if (!hit) return null
+    const rowTags = tagsOf(n.id)
     return (
       <div
         key={n.id}
@@ -172,6 +177,28 @@ export function NoteTree({
         })()}
         {n.pinned && <Pin size={12} className="ntree__pin" />}
         <span className="ntree__title">{n.title}</span>
+        {rowTags.length > 0 && (
+          <span className="ntree__tags" aria-label="笔记标签">
+            {rowTags.slice(0, 2).map((tg) => (
+              <span
+                key={tg.id}
+                className="chip chip--tag chip--tag--mini"
+                style={{ background: tg.color, borderColor: tg.color, color: inkOn(tg.color) }}
+                title={tg.name}
+              >
+                {tg.name}
+              </span>
+            ))}
+            {rowTags.length > 2 && (
+              <span
+                className="chip chip--tag chip--tag--mini"
+                title={rowTags.slice(2).map((x) => x.name).join('、')}
+              >
+                +{rowTags.length - 2}
+              </span>
+            )}
+          </span>
+        )}
         <span className="ntree__actions">
           <button
             className="icon-btn"

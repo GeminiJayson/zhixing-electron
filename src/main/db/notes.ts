@@ -29,8 +29,47 @@ export function getNote(id: number): Note | null {
 // 免得已有的十几个 import 全改一遍。
 export { resolveNoteTitle } from './task-note-links'
 
+// ---------------------------------------------------------------- 标签（笔记侧）
+
 /**
- * 保存正文时按 [[标题]] 同步 note_link，语义等同 note_service._pipeline 的 diff：
+ * 全部笔记的标签关联：渲染层拿它给笔记行挂胶囊。
+ * tag 表与任务共用一套，所以这里只查 note_tag 一侧，颜色随标签全局一致。
+ */
+export function noteTagMap(): { note_id: number; id: number; name: string; color: string }[] {
+  return conn()
+    .prepare(
+      `SELECT nt.note_id, t.id, t.name, t.color
+         FROM note_tag nt JOIN tag t ON t.id = nt.tag_id
+        ORDER BY t.name ASC`
+    )
+    .all() as { note_id: number; id: number; name: string; color: string }[]
+}
+
+/**
+ * 覆盖式设置笔记标签：
+ * 标签不存在时按名新建，与任务共用同一张 tag 表 —— 于是「给笔记打标签」不需要
+ * 另建一套标签体系，标签管理里的重命名 / 合并 / 删除自动同时作用于两边。
+ */
+export function setNoteTags(noteId: number, names: string[]): void {
+  const c = conn()
+  c.prepare('DELETE FROM note_tag WHERE note_id = ?').run(noteId)
+  const find = c.prepare('SELECT id FROM tag WHERE name = ?')
+  const add = c.prepare('INSERT INTO tag (name, color) VALUES (?, ?)')
+  const link = c.prepare('INSERT OR IGNORE INTO note_tag (note_id, tag_id) VALUES (?, ?)')
+  for (const raw of names) {
+    const name = raw.trim()
+    if (!name) continue
+    let row = find.get(name) as { id: number } | undefined
+    if (!row) {
+      const info = add.run(name, '#0D9488')
+      row = { id: Number(info.lastInsertRowid) }
+    }
+    link.run(noteId, row.id)
+  }
+}
+
+/**
+ * 保存正文时按 [[标题]] 同步 note_link：
  * 正文里消失的链接删行；新增的插入并按标题尝试绑定 dst_note_id；
  * 已存在的悬空行在目标出现后转正（绑定 dst_note_id）。
  */
@@ -51,9 +90,9 @@ export function syncNoteLinks(noteId: number, contentMd: string): void {
   const ins = c.prepare('INSERT INTO note_link (src_note_id, dst_title, dst_note_id) VALUES (?, ?, ?)')
   const bind = c.prepare('UPDATE note_link SET dst_note_id = ? WHERE src_note_id = ? AND dst_title = ?')
   for (const title of titles) {
-    // 对齐 Python NoteLinkRepository.replace_links：解析到什么就绑什么，
-    // **不特判自链接**（N-§1.3#15）。原先把自链接置空，会让正文里出现自己标题的
-    // 笔记在两侧产生不同形态的链接行（Electron 是悬空，Python 是指向自身）。
+    // 解析到什么就绑什么，
+    // **不特判自链接**。原先把自链接置空，会让正文里出现自己标题的
+    // 笔记在两侧产生不同形态的链接行。
     const dst = resolveNoteTitle(title)
     if (have.has(title)) bind.run(dst, noteId, title)
     else ins.run(noteId, title, dst)
@@ -120,11 +159,11 @@ export function saveNote(
    * 这几步全是同步的，正好适合 better-sqlite3 的同步事务 —— 异步副作用必须留在事务外。
    */
   const tx = c.transaction(() => {
-    // 正文变更前先落一份版本快照（与 note_service.save 的 _snapshot 时机一致）
+    // 正文变更前先落一份版本快照
     if ('content_md' in fields) snapshotNote(id)
     c.prepare(sql).run(...args)
     if ('content_md' in fields) syncNoteLinks(id, fields.content_md ?? '')
-    // 改名后，原先指向旧标题的链接跟随改名（对齐 links.rename_target）
+    // 改名后，原先指向旧标题的链接跟随改名
     if (nextTitle !== before.title) {
       c.prepare('UPDATE note_link SET dst_title = ? WHERE dst_title = ?').run(nextTitle, before.title)
       // 任务正文里写的还是旧标题的那些行：按旧标题掉链、按新标题补链
@@ -137,7 +176,7 @@ export function saveNote(
   return tx()
 }
 
-/** 五种笔记格式（对齐 NOTE_FORMATS）。word/excel 的 content_md 存本地路径，link 存 URL。 */
+/** 五种笔记格式。word/excel 的 content_md 存本地路径，link 存 URL。 */
 export const NOTE_FORMATS = ['markdown', 'richtext', 'word', 'excel', 'link'] as const
 export type NoteFormat = (typeof NOTE_FORMATS)[number]
 
@@ -169,7 +208,7 @@ export function createNote(
 }
 
 /**
- * 软删除（与 note_service.delete 一致，可从回收站恢复）。
+ * 软删除（可从回收站恢复）。
  * 同步把指向它的入链悬空化：dst_note_id→NULL 但保留 dst_title，
  * 否则图谱会因 dst 已删除而整条丢弃该引用。
  */
@@ -191,7 +230,7 @@ export function listOutLinks(noteId: number): NoteLink[] {
     .all(noteId) as NoteLink[]
 }
 
-/** 反链：按 dst_note_id 或 dst_title 命中本笔记的来源（对齐 links.backlinks）。 */
+/** 反链：按 dst_note_id 或 dst_title 命中本笔记的来源。 */
 export function listBacklinks(noteId: number): Backlink[] {
   const me = getNote(noteId)
   const rows = conn()
@@ -214,7 +253,7 @@ export function listBacklinks(noteId: number): Backlink[] {
   }))
 }
 
-/** 把悬空「待建」引用转正：目标不存在则按标题新建（对齐 materialize_dangling）。 */
+/** 把悬空「待建」引用转正：目标不存在则按标题新建。 */
 export function materializeDangling(srcNoteId: number, title: string): number | null {
   const clean = title.trim()
   if (!clean) return null
@@ -261,9 +300,8 @@ export function renameNoteFolder(id: number, name: string): NoteFolder | null {
 }
 
 /**
- * 笔记文件夹为空时自动新建默认文件夹（对齐 note_service.ensure_default_folder）。
+ * 笔记文件夹为空时自动新建默认文件夹。
  *
- * Python 在笔记树 reload 时做这件事（note_page._reload_tree），
  * 保证「全部笔记」之外始终有一个可归属的目录。返回新建的文件夹，已有则返回 null。
  */
 export function ensureDefaultFolder(): NoteFolder | null {
@@ -274,7 +312,7 @@ export function ensureDefaultFolder(): NoteFolder | null {
 }
 
 /**
- * 移动笔记文件夹到新父级（对齐 note_service.move_folder）。
+ * 移动笔记文件夹到新父级。
  * 提交前做祖先链回环校验：拒绝挂到自身或自己的子孙下，成环时返回 null 且不写库。
  */
 export function moveNoteFolder(folderId: number, newParentId: number | null): NoteFolder | null {
@@ -303,7 +341,7 @@ export function moveNoteFolder(folderId: number, newParentId: number | null): No
 }
 
 /**
- * 删除笔记文件夹（对齐 note_service.delete_folder）：
+ * 删除笔记文件夹：
  * 其下笔记（含已软删的回收站笔记）回落「全部笔记」，子文件夹上移一级。
  */
 export function deleteNoteFolder(folderId: number): number {
@@ -322,11 +360,11 @@ export function deleteNoteFolder(folderId: number): number {
 
 // ---------------------------------------------------------------- 主动引用 / 归属 / 追加
 
-/** add_reference_link 的状态码（对齐 note_service.add_reference_link 返回串）。 */
+/** add_reference_link 的状态码。 */
 export type ReferenceStatus = 'added' | 'dangling' | 'bound' | 'duplicate' | 'invalid' | 'self'
 
 /**
- * 主动建引用 note_link(src → dst)（对齐 note_service.add_reference_link）：
+ * 主动建引用 note_link(src → dst)：
  * target 为笔记 id → 引用该笔记（不存在/已软删 → invalid）；target 为标题 →
  * 精确解析到笔记则引用它，解析不到建「待建」悬空链接（dst_note_id=None）。
  * 按 (src, dst_title) 幂等：已存在且目标一致 → duplicate；悬空行转正 → bound。
@@ -339,7 +377,7 @@ export function addReferenceLink(srcNoteId: number, target: number | string): Re
     title = target.trim()
     if (!title) return 'invalid'
     dstId = resolveNoteTitle(title)
-    // 对齐 Python：标题解析到自己时按 self 拒绝
+    // 标题解析到自己时按 self 拒绝
     if (dstId === srcNoteId) return 'self'
   } else if (typeof target === 'number') {
     if (target <= 0) return 'invalid'
@@ -372,8 +410,8 @@ export function addReferenceLink(srcNoteId: number, target: number | string): Re
 }
 
 /**
- * 向笔记正文追加一段文本（对齐 note_service.append），供完成任务时的「复盘/结论」回写。
- * 与 Python 一致：非空正文前补两个换行；这次写入不触发版本快照。
+ * 向笔记正文追加一段文本，供完成任务时的「复盘/结论」回写。
+ * 非空正文前补两个换行；这次写入不触发版本快照。
  */
 export function appendNote(noteId: number, text: string): Note | null {
   const note = getNote(noteId)
@@ -388,7 +426,7 @@ export function appendNote(noteId: number, text: string): Note | null {
 }
 
 /**
- * 段落级上下文（v0.15 P0-1 / 对齐 TaskRepository.link_context）：
+ * 段落级上下文：
  * 记录「任务关联了本笔记的某一段落」，同 (task, note, block_key) 幂等。
  * 「选文转任务并关联段落」写这里，供任务侧一键跳回本段。
  */
@@ -407,7 +445,7 @@ export function attachNoteBlockContext(
     .run(taskId, noteId, blockKey, snippet, nowStamp()).changes
 }
 
-/** 某笔记的全部段落上下文（对齐 TaskRepository.contexts_for_note）。 */
+/** 某笔记的全部段落上下文。 */
 export function listNoteBlockContexts(
   noteId: number
 ): { id: number; task_id: number; note_id: number; block_key: string; snippet: string }[] {
@@ -424,7 +462,7 @@ export function listNoteBlockContexts(
   }[]
 }
 
-/** 本笔记归属的任务（对齐 TaskRepository.tasks_for_note，未删任务按 updated_at 倒序）。 */
+/** 本笔记归属的任务。 */
 export function noteAttachedTasks(noteId: number): { id: number; title: string }[] {
   return conn()
     .prepare(
@@ -435,7 +473,7 @@ export function noteAttachedTasks(noteId: number): { id: number; title: string }
 }
 
 /**
- * 「+ 归属 → 选任务」候选（对齐 TaskRepository.candidates）：
+ * 「+ 归属 → 选任务」候选：
  * 非删、非终态任务；q 非空按标题模糊过滤，按 updated_at 倒序取前 limit 条。
  */
 export function noteTaskCandidates(q: string, limit = 30): { id: number; title: string }[] {
@@ -454,10 +492,10 @@ export function noteTaskCandidates(q: string, limit = 30): { id: number; title: 
 
 // ---------------------------------------------------------------- 笔记版本历史 / 孤儿 / 模板
 
-/** 版本历史保留最近 20 版（对齐 note_service._NOTE_REVISION_LIMIT）。 */
+/** 版本历史保留最近 20 版。 */
 export const NOTE_REVISION_LIMIT = 20
 
-/** 笔记模板（对齐 NOTE_TEMPLATES：标题前缀 + 内容骨架）。 */
+/** 笔记模板。 */
 export const NOTE_TEMPLATES: Record<string, { title: string; content: string }> = {
   每日笔记: {
     title: '每日笔记 ',
@@ -474,7 +512,7 @@ export const NOTE_TEMPLATES: Record<string, { title: string; content: string }> 
 }
 
 /**
- * 保存/回滚前把当前内容存入版本历史（对齐 _snapshot）：
+ * 保存/回滚前把当前内容存入版本历史：
  * 与上一版内容相同则跳过，超出 20 版删最旧的。
  */
 export function snapshotNote(noteId: number): void {
@@ -504,7 +542,7 @@ export function listNoteRevisions(noteId: number): NoteRevision[] {
     .all(noteId) as NoteRevision[]
 }
 
-/** 回滚到某版：先给当前内容留快照，避免回滚不可逆（对齐 restore_revision）。 */
+/** 回滚到某版：先给当前内容留快照，避免回滚不可逆。 */
 export function restoreNoteRevision(noteId: number, revId: number): Note | null {
   const c = conn()
   const rev = c
@@ -521,7 +559,7 @@ export function restoreNoteRevision(noteId: number, revId: number): Note | null 
   return getNote(noteId)
 }
 
-/** 孤儿笔记：既无出链也无入链（对齐 orphans）。 */
+/** 孤儿笔记：既无出链也无入链。 */
 export function orphanNotes(): Note[] {
   const c = conn()
   const notes = c
@@ -539,7 +577,7 @@ export function orphanNotes(): Note[] {
 }
 
 /**
- * 失效链接（对齐 NoteLinkRepository.broken_links，N-§1.3#14）：
+ * 失效链接：
  * dst_note_id 为空（待建/目标已删）**且标题当前解析不到现存笔记**才算失效。
  * 少了后半段过滤时，正文里刚写下的 [[标题]]（目标已存在但尚未绑定 dst_note_id）
  * 会被误报成失效链接。
@@ -563,7 +601,7 @@ export function brokenLinks(): { src_note_id: number; src_title: string; dst_tit
   return rows.filter((r) => !existing.has(r.dst_title))
 }
 
-/** 按模板新建笔记（标题带 MM-DD 后缀，对齐 create_from_template）。 */
+/** 按模板新建笔记。 */
 export function createNoteFromTemplate(kind: string, folderId: number | null): Note | null {
   const tpl = NOTE_TEMPLATES[kind]
   if (!tpl) return null

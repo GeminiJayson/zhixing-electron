@@ -6,7 +6,7 @@ const TODAY = '2026-09-16' // 周三
 describe('快速捕获语法糖', () => {
   it('完整语法：优先级 + 列表 + 标签 + 日期', () => {
     const p = parseCapture('周五前 交付方案 !2 @工作 #客户', TODAY)
-    // 日期词后的「前/之前/以内」等连接词一并清掉（对齐 capture_grammar 的后处理）
+    // 日期词后的「前/之前/以内」等连接词一并清掉
     expect(p.title).toBe('交付方案')
     expect(p.priority).toBe(5)
     expect(p.listName).toBe('工作')
@@ -71,7 +71,7 @@ describe('自然日期词', () => {
   })
 
   it('时刻解析（中文与 24h）', () => {
-    // 无修饰的 1-6 点按口语「下午」处理（对齐 _resolve_hour：3点 → 15:00）
+    // 无修饰的 1-6 点按口语「下午」处理
     expect(parseNaturalDate('明天3点', TODAY).clock).toEqual([15, 0])
     expect(parseNaturalDate('明天下午3点', TODAY).clock).toEqual([15, 0])
     expect(parseNaturalDate('明天3点半', TODAY).clock).toEqual([15, 30])
@@ -80,16 +80,16 @@ describe('自然日期词', () => {
     expect(parseNaturalDate('明天20点', TODAY).clock).toEqual([20, 0])
   })
 
-  it('非法时刻 / 非法日期一律丢弃（对齐 parse_clock 与 parse_natural_date）', () => {
+  it('非法时刻 / 非法日期一律丢弃', () => {
     expect(parseNaturalDate('明天25:99', TODAY).clock).toBeNull()
     // 注意不能用带后缀的整串（正则要求 ^...$，那样会因「不匹配」而返回 null，测不到非法日期检测）
     expect(parseNaturalDate('2月30日', TODAY).date).toBeNull()
     expect(parseNaturalDate('2/29', TODAY).date).toBeNull()
-    // TODAY = 2026-09-16，2 月已过 → 合法则顺延到明年（对齐「已过的月日顺延」）
+    // TODAY = 2026-09-16，2 月已过 → 合法则顺延到明年
     expect(parseNaturalDate('2月28日', TODAY).date).toBe('2027-02-28')
   })
 
-  it('标题残留修饰词与首尾标点被清掉（对齐 capture_grammar）', () => {
+  it('标题残留修饰词与首尾标点被清掉', () => {
     expect(parseCapture('周五前 交付方案', TODAY).title).toBe('交付方案')
     expect(parseCapture('- 买菜', TODAY).title).toBe('买菜')
   })

@@ -1,5 +1,5 @@
 /* 统一工具栏（components/Toolbar.tsx）：两层骨架 + 溢出逐级折叠。
-   控件高度一律用 --control-h 家族，见 docs/03 §2.7。 */
+   控件高度一律用 --control-h 家族，见 docs/03。 */
 
 .tb {
   margin-bottom: var(--space-3);

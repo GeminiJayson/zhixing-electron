@@ -17,8 +17,7 @@ interface Props {
 
 /**
  * 看板：列 = 状态，卡片 = **根任务**（列头计数也只算根任务）。
- * 展开的父任务把未完成子任务以缩进卡片列在其下方，仅作展示、不做状态级联
- * （对齐 kanban.KanbanView.load）。
+ * 展开的父任务把未完成子任务以缩进卡片列在其下方，仅作展示、不做状态级联。
  */
 export function KanbanBoard({ tasks, effective, expanded, onOpen, onToggleSubtree, onDropStatus, onAdd }: Props) {
   const [dragId, setDragId] = useState<number | null>(null)

@@ -11,7 +11,7 @@ interface Props {
   onOpen: (id: number) => void
   onToggle: (id: number) => void
   onReschedule: (id: number, day: string) => void
-  /** 日历是否显示已完成任务（settings.calendar_show_done，默认 false，T11） */
+  /** 日历是否显示已完成任务（settings.calendar_show_done，默认 false） */
   showDone: boolean
 }
 
@@ -21,7 +21,7 @@ const MAX_PILLS = 3
 const pad = pad2
 
 /**
- * 任务按日期归类，与 Python task_page.group_tasks_by_date 逐条对齐（T11）：
+ * 任务按日期归类：
  * - 开始+截止：区间内每一天都显示（含两端，逐日展开，防御性上限约 10 年）；
  * - 仅截止：截止当天；仅开始：开始当天；无日期：归入「今日」；
  * - 每日内按 (-priority, sort_key, id) 升序。
@@ -65,7 +65,7 @@ export function groupTasksByDate(tasks: Task[], today: string): Map<string, Task
   return out
 }
 
-/** 月历 + 右侧当日任务清单；任务胶囊可拖到另一天改期（对齐 CalendarTaskView）。 */
+/** 月历 + 右侧当日任务清单；任务胶囊可拖到另一天改期。 */
 export function CalendarBoard({ tasks, effective, onOpen, onToggle, onReschedule, showDone }: Props) {
   const today = new Date().toLocaleDateString('sv-SE')
   const [cursor, setCursor] = useState(() => {
@@ -79,7 +79,7 @@ export function CalendarBoard({ tasks, effective, onOpen, onToggle, onReschedule
   const isDone = (t: Task): boolean =>
     effective.get(t.id) ?? isTerminal(t.status)
 
-  // 已完成过滤与 Python _visible_tasks 同口径：开关关（默认 false）才隐去有效完成
+  // 已完成过滤：开关关（默认 false）才隐去有效完成
   const visible = useMemo(
     () => (showDone ? tasks : tasks.filter((t) => !isDone(t))),
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -2,7 +2,7 @@
  * 工作流：条件节点的「满足 / 不满足」两条分支 + 实例再次运行/删除 + 模板栏宽度可调。
  *
  * 覆盖：
- *   1. branch_false_node_id 落库并能读回（Electron 私有附加列，不占 Python 的迁移号）
+ *   1. branch_false_node_id 落库并能读回
  *   2. 推进：条件不成立走 false 分支、成立走 true 分支
  *   3. 实例：rerunWorkflowInstance 新开一个实例；deleteWorkflowInstance 只删该实例，
  *      模板与已生成的任务都不动

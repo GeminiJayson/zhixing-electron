@@ -1,8 +1,8 @@
-/** 任务状态与终态语义，对齐 zhixing/model/domain/entities.py。 */
+/** 任务状态与终态语义。 */
 
 import type { Task, TaskStatus } from './types'
 
-/** 编辑页下拉与看板列的顺序（与 entities.TaskStatus 一致） */
+/** 编辑页下拉与看板列的顺序。 */
 export const STATUS_CHOICES: readonly { value: TaskStatus; label: string }[] = [
   { value: 'todo', label: '待办' },
   { value: 'doing', label: '进行中' },
@@ -39,7 +39,7 @@ export function isTerminal(status: TaskStatus): boolean {
 }
 
 /**
- * 有效完成 roll-up，逐行对齐 task_rules.effective_done_map：
+ * 有效完成 roll-up：
  * 叶子看自身是否终态；父任务看**所有**后代是否都有效完成。
  * 纯派生值，不落库。
  */
@@ -70,6 +70,38 @@ export function effectiveDoneMap(tasks: Task[]): Map<number, boolean> {
 
   for (const t of tasks) rec(t)
   return memo
+}
+
+/**
+ * 某个清单范围里的任务：根 + 后代闭包。
+ *
+ * 与主进程 lists.listTasksByList 的递归 CTE 是同一套语义的两种实现 —— 那边在库里筛，
+ * 这边在已经取回的全量任务上筛（清单栏要给每个清单显示计数，只能一次取全量）。
+ * 三条规则两边必须一致：
+ *   - 根 = 该清单下的**顶层**任务；
+ *   - 该清单没有任何顶层任务时，回退为它的全部任务；
+ *   - 子任务的 list_id 可能与父不同，闭包保证它们不会因为「根判定」被漏掉。
+ */
+export function tasksInListScope(tasks: Task[], listId: number | null): Task[] {
+  const hit = (t: Task): boolean => (t.list_id ?? null) === listId
+  const roots = tasks.filter((t) => t.parent_id === null && hit(t))
+  const seed = roots.length > 0 ? roots : tasks.filter(hit)
+  if (seed.length === 0) return []
+
+  const byParent = new Map<number, Task[]>()
+  for (const t of tasks) {
+    if (t.parent_id === null) continue
+    const arr = byParent.get(t.parent_id) ?? []
+    arr.push(t)
+    byParent.set(t.parent_id, arr)
+  }
+  const keep = new Set<number>()
+  const walk = (t: Task): void => {
+    keep.add(t.id)
+    for (const c of byParent.get(t.id) ?? []) walk(c)
+  }
+  for (const r of seed) walk(r)
+  return tasks.filter((t) => keep.has(t.id))
 }
 
 /** 合并任务与有效完成态，供列表勾选显示 */

@@ -10,8 +10,8 @@ import { DEFAULT_THEME_PACK } from './theme-packs'
  * 那里存着 theme_pack=墨黑，于是断言「默认是墨黑」的脚本一直是「过」的。
  * 换成空库之后立刻现形。
  *
- * 权威来源是 Python 版（core/constants.py / settings.py 都是「青竹」，accent #0D9488）：
- * 两版共用同一张 settings 表，默认值分叉会让同一个库在两侧表现不一致。
+ * 权威默认值是「青竹」（accent #0D9488）：
+ * 共用的 settings 表要求默认值一致，分叉会让同一个库在不同客户端表现不一致。
  */
 describe('主题包默认值只有一个来源', () => {
   it('DEFAULT_THEME_PACK 必须与 DEFAULT_SETTINGS.theme_pack 一致', () => {
@@ -23,7 +23,7 @@ describe('主题包默认值只有一个来源', () => {
   })
 
   it('默认包必须真的在主题包表里（否则 resolveThemePack 会静默换包）', () => {
-    // 与 Python 对齐：默认值「青竹」
+    // 默认值「青竹」
     expect(DEFAULT_THEME_PACK).toBe('青竹')
   })
 })

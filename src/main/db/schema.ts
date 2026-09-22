@@ -1,11 +1,10 @@
 /**
- * 建库 DDL：库文件不存在时由 connection.open() 执行，效果等价于 Python 版的
- * Base.metadata.create_all + _FTS_DDL + 写入 settings.schema_version。
+ * 建库 DDL：库文件不存在时由 connection.open() 执行，建全部业务表 + FTS 表并写入
+ * settings.schema_version。
  *
- * 本文件是生成物，请勿手改：
- *     .venv/bin/python electron/scripts/export-schema.py
- * Python 侧 SCHEMA_VERSION 变化后必须重新生成，否则新库会缺表。
- * 当前对应 Python 侧 SCHEMA_VERSION = 12，共 24 张表。
+ * 这里是建库 DDL 的**唯一真源**，随功能直接维护：改 `SCHEMA_SQL` 后要同步升
+ * `SCHEMA_VERSION`，并在 migrate.ts 的迁移链里补上同号步骤，旧库才会跟着补齐。
+ * 当前 SCHEMA_VERSION = 12，共 24 张表。
  */
 export const SCHEMA_VERSION = 12
 

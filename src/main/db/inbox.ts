@@ -12,7 +12,7 @@ import { reindexFlash, reindexTask, removeFromIndex } from './fts'
 export const FLASH_COLUMNS =
   'id, content, remark, source_app, source_url, status, converted_type, converted_id, created_at'
 
-/** 任务收件箱：未归入任何列表（list_id IS NULL）的任务，对齐 task_service.list_tree(None)。 */
+/** 任务收件箱：未归入任何列表（list_id IS NULL）的任务。 */
 export function listInboxTasks(): Task[] {
   return conn()
     .prepare(
@@ -51,7 +51,7 @@ export function addFlash(
       `INSERT INTO flash (content, remark, source_app, source_url, status, converted_type, converted_id, created_at)
        VALUES (?, ?, ?, ?, 'inbox', '', 0, ?)`
     )
-    // 对齐 flash_service.add：正文截 2000、备注截 200，避免超长内容撑爆列表与检索索引
+    // 正文截 2000、备注截 200，避免超长内容撑爆列表与检索索引
     .run(clean.slice(0, 2000), remark.slice(0, 200), sourceApp, sourceUrl, nowStamp())
   const id = Number(info.lastInsertRowid)
   reindexFlash(id)
@@ -70,7 +70,7 @@ export function deleteFlash(id: number): number {
   return changes
 }
 
-/** 改备注（对齐 update_remark）。 */
+/** 改备注。 */
 export function updateFlashRemark(id: number, remark: string): Flash | null {
   conn()
     .prepare('UPDATE flash SET remark = ? WHERE id = ?')
@@ -80,7 +80,7 @@ export function updateFlashRemark(id: number, remark: string): Flash | null {
 }
 
 /**
- * 给闪念打标签（对齐 flash_service.tag）：按名 ensure 后**整体覆盖**。
+ * 给闪念打标签：按名 ensure 后**整体覆盖**。
  * flash_tag 表此前只有建表 DDL，没有任何写入路径。
  */
 export function tagFlash(id: number, tagNames: string[]): void {
@@ -105,7 +105,7 @@ export function tagFlash(id: number, tagNames: string[]): void {
 }
 
 /**
- * 合并多条闪念（对齐 flash_service.merge）：正文以分隔线拼接、备注与来源取首条、
+ * 合并多条闪念：正文以分隔线拼接、备注与来源取首条、
  * 标签取并集，原条软删，返回新条。
  */
 export function mergeFlashes(ids: number[]): Flash | null {
@@ -144,7 +144,7 @@ export function mergeFlashes(ids: number[]): Flash | null {
   return tx()
 }
 
-/** 标记闪念已转换（status=converted + 去向），对齐 flash_service._mark_converted。 */
+/** 标记闪念已转换（status=converted + 去向）。 */
 export function markFlashConverted(
   id: number,
   kind: 'task' | 'note' | 'subtask',
@@ -155,7 +155,7 @@ export function markFlashConverted(
     .run(kind, targetId, id)
 }
 
-/** 闪念 → 任务：标题取正文首行前 60 字，原正文写入备注（对齐 to_task）。 */
+/** 闪念 → 任务：标题取正文首行前 60 字，原正文写入备注。 */
 export function flashToTask(id: number): number | null {
   const f = getFlash(id)
   if (!f) return null
@@ -174,7 +174,7 @@ export function flashToTask(id: number): number | null {
   return taskId
 }
 
-/** 闪念 → 子任务（对齐 to_subtask）：挂到指定父任务下。 */
+/** 闪念 → 子任务：挂到指定父任务下。 */
 export function flashToSubtask(id: number, parentTaskId: number): number | null {
   const f = getFlash(id)
   if (!f) return null
@@ -200,7 +200,7 @@ export function flashToSubtask(id: number, parentTaskId: number): number | null 
   return taskId
 }
 
-/** 闪念 → 笔记：标题取备注或正文首行前 40 字（对齐 to_note）。 */
+/** 闪念 → 笔记：标题取备注或正文首行前 40 字。 */
 export function flashToNote(id: number, folderId: number | null = null): number | null {
   const f = getFlash(id)
   if (!f) return null

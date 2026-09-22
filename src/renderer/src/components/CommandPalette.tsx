@@ -85,7 +85,7 @@ function backupsDirOf(dbPath: string): string {
  *
  * 检索走主进程的 global_search（FTS5 + 前缀/过滤语法 + 命令注入 + MRU），
  * 不再像以前那样只对已加载的笔记标题做子串匹配。
- * 命令组来自主进程注入的命令注册表（对齐 Python 的 search_service.commands），
+ * 命令组来自主进程注入的命令注册表，
  * 渲染层只负责把稳定命令 id 映射到具体动作。
  */
 export function CommandPalette({ open, onClose, onNavigate, onOpenNote, onQuickAdd, onNotice }: Props) {
@@ -102,8 +102,7 @@ export function CommandPalette({ open, onClose, onNavigate, onOpenNote, onQuickA
     window.setTimeout(() => inputRef.current?.focus(), 30)
   }, [open])
 
-  // 输入后防抖查库；**空查询也要查一次**——命令注册表就是这么注入的
-  // （对齐 global_search 对空查询返回命令组的行为）。
+  // 输入后防抖查库；**空查询也要查一次**——命令注册表就是这么注入的。
   useEffect(() => {
     if (!open) return
     const query = q.trim()
@@ -122,7 +121,7 @@ export function CommandPalette({ open, onClose, onNavigate, onOpenNote, onQuickA
     }
   }, [q, open])
 
-  /** 命令 id → 渲染层动作（对齐 app_controller 的 7 条注册命令）。 */
+  /** 命令 id → 渲染层动作。 */
   const runCommand = async (id: string): Promise<void> => {
     rememberCommand(id)
     try {
@@ -142,7 +141,7 @@ export function CommandPalette({ open, onClose, onNavigate, onOpenNote, onQuickA
         const res = await window.zhixing.db.backupDatabase(backupsDirOf(info.path))
         onNotice?.(res ? '已备份到 ' + res.path : '备份失败')
       } else if (id === 'start-pomodoro') {
-        // 无任务启动专注（对齐 _start_pomodoro(None)）
+        // 无任务启动专注
         window.dispatchEvent(new CustomEvent('zhixing:pomodoro', { detail: { taskId: null, title: '' } }))
       }
     } catch (err) {
@@ -154,7 +153,7 @@ export function CommandPalette({ open, onClose, onNavigate, onOpenNote, onQuickA
     const query = q.trim().toLowerCase()
     const out: Item[] = []
 
-    // 1) 命令组（主进程注入，空查询即全部；对齐 SearchResult.groups 的「命令」在首位）
+    // 1) 命令组
     //    最近用过的排在前面，并在副标题里标出来
     const mru = readCommandMru()
     const commands = [...(hits?.command ?? [])].sort((a, b) => {
@@ -246,7 +245,7 @@ export function CommandPalette({ open, onClose, onNavigate, onOpenNote, onQuickA
 
   const exec = async (item: Item | undefined): Promise<void> => {
     if (!item) return
-    // MRU：选中即记一次（对齐 app_controller._open_hit 的 search_service.touch）
+    // MRU：选中即记一次
     if (item.mru) {
       try {
         await window.zhixing.db.searchTouch(item.mru.kind, item.mru.id)

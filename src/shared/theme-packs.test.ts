@@ -7,7 +7,7 @@ const REQUIRED = [
 ] as const
 
 describe('主题包', () => {
-  it('来自 Python 版的 14 款主题包都在', () => {
+  it('14 款主题包都在', () => {
     expect(THEME_PACK_NAMES).toHaveLength(14)
     expect(THEME_PACK_NAMES).toContain('墨黑')
     expect(THEME_PACK_NAMES).toContain('樱花粉')

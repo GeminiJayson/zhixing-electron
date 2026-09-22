@@ -1,13 +1,13 @@
 /**
- * 主题应用（O8）：把主题包的 token 覆盖写入设计令牌变量。
- * 数据来自 shared/theme-packs.ts（由 Python 版 resources/themes/*.json 生成），
+ * 主题应用：把主题包的 token 覆盖写入设计令牌变量。
+ * 数据来自 shared/theme-packs.ts，
  * 所以新增主题包只需加数据，不用改这里的代码。
  */
 import { resolveThemePack, type ThemeColors } from '@shared/theme-packs'
 import { ensureTextContrast } from '@shared/color'
 import type { AppSettings, ThemeMode } from '@shared/settings'
 
-/** theme_mode 为 system 时按系统明暗解析成实际模式（对齐 app_controller 的 styleHints 取值）。 */
+/** theme_mode 为 system 时按系统明暗解析成实际模式。 */
 export function resolveThemeMode(mode: ThemeMode): 'light' | 'dark' {
   if (mode !== 'system') return mode
   // 非浏览器环境（node 下的单测）没有 matchMedia，按浅色处理
@@ -36,7 +36,7 @@ const TOKEN_VARS: Record<keyof ThemeColors, string[]> = {
 
 /**
  * 应用主题：先铺主题包的语义色，再单独写入强调色。
- * 强调色与主题包正交（与 Python 版一致）——换主题包不会改掉你选的强调色。
+ * 强调色与主题包正交——换主题包不会改掉你选的强调色。
  */
 export function applyTheme(
   mode: 'light' | 'dark',
@@ -47,7 +47,7 @@ export function applyTheme(
   const pack = resolveThemePack(packName)
   const colors: ThemeColors = { ...(mode === 'dark' ? pack.dark : pack.light) }
   // 主题包的文字色是按观感调的柔和色，对 canvas / layer 的对比度大量落在 4.5 以下
-  // （实测 168 组里 74 组不达标）。这里按与 Python 版同一套下限做校正：
+  // （实测 168 组里 74 组不达标）。这里按同一套下限做校正：
   // 正文/次要 4.5:1、辅助文字 4.0:1；已达标的值原样保留。
   const surfaces = [colors.canvas, colors.layer]
   colors.fg = ensureTextContrast(colors.fg, surfaces, 4.5)
@@ -66,20 +66,19 @@ export function applyTheme(
     '--accent-text',
     ensureTextContrast(accentColor, [...surfaces, colors.accent_soft], 4.5)
   )
-  // R4：强调底上的文字不再恒为白 —— 浅强调色（如 #FDE047）上白字只有约 1.3:1。
+  // 强调底上的文字不再恒为白 —— 浅强调色（如 #FDE047）上白字只有约 1.3:1。
   // 与上面同一套 ensureTextContrast：从白起步，浅底压暗到 4.5:1，深底保持白。
   root.style.setProperty('--fg-on-accent', ensureTextContrast('#ffffff', [accentColor], 4.5))
   root.dataset.theme = mode
 }
 
-/** 动效档位：full=完整、reduced=仅必要、none=关闭（对齐 Python 的 reduce-motion 语义）。 */
+/** 动效档位：full=完整、reduced=仅必要、none=关闭。 */
 export type MotionState = 'full' | 'reduced' | 'none'
 
 /**
- * OS 级「减少动态效果」探测（对齐 Python app_controller._os_reduce_motion）。
+ * OS 级「减少动态效果」探测。
  *
- * Python 走 NSWorkspace / SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION)；
- * Chromium 已把同一个系统开关映射到 CSS 的 prefers-reduced-motion，渲染层直接读即可，
+ * Chromium 已把系统开关映射到 CSS 的 prefers-reduced-motion，渲染层直接读即可，
  * 无需再经主进程 + 原生调用。
  */
 export function prefersReducedMotion(): boolean {
@@ -162,9 +161,9 @@ export function applyMotion(
  * 主窗口、设置页、桌面浮窗共用这一份实现——浮窗是独立渲染进程，只能自己
  * 从 settings 表读一遍；三处各写一遍就会在换包/改字号时互相漂移。
  *
- * 映射口径与 Python app_controller._apply_theme 一致：设置值即像素值，
+ * 映射口径：设置值即像素值，
  * 此前 font_size+1.5 / task_row_height+10 的补偿偏移已取消（会与设置页 SpinBox、
- * 与共用 settings 表的 Python 版显示值不一致）。
+ * 与共用 settings 表的显示值不一致）。
  */
 export function applyAppearance(
   s: AppSettings,

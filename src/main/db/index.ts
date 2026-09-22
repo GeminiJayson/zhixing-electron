@@ -29,7 +29,7 @@ import { EXPORT_TABLES, buildExportJson, buildTasksCsv, buildNotesExport, import
 import { TASK_ID_OFFSET, FLASH_ID_OFFSET, FOLDER_ID_OFFSET, ANCHOR_ID_OFFSET, folderNodeId, anchorNodeId, classifyEdge, graphNodeId, buildGraphTracked, acyclicOwnershipEdges, diffGraph, graphDelta, graphNeighborhood, graphPreview, isGraphWatching, setGraphWatch, connectionAllowed, resolveEdgeKind, wouldCreateCycle, linkNotes, linkTaskNoteRef, unlinkTaskNoteRef, unlinkNotes, connectGraphNodes, removeGraphEdge, rewireGraphEdge } from './graph'
 import { FLASH_COLUMNS, getFlash, listFlashesByStatus, addFlash, setFlashStatus, deleteFlash, markFlashConverted, flashToTask, flashToNote, updateFlashRemark, tagFlash, mergeFlashes, flashToSubtask } from './inbox'
 import { shiftDay, rollRecurringToday, resumeDueToday, recordPomodoro, pomodoroToday, dueReminders, dismissReminder, snoozeReminder, saveWidgetGeometry, currentSettings, seedIfEmpty } from './maintenance'
-import { NOTE_COLUMNS, listNoteFolders, getNote, resolveNoteTitle, syncNoteLinks, saveNote, createNote, deleteNote, listOutLinks, listBacklinks, materializeDangling, bindDanglingByTitle, createNoteFolder, renameNoteFolder, ensureDefaultFolder, moveNoteFolder, deleteNoteFolder, addReferenceLink, appendNote, attachNoteBlockContext, listNoteBlockContexts, noteAttachedTasks, noteTaskCandidates, NOTE_REVISION_LIMIT, NOTE_TEMPLATES, snapshotNote, listNoteRevisions, restoreNoteRevision, orphanNotes, brokenLinks, createNoteFromTemplate } from './notes'
+import { NOTE_COLUMNS, listNoteFolders, getNote, resolveNoteTitle, syncNoteLinks, saveNote, createNote, deleteNote, listOutLinks, listBacklinks, materializeDangling, bindDanglingByTitle, createNoteFolder, renameNoteFolder, ensureDefaultFolder, moveNoteFolder, deleteNoteFolder, addReferenceLink, appendNote, attachNoteBlockContext, listNoteBlockContexts, noteAttachedTasks, noteTaskCandidates, NOTE_REVISION_LIMIT, NOTE_TEMPLATES, snapshotNote, listNoteRevisions, restoreNoteRevision, orphanNotes, brokenLinks, createNoteFromTemplate, noteTagMap, setNoteTags } from './notes'
 import {
   previewOfficeNote,
   officeDocNote,
@@ -41,11 +41,11 @@ import { dayOf, todayRoots, reviewStats } from './review'
 import { listSettings, setSetting, setSettings, backupDatabase } from './settings'
 import { autoBackup, listBackups, restoreBackup } from './backup'
 import { globalSearch, searchTouch } from './search'
-import { listFolders, listTasksByList, createListFolder, renameListFolder, deleteListFolder, moveTaskToList, defaultListId } from './lists'
+import { listFolders, listTasksByList, createListFolder, renameListFolder, deleteListFolder, moveListFolder, reorderListFolder, isListDescendantOf, moveTaskToList, defaultListId } from './lists'
 import { linkTaskWikiNotes } from './task-note-links'
 import { siblingsOf, isDescendantOf, reorderTask, moveTaskRelative, reparentTask, batchComplete, batchMove, batchSetDue, listTags, setTaskTags, ensureListId, quickAdd } from './task-ops'
 import { listTasks, listTodayTasks, recentNotes, noteCountMap, tagMap, listNotes, overview, toggleTask, cloneTaskTree, setPriority, setTitle, setStatus, setDueDate, nextSortKey, createTask, EDITABLE_FIELDS, updateTask, softDelete, batchDeleteTasks, batchUndoLast, attachTaskNote, detachTaskNote, listLinkedNotes, pauseTask, resumeTask, attachBlock, detachBlock, listLinkedContexts, contextsForNote, noteContextMap, writeNoteAfterDone, taskCandidates } from './tasks'
-import { trashItems, restoreTrash, purgeTrash, emptyTrash, emptyAllTrash, purgeTrashOlderThan, tagsWithUsage, createTag, renameTag, deleteTag, batchDeleteTags, mergeTags } from './trash'
+import { trashItems, restoreTrash, purgeTrash, emptyTrash, emptyAllTrash, purgeTrashOlderThan, tagsWithUsage, createTag, renameTag, deleteTag, setTagColor, batchDeleteTags, mergeTags } from './trash'
 import { attachmentStats, deleteAttachment, importAttachment, listAttachments, pruneAttachments } from './attachments'
 import { deleteSavedQuery, listSavedQueries, saveSavedQuery } from './queries'
 import { NODE_COLUMNS, orderedNodes, nextWorkflowNode, validateWorkflowTemplate, listWorkflowTemplates, getWorkflowTemplate, saveWorkflowTemplate, deleteWorkflowTemplate, duplicateWorkflowTemplate, autoLayoutWorkflowNodes, updateWorkflowNodePos, batchUpdateNodePos, setWorkflowBranch, spawnStepTask, instantiateWorkflow, getWorkflowInstance, listWorkflowInstances, listWorkflowInstancesByTask, completeWorkflowStep, abortWorkflowInstance, retryWorkflowStep, deleteWorkflowInstance, rerunWorkflowInstance, setWorkflowNotifier, splitCommand, describeWorkflowAction, runWorkflowAction, listWorkflowGroups, workflowTemplateGroups, saveWorkflowGroup, deleteWorkflowGroup, moveWorkflowTemplate, renameWorkflowInstance } from './workflow'
@@ -54,7 +54,7 @@ import type { TrashItem } from './trash'
 import type { DataDomain } from '../../shared/events'
 import type { GraphNodePayload, GraphQuery, TaskStatus } from '../../shared/types'
 
-// ---------------------------------------------------------------- 数据变更广播（O3）
+// ---------------------------------------------------------------- 数据变更广播
 
 /** 写操作 → 需要通知的域；只列写操作，读操作不进这张表。 */
 const WRITE_DOMAINS: Record<string, DataDomain | DataDomain[]> = {
@@ -143,6 +143,8 @@ const WRITE_DOMAINS: Record<string, DataDomain | DataDomain[]> = {
   'db:renameListFolder': 'task',
   'db:deleteListFolder': 'task',
   'db:moveTaskToList': 'task',
+  'db:moveListFolder': 'task',
+  'db:reorderListFolder': 'task',
   'db:pauseTask': 'task',
   'db:resumeTask': 'task',
   // 段落级上下文：任务侧「关联段落」与笔记侧反链/图谱两侧都要刷新
@@ -150,7 +152,7 @@ const WRITE_DOMAINS: Record<string, DataDomain | DataDomain[]> = {
   'db:detachBlock': ['task', 'note'],
   // 任务↔笔记的归属关联（写 task_note_link）此前漏登记：行内 ⇄N 计数与图谱边不会跟着刷新
   'db:attachTaskNote': 'task',
-  // 显式重解析任务正文的 [[链接]]（对齐 Python 的 link_wiki_notes）：
+  // 显式重解析任务正文的 [[链接]]：
   // 新建/改名已会自动回绑，这个入口是给「修复上线前就写坏的历史数据」用的
   'db:linkTaskWikiNotes': 'task',
   'db:detachTaskNote': 'task',
@@ -160,7 +162,7 @@ const WRITE_DOMAINS: Record<string, DataDomain | DataDomain[]> = {
   'db:setSetting': 'settings',
   'db:setSettings': 'settings',
   // 回收站操作按 kind 动的是三类记录之一（任务清理还会级联 workflow_step_task），
-  // 逐个 kind 判断做不到就整组广播：多刷一次无害，漏刷才会让页面显示陈数据（D14）
+  // 逐个 kind 判断做不到就整组广播：多刷一次无害，漏刷才会让页面显示陈数据
   'db:restoreTrash': ['task', 'note', 'flash', 'workflow'],
   'db:purgeTrash': ['task', 'note', 'flash', 'workflow'],
   'db:emptyTrash': ['task', 'note', 'flash', 'workflow'],
@@ -169,13 +171,17 @@ const WRITE_DOMAINS: Record<string, DataDomain | DataDomain[]> = {
   'db:renameTag': 'task',
   'db:deleteTag': 'task',
   'db:mergeTags': 'task',
+  // 标签颜色是任务与笔记共用的同一行数据，两边的胶囊都要跟着换色
+  'db:setTagColor': ['task', 'note'],
+  // 给笔记打标签写的是 note_tag；标签本身共用，但受影响的是笔记视图
+  'db:setNoteTags': 'note',
   'db:rollRecurringToday': 'task',
   'db:resumeDueToday': 'task',
   'db:recordPomodoro': 'task',
   'db:dismissReminder': 'task',
   'db:snoozeReminder': 'task',
-  // 导入是整库替换（对齐 Python 的 backup_restored 全量刷新）：只广播 task 会留下
-  // 过期的笔记/闪念/工作流/设置视图（D14）
+  // 导入是整库替换：只广播 task 会留下
+  // 过期的笔记/闪念/工作流/设置视图
   'db:importFromPath': ['task', 'note', 'flash', 'workflow', 'settings'],
   'db:importData': ['task', 'note', 'flash', 'workflow', 'settings'],
   'db:importMarkdownFolder': 'note',
@@ -193,7 +199,7 @@ export function broadcastDataChanged(domain: DataDomain): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) win.webContents.send('data:changed', domain)
   }
-  // G5/G6：笔记/任务/闪念写入后，图谱相关的域顺带推一帧增量（diff 在数据层算），
+  // 笔记/任务/闪念写入后，图谱相关的域顺带推一帧增量（diff 在数据层算），
   // 图页据此定点增删并保留坐标；没有图页在看时不白算。
   if ((domain === 'note' || domain === 'task' || domain === 'flash') && isGraphWatching()) {
     try {
@@ -209,7 +215,7 @@ export function broadcastDataChanged(domain: DataDomain): void {
   }
 }
 
-/** 把当前图谱增量推给所有窗口（对齐 Python 的 bus.graph_delta）。 */
+/** 把当前图谱增量推给所有窗口。 */
 function broadcastGraphDelta(): void {
   const delta = graphDelta()
   for (const win of BrowserWindow.getAllWindows()) {
@@ -222,7 +228,7 @@ function broadcastGraphDelta(): void {
  * 用包装器而不是在每个 handler 里手写广播，是为了不漏、也不重复。
  */
 /**
- * 任务完成时推进它所属的工作流实例（对齐 app_controller._advance_workflow_for_task）。
+ * 任务完成时推进它所属的工作流实例。
  * 放在 IPC 层而不是仓储层：workflow.ts 已经依赖 tasks.ts，反向引用会形成循环。
  * 推进失败只记录 —— 流程不该把任务本身的操作拖失败。
  */
@@ -252,14 +258,14 @@ export function registerDbHandlers(): void {
   // 自动步骤（命令 / 脚本）是在主进程后台推进的：跑完一步必须主动告诉渲染层刷新，
   // 否则页面上会一直显示「运行中」，直到用户手动切页。
   setWorkflowNotifier(() => broadcastDataChanged('workflow'))
-  // 首次启动写入欢迎内容（对齐 Python ctx.seed_if_empty，D24）：只在空库时写，
+  // 首次启动写入欢迎内容：只在空库时写，
   // 放在注册 IPC 之前，保证窗口首次取数时种子数据已就位。
   try {
     seedIfEmpty()
   } catch (err) {
     console.error('[db] 写入欢迎内容失败', err)
   }
-  // 只读分支（D2）：ready=库是否打开；readonly=能打开但迁移失败（显示只读横幅+恢复备份入口）；
+  // 只读分支：ready=库是否打开；readonly=能打开但迁移失败（显示只读横幅+恢复备份入口）；
   // error=完全打不开时的中文原因。
   handle('db:info', () => {
     const c = open()
@@ -302,6 +308,9 @@ export function registerDbHandlers(): void {
   handle('db:batchSetDue', (_e, ids: number[], due: string | null) => batchSetDue(ids, due))
   handle('db:tags', () => listTags())
   handle('db:setTaskTags', (_e, id: number, names: string[]) => setTaskTags(id, names))
+  handle('db:noteTags', () => noteTagMap())
+  handle('db:setNoteTags', (_e, id: number, names: string[]) => setNoteTags(id, names))
+  handle('db:setTagColor', (_e, id: number, color: string) => setTagColor(id, color))
   handle('db:recentNotes', (_e, limit?: number) => recentNotes(limit))
   handle(
     'db:runWorkflowAction',
@@ -337,6 +346,15 @@ export function registerDbHandlers(): void {
   )
   handle('db:renameListFolder', (_e, id: number, name: string) => renameListFolder(id, name))
   handle('db:deleteListFolder', (_e, id: number) => deleteListFolder(id))
+  handle('db:moveListFolder', (_e, id: number, parentId: number | null) =>
+    moveListFolder(id, parentId)
+  )
+  handle('db:reorderListFolder', (_e, id: number, anchorId: number, below?: boolean) =>
+    reorderListFolder(id, anchorId, below ?? true)
+  )
+  handle('db:isListDescendantOf', (_e, ancestorId: number, nodeId: number) =>
+    isListDescendantOf(ancestorId, nodeId)
+  )
   handle('db:moveTaskToList', (_e, taskId: number, listId: number | null) =>
     moveTaskToList(taskId, listId)
   )
@@ -403,7 +421,7 @@ export function registerDbHandlers(): void {
     rewireGraphEdge(params)
   )
   handle('db:globalSearch', (_e, q: string) => globalSearch(q))
-  // G13：MRU —— 命令面板选中某条命中时记一次，后续搜索按最近访问优先
+  // MRU —— 命令面板选中某条命中时记一次，后续搜索按最近访问优先
   handle('db:searchTouch', (_e, kind: string, id: number) => {
     searchTouch(kind, id)
     return true
@@ -431,18 +449,18 @@ export function registerDbHandlers(): void {
     return { count: notes.length, folders: [...new Set(notes.map((n) => n.folder))].slice(0, 5) }
   })
   handle('db:importData', (e) => importData(e.sender))
-  // Markdown 文件夹导入（D25）：一个走系统对话框，一个供脚本按路径直接导入
+  // Markdown 文件夹导入：一个走系统对话框，一个供脚本按路径直接导入
   handle('db:importMarkdownFolder', (e) => importMarkdownFolderDialog(e.sender))
   handle('db:importMarkdownFromPath', (_e, path: string) => importMarkdownFolder(path))
   // 供自动化脚本直接按路径导入（等价于用户在对话框里选同一个文件）
   handle('db:importFromPath', (_e, path: string) => importFromJsonFile(path))
   handle('db:openNoteFile', (_e, id: number) => openNoteFile(id))
   handle('db:previewNote', (_e, id: number) => previewOfficeNote(id))
-  // N-§1.3#5：Word/Excel 可编辑写回（对齐 WordEditView / ExcelEditView）
+  // Word/Excel 可编辑写回
   handle('db:officeDoc', (_e, id: number) => officeDocNote(id))
   handle('db:saveWordNote', (_e, id: number, html: string) => saveWordNote(id, html))
   handle('db:saveExcelNote', (_e, id: number, rows: string[][]) => saveExcelNote(id, rows))
-  // N3：Word/Excel 未指定文件时自动新建空白文件
+  // Word/Excel 未指定文件时自动新建空白文件
   handle('db:createBlankOffice', (_e, format: string, title: string) =>
     createBlankOfficeFile(format, title)
   )
@@ -475,14 +493,14 @@ export function registerDbHandlers(): void {
   handle('db:createNoteFromTemplate', (_e, kind: string, folderId: number | null) =>
     createNoteFromTemplate(kind, folderId)
   )
-  // N17：对齐 NoteRepository.all()（无 LIMIT）。listNotes 自身默认 300，
+  // 无 LIMIT：listNotes 自身默认 300，
   // 这里在没有显式 limit 时传 -1（SQLite 的「不限量」），笔记页不再被截断。
   handle('db:notes', (_e, limit?: number) => listNotes(limit ?? -1))
   handle('db:flashes', (_e, status?: string | null) =>
     listFlashesByStatus(status === undefined ? 'inbox' : status)
   )
-  // 收件箱 = list_tree(None)：只以「顶层且 list_id 为空」的任务为根 + 完整子树闭包，
-  // 不能按 list_id IS NULL 平铺（否则子任务会同时出现在收件箱，T6）。
+  // 收件箱：只以「顶层且 list_id 为空」的任务为根 + 完整子树闭包，
+  // 不能按 list_id IS NULL 平铺（否则子任务会同时出现在收件箱）。
   handle('db:inboxTasks', () => listTasksByList(null))
   handle(
     'db:updateFlashRemark',
@@ -520,13 +538,13 @@ export function registerDbHandlers(): void {
     saveWorkflowTemplate(tpl)
   )
   handle('db:deleteWorkflowTemplate', (_e, id: number) => deleteWorkflowTemplate(id))
-  // 复制模板（对齐 duplicate_template）：名称加「 副本」，节点整体复制
+  // 复制模板：名称加「 副本」，节点整体复制
   handle('db:duplicateWorkflowTemplate', (_e, id: number) => duplicateWorkflowTemplate(id))
-  // 一键对齐：pos_x=0、pos_y=i*yGap（对齐 _auto_layout 的纵向网格）
+  // 一键对齐：pos_x=0、pos_y=i*yGap
   handle('db:autoLayoutWorkflow', (_e, templateId: number, yGap: number) =>
     autoLayoutWorkflowNodes(templateId, yGap)
   )
-  // 某任务启动/关联的实例（对齐 instances_of_task，任务侧「工作流」卡片用）
+  // 某任务启动/关联的实例
   handle('db:workflowInstancesOfTask', (_e, taskId: number) =>
     listWorkflowInstancesByTask(taskId)
   )
@@ -576,21 +594,21 @@ export function registerDbHandlers(): void {
   handle('db:deleteWorkflowInstance', (_e, id: number) => deleteWorkflowInstance(id))
   // 重复运行：按同一模板再启动一个新实例，旧记录保留
   handle('db:rerunWorkflowInstance', (_e, id: number) => rerunWorkflowInstance(id))
-  // G7：图谱构建参数（includeTasks / 文件夹 / 标签 / 邻域），默认纳入任务节点
+  // 图谱构建参数（includeTasks / 文件夹 / 标签 / 邻域），默认纳入任务节点
   handle('db:graph', (_e, query?: GraphQuery) => buildGraphTracked({ includeTasks: true, ...(query ?? {}) }))
-  // G8：笔记邻域子图（仅沿 note_link 做 1~2 度 BFS）
+  // 笔记邻域子图（仅沿 note_link 做 1~2 度 BFS）
   handle('db:graphNeighborhood', (_e, noteId: number, degree?: number) =>
     graphNeighborhood(noteId, degree ?? 1)
   )
-  // G9：选中节点预览文本（按类型输出摘要/状态/优先级/截止/父任务/关联笔记/来源）
+  // 选中节点预览文本（按类型输出摘要/状态/优先级/截止/父任务/关联笔记/来源）
   handle('db:graphPreview', (_e, node: GraphNodePayload) => graphPreview(node))
-  // G5：图页开关增量推送（没人看图时不重算 diff）
+  // 图页开关增量推送（没人看图时不重算 diff）
   handle('db:graphWatch', (_e, active: boolean) => {
     setGraphWatch(active)
     return true
   })
   /**
-   * G10：图页双击闪念/任务/文件夹的跨页跳转。
+   * 图页双击闪念/任务/文件夹的跨页跳转。
    * 复用主窗口既有的深链通道（app:deeplink → App 的 onDeepLink 分支），
    * 这样图谱不必为了跳页去持有 App 的页面路由状态。
    */
@@ -598,7 +616,7 @@ export function registerDbHandlers(): void {
     e.sender.send('app:deeplink', { kind, id, block: '' })
     return true
   })
-  // N-§1.3#13：文件夹为空时补默认文件夹（对齐 note_page._reload_tree → ensure_default_folder）
+  // 文件夹为空时补默认文件夹
   handle('db:ensureDefaultFolder', () => ensureDefaultFolder())
   handle('db:noteFolders', () => listNoteFolders())
   handle('db:note', (_e, id: number) => getNote(id))
@@ -613,7 +631,7 @@ export function registerDbHandlers(): void {
         content_md?: string
         folder_id?: number | null
         pinned?: boolean
-        // N3：saveNote 支持 format，UI 才有「改格式」入口
+        // saveNote 支持 format，UI 才有「改格式」入口
         format?: string
       }
     )
@@ -649,8 +667,7 @@ export function registerDbHandlers(): void {
     noteTaskCandidates(q ?? '', limit ?? 30)
   )
 
-  // N1：关窗/刷新前最后一次落盘必须**同步**完成，否则渲染进程卸载后 invoke 永远不会回来。
-  // 对齐 Python note_page 关窗前 commit 编辑器（阻塞式）的语义。
+  // 关窗/刷新前最后一次落盘必须**同步**完成，否则渲染进程卸载后 invoke 永远不会回来。
   ipcMain.on('db:flushNote', (event, id: number, fields: Record<string, unknown>) => {
     try {
       event.returnValue = !!saveNote(

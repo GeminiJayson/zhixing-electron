@@ -70,7 +70,7 @@ textarea {
   color: var(--fg-primary);
 }
 
-/* 焦点环：永远可见，不可删（无障碍硬约束，docs/03 §2.1） */
+/* 焦点环：永远可见，不可删（无障碍硬约束，docs/03） */
 :focus-visible {
   outline: var(--focus-w) solid var(--focus-ring);
   outline-offset: 1px;

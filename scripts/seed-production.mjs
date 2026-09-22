@@ -126,7 +126,7 @@ const BROWSER = [
   '',
   '  // ---- 回填一级任务的正文链接',
   '  // 必须放在笔记建好之后：syncTaskNoteLinks 解析不到标题就不落链，',
-  '  // 而应用目前没有「笔记建好后重新解析任务正文」的入口（Python 版有 link_wiki_notes）。',
+  '  // 而应用目前没有「笔记建好后重新解析任务正文」的入口。',
   '  for (let i = 0; i < S.tree.length; i++) {',
   '    const tid = R.ids[S.tree[i].title]',
   '    if (tid) await step("正文链接 " + S.tree[i].title, () => db.updateTask(tid, { notes_md: "[[" + L1_NOTES[i] + "]]" }))',

@@ -1,6 +1,5 @@
 /**
- * 循环任务递推，与 zhixing/model/domain/task_rules.py 的
- * parse_rrule / next_due / next_count_rule / next_recurrence 逐条对齐。
+ * 循环任务递推。
  *
  * 日期一律按 'YYYY-MM-DD' 处理并用 UTC 运算，避免本地时区把日期前后挪一天。
  */

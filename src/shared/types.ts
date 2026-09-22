@@ -152,7 +152,7 @@ export interface WorkflowTemplateSummary {
   updated_at: string
 }
 
-/** 图谱节点 kind，与 graph_service.GraphNode.kind 同名（anchor = v0.15 段落锚） */
+/** 图谱节点 kind（anchor = v0.15 段落锚） */
 export type GraphKind = 'note' | 'folder' | 'dangling' | 'task' | 'flash' | 'anchor'
 
 export interface GraphNodePayload {
@@ -164,11 +164,11 @@ export interface GraphNodePayload {
   colorHint: string
   refId: number
   format: string
-  /** anchor：引用该段落的任务 id（对齐 GraphNode.ref_task） */
+  /** anchor：引用该段落的任务 id */
   refTask?: number
-  /** anchor：段落定位键（对齐 GraphNode.block_key） */
+  /** anchor：段落定位键 */
   blockKey?: string
-  /** anchor：段落引文快照（对齐 GraphNode.snippet） */
+  /** anchor：段落引文快照 */
   snippet?: string
 }
 
@@ -177,31 +177,31 @@ export interface GraphPayload {
   edges: [number, number][]
   /** "src,dst" → 边类别；归属=实线，引用=虚线 */
   edgeKinds: Record<string, 'ownership' | 'reference'>
-  /** 因环路被破环丢弃的归属层级边（对齐 GraphData.cycle_edges，供图页提示） */
+  /** 因环路被破环丢弃的归属层级边 */
   cycleEdges: [number, number][]
 }
 
-/** 图谱构建参数（对齐 GraphService.build 的 folder_id / tag_id / include_tasks）。 */
+/** 图谱构建参数。 */
 export interface GraphQuery {
-  /** 是否纳入任务节点（Python 图页默认 True） */
+  /** 是否纳入任务节点 */
   includeTasks?: boolean
   /** 仅看某笔记文件夹 */
   folderId?: number | null
   /** 仅看带某笔记标签的笔记 */
   tagId?: number | null
-  /** 邻域子图：仅保留这些笔记主键（对齐 neighborhood 的 only_ids） */
+  /** 邻域子图：仅保留这些笔记主键 */
   onlyIds?: number[] | null
 }
 
 /**
- * 图谱增量（对齐 GraphDelta）：相对上一帧的最小变更集。
+ * 图谱增量：相对上一帧的最小变更集。
  * 消费端据此做定点增删、保留节点坐标与 pinned，避免整图重建。
  */
 export interface GraphDelta {
   addedNodes: GraphNodePayload[]
   removedNodeIds: number[]
   updatedNodeIds: number[]
-  /** 更新后的节点快照（渲染层拿不到主进程缓存，Python 侧由消费端读 cache.by_id） */
+  /** 更新后的节点快照 */
   updatedNodes?: GraphNodePayload[]
   addedEdges: [number, number][]
   removedEdges: [number, number][]
@@ -292,8 +292,8 @@ export interface AppInfo {
   node: string
   dbPath: string
   dbReady: boolean
-  /** 只读模式原因（库能打开但迁移失败）；空/缺省表示正常（D2） */
+  /** 只读模式原因（库能打开但迁移失败）；空/缺省表示正常 */
   dbReadonly?: string
-  /** 完全打不开时的中文原因；空/缺省表示正常（D2） */
+  /** 完全打不开时的中文原因；空/缺省表示正常 */
   dbError?: string
 }

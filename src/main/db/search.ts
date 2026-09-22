@@ -1,15 +1,15 @@
 /**
- * 命令面板统一搜索（对齐 Python 的 model/application/search_service.py）。
+ * 命令面板统一搜索。
  *
  * 语法：
  *   - 前缀 task: / note: / flash: / tag:
  *   - 过滤 due:today|tomorrow|overdue|none、status:<状态>、priority:p1..p8|none、folder:名称
- *   - 出现任一过滤词时强制只搜任务（与 Python 一致）
- *   - 空查询且无过滤：只回命令（命令在服务侧注入，对齐 SearchService.commands）
+ *   - 出现任一过滤词时强制只搜任务
+ *   - 空查询且无过滤：只回命令
  *
- * FTS 命中后统一按 rank 排序（task 20 / note 8 / flash 6，与 Python 分档一致），
+ * FTS 命中后统一按 rank 排序，
  * 并一律排除 deleted_at 非空的行。
- * 最后按 MRU（最近访问优先）重排 task/note/flash 三组（对齐 _apply_mru）。
+ * 最后按 MRU（最近访问优先）重排 task/note/flash 三组。
  */
 import { conn, today } from './connection'
 import { searchIndex } from './fts'
@@ -21,7 +21,7 @@ export interface SearchHit {
   subtitle: string
 }
 
-/** 命令面板可执行命令（对齐 search_service.SearchHit(kind='command')，动作由渲染层注入）。 */
+/** 命令面板可执行命令。 */
 export interface CommandHit {
   /** 稳定命令 id：渲染层据此映射到具体动作 */
   id: string
@@ -38,9 +38,8 @@ export interface SearchResult {
 }
 
 /**
- * 命令注册表（对齐 app_controller 的 context.search_service.commands 七条）。
- * Python 把可调用动作挂在 SearchHit.action 上；Electron 侧动作在渲染层，
- * 这里只交付稳定 id + 标题，由 CommandPalette 映射。
+ * 命令注册表。
+ * 动作在渲染层，这里只交付稳定 id + 标题，由 CommandPalette 映射。
  */
 export const COMMANDS: CommandHit[] = [
   { id: 'theme-dark', title: '切换深色主题', subtitle: '命令 · 外观' },
@@ -53,8 +52,8 @@ export const COMMANDS: CommandHit[] = [
 ]
 
 /**
- * MRU：kind:id → 最近命中时间戳（对齐 SearchService._mru）。
- * 存在主进程内存里——与 Python 同寿命（重启即清），不进数据库。
+ * MRU：kind:id → 最近命中时间戳。
+ * 存在主进程内存里——重启即清，不进数据库。
  */
 const mru = new Map<string, number>()
 
@@ -63,7 +62,7 @@ export function searchTouch(kind: string, id: number): void {
   mru.set(kind + ':' + id, Date.now())
 }
 
-/** 按 MRU 时间倒序重排 task / note / flash 三组（对齐 _apply_mru）。 */
+/** 按 MRU 时间倒序重排 task / note / flash 三组。 */
 function applyMru(result: SearchResult): void {
   if (!mru.size) return
   const sort = (hits: SearchHit[]): void => {
@@ -178,7 +177,7 @@ export function globalSearch(input: string): SearchResult {
   }
 
   // 命令注入：空查询返回全部命令，有查询按标题/副标题包含匹配，最多 6 条
-  // （对齐 global_search 的命令块与 `len(result.command) >= 6` 中止条件）
+  //
   if (!prefix || prefix === 'command') {
     const needle = q.toLowerCase()
     for (const cmd of COMMANDS) {
@@ -189,7 +188,7 @@ export function globalSearch(input: string): SearchResult {
     }
   }
 
-  // 空查询且没有过滤：只回命令（对齐 `if not q and not ...: return result`）
+  // 空查询且没有过滤：只回命令
   if (!q && !hasFilter) return result
 
   const c = conn()
@@ -211,7 +210,7 @@ export function globalSearch(input: string): SearchResult {
   if (!prefix || prefix === 'task') {
     let ids: number[]
     if (hasFilter && !q) {
-      // 纯过滤：不依赖 FTS，按条件扫全量（对齐 Python 的过滤模式分支）
+      // 纯过滤：不依赖 FTS，按条件扫全量
       const rows = c
         .prepare('SELECT id FROM task WHERE deleted_at IS NULL ORDER BY sort_key, id')
         .all() as { id: number }[]

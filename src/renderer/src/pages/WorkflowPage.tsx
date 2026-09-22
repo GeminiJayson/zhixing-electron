@@ -79,7 +79,7 @@ const CANVAS_H = 520
 /** 节点详情浮卡尺寸（条件节点要多写一行「两条分支通向哪」，比普通步骤高一些） */
 const CARD_W = 236
 const CARD_H = 196
-/** 步骤编辑弹窗里「SOP 文档」下拉最多列出的笔记数（对齐 note_choices 的 recent(200)） */
+/** 步骤编辑弹窗里「SOP 文档」下拉最多列出的笔记数 */
 const NOTE_CHOICE_LIMIT = 200
 /** 模板树侧栏宽度：可拖拽调节，边界保证两边都还能用 */
 const SIDE_DEFAULT = 220
@@ -206,10 +206,10 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   const [editing, setEditing] = useState<WorkflowNodePayload | null>(null)
   /** editing 是否为「新增步骤」（决定保存时插到选中节点之后，而不是原位替换） */
   const [editingNew, setEditingNew] = useState(false)
-  /** 新增步骤时是否设为选中节点的条件分支（对齐 _StepEditDialog 的 branch_check） */
+  /** 新增步骤时是否设为选中节点的条件分支 */
   /** 正在编辑的是条件节点还是普通步骤 —— 渲染哪个编辑弹窗由它决定 */
   const editingIsCondition = editing?.action_kind === CONDITION_KIND
-  /** 步骤可绑定的 SOP 笔记（对齐 note_choices：recent(200) 的 id/标题） */
+  /** 步骤可绑定的 SOP 笔记 */
   const [noteChoices, setNoteChoices] = useState<Note[]>([])
   const dragRef = useRef<{
     id: number
@@ -236,7 +236,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   // 画布视图（平移 / 缩放）。startDrag 定义在 hook 之前，用这个 ref 桥接。
   const panRef = useRef<ReturnType<typeof usePanZoom> | null>(null)
 
-  /** 模板分类（对齐笔记树的两层：分类 → 模板） */
+  /** 模板分类 */
   type WfGroup = Awaited<ReturnType<typeof window.zhixing.db.workflowGroups>>[number]
   const [groups, setGroups] = useState<WfGroup[]>([])
   const [templateGroups, setTemplateGroups] = useState<{ id: number; group_id: number | null }[]>([])
@@ -292,7 +292,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     })()
   }, [loadTemplates, openTemplate, loadInstances])
 
-  // SOP 文档候选：与 Python 的 note_choices 同口径（近期笔记，最多 200 条）
+  // SOP 文档候选：近期笔记，最多 200 条
   useEffect(() => {
     void (async () => {
       try {
@@ -426,7 +426,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     await refresh()
   }
 
-  /** 拖动结束才落库（对齐 silent 保存，避免每帧写库）。 */
+  /** 拖动结束才落库。 */
   const endDrag = async (e?: { type?: string; clientX?: number; clientY?: number }): Promise<void> => {
     if (branchDrag) {
       if (e?.type === 'pointerleave' || e?.clientX == null || e?.clientY == null) setBranchDrag(null)
@@ -613,7 +613,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     await refresh()
   }
 
-  /** 分类树渲染辅助（对齐笔记树：分类可折叠、行 hover 出胶囊） */
+  /** 分类树渲染辅助 */
   const groupOf = (id: number): number | null =>
     templateGroups.find((x) => x.id === id)?.group_id ?? null
   const toggleGroup = (id: number): void =>
@@ -770,7 +770,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     return true
   }
 
-  /** I14 复制一份（对齐 duplicate_template）：名称加「 副本」，节点整体复制、不复制坐标。 */
+  /** 复制一份：名称加「 副本」，节点整体复制、不复制坐标。 */
   const handleDuplicateTemplate = async (id?: number): Promise<void> => {
     const tid = id ?? current?.id
     if (!tid) return
@@ -784,7 +784,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     onNotice(`已复制为「${copy.name}」`)
   }
 
-  /** I15 重命名模板（对齐 _rename_template_by_id：改名后整体保存）。 */
+  /** 重命名模板。 */
   const handleRenameTemplate = async (): Promise<void> => {
     if (!current) return
     const name = await dialog.prompt({
@@ -796,13 +796,13 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     if (await persistTemplate(ordered, { name: name.trim() })) onNotice('已重命名')
   }
 
-  /** I16 启动策略可编辑（对齐 _on_policy_changed：改完立即保存）。 */
+  /** 启动策略可编辑。 */
   const handlePolicyChange = async (policy: string): Promise<void> => {
     if (!current) return
     await persistTemplate(ordered, { start_policy: policy })
   }
 
-  /** I17 删除选中步骤（对齐 _delete_step：删后按顺序整体重排 order_index）。 */
+  /** 删除选中步骤。 */
   const handleDeleteStep = async (): Promise<void> => {
     if (!current || selected == null) return
     const removedId = selected
@@ -831,7 +831,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     await persistTemplate(next)
   }
 
-  /** I17 上移 / 下移（对齐 _move_step：交换后整体重排 order_index）。 */
+  /** 上移 / 下移。 */
   const handleMoveStep = async (delta: number): Promise<void> => {
     if (!current || selected == null) return
     const list = [...ordered]
@@ -883,8 +883,8 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   }
 
   /**
-   * I18 加一步 / 加条件：先弹步骤编辑窗，保存时**插到选中节点之后**（未选中则追加末尾），
-   * 并可勾选「作为选中节点的条件分支」（对齐 _add_step 的 dlg + as_branch）。
+   * 加一步 / 加条件：先弹步骤编辑窗，保存时**插到选中节点之后**（未选中则追加末尾），
+   * 并可勾选「作为选中节点的条件分支」。
    * 新节点用负临时 id，保存时经 id_map 重映射成真实 id，分支引用才不会悬空。
    *
    * 条件节点与普通步骤走同一个弹窗，只是预置好 action_kind 与一份「提示确认」草稿 ——
@@ -1011,7 +1011,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
 
   const handleInstantiate = async (): Promise<void> => {
     if (!current) return
-    // 与 Python 一样把当前启动策略显式传给实例化（不依赖库里的旧值）
+    // 把当前启动策略显式传给实例化（不依赖库里的旧值）
     const inst = await window.zhixing.db.instantiateWorkflow(
       current.id,
       null,

@@ -4,7 +4,7 @@ interface Props {
   title: string
   theme: 'light' | 'dark'
   onToggleTheme: () => void
-  /** 标题栏签名（对齐 main_window 的签名位，空则不显示） */
+  /** 标题栏签名 */
   signature?: string
 }
 

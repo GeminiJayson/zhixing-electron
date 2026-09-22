@@ -16,7 +16,7 @@ interface DiffLine {
 }
 
 /**
- * 行级 unified diff（对齐 Python note_tools 的 difflib.unified_diff 口径）：
+ * 行级 unified diff：
  * LCS 求增删、上下各 3 行上下文、`@@ -a,b +c,d @@` 段头，行前缀
  * ` ` / `+` / `-`，首两行 `--- 选中版本` / `+++ 当前内容`。
  */
@@ -32,7 +32,7 @@ export function unifiedDiff(oldText: string, newText: string, context = 3): Diff
       lcs[i][j] = a[i] === b[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1])
     }
   }
-  // 逐行产出带 kind 的操作序列（等价 SequenceMatcher 的 opcodes 展开）
+  // 逐行产出带 kind 的操作序列
   type Op = { kind: 'eq' | 'del' | 'add'; text: string }
   const ops: Op[] = []
   let i = 0
@@ -128,7 +128,7 @@ export function NoteHistory({ noteId, onRestored, onClose }: Props) {
   const dialog = useDialog()
   const [revs, setRevs] = useState<NoteRevision[]>([])
   const [preview, setPreview] = useState<NoteRevision | null>(null)
-  /** 当前笔记正文：diff 的「新」侧（对齐 Python _current_note_content） */
+  /** 当前笔记正文：diff 的「新」侧 */
   const [currentContent, setCurrentContent] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -226,7 +226,7 @@ export function NoteHistory({ noteId, onRestored, onClose }: Props) {
             disabled={!preview || busy}
             onClick={async () => {
               if (!preview || busy) return
-              // 回滚二次确认（W21）：误点即毁掉当前内容，必须先确认
+              // 回滚二次确认：误点即毁掉当前内容，必须先确认
               const confirmed = await dialog.confirm({
                 title: '回滚到该版本',
                 message: '当前内容会先另存一份快照，然后被这个历史版本覆盖。确定回滚？',

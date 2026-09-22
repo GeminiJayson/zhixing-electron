@@ -31,7 +31,7 @@ const { check, finish, results } = createChecker()
 const info = await app.evaluate('window.zhixing.db.info()')
 check('数据库指向副本库', String(info.path).startsWith(tmpHome), info.path)
 
-// 1) 空节点模板被拒绝（对齐 validate 的第一条）
+// 1) 空节点模板被拒绝
 const empty = await app.evaluate(
   "window.zhixing.db.saveWorkflowTemplate({ name: '验证-空模板', nodes: [] })"
 )

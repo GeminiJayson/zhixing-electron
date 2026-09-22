@@ -135,15 +135,40 @@
   min-height: 34px;
   padding: 0 var(--space-2);
   border-radius: var(--radius-ctl);
-  cursor: pointer;
 }
 .tag-row:hover {
   background: var(--bg-hover);
 }
+/* 勾选区（复选框 + 名称）选中标签，色块是另一个动作：给它换颜色 */
+.tag-row__pick {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
 .tag-row__dot {
-  width: 10px;
-  height: 10px;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: var(--border-w) solid var(--border);
   border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+.tag-row__dot:hover {
+  transform: scale(1.12);
+}
+.tag-row__dot--on {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 1px;
+}
+.tag-row__colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: var(--space-1) var(--space-2) var(--space-2) 30px;
 }
 .tag-row__name {
   flex: 1;

@@ -1,9 +1,8 @@
 /**
  * 主题包对比度实测（WCAG 2.1 相对亮度，非估算）。
  *
- * 为什么需要：Python 版在 docs/ui_polish_v014_audit.md 做过对比度整改
- * （accent 明暗派生、fg2 ≥4.5、fg3 ≥4.0），Electron 的主题包是另写的一份，
- * 需要独立核对是否继承了同样的可访问性下限。
+ * 主题包需要可访问性下限（accent 明暗派生、fg2 ≥4.5、fg3 ≥4.0），
+ * 这里逐套独立核对是否满足。
  *
  * 用法：node scripts/contrast-audit.mjs
  */
@@ -62,7 +61,7 @@ if (!packs.length) {
   process.exit(1)
 }
 
-// 与 Python 版同一套下限：正文/次要 4.5:1（AA），辅助文字放宽到 4.0:1
+// 对比度下限：正文/次要 4.5:1（AA），辅助文字放宽到 4.0:1
 const RULES = [
   { fg: 'fg', bgs: ['canvas', 'layer'], min: 4.5, label: '正文' },
   { fg: 'fg2', bgs: ['canvas', 'layer'], min: 4.5, label: '次要文字' },

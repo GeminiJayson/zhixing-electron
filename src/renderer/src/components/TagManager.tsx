@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Check, Pencil, Plus, Trash2 } from '@renderer/lib/icons'
 import { useDialog } from './Dialogs'
+import { TAG_COLOR_PRESETS } from './TagMenu'
 
 interface Props {
   onNotice: (message: string) => void
@@ -8,11 +9,23 @@ interface Props {
   onClose: () => void
 }
 
-/** 标签管理（F1-6）：重命名、合并、删除；标签为任务与笔记共用一套。 */
+/** 标签管理：重命名、合并、删除；标签为任务与笔记共用一套。 */
 export function TagManager({ onNotice, onChanged, onClose }: Props) {
   const dialog = useDialog()
   const [tags, setTags] = useState<{ id: number; name: string; color: string; count: number }[]>([])
   const [picked, setPicked] = useState<Set<number>>(new Set())
+  /** 正在改色的标签 id；null = 没有展开调色板 */
+  const [colorFor, setColorFor] = useState<number | null>(null)
+
+  /**
+   * 改颜色：先乐观更新这一行，再写库，最后 onChanged() 让任务页 / 笔记页重新取数。
+   * 取色器拖动会连续触发 onChange，所以这里不做全量 load()（那会把列表刷得一闪一闪）。
+   */
+  const applyColor = async (id: number, color: string): Promise<void> => {
+    setTags((prev) => prev.map((t) => (t.id === id ? { ...t, color } : t)))
+    await window.zhixing.db.setTagColor(id, color)
+    await onChanged()
+  }
 
   const load = useCallback(async () => {
     setTags(await window.zhixing.db.tagsWithUsage())
@@ -119,23 +132,60 @@ export function TagManager({ onNotice, onChanged, onClose }: Props) {
             <ul className="tag-list">
               {tags.map((t) => (
                 <li key={t.id}>
-                  <label className="tag-row">
-                    <input
-                      type="checkbox"
-                      checked={picked.has(t.id)}
-                      onChange={(e) =>
-                        setPicked((prev) => {
-                          const next = new Set(prev)
-                          if (e.target.checked) next.add(t.id)
-                          else next.delete(t.id)
-                          return next
-                        })
-                      }
+                  <div className="tag-row">
+                    <label className="tag-row__pick">
+                      <input
+                        type="checkbox"
+                        checked={picked.has(t.id)}
+                        onChange={(e) =>
+                          setPicked((prev) => {
+                            const next = new Set(prev)
+                            if (e.target.checked) next.add(t.id)
+                            else next.delete(t.id)
+                            return next
+                          })
+                        }
+                      />
+                      <span className="tag-row__name">{t.name}</span>
+                    </label>
+                    {/* 色块即改色入口：点它是「给这个标签换色」，而不是再挑一次选中 */}
+                    <button
+                      type="button"
+                      className={'tag-row__dot' + (colorFor === t.id ? ' tag-row__dot--on' : '')}
+                      style={{ background: t.color }}
+                      title={`改「${t.name}」的颜色`}
+                      aria-label={`改「${t.name}」的颜色`}
+                      aria-expanded={colorFor === t.id}
+                      onClick={() => setColorFor((prev) => (prev === t.id ? null : t.id))}
                     />
-                    <span className="tag-row__dot" style={{ background: t.color }} />
-                    <span className="tag-row__name">{t.name}</span>
                     <span className="u-aux">{t.count} 处引用</span>
-                  </label>
+                  </div>
+                  {colorFor === t.id && (
+                    <div className="tag-row__colors" role="group" aria-label={`${t.name} 的颜色`}>
+                      {TAG_COLOR_PRESETS.map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          className={
+                            'tagmenu__color' +
+                            (c.toLowerCase() === t.color.toLowerCase() ? ' tagmenu__color--on' : '')
+                          }
+                          style={{ background: c }}
+                          title={c}
+                          aria-label={`${t.name} 用颜色 ${c}`}
+                          onClick={() => void applyColor(t.id, c)}
+                        />
+                      ))}
+                      <label className="tagmenu__custom" title="自定义颜色">
+                        <input
+                          type="color"
+                          value={/^#[0-9a-f]{6}$/i.test(t.color) ? t.color : '#0D9488'}
+                          aria-label={`${t.name} 的自定义颜色`}
+                          onChange={(e) => void applyColor(t.id, e.target.value)}
+                        />
+                      </label>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>

@@ -1,9 +1,9 @@
 /**
- * FTS5 全文检索（对齐 Python 的 zhixing/model/infrastructure/fts.py）。
+ * FTS5 全文检索。
  *
- * 关键：Python 在**写入时**就用 jieba 的 cut_for_search 把正文切成空格分隔的词再交给
- * unicode61 索引。两版共用同一个 FTS 表，Electron 若直接写原文，索引里就会同时存在
- * 「按词」与「按字」两套内容，跨客户端检索会互相漏检。所以这里用同一个分词器。
+ * 关键：**写入时**用 jieba 的 cut_for_search 把正文切成空格分隔的词再交给
+ * unicode61 索引。若直接写原文，索引里就会同时存在「按词」与「按字」两套内容，
+ * 与查询分词不一致时会互相漏检。所以这里写入与查询共用同一个分词器。
  */
 import { conn } from './connection'
 import { queryTerms, tokenize } from './fts-query'
@@ -20,7 +20,7 @@ const FT = {
   flash: ['flash_fts', 'flash_id'],
 } as const
 
-/** 先删后插（对齐 db.fts_replace），单行幂等。 */
+/** 先删后插，单行幂等。 */
 function replace(table: string, idCol: string, rowId: number, cols: Record<string, string>): void {
   const c = conn()
   c.prepare('DELETE FROM ' + table + ' WHERE ' + idCol + ' = ?').run(rowId)
@@ -89,7 +89,7 @@ export function removeFromIndex(kind: Kind, rowId: number): void {
   conn().prepare('DELETE FROM ' + table + ' WHERE ' + idCol + ' = ?').run(rowId)
 }
 
-/** 检索（对齐 FTSService.search）：返回 [row_id, rank]，rank 越小越相关。 */
+/** 检索：返回 [row_id, rank]，rank 越小越相关。 */
 export function searchIndex(kind: Kind, q: string, limit = 50): [number, number][] {
   const expr = queryTerms(q)
   if (!expr) return []

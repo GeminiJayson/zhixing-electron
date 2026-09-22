@@ -6,7 +6,7 @@ import { parseSettings, serializeSetting } from '@shared/settings'
 describe('settings 类型层', () => {
   it('空表回退到默认值', () => {
     const s = parseSettings({})
-    // 默认值以 Python 的 ensure_defaults / settings_page 为准（两版共用同一张表）
+    // 默认值以共用的 settings 表为准
     expect(s.font_size).toBe(14)
     expect(s.theme_mode).toBe('system')
     expect(s.theme_pack).toBe('青竹')

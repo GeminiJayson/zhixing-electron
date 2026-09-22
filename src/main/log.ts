@@ -1,5 +1,5 @@
 /**
- * 主进程文件日志（对齐 Python 的 loguru 配置：logs/zhixing.log，1MB × 3 份滚动）。
+ * 主进程文件日志。
  *
  * 此前 Electron 只有零散 console.warn/error，线上问题无痕可查。
  * 这里用 hook console 的方式覆盖全仓调用点，不必逐个替换。

@@ -24,7 +24,7 @@ interface Props {
   onClose: () => void
 }
 
-/** 任务编辑弹窗：标题 / 状态 / 优先级 / 时间范围 / 备注（对齐手册 §5.3 的编辑页字段）。 */
+/** 任务编辑弹窗：标题 / 状态 / 优先级 / 时间范围 / 备注。 */
 export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
   const [title, setTitle] = useState(task.title)
   const [status, setStatus] = useState<TaskStatus>(task.status)
@@ -37,7 +37,7 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
   const [notes, setNotes] = useState(task.notes_md ?? '')
   const [repeat, setRepeat] = useState<RepeatPeriod>(task.repeat_period)
   const [repeatRule, setRepeatRule] = useState(task.repeat_rule ?? '')
-  // T4：等待中可设「恢复于」（到期由 resume_due_today 自动回待办）
+  // 等待中可设「恢复于」（到期自动回待办）
   const [resume, setResume] = useState(task.resume_at ?? '')
   /**
    * 提醒时刻。此前没有任何界面入口 —— 只有在快速捕获里写「明天3点」才能带上，
@@ -45,7 +45,7 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
    */
   const [reminder, setReminder] = useState(() => splitStamp(task.reminder_at)[0])
   const [reminderTime, setReminderTime] = useState(() => splitStamp(task.reminder_at)[1])
-  // T3：段落级上下文（关联笔记段落）与「写复盘」回写
+  // 段落级上下文（关联笔记段落）与「写复盘」回写
   const [contexts, setContexts] = useState<TaskNoteContext[]>([])
   const [noteList, setNoteList] = useState<Note[]>([])
   const [pickNote, setPickNote] = useState('')
@@ -79,7 +79,7 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
     await loadContexts()
   }
 
-  /** 完成沉淀（对齐 app_controller._write_note_after_done）：有关联段落则追加「结论」，否则新建复盘笔记。 */
+  /** 完成沉淀：有关联段落则追加「结论」，否则新建复盘笔记。 */
   const writeback = async (): Promise<void> => {
     setSaving(true)
     await window.zhixing.db.writeNoteAfterDone(task.id, task.title)
@@ -112,7 +112,7 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
       notes_md: notes,
       repeat_period: repeat,
       repeat_rule: repeat === 'custom' ? repeatRule || null : null,
-      // 与 Python task_editor._commit_status 一致：非 waiting 显式清空恢复日期
+      // 非 waiting 显式清空恢复日期
       resume_at: status === 'waiting' ? resume || null : null,
     })
     setSaving(false)
@@ -175,7 +175,7 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
             </label>
             <label className="form-row form-row--half">
               <span>开始</span>
-              {/* 日期与时刻分开：日期仍进 start_date（与 Python 版共用的 DATE 列），
+              {/* 日期与时刻分开：日期仍进 start_date（DATE 列），
                   时刻进本应用私有的 start_time —— 这样「精确到分钟」不会污染共用 schema */}
               <span className="form-row__pair">
                 {/* 两个都自绘：原生 date / time 面板都不进页面的样式树，尺度不受控 */}

@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { contrastRatio, ensureTextContrast, mixHex, relativeLuminance } from './color'
+import {
+  TAG_COLOR_PRESETS,
+  contrastRatio,
+  ensureTextContrast,
+  inkOn,
+  mixHex,
+  relativeLuminance,
+} from './color'
 import { THEME_PACKS } from './theme-packs'
 
 /**
- * 这些下限来自 Python 版的对比度整改（docs/ui_polish_v014_audit.md）：
+ * 对比度下限：
  * 正文/次要文字 4.5:1（WCAG AA），辅助文字放宽到 4.0:1。
  */
 const FG_MIN = 4.5
@@ -78,5 +85,45 @@ describe('对比度校正', () => {
         }
       }
     }
+  })
+})
+
+/**
+ * 标签胶囊把用户自选的颜色当**实心底色**用，所以文字色必须跟着翻面 ——
+ * 这一组断言守着「任意颜色都不会变成看不见的文字」。
+ */
+describe('实心底色上的文字色', () => {
+  it('浅底给深字、深底给浅字', () => {
+    expect(inkOn('#FDE047')).toBe('#111827')
+    expect(inkOn('#FFFFFF')).toBe('#111827')
+    expect(inkOn('#111827')).toBe('#f8fafc')
+    // 青色走的是「对比度择优」而不是亮度阈值：它亮度 0.23，浅字只有 3.6:1，深字 4.6:1
+    expect(inkOn('#0D9488')).toBe('#111827')
+  })
+
+  it('11px 的标签胶囊：每个预设色配它的文字色都达到 4.5:1', () => {
+    expect(TAG_COLOR_PRESETS.length).toBeGreaterThanOrEqual(8)
+    for (const c of TAG_COLOR_PRESETS) {
+      expect(contrastRatio(inkOn(c), c), `${c} 上的文字`).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
+  it('中亮区的底色也不会选错方向：总是给出两个候选里更可读的那个', () => {
+    // 中亮区两种文字都可能不达标，但绝不能选反 —— 选到 3.6:1 而放着 4.6:1 不用就是 bug。
+    // 这里的判据与实现同源，属于「方向不许翻」的回归钉子。
+    for (const c of ['#3B82F6', '#F59E0B', '#DB2777', '#22C55E']) {
+      const picked = inkOn(c)
+      const best = contrastRatio('#111827', c) >= contrastRatio('#f8fafc', c) ? '#111827' : '#f8fafc'
+      expect(picked, `${c} 应该用 ${best}`).toBe(best)
+    }
+    // 非法值不能原样返回（否则 CSS 里会出现无效颜色）
+    for (const bad of ['rgba(0,0,0,.5)', 'red', '', '#12345']) {
+      expect(['#111827', '#f8fafc']).toContain(inkOn(bad))
+    }
+  })
+
+  it('非法色值不抛错，退回浅色文字', () => {
+    expect(inkOn('rgba(0,0,0,.5)')).toBe('#f8fafc')
+    expect(inkOn('')).toBe('#f8fafc')
   })
 })

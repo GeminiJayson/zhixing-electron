@@ -3,37 +3,37 @@ import { NotebookPen, Plus, Sparkles, SquareCheck } from '@renderer/lib/icons'
 import type { PageKey } from '../nav'
 
 interface Props {
-  /** 当前页：只在今日/任务页显示（对齐 FloatingDock.set_page 的可见性规则） */
+  /** 当前页：只在今日/任务页显示 */
   page: PageKey
-  /** 快速添加任务（对齐 taskRequested → quick-capture） */
+  /** 快速添加任务 */
   onTask: () => void
-  /** 新建笔记（对齐 noteRequested → new-note） */
+  /** 新建笔记 */
   onNote: () => void
-  /** 记闪念（对齐 flashRequested → flash-inbox） */
+  /** 记闪念 */
   onFlash: () => void
 }
 
 /** 主「+」按钮边长：圆角恒取半高，尺寸是「正圆」的唯一来源。 */
 /** 浮动主操作（FAB）的边长。**独立于「控件高度」尺度**：它是页面级主操作，
- *  比表单控件大一档，不随设置页的控件高度缩放（对齐 floating_dock.py）；
+ *  比表单控件大一档，不随设置页的控件高度缩放；
  *  展开出来的三个动作是 .text-btn，那个才跟控件高度。 */
 const MAIN_BTN = 38
 
-/** 展开项：新建任务 / 新建笔记 / 记闪念（对齐 floating_dock._ACTIONS）。 */
+/** 展开项：新建任务 / 新建笔记 / 记闪念。 */
 const ITEMS = [
   { key: 'task', label: '新建任务', Icon: SquareCheck },
   { key: 'note', label: '新建笔记', Icon: NotebookPen },
   { key: 'flash', label: '记闪念', Icon: Sparkles },
 ] as const
 
-/** 只在高频新建页出现——其余页已有各自的新建入口，避免重复入口（对齐 set_page）。 */
+/** 只在高频新建页出现——其余页已有各自的新建入口，避免重复入口。 */
 const VISIBLE_PAGES: readonly PageKey[] = ['today', 'tasks']
 
 /**
- * 右下角快捷新建浮条（S27，对齐 view/widget/floating_dock.py）。
+ * 右下角快捷新建浮条。
  *
  * 收起态是一个正圆「+」；点开向上展开三枚胶囊。切页离开今日/任务页立即收起，
- * 点击外部或按 Esc 也收起（对齐 MainWindow.eventFilter 的浮层交互）。
+ * 点击外部或按 Esc 也收起。
  * 样式用行内值 + 设计令牌，不新增样式文件（样式文件不在本域所有权内）。
  */
 export function FloatingDock({ page, onTask, onNote, onFlash }: Props) {
@@ -41,7 +41,7 @@ export function FloatingDock({ page, onTask, onNote, onFlash }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
   const visible = VISIBLE_PAGES.includes(page)
 
-  // 切到别的页立即收起（对齐 set_page 里的 collapse(instant=True)）
+  // 切到别的页立即收起
   useEffect(() => {
     if (!visible) setOpen(false)
   }, [visible])

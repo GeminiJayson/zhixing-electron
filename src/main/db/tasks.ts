@@ -22,7 +22,7 @@ import { conn, nowClock, nowStamp, today, getTask, TASK_COLUMNS } from './connec
 // ---------------------------------------------------------------- 只读查询
 
 /**
- * 全部任务，对齐 TaskRepository.list_all：默认**无上限**（T15）。
+ * 全部任务，默认**无上限**。
  * 调用方显式传 limit 时才截断（此前默认 500，渲染层不传参即被静默截断）。
  */
 export function listTasks(limit?: number): Task[] {
@@ -34,7 +34,7 @@ export function listTasks(limit?: number): Task[] {
 }
 
 /**
- * 今日待办，逐条对齐 task_service.today_tree：
+ * 今日待办：
  * 根 = 顶层 + roll-up 有效未完成 + 未逾期（无截止 或 截止 >= 今天）；
  * 逾期根不进今日；每个根带**完整子树**（子任务条件不同也随父展示）。
  */
@@ -89,7 +89,7 @@ export function detachTaskNote(taskId: number, noteId: number): number {
     .run(taskId, noteId).changes
 }
 
-/** 某任务关联的笔记（对齐 linked_notes，排除已删笔记）。 */
+/** 某任务关联的笔记。 */
 export function listLinkedNotes(taskId: number): Note[] {
   return conn()
     .prepare(
@@ -127,7 +127,7 @@ export function listNotes(limit = 300): Note[] {
 
 
 /**
- * 概览四卡，对齐 review_service.today_counts：
+ * 概览四卡：
  * 今日待办只数**顶层有效未完成且未逾期**的根；逾期与今日完成都按 roll-up 判定。
  */
 export function overview(): Overview {
@@ -152,7 +152,7 @@ export function overview(): Overview {
 // ---------------------------------------------------------------- 写入
 // 全部走参数化 SQL + 字段白名单；不接受来自渲染进程的任意列名或任意 SQL。
 
-/** 与 task_service.toggle_complete 一致：终态→待办并清 completed_at，否则→完成。 */
+/** 终态→待办并清 completed_at，否则→完成。 */
 export function toggleTask(id: number): Task | null {
   const c = conn()
   const row = c.prepare('SELECT status FROM task WHERE id = ?').get(id) as
@@ -169,7 +169,7 @@ export function toggleTask(id: number): Task | null {
   )
   const updated = getTask(id)
 
-  // 对齐 task_service.toggle_complete：循环任务（顶层）完成后克隆整棵子树并推进截止日。
+  // 循环任务（顶层）完成后克隆整棵子树并推进截止日。
   // 子任务自身的循环不触发克隆（parent_id 非空）。
   if (!wasDone && updated && updated.parent_id === null && updated.repeat_period !== 'none') {
     const [nextDueDate, nextRule] = nextRecurrence(updated, today())
@@ -179,7 +179,7 @@ export function toggleTask(id: number): Task | null {
 }
 
 /**
- * 克隆任务及其子树，对齐 task_service._clone_task_tree：
+ * 克隆任务及其子树：
  * 补全 start_date / reminder_at / 标签 / 循环规则 / 子任务；克隆体状态一律回到 todo。
  */
 export function cloneTaskTree(
@@ -252,7 +252,7 @@ export function setTitle(id: number, title: string): Task | null {
   return getTask(id)
 }
 
-/** 与 task_service.update 的等待中规则一致：离开 waiting 时清 resume_at。 */
+/** 离开 waiting 时清 resume_at。 */
 /**
  * 把已完成的任务释放回「待执行」。
  *
@@ -329,8 +329,8 @@ export function nextSortKey(parentId: number | null): number {
 export function createTask(title: string, parentId: number | null, listId: number | null): Task | null {
   const clean = title.trim()
   if (!clean) return null
-  // 对齐 TaskService.add_subtask：未显式指定清单时继承父任务的 list_id，
-  // 否则子任务会因自身 list_id 为空而同时出现在收件箱（T6）。
+  // 未显式指定清单时继承父任务的 list_id，
+  // 否则子任务会因自身 list_id 为空而同时出现在收件箱。
   const parent = parentId !== null ? getTask(parentId) : null
   const effectiveList = listId ?? parent?.list_id ?? null
   const stamp = nowStamp()
@@ -385,34 +385,33 @@ export function updateTask(id: number, fields: Partial<Record<EditableField, str
   if (!sets.length) return getTask(id)
 
   const stamp = nowStamp()
-  // 对齐 T5：编辑面板改 status **不**写 completed_at（只有 set_status/toggle_complete 写），
-  // 也不再隐式清 resume_at —— Python task_editor._commit_status 由编辑器显式传 resume_at。
+  // 编辑面板改 status **不**写 completed_at（只有 setStatus/toggleTask 写），
+  // 也不再隐式清 resume_at —— resume_at 由编辑器显式传入。
   sets.push('updated_at = ?')
   args.push(stamp, id)
   conn().prepare(`UPDATE task SET ${sets.join(', ')} WHERE id = ?`).run(...args)
 
   reindexTask(id)
-  // notes_md 变更后重新解析 [[笔记标题]]（对齐 task_service.update → _sync_wiki_links）
+  // notes_md 变更后重新解析 [[笔记标题]]
   if ('notes_md' in fields) syncTaskNoteLinks(id, String(fields.notes_md ?? ''))
   return getTask(id)
 }
 
 
-/** 置为等待中并可指定恢复日期（对齐 TaskService.pause，v0.15 P2-8）。 */
+/** 置为等待中并可指定恢复日期。 */
 export function pauseTask(id: number, resumeAt: string | null = null): Task | null {
   return updateTask(id, { status: 'waiting', resume_at: resumeAt })
 }
 
-/** 恢复（默认回待办并清恢复日期，对齐 TaskService.resume）。 */
+/** 恢复。 */
 export function resumeTask(id: number, status: TaskStatus = 'todo'): Task | null {
   return updateTask(id, { status, resume_at: null })
 }
 
-// ------------------------------------------------ 任务↔笔记「段落级」上下文（T3）
+// ------------------------------------------------ 任务↔笔记「段落级」上下文
 
 /**
- * 记录任务关联笔记内某段落（幂等，对齐 TaskService.attach_block /
- * TaskRepository.link_context）。task 必须已存在，否则返回 null。
+ * 记录任务关联笔记内某段落（幂等）。task 必须已存在，否则返回 null。
  */
 export function attachBlock(
   taskId: number,
@@ -432,7 +431,7 @@ export function attachBlock(
   return getTask(taskId)
 }
 
-/** 解除段落上下文；blockKey 为空则解除该 (task,note) 的全部段落（对齐 unlink_context）。 */
+/** 解除段落上下文；blockKey 为空则解除该 (task,note) 的全部段落。 */
 export function detachBlock(taskId: number, noteId: number, blockKey = ''): number {
   const c = conn()
   return blockKey
@@ -446,7 +445,7 @@ export function detachBlock(taskId: number, noteId: number, blockKey = ''): numb
         .run(taskId, noteId).changes
 }
 
-/** 某任务的全部段落上下文（软删笔记隐去，对齐 linked_contexts）。 */
+/** 某任务的全部段落上下文。 */
 export function listLinkedContexts(taskId: number): TaskNoteContext[] {
   return conn()
     .prepare(
@@ -456,14 +455,14 @@ export function listLinkedContexts(taskId: number): TaskNoteContext[] {
     .all(taskId) as TaskNoteContext[]
 }
 
-/** 某笔记的全部段落上下文（图谱反链/预览用，对齐 contexts_for_note）。 */
+/** 某笔记的全部段落上下文。 */
 export function contextsForNote(noteId: number): TaskNoteContext[] {
   return conn()
     .prepare('SELECT * FROM task_note_context WHERE note_id = ? ORDER BY id')
     .all(noteId) as TaskNoteContext[]
 }
 
-/** 批量取多任务的段落上下文（图谱 task→anchor 构建用，对齐 context_notes_for）。 */
+/** 批量取多任务的段落上下文。 */
 export function noteContextMap(taskIds: number[]): Record<number, TaskNoteContext[]> {
   if (!taskIds.length) return {}
   const marks = taskIds.map(() => '?').join(',')
@@ -480,7 +479,7 @@ export function noteContextMap(taskIds: number[]): Record<number, TaskNoteContex
 }
 
 /**
- * 完成任务时沉淀复盘（对齐 AppController._write_note_after_done，T3）：
+ * 完成任务时沉淀复盘：
  * 有段落上下文 → 把「结论」追加回原笔记并保留段落锚；否则新建「复盘：X」笔记。
  */
 export function writeNoteAfterDone(
@@ -492,7 +491,7 @@ export function writeNoteAfterDone(
   if (ctx0) {
     const note = getNote(ctx0.note_id)
     if (note) {
-      // 复用 appendNote（对齐 note_service.append：追加不触发版本快照）
+      // 复用 appendNote
       const fresh = appendNote(note.id, `## 结论（${today()}）\n- ✅ 已完成：${title}\n`)
       if (fresh) return { noteId: fresh.id, blockKey: ctx0.block_key }
     }
@@ -507,7 +506,7 @@ export function writeNoteAfterDone(
 }
 
 /**
- * 捕获目标选择器的任务候选（对齐 TaskService.task_candidates，T17）：
+ * 捕获目标选择器的任务候选：
  * q 非空按标题模糊搜索（限 limit），否则返回近期（~今天+30 天）内的顶层未完成任务；
  * 两种口径都过滤已完成/已放弃。
  */
@@ -535,7 +534,7 @@ export function taskCandidates(q = '', limit = 20): Task[] {
     .all(end, limit) as Task[]
 }
 
-/** 软删除，级联子树（与 TaskRepository.soft_delete(cascade=True) 一致）。 */
+/** 软删除，级联子树。 */
 export function softDelete(id: number): number {
   const c = conn()
   const stamp = nowStamp()

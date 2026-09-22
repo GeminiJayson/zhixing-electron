@@ -4,10 +4,10 @@
  * 这套算法原本只活在渲染层的 MarkdownEditor 里，但 AI 整理会**重写正文**，
  * 而任务关联的段落锚（task_note_context.block_key）是靠段落文本的 sha1 指纹定位的 ——
  * 正文一变，指纹就全对不上了。主进程必须能算同样的指纹、并在新正文里重新找回那一段，
- * 所以把它提到 shared，两端共用同一份实现（与 Python 的 _block_fingerprint 逐字一致）。
+ * 所以把它提到 shared，两端共用同一份实现。
  */
 
-/** 纯 JS SHA-1（渲染进程不可用 node:crypto；与 Python hashlib.sha1 同算法）。 */
+/** 纯 JS SHA-1。 */
 export function sha1Hex(input: string): string {
   const utf8 = Array.from(new TextEncoder().encode(input))
   const ml = utf8.length
@@ -72,9 +72,9 @@ export function normalizeBlockText(text: string): string {
 }
 
 /**
- * 段落定位键（对齐 Python MarkdownEditor._block_fingerprint）：
+ * 段落定位键：
  * 空白折叠 + 去首尾 + 小写后取 sha1 前 12 位，前缀 `fp:`。
- * 与 Python 共享同一张 task_note_context 表，键必须逐字一致才能互相定位。
+ * 键必须与 task_note_context 表里的键逐字一致，才能互相定位。
  */
 export function blockFingerprint(text: string, length = 12): string {
   const norm = normalizeBlockText(text)

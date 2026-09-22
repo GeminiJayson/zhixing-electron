@@ -6,6 +6,7 @@ import {
   buildTaskTree,
   effectiveDoneMap,
   isTerminal,
+  tasksInListScope,
 } from '@shared/task'
 import type { Task } from '@shared/types'
 
@@ -91,5 +92,36 @@ describe('任务树', () => {
     const tasks = [mk(2, null, 'todo', { sort_key: 10 }), mk(1, null, 'todo', { sort_key: 20 })]
     const tree = buildTaskTree(tasks, effectiveDoneMap(tasks), new Map(), new Map())
     expect(tree.map((n) => n.id)).toEqual([2, 1])
+  })
+})
+
+describe('清单范围：根 + 后代闭包', () => {
+  it('只收该清单的顶层任务及其后代', () => {
+    const tasks = [
+      mk(1, null, 'todo', { list_id: 7 }),
+      mk(2, 1, 'todo', { list_id: 7 }),
+      mk(3, null, 'todo', { list_id: 8 }),
+    ]
+    expect(tasksInListScope(tasks, 7).map((t) => t.id)).toEqual([1, 2])
+  })
+
+  it('子任务的 list_id 与父不同也照样跟着父出现（否则它会凭空消失）', () => {
+    const tasks = [mk(1, null, 'todo', { list_id: 7 }), mk(2, 1, 'todo', { list_id: null })]
+    expect(tasksInListScope(tasks, 7).map((t) => t.id)).toEqual([1, 2])
+  })
+
+  it('收件箱（list_id 为空）同样按闭包取', () => {
+    const tasks = [mk(1, null, 'todo'), mk(2, 1, 'todo', { list_id: 7 }), mk(3, null, 'todo', { list_id: 7 })]
+    expect(tasksInListScope(tasks, null).map((t) => t.id)).toEqual([1, 2])
+  })
+
+  it('没有顶层根时回退为该清单的全部任务（兼容分支）', () => {
+    // 3 是 2 的子任务，2 却挂在别的清单下：7 没有自己的顶层任务
+    const tasks = [mk(2, null, 'todo', { list_id: 8 }), mk(3, 2, 'todo', { list_id: 7 })]
+    expect(tasksInListScope(tasks, 7).map((t) => t.id)).toEqual([3])
+  })
+
+  it('空清单返回空数组', () => {
+    expect(tasksInListScope([mk(1, null, 'todo', { list_id: 8 })], 7)).toEqual([])
   })
 })

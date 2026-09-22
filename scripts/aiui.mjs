@@ -96,7 +96,7 @@ check(
   JSON.stringify(settingGap)
 )
 
-// 改动 2：提示词的两个动作行要靠右（按钮右边缘与上方 textarea 对齐）
+// 改动 2：提示词的两个动作行要靠右
 const actionsAlign = await app.evaluate(`(() => {
   const rows = [...document.querySelectorAll('.set-row--end')]
   const areas = [...document.querySelectorAll('textarea[aria-label="整理提示词"], textarea[aria-label="全库整理提示词"]')]

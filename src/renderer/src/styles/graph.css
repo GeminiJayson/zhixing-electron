@@ -173,7 +173,7 @@
   font-size: var(--text-lead);
   word-break: break-word;
 }
-/* 节点摘要（G9）：段落自带换行，去掉 <p> 默认外边距以免与侧栏 gap 叠加 */
+/* 节点摘要：段落自带换行，去掉 <p> 默认外边距以免与侧栏 gap 叠加 */
 .graph-side__preview {
   margin: 0;
   word-break: break-word;

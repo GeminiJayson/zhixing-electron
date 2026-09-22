@@ -1,5 +1,5 @@
 /**
- * `zhixing://` 深链解析，逐条对齐 core/deep_link.py：
+ * `zhixing://` 深链解析：
  *   zhixing://task/<id> | note/<id> | flash/<id> | folder/<id>
  *   zhixing://note/<id>?block=<key>  （定位到笔记段落）
  * 保持纯函数，便于单测与主进程复用。
@@ -43,7 +43,7 @@ export function extractDeepLink(argv: readonly string[]): string | null {
 }
 
 /**
- * Python 风格热键（ctrl+alt+n）→ Electron Accelerator（Control+Alt+N）。
+ * 热键写法（ctrl+alt+n）→ Electron Accelerator（Control+Alt+N）。
  * 无法识别的片段返回空串，调用方跳过注册。
  */
 export function toAccelerator(hotkey: string): string {

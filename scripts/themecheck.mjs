@@ -1,5 +1,5 @@
 /**
- * 主题包验证（O8）：换包改变语义色、明暗两套各自生效、强调色保持正交。
+ * 主题包验证：换包改变语义色、明暗两套各自生效、强调色保持正交。
  * 用法：node scripts/themecheck.mjs
  */
 import { execFileSync, spawn } from 'node:child_process'

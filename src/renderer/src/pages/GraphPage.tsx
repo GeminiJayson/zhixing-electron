@@ -19,7 +19,7 @@ interface Props {
 
 type Scope = 'all' | 'n1' | 'n2'
 
-/** 文件夹色板与根目录专属色，逐值取自 graph_page._FOLDER_PALETTE / _ROOT_NOTE_COLOR。 */
+/** 文件夹色板与根目录专属色。 */
 const FOLDER_PALETTE = [
   '#0D9488', '#2563EB', '#7C3AED', '#DB2777', '#EA580C', '#16A34A',
   '#D97706', '#0891B2', '#4F46E5', '#65A30D', '#B45309', '#0EA5E9',
@@ -33,7 +33,7 @@ const KIND_COLOR: Record<string, string> = {
   anchor: '#0891B2',
 }
 
-/** 六类节点的中文名（对齐 graph_page.select_node 的 kind_label）。 */
+/** 六类节点的中文名。 */
 const KIND_CN: Record<string, string> = {
   note: '笔记',
   flash: '闪念',
@@ -63,7 +63,7 @@ const radiusOf = (): number => NODE_R
 
 /** 图谱页：力导向布局 + 按 kind 区分的节点形状 + 归属实线/引用虚线。 */
 /**
- * 节点坐标缓存（O5）：按节点 id 记住上次位置。
+ * 节点坐标缓存：按节点 id 记住上次位置。
  * 放在模块级而不是组件内，是为了「离开图谱页再回来」也能复用——
  * 否则每次重进都从随机位置重跑布局，同一份数据的位置会变。
  */
@@ -72,16 +72,16 @@ const POS_CACHE = new Map<number, { x: number; y: number }>()
 export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Props) {
   const [data, setData] = useState<GraphPayload | null>(null)
   const [scope, setScope] = useState<Scope>('all')
-  /** 默认纳入任务节点（对齐 graph_page._reload_impl 的 include_tasks=True） */
+  /** 默认纳入任务节点 */
   const [includeTasks, setIncludeTasks] = useState(true)
-  /** 文件夹 / 标签过滤（G7，对齐 folder_combo / tag_combo） */
+  /** 文件夹 / 标签过滤 */
   const [folderId, setFolderId] = useState<number | null>(null)
   const [tagId, setTagId] = useState<number | null>(null)
   const [folders, setFolders] = useState<NoteFolder[]>([])
   const [tags, setTags] = useState<{ id: number; name: string; color: string }[]>([])
-  /** 图内搜索（G7，对齐 search_input + Ctrl+F） */
+  /** 图内搜索 */
   const [search, setSearch] = useState('')
-  /** 邻域子图（G8）：scope≠all 且选中节点时由主进程按 note_link 算 */
+  /** 邻域子图：scope≠all 且选中节点时由主进程按 note_link 算 */
   const [neighbor, setNeighbor] = useState<GraphPayload | null>(null)
   const [selected, setSelected] = useState<number | null>(null)
   /** 键盘焦点落在哪个节点上（Tab 走图时画圆环用，见 gnode 的 onFocus/onBlur） */
@@ -99,7 +99,7 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
   const [linkMode, setLinkMode] = useState<'ownership' | 'reference'>('ownership')
   /** 鼠标悬停的边（按下标标识）：只在悬停时才亮出端点手柄与删除按钮 */
   const [edgeHover, setEdgeHover] = useState<number | null>(null)
-  /** 鼠标悬浮的节点：与它直接相连的线与节点高亮，其余淡化到几乎隐形（对齐 Obsidian） */
+  /** 鼠标悬浮的节点：与它直接相连的线与节点高亮，其余淡化到几乎隐形 */
   const [hoverNode, setHoverNode] = useState<number | null>(null)
   /** 正在改挂端点：记录边下标、被拖的那一端，以及指针当前的世界坐标 */
   const [edgeDrag, setEdgeDrag] = useState<{
@@ -117,9 +117,9 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
   // 用这个 ref 桥接。
   const panRef = useRef<ReturnType<typeof usePanZoom> | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
-  /** 上一次提示过的循环归属边集合（同一组只提示一次，对齐 _last_cycle_warn） */
+  /** 上一次提示过的循环归属边集合 */
   const lastCycleWarn = useRef('')
-  /** 当前动效档位（'' = full）：模拟重建时据此决定是否立即冻结（S10） */
+  /** 当前动效档位（'' = full）：模拟重建时据此决定是否立即冻结 */
   const motionRef = useRef('')
   const scopeRef = useRef<Scope>(scope)
   scopeRef.current = scope
@@ -133,13 +133,13 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
     void load()
   }, [load])
 
-  // 文件夹 / 标签过滤下拉（对齐 _populate_filters）
+  // 文件夹 / 标签过滤下拉
   useEffect(() => {
     void window.zhixing.db.noteFolders().then(setFolders)
     void window.zhixing.db.tags().then(setTags)
   }, [data])
 
-  // 邻域子图：只在 scope≠all 且有选中节点时按 note_link BFS 现算（G8）
+  // 邻域子图：只在 scope≠all 且有选中节点时按 note_link BFS 现算
   useEffect(() => {
     if (scope === 'all' || selected == null) {
       setNeighbor(null)
@@ -160,7 +160,7 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
   const lastDeltaAt = useRef(0)
 
   /**
-   * G5：消费主进程推来的图谱增量——按节点/边定点增删，保留布局（POS_CACHE 持有坐标）。
+   * 消费主进程推来的图谱增量——按节点/边定点增删，保留布局（POS_CACHE 持有坐标）。
    * full 或邻域视图下退回整体重查（邻域缓存参数不同，局部合并没有意义）。
    */
   const applyDelta = useCallback(
@@ -208,7 +208,7 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
   const applyDeltaRef = useRef(applyDelta)
   applyDeltaRef.current = applyDelta
 
-  // G5/G6：打开图谱页时登记增量推送；笔记/任务/闪念写一次就推一帧 diff。
+  // 打开图谱页时登记增量推送；笔记/任务/闪念写一次就推一帧 diff。
   useEffect(() => {
     void window.zhixing.db.graphWatch(true)
     // 登记时先打一次时间戳，避免首次写入时域订阅兜底与增量各查一遍
@@ -232,7 +232,7 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
     [load]
   )
 
-  // G2：循环归属断开提示（同一组循环边只提示一次，对齐 _warn_cycle_edges）
+  // 循环归属断开提示
   useEffect(() => {
     const cycles = data?.cycleEdges ?? []
     if (!cycles.length) return
@@ -263,7 +263,7 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
     return hits.length ? new Set(hits.map((n) => n.id)) : null
   }, [search, base])
 
-  // 文本变化 → 选中第一个命中（对齐 _focus_node_search）；空文本则只清高亮
+  // 文本变化 → 选中第一个命中；空文本则只清高亮
   const firstHit = useMemo(() => {
     const needle = search.trim().toLowerCase()
     if (!needle || !base) return null
@@ -273,7 +273,7 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
     if (firstHit) setSelected(firstHit.id)
   }, [firstHit])
 
-  // G9：选中节点按类型取预览文本（对齐 GraphService.preview_text）
+  // 选中节点按类型取预览文本
   useEffect(() => {
     if (!base || selected == null) {
       setPreview('')
@@ -293,7 +293,7 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
     }
   }, [selected, base])
 
-  // Ctrl+F 聚焦图内搜索框（对齐 graph_page.focus_node_search）
+  // Ctrl+F 聚焦图内搜索框
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'f') return
@@ -377,7 +377,7 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
         setTick((t) => t + 1)
       })
 
-    // S10：处于减动效档位时，模拟一经建立就冻结（对齐 _degrade_graph_physics 的 _physics.stop()）。
+    // 处于减动效档位时，模拟一经建立就冻结。
     // stop() 之后不会再触发 tick，所以手动推一帧让静态节点渲染出来。
     if (motionRef.current === 'reduced' || motionRef.current === 'none') {
       sim.stop()
@@ -390,8 +390,8 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
     }
   }, [view])
 
-  // S10：动效降级 —— reduced/none 时冻结力导向物理，回到 full 且当前有节点时恢复
-  // （对齐 app_controller._degrade_graph_physics：reduced → stop()，否则有节点才 start()）
+  // 动效降级 —— reduced/none 时冻结力导向物理，回到 full 且当前有节点时恢复
+  //
   useEffect(() => {
     const apply = (level: string): void => {
       motionRef.current = level
@@ -430,7 +430,7 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
   const selectedNode = nodes.find((n) => n.id === selected) ?? null
 
   /**
-   * 连线写入（对齐 dialog 拖拽建链的裁决口径）：
+   * 连线写入：
    * 先按允许矩阵判断，任务↔笔记再用 ownership/reference 决定写哪张表。
    */
   const tryLink = useCallback(
@@ -703,7 +703,7 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
   const pan = usePanZoom({ baseW: width, baseH: height, onMove: onSvgPointerMove, onEnd: endDrag })
   panRef.current = pan
 
-  // G7：图内搜索命中首个节点时镜头飞入（对齐 Python _focus_node_search 的 view.centerOn）。
+  // 图内搜索命中首个节点时镜头飞入。
   // 坐标在力导向模拟里，所以从 sim 取当前落位；centerOn 是稳定引用，避免每次渲染都重跑。
   const firstHitId = firstHit?.id ?? null
   const centerOn = pan.centerOn
@@ -719,7 +719,7 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
   }, [firstHitId, centerOn])
 
   /**
-   * 六类节点的打开动作（对齐 graph_page._open_selected / mouseDoubleClickEvent）：
+   * 六类节点的打开动作：
    * - note → 打开笔记；
    * - dangling → 按标题新建笔记并绑定悬空引用；
    * - anchor → 打开所属笔记（段落定位键随行，深链消费端补齐前只到笔记粒度）；
@@ -1079,7 +1079,7 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
                   </>
                 )}
               </dl>
-              {/* G9：按类型输出的预览文本（摘要/状态/优先级/截止/父任务/关联笔记/来源） */}
+              {/* 按类型输出的预览文本（摘要/状态/优先级/截止/父任务/关联笔记/来源） */}
               {preview && (
                 <p className="u-aux graph-side__preview" style={{ whiteSpace: 'pre-line' }}>
                   {preview}
@@ -1114,7 +1114,7 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
                   </label>
                 )}
               </div>
-              {/* 六类节点都有主操作按钮（对齐 _open_selected 的 open_btn 文案表） */}
+              {/* 六类节点都有主操作按钮 */}
               <button className="text-btn text-btn--accent" onClick={() => void openNode(selectedNode)}>
                 {sidebarAction(selectedNode)}
               </button>

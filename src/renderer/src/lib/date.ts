@@ -23,7 +23,7 @@ export function dueLabel(due: string | null): DueLabel {
 export const pad2 = (n: number): string => String(n).padStart(2, '0')
 
 /**
- * 生成 6×7 的月份网格（**周一为第一列**，与 QCalendarWidget 的周首一致）。
+ * 生成 6×7 的月份网格（**周一为第一列**）。
  *
  * 从 CalendarBoard 提取到这里：日历视图与新的日期选择器要的是同一个月历，
  * 两份实现迟早会在补位、闰月这些地方分叉。全程用 UTC 造日期，避免本地时区
@@ -130,7 +130,7 @@ export function taskProgress(
   return { ratio: 0, tone: 'idle', label: `未开始 · ${left}` }
 }
 
-/** 「开始 ~ 截止」区间 chip 文案（对齐手册 §5.2 的时间范围 chip） */
+/** 「开始 ~ 截止」区间 chip 文案 */
 export function rangeLabel(start: string | null, due: string | null): string {
   if (start && due) return start === due ? due : `${start} ~ ${due}`
   if (due) return due

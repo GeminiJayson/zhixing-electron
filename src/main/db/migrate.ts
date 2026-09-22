@@ -1,9 +1,7 @@
 /**
  * schema 迁移链：把旧版本的库逐号升到 SCHEMA_VERSION。
  *
- * 逐条对齐 Python 的 zhixing/model/infrastructure/db.py 里的 _MIGRATIONS（v1..v12）。
- * 两个客户端读写同一个 SQLite 文件，迁移结果必须一致，否则先升级的一方会
- * 让另一方读不懂库。每个迁移都必须幂等：失败重试、两个进程先后打开都可能重放。
+ * 每个迁移都必须幂等：失败重试、进程重启后重新打开都可能重放。
  */
 import type Database from 'better-sqlite3'
 
@@ -26,7 +24,7 @@ export const MIGRATIONS: Record<number, (c: Database.Database) => void> = {
   2: (c) => addColumn(c, "task", "start_date", "start_date DATE"),
   3: (c) => addColumn(c, "note", "format", "format TEXT NOT NULL DEFAULT 'markdown'"),
   4: (c) => {
-    // V4：笔记版本历史表（create_all 会建；这里对历史库兜底）。
+    // V4：笔记版本历史表（SCHEMA_SQL 会建；这里对历史库兜底）。
     c.exec(
       "CREATE TABLE IF NOT EXISTS note_revision (" +
         "id INTEGER PRIMARY KEY AUTOINCREMENT, " +

@@ -12,12 +12,12 @@ import { autoBackup } from './backup'
 // ---------------------------------------------------------------- 导出
 
 /**
- * 与 exporter.export_json 相同的表集合与外壳字段。
+ * 导出使用的表集合与外壳字段。
  *
  * 顺序同时是**插入顺序**（导入按此顺序写库），从表必须排在主表之后：
  *   task/note → task_note_context/task_note_ref/workflow_*；
  *   工作流四表按 template → node → instance → step_task 的依赖序。
- * 此前缺 task_note_context / task_note_ref / workflow_*（D6），导入后这些表
+ * 此前缺 task_note_context / task_note_ref / workflow_*，导入后这些表
  * 仍留着旧 id，指向已不存在的任务/笔记。
  */
 export const EXPORT_TABLES = [
@@ -67,7 +67,7 @@ const ORPHAN_CLEANUP: string[] = [
   'DELETE FROM workflow_step_task WHERE instance_id NOT IN (SELECT id FROM workflow_instance) OR node_id NOT IN (SELECT id FROM workflow_node) OR task_id NOT IN (SELECT id FROM task)',
 ]
 
-/** 导出 JSON 的完整内容（与 exporter.export_json 的外壳与表集合一致）。 */
+/** 导出 JSON 的完整内容（含外壳字段与全部导出表）。 */
 export function buildExportJson(): { data: Record<string, unknown>; count: number } {
   const c = conn()
   const data: Record<string, unknown> = { app: 'zhixing', version: 1 }
@@ -80,7 +80,7 @@ export function buildExportJson(): { data: Record<string, unknown>; count: numbe
   return { data, count }
 }
 
-/** 导出任务 CSV 文本（带 BOM 前缀，列与 exporter.export_tasks_csv 一致）。 */
+/** 导出任务 CSV 文本（带 BOM 前缀）。 */
 export function buildTasksCsv(): { text: string; count: number } {
   const rows = conn()
     .prepare(
@@ -90,7 +90,7 @@ export function buildTasksCsv(): { text: string; count: number } {
     .all() as Record<string, unknown>[]
   const esc = (v: unknown): string => {
     const s = v === null || v === undefined ? '' : String(v).replace(/\n/g, ' ')
-    // 对齐 csv.writer 的 QUOTE_MINIMAL：字段含分隔符/引号/行结束符才加引号
+    // CSV 引号规则：字段含分隔符/引号/行结束符才加引号
     return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
   }
   const header = ['id', '标题', '状态', '优先级', '截止日期', '列表', '父任务', '循环', '备注']
@@ -102,8 +102,8 @@ export function buildTasksCsv(): { text: string; count: number } {
         .join(',')
     )
   }
-  // 对齐 csv.writer 的默认方言（D27）：行结束符为 \r\n，且最后一行也带换行。
-  // 此前用 '\n' join 且无结尾换行，Excel 打开时换行符/行数都与 Python 版不一致。
+  // CSV 方言：行结束符为 \r\n，且最后一行也带换行。
+  // 若用 '\n' join 且无结尾换行，Excel 打开时换行符/行数会不对。
   return { text: '\ufeff' + lines.join('\r\n') + '\r\n', count: rows.length }
 }
 
@@ -147,7 +147,7 @@ function crc32(buf: Buffer): number {
   return (c ^ 0xffffffff) >>> 0
 }
 
-/** DOS 时间/日期（本地时区），与 Python zipfile.writestr 默认取「当前时间」一致。 */
+/** ZIP 条目的 DOS 时间/日期（本地时区），默认取「当前时间」。 */
 function dosDateTime(d: Date): { time: number; date: number } {
   const time = (d.getHours() << 11) | (d.getMinutes() << 5) | (Math.floor(d.getSeconds() / 2) & 0x1f)
   const date = (((d.getFullYear() - 1980) & 0x7f) << 9) | ((d.getMonth() + 1) << 5) | d.getDate()
@@ -155,7 +155,7 @@ function dosDateTime(d: Date): { time: number; date: number } {
 }
 
 /**
- * 打包成 ZIP（对齐 exporter.export_notes_markdown 的 ZIP_DEFLATED 压缩包，D26）。
+ * 打包成 ZIP。
  * 不引第三方依赖：本地文件头 + 中央目录 + EOCD，UTF-8 文件名（通用标志位 bit 11）。
  */
 export function buildZip(entries: { name: string; content: string }[]): Buffer {
@@ -247,7 +247,7 @@ export async function exportData(
   }
 
   if (kind === 'markdown-zip') {
-    // 「导出笔记 Markdown」的 Python 形态是一个 ZIP 包（D26）
+    // 「导出笔记 Markdown」打包成 ZIP
     const { canceled, filePath } = await dialog.showSaveDialog(win!, {
       title: '导出笔记 Markdown',
       defaultPath: 'notes.zip',
@@ -267,9 +267,9 @@ export async function exportData(
   if (canceled || !filePaths[0]) return null
   const baseDir = filePaths[0]
   const notes = buildNotesExport()
-  // 同名去重（对齐 exporter.export_notes_folder 的 `used` 集合，D26）：
+  // 同名去重：
   // 同题笔记按 -2/-3 递增改名，而不是直接覆盖已有文件。
-  // Python 的 used 是「本次导出全局集合」（跨目录也算重名），这里保持一致。
+  // 去重集合是「本次导出全局集合」（跨目录也算重名）。
   const used = new Set<string>()
   let written = 0
   for (const n of notes) {
@@ -292,7 +292,7 @@ export async function exportData(
 // ---------------------------------------------------------------- 导入（覆盖式）
 
 /**
- * 覆盖式导入 JSON 导出文件（对齐 Importer.import_json）。
+ * 覆盖式导入 JSON 导出文件。
  * 安全措施：校验文件外壳、**导入前自动 VACUUM INTO 备份当前库**、
  * 整个导入在一个事务里完成；渲染进程还会先做二次确认。
  */
@@ -300,7 +300,7 @@ export function importFromJsonFile(filePath: string): {
   ok: boolean
   message: string
   rows?: number
-  /** 与 Python importer.import_json 的返回值一致：分别回传任务数与笔记数（D28）。 */
+  /** 返回值分别是任务数与笔记数。 */
   tasks?: number
   notes?: number
   backup?: string
@@ -314,10 +314,10 @@ export function importFromJsonFile(filePath: string): {
   }
   if (data.app !== 'zhixing') return { ok: false, message: '不是「知行」的导出文件' }
 
-  // 导入前自动备份（用户数据安全的第一道闸）：改走 BackupService.autoBackup（D4），
+  // 导入前自动备份（用户数据安全的第一道闸）：改走 BackupService.autoBackup，
   // 与启动备份/恢复前备份落在同一个 backups/ 目录并一起纳入 10 份 prune；
   // 此前写进 backups/before-import/ 子目录，既不 prune 也没走备份服务。
-  // 文件名前缀与 Python 一致：settings_page._import_json 调 backup(reason="pre-import")。
+  // 备份文件名以 pre-import 为前缀（与 autoBackup 的 reason 一致）。
   const backupFile = autoBackup('pre-import')
   if (!backupFile) return { ok: false, message: '备份失败，已中止导入（详见日志）' }
 
@@ -329,11 +329,11 @@ export function importFromJsonFile(filePath: string): {
       const inserted: Record<string, number> = {}
       for (const table of [...EXPORT_TABLES].reverse()) {
         // settings 不走「清空重建」：它是一组配置键，清空会把导出文件里没有的键一并抹掉，
-        // 其中就包含 schema_version —— 导入旧文件会让版本号回退，随后 Python 版打开会
-        // 误判需要迁移。对齐 exporter._import_json：逐键 upsert，且跳过 schema_version。
+        // 其中就包含 schema_version —— 导入旧文件会让版本号回退，之后打开会误判需要迁移。
+        // 逐键 upsert，且跳过 schema_version。
         if (table === 'settings') continue
-        // 导出文件里没有这张表就整表保留（对齐 importer 的「目标缺失即跳过」）：
-        // Python 版导出的 JSON 不含 workflow_* / task_note_context 等表，
+        // 导出文件里没有这张表就整表保留：
+        // 旧导出文件的 JSON 不含 workflow_* / task_note_context 等表，
         // 无条件 DELETE 会把库里现存的这些关联清空。
         if (!Array.isArray(data[table])) continue
         c.prepare(`DELETE FROM ${table}`).run()
@@ -366,12 +366,12 @@ export function importFromJsonFile(filePath: string): {
         }
       }
       // 外键完整性：导入文件内部可能引用不存在的行（手工编辑过、或来自不完整的备份）。
-      // Python 侧是「目标缺失即跳过」，这里在插入后等价地清掉孤儿，避免留下指向空气的关联。
+      // 插入后清掉目标缺失的孤儿关联，避免留下指向空气的外键。
       for (const sql of ORPHAN_CLEANUP) c.prepare(sql).run()
       return { total, inserted }
     })
     const { total, inserted } = run()
-    // 提示口径对齐 Python（D28）：settings_page 显示「已导入：任务 N · 笔记 M」
+    // 提示文案：「已导入：任务 N · 笔记 M」
     const tasks = inserted.task ?? 0
     const notes = inserted.note ?? 0
     return {
@@ -411,7 +411,7 @@ export async function importData(sender: Electron.WebContents): Promise<{
 
 // ---------------------------------------------------------------- Markdown 文件夹导入
 
-/** 递归收集 *.md，排序口径对齐 Python 的 sorted(Path(folder).rglob("*.md"))。 */
+/** 递归收集 *.md，按路径不区分大小写排序。 */
 function collectMarkdownFiles(dir: string): string[] {
   const found: string[] = []
   const walk = (cur: string): void => {
@@ -426,7 +426,7 @@ function collectMarkdownFiles(dir: string): string[] {
     for (const ent of entries) {
       const full = join(cur, ent.name)
       if (ent.isDirectory()) walk(full)
-      // Windows 上 pathlib 的 glob 按大小写不敏感匹配，这里同样忽略大小写
+      // Windows 上文件名匹配大小写不敏感，这里同样忽略大小写
       else if (ent.isFile() && ent.name.toLowerCase().endsWith('.md')) found.push(full)
     }
   }
@@ -439,7 +439,7 @@ function collectMarkdownFiles(dir: string): string[] {
 }
 
 /**
- * 导入 Markdown 文件夹（对齐 Importer.import_markdown_folder，D25）：
+ * 导入 Markdown 文件夹：
  * 递归取 *.md，首行 `# 标题` 作标题、其余作正文，标题截断 120 字，统一入根目录。
  * 返回导入的笔记数。
  */
@@ -472,7 +472,7 @@ export function importMarkdownFolder(folder: string): {
   return { ok: true, count, message: `已导入 ${count} 篇笔记` }
 }
 
-/** 选文件夹导入 Markdown（设置页入口，对齐 settings_page._import_md）。 */
+/** 选文件夹导入 Markdown。 */
 export async function importMarkdownFolderDialog(sender: Electron.WebContents): Promise<{
   ok: boolean
   count: number

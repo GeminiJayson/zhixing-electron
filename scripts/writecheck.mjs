@@ -68,7 +68,7 @@ if (id) {
     `status=${edited?.status} priority=${edited?.priority}`
   )
 
-  // 6.6) 循环任务完成后克隆推进（对齐 toggle_complete + _clone_task_tree）
+  // 6.6) 循环任务完成后克隆推进
   const rec = await app.evaluate(
     "window.zhixing.db.createTask('写链路验证-循环任务', null, null).then(t => window.zhixing.db.updateTask(t.id, { repeat_period: 'daily', due_date: '2026-09-15' }))"
   )
@@ -130,7 +130,7 @@ const row = sql(tmpDb, "SELECT deleted_at || '|' || updated_at FROM task WHERE t
 const [deletedAt, updatedAt] = row.split('|')
 check('软删除已落库（deleted_at 非空）', !!deletedAt, `deleted_at=${deletedAt}`)
 check(
-  '时间戳为 Python datetime 格式（微秒 6 位）',
+  '时间戳为 YYYY-MM-DD HH:MM:SS.ffffff（微秒 6 位）',
   /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6}$/.test(updatedAt ?? ''),
   updatedAt ?? ''
 )

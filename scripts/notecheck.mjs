@@ -1,6 +1,6 @@
 /**
  * 笔记链路验证：在副本库上跑 笔记 CRUD + [[wiki 链接]] 管线，真实库零写入。
- * 覆盖 note_service 的 _pipeline diff 语义与 materialize_dangling。
+ * 覆盖链接管线的 diff 语义与悬空链接实体化。
  * 用法：node scripts/notecheck.mjs
  */
 import { execFileSync, spawn } from 'node:child_process'

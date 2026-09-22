@@ -1,5 +1,5 @@
 /**
- * 长列表虚拟滚动验证（O4）：造 400 条任务，确认 DOM 行数远小于数据行数，且滚动后会换行。
+ * 长列表虚拟滚动验证：造 400 条任务，确认 DOM 行数远小于数据行数，且滚动后会换行。
  * 用法：node scripts/vlistcheck.mjs
  */
 import { execFileSync, spawn } from 'node:child_process'

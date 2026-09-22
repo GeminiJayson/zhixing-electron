@@ -37,7 +37,6 @@ export function isDescendantOf(ancestorId: number, nodeId: number): boolean {
 
 /**
  * 拖拽排序：放到 anchor 上/下，取相邻 sort_key 的中间值。
- * 与 task_service.reorder 的中间值算法一致。
  */
 export function reorderTask(taskId: number, anchorId: number, below = true): Task | null {
   const anchor = getTask(anchorId)
@@ -50,15 +49,15 @@ export function reorderTask(taskId: number, anchorId: number, below = true): Tas
   const nextKey =
     idx < sib.length ? sib[idx].sort_key : sib.length ? sib[sib.length - 1].sort_key + 2 : 2
   const key = (prevKey + nextKey) / 2
-  // 对齐 TaskService.reorder：只改 sort_key，**不**动 parent_id（T12）。
-  // 跨级拖拽由调用方先显式改挂，与 Python task_page._on_tree_drop 的分工一致。
+  // 只改 sort_key，**不**动 parent_id。
+  // 跨级拖拽由调用方先显式改挂。
   conn()
     .prepare('UPDATE task SET sort_key = ?, updated_at = ? WHERE id = ?')
     .run(key, nowStamp(), taskId)
   return getTask(taskId)
 }
 
-/** 同级上移(-1)/下移(+1)，对齐 task_service.move_relative。 */
+/** 同级上移(-1)/下移(+1)。 */
 export function moveTaskRelative(taskId: number, delta: number): boolean {
   const me = getTask(taskId)
   if (!me) return false
@@ -91,16 +90,15 @@ export function reparentTask(taskId: number, parentId: number | null): Task | nu
     if (!parent) return me
   }
   const stamp = nowStamp()
-  // 对齐 TaskService.reparent：只改 parent_id，**保留原 sort_key**（T12）。
-  // 成环校验保留：Python 侧在 view 层（task_page._is_descendant）做同样的事，
-  // 渲染层无法自行回溯时由这里兜底，避免拖出环导致渲染/roll-up 递归。
+  // 只改 parent_id，**保留原 sort_key**。
+  // 成环校验保留：渲染层无法自行回溯时由这里兜底，避免拖出环导致渲染/roll-up 递归。
   conn()
     .prepare('UPDATE task SET parent_id = ?, updated_at = ? WHERE id = ?')
     .run(parentId, stamp, taskId)
   return getTask(taskId)
 }
 
-/** 批量完成：只处理未完成的（对齐 batch_complete）。 */
+/** 批量完成：只处理未完成的。 */
 export function batchComplete(ids: number[]): number {
   const c = conn()
   const stamp = nowStamp()
@@ -148,7 +146,7 @@ export function listTags(): { id: number; name: string; color: string }[] {
 }
 
 /**
- * 覆盖式设置任务标签（对齐 TagRepository.set_tags 的清空后重插）；
+ * 覆盖式设置任务标签；
  * 标签不存在时按名新建，与任务/笔记共用一套标签。
  */
 export function setTaskTags(taskId: number, names: string[]): void {
@@ -171,7 +169,7 @@ export function setTaskTags(taskId: number, names: string[]): void {
 
 // ---------------------------------------------------------------- 快速添加
 
-/** 按名查找 list 类型的清单 id；未命中返回 null（对齐 folders.find_by_name，不新建）。 */
+/** 按名查找 list 类型的清单 id；未命中返回 null。 */
 function findListIdByName(name: string): number | null {
   const clean = (name ?? '').trim()
   if (!clean) return null
@@ -200,7 +198,7 @@ export function ensureListId(name: string): number | null {
 
 /**
  * 快速添加：解析 !优先级 @列表 #标签 日期词 后建任务。
- * 与手册 §4.1 一致——未写日期词时截止日自动设为**今天**。
+ * 未写日期词时截止日自动设为**今天**。
  */
 export function quickAdd(text: string, defaultListId: number | null = null): Task | null {
   const c = conn()
@@ -208,8 +206,8 @@ export function quickAdd(text: string, defaultListId: number | null = null): Tas
   const parsed = parseCapture(text, day)
   if (!parsed.title) return null
 
-  // 对齐 TaskService.quick_create：@列表 命中用该清单，未命中**回退** default_list_id；
-  // 无 @列表 也用 default_list_id。此前未命中即新建 list_folder，凭空造清单（T7/I39）。
+  // @列表 命中用该清单，未命中**回退** default_list_id；
+  // 无 @列表 也用 default_list_id。此前未命中即新建 list_folder，凭空造清单。
   const listId = parsed.listName
     ? (findListIdByName(parsed.listName) ?? defaultListId)
     : defaultListId

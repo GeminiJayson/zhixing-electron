@@ -8,7 +8,7 @@ import {
 } from './note-links'
 
 describe('链接笔记条目：解析要能吃掉三种历史形态', () => {
-  it('Python 版的 [{title,target}] 数组', () => {
+  it('[{title,target}] 数组', () => {
     expect(parseLinkItems('[{"title":"知乎","target":"https://zhihu.com"}]')).toEqual([
       { title: '知乎', target: 'https://zhihu.com' },
     ])

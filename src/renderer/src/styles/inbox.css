@@ -28,7 +28,7 @@
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius-lg);
 }
-/* 深链定位到的闪念：短暂高亮（S22） */
+/* 深链定位到的闪念：短暂高亮 */
 .flash-card--focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);

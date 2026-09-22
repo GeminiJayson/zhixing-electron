@@ -3,7 +3,7 @@
  *
  * 存在 workflow_node.action_value 里（JSON 字符串），action_kind 固定为 'condition'。
  * 复用它而不是新增字段：action_kind / action_value 本来就是自由字符串，
- * 加个枚举值不必动 schema，也就不会影响与 Python 版共用的库。
+ * 加个枚举值不必动 schema，也就不会影响共用的库。
  */
 
 import type { NodeRunResult } from './types'

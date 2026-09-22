@@ -1,9 +1,7 @@
 /**
- * 任务清单 / 分组（对齐 task_service 的 folder_tree / create_folder / rename_folder /
- * delete_folder / default_list_id / list_tree / move_to_list）。
+ * 任务清单 / 分组：树形清单、创建 / 改名 / 删除文件夹、默认清单 id、移动到清单。
  *
- * 此前 list_folder 表只有 quickAdd 的隐式写入：任务没有分组视图、不能按清单浏览或移动，
- * 与 Python 版的列表数据模型实际不可互操作。
+ * 此前 list_folder 表只有 quickAdd 的隐式写入：任务没有分组视图、不能按清单浏览或移动。
  */
 import { conn, nowStamp, TASK_COLUMNS } from './connection'
 import { batchMove } from './task-ops'
@@ -11,14 +9,14 @@ import type { ListFolder, Task } from '../../shared/types'
 
 const LIST_COLUMNS = 'id, parent_id, kind, name, icon, collapsed, sort'
 
-/** 全部清单与分组（对齐 folder_tree）。 */
+/** 全部清单与分组。 */
 export function listFolders(): ListFolder[] {
   return conn()
     .prepare('SELECT ' + LIST_COLUMNS + ' FROM list_folder ORDER BY sort, id')
     .all() as ListFolder[]
 }
 
-/** 新建清单或分组（对齐 create_folder）。 */
+/** 新建清单或分组。 */
 export function createListFolder(
   name: string,
   kind: 'group' | 'list' = 'list',
@@ -39,7 +37,7 @@ export function createListFolder(
     .get(Number(info.lastInsertRowid)) as ListFolder
 }
 
-/** 重命名（对齐 rename_folder）。 */
+/** 重命名。 */
 export function renameListFolder(id: number, name: string): number {
   return conn()
     .prepare('UPDATE list_folder SET name = ? WHERE id = ?')
@@ -47,7 +45,7 @@ export function renameListFolder(id: number, name: string): number {
 }
 
 /**
- * 删除（对齐 folders.delete）：列表下的任务回落收件箱（list_id→NULL），
+ * 删除：列表下的任务回落收件箱（list_id→NULL），
  * 子节点上移一级后删除自身。
  */
 export function deleteListFolder(id: number): number {
@@ -66,7 +64,102 @@ export function deleteListFolder(id: number): number {
   return run()
 }
 
-/** 默认清单「我的清单」：不存在则创建（对齐 default_list_id）。 */
+/**
+ * 把清单 / 分组移动到某个分组下（parentId 为 null 表示顶层）。
+ *
+ * 两处校验都返回 0（未改任何行）而不是抛错：
+ *   - 目标是它自己或它的后代 —— 否则树会自成环，渲染端会无限递归；
+ *   - 目标不是分组 —— list 套 list 在数据模型里能存，但视图里没有意义。
+ */
+export function moveListFolder(id: number, parentId: number | null): number {
+  const c = conn()
+  if (id === parentId) return 0
+  if (parentId !== null) {
+    const parent = c.prepare('SELECT kind FROM list_folder WHERE id = ?').get(parentId) as
+      | { kind: string | null }
+      | undefined
+    if (!parent || parent.kind !== 'group') return 0
+  }
+  let cur = parentId
+  while (cur != null) {
+    if (cur === id) return 0
+    const row = c.prepare('SELECT parent_id FROM list_folder WHERE id = ?').get(cur) as
+      | { parent_id: number | null }
+      | undefined
+    cur = row?.parent_id ?? null
+  }
+  // 落到目标分组的末尾：拖进分组时「放在哪儿」不该由它原来的 sort 决定
+  const next = c
+    .prepare('SELECT COALESCE(MAX(sort), 0) + 1 AS s FROM list_folder WHERE parent_id IS ?')
+    .get(parentId) as { s: number }
+  return c
+    .prepare('UPDATE list_folder SET parent_id = ?, sort = ? WHERE id = ?')
+    .run(parentId, next.s, id).changes
+}
+
+/** 某个父级下的清单 / 分组（可排除自身），按 sort 排。 */
+function listSiblings(parentId: number | null, excludeId?: number): ListFolder[] {
+  return conn()
+    .prepare(
+      `SELECT ${LIST_COLUMNS} FROM list_folder
+        WHERE (parent_id IS ? OR parent_id = ?)
+          AND (? IS NULL OR id != ?)
+     ORDER BY sort ASC, id ASC`
+    )
+    .all(parentId, parentId, excludeId ?? null, excludeId ?? null) as ListFolder[]
+}
+
+/** nodeId 是否在 ancestorId 的子树内（拖拽防成环）。 */
+export function isListDescendantOf(ancestorId: number, nodeId: number): boolean {
+  const c = conn()
+  let cur: number | null = nodeId
+  const guard = new Set<number>()
+  while (cur !== null && !guard.has(cur)) {
+    guard.add(cur)
+    const row = c.prepare('SELECT parent_id FROM list_folder WHERE id = ?').get(cur) as
+      | { parent_id: number | null }
+      | undefined
+    if (!row) return false
+    if (row.parent_id === ancestorId) return true
+    cur = row.parent_id
+  }
+  return false
+}
+
+/**
+ * 拖拽排序 / 跨分组拖拽：把 id 放到 anchor 的上（below=false）或下（below=true），
+ * 父级跟随 anchor —— 于是「拖到另一个分组里的某行旁边」就等于「跨组移动 + 排序」。
+ *
+ * sort 取相邻两项的中间值（与任务排序同一套算法）：只写一行，不必重排整棵树。
+ * 拒绝把自己拖进自己的子树：那样会让渲染端无限递归。
+ */
+export function reorderListFolder(id: number, anchorId: number, below: boolean): number {
+  const c = conn()
+  if (id === anchorId) return 0
+  const me = c.prepare(`SELECT ${LIST_COLUMNS} FROM list_folder WHERE id = ?`).get(id) as
+    | ListFolder
+    | undefined
+  const anchor = c.prepare(`SELECT ${LIST_COLUMNS} FROM list_folder WHERE id = ?`).get(anchorId) as
+    | ListFolder
+    | undefined
+  if (!me || !anchor) return 0
+  if (isListDescendantOf(id, anchorId)) return 0
+  const parentId = anchor.parent_id ?? null
+  const sib = listSiblings(parentId, id)
+  const idxBase = sib.findIndex((x) => x.id === anchorId)
+  const idx = (idxBase < 0 ? sib.length : idxBase) + (below ? 1 : 0)
+  const keyOf = (x: ListFolder | undefined, fallback: number): number =>
+    typeof x?.sort === 'number' ? x.sort : fallback
+  const prevKey = idx > 0 ? keyOf(sib[idx - 1], 0) : sib.length ? keyOf(sib[0], 0) - 2 : 0
+  const nextKey =
+    idx < sib.length ? keyOf(sib[idx], 2) : sib.length ? keyOf(sib[sib.length - 1], 0) + 2 : 2
+  const key = (prevKey + nextKey) / 2
+  return c
+    .prepare('UPDATE list_folder SET parent_id = ?, sort = ? WHERE id = ?')
+    .run(parentId, key, id).changes
+}
+
+/** 默认清单「我的清单」：不存在则创建。 */
 export function defaultListId(): number {
   const found = conn()
     .prepare("SELECT id FROM list_folder WHERE name = '我的清单' ORDER BY id LIMIT 1")
@@ -75,21 +168,21 @@ export function defaultListId(): number {
   return createListFolder('我的清单', 'list', null).id
 }
 
-/** 把任务移到清单（对齐 move_to_list；复用批量移动，事务与时间戳一致）。 */
+/** 把任务移到清单。 */
 export function moveTaskToList(taskId: number, listId: number | null): number {
   return batchMove([taskId], listId)
 }
 
 /**
- * 某清单下的任务（对齐 list_tree）：以 list_id 匹配的任务为根，闭包收全部后代。
+ * 某清单下的任务：以 list_id 匹配的任务为根，闭包收全部后代。
  * 子任务的 list_id 可能与父不同，闭包保证它们不会因为「根判定」被漏掉。
  */
 export function listTasksByList(listId: number | null): Task[] {
   return conn()
     .prepare(
       // 根必须是「该清单下的顶层任务」：否则子任务（自身 list_id 可能为空）会同时出现在
-      // 收件箱与父任务的清单里（对齐 list_tree 的 roots 判定）。第二段是 Python 的
-      // 「无顶层根时回退列出该列表全部任务」兼容分支。
+      // 收件箱与父任务的清单里。第二段是
+      // 「无顶层根时回退列出该列表全部任务」的兼容分支。
       'WITH RECURSIVE seed(id) AS (' +
         ' SELECT id FROM task WHERE deleted_at IS NULL AND list_id IS ? AND parent_id IS NULL' +
         ' UNION' +

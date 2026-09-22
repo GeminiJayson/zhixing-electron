@@ -22,11 +22,11 @@ interface Props {
   onChanged: () => Promise<void>
 }
 
-/** 划词捕获的默认来源应用名（对齐 Python 的 `source_app or "划词"`）。 */
+/** 划词捕获的默认来源应用名。 */
 const DEFAULT_SOURCE_APP = '划词'
 
 /**
- * 从剪贴板 HTML 提取来源 URL（逐条对齐 app_controller._extract_source_url）：
+ * 从剪贴板 HTML 提取来源 URL：
  * 优先级 HTML href 显式链接 → HTML 元数据 source-url/canonical/og:url → 纯文本 URL；
  * `//` 补 https、`/` 用 HTML 里的 host 补全、`www.` 补 https；失败返回空串。
  */
@@ -52,7 +52,7 @@ export function extractSourceUrl(html: string, text: string): string {
 
 /**
  * 读剪贴板：优先经 `clipboard.read()` 拿 text/html（用于解析来源 URL），
- * 平台/权限不允许时退回 `readText()`（等价 Python 的 clipboard_fallback 降级）。
+ * 平台/权限不允许时退回 `readText()`。
  */
 export async function readClipboard(): Promise<{ text: string; html: string }> {
   let text = ''
@@ -82,12 +82,11 @@ export async function readClipboard(): Promise<{ text: string; html: string }> {
 
 /**
  * 捕获面板：全局热键或托盘唤出。
- * quick 模式回车即建任务（支持 !2 @列表 #标签 明天 语法糖，对齐 quick_capture.quick_create）；
+ * quick 模式回车即建任务；
  * capture 模式是划词捕获卡的**五去向**：闪念 / 任务 / 笔记 / 入分组 / 子任务。
  *
  * 内容来源：全局热键唤出时，主进程会先模拟 Ctrl+C 取来**当前选中的文字**（连 HTML 一起），
- * 通过 seed 传进来；从托盘/浮窗打开、或确实取不到选区时，退回读系统剪贴板
- * （等价 Python 的 clipboard_fallback）。
+ * 通过 seed 传进来；从托盘/浮窗打开、或确实取不到选区时，退回读系统剪贴板。
  */
 export function CapturePanel({
   open,
@@ -100,7 +99,7 @@ export function CapturePanel({
 }: Props) {
   const [text, setText] = useState('')
   const [remark, setRemark] = useState('')
-  /** 剪贴板 HTML 里解析出的来源 URL（I2），随闪念一起落库 */
+  /** 剪贴板 HTML 里解析出的来源 URL，随闪念一起落库 */
   const [sourceUrl, setSourceUrl] = useState('')
   /** 正在选择目标：「入分组」/「子任务」展开内联 TargetSelector */
   const [selector, setSelector] = useState<'group' | 'subtask' | null>(null)
@@ -119,7 +118,7 @@ export function CapturePanel({
         setSourceUrl(extractSourceUrl(seed.html ?? '', seed.text))
       } else if (mode === 'capture') {
         const { text: clip, html } = await readClipboard()
-        // 不再 slice(0,500)：Python 的 get_text 读全文，截断会丢内容
+        // 不再 slice(0,500)：读全文，截断会丢内容
         if (clip?.trim()) setText(clip.trim())
         setSourceUrl(extractSourceUrl(html, clip))
       }
@@ -151,7 +150,7 @@ export function CapturePanel({
     return task
   }
 
-  /** quick 模式：走语法糖解析（对齐 _quick_submit → quick_create）。 */
+  /** quick 模式：走语法糖解析。 */
   const quickAddTask = async (): Promise<void> => {
     const value = text.trim()
     if (!value) return
@@ -165,7 +164,7 @@ export function CapturePanel({
     onClose()
   }
 
-  /** 捕获「任务」：**不解析语法糖**，标题取内容前 60 字、正文进备注（对齐 submitTask）。 */
+  /** 捕获「任务」：**不解析语法糖**，标题取内容前 60 字、正文进备注。 */
   const toTask = async (): Promise<void> => {
     const value = text.trim()
     if (!value) return
@@ -181,7 +180,7 @@ export function CapturePanel({
     onClose()
   }
 
-  /** 闪念：带上来源应用与来源 URL（I1）。 */
+  /** 闪念：带上来源应用与来源 URL。 */
   const toFlash = async (): Promise<void> => {
     const value = text.trim()
     if (!value) return
@@ -191,7 +190,7 @@ export function CapturePanel({
     onClose()
   }
 
-  /** 笔记：标题=(备注||内容)[:30]，正文=引文 + 原文 + 备注（对齐 _capture_to_note）。 */
+  /** 笔记：标题=(备注||内容)[:30]，正文=引文 + 原文 + 备注。 */
   const toNote = async (): Promise<void> => {
     const value = text.trim()
     if (!value) return
@@ -204,7 +203,7 @@ export function CapturePanel({
     onClose()
   }
 
-  /** 入分组：内容成为目标分组下的新任务（对齐 _capture_to_group）。 */
+  /** 入分组：内容成为目标分组下的新任务。 */
   const toGroup = async (listId: number, name: string): Promise<void> => {
     const value = text.trim()
     if (!value) return
@@ -220,7 +219,7 @@ export function CapturePanel({
     onClose()
   }
 
-  /** 加子任务：内容成为所选父任务下的子待办（对齐 _capture_to_subtask）。 */
+  /** 加子任务：内容成为所选父任务下的子待办。 */
   const toSubtask = async (parentId: number, name: string): Promise<void> => {
     const value = text.trim()
     if (!value) return
@@ -236,7 +235,7 @@ export function CapturePanel({
     onClose()
   }
 
-  /** 五去向的字母快捷键（对齐 _install_shortcuts 的 F/T/N/G/U）；
+  /** 五去向的字母快捷键；
    *  在输入框里打字时不拦截，否则备注里打不出 g/u 等字母。 */
   const onPanelKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
     if (e.ctrlKey || e.metaKey || e.altKey) return

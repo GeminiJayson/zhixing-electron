@@ -1,10 +1,9 @@
 /**
- * 颜色工具：对比度校正（对齐 Python 版 theme.py 的 _ensure_text_contrast）。
+ * 颜色工具：对比度校正。
  *
  * 为什么需要：主题包的 fg2/fg3 是按观感调的柔和色，对 canvas / layer 的对比度
  * 大量落在 2.4–4.5 之间（实测 168 组里 74 组不达标，辅助文字最低只有 2.36:1）。
- * Python 版在 docs/ui_polish_v014_audit.md 做过同一件事（fg2 ≥4.5、fg3 ≥4.0），
- * Electron 的主题包是另一份数据，所以在应用主题时按同一套下限做运行时校正，
+ * 因此在应用主题时按固定下限（fg2 ≥4.5、fg3 ≥4.0）做运行时校正，
  * 而不是手改 168 个色值。
  */
 
@@ -48,6 +47,49 @@ export function contrastRatio(a: string, b: string): number {
   const [hi, lo] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x)
   return (hi + 0.05) / (lo + 0.05)
 }
+
+/** 浅底上用的正文色 / 深底上用的正文色；标签胶囊的实心底色靠它保证字看得见。 */
+const INK_ON_LIGHT = '#111827'
+const INK_ON_DARK = '#f8fafc'
+
+/**
+ * 给定底色，返回压在上面更可读的那个正文色（深字或浅字）。
+ *
+ * 标签颜色由用户自选，可能很浅（#FDE047）也可能很深（#111827）；胶囊把它当实心
+ * 背景用时，文字色必须跟着翻面，否则「自定义颜色」会直接变成「看不见的标签」。
+ *
+ * 判据用**两个候选色的实际对比度取更优**，而不是「亮度过某个阈值就翻面」：
+ * 中间亮度的底色（例如青色 #0D9488，亮度 0.23）在阈值法下会选到浅字，
+ * 而那里的浅字只有 3.6:1、深字反而有 4.6:1。
+ */
+export function inkOn(hex: string): string {
+  if (!parseHex(hex)) return INK_ON_DARK
+  return contrastRatio(INK_ON_LIGHT, hex) >= contrastRatio(INK_ON_DARK, hex)
+    ? INK_ON_LIGHT
+    : INK_ON_DARK
+}
+
+/**
+ * 标签调色板的 12 个预设色。
+ *
+ * 每个色都在「深字 ≥4.5:1 或浅字 ≥4.5:1」的范围内（见 color.test.ts 的断言）——
+ * 胶囊是 11px 小字，按 WCAG AA 需要 4.5:1；色板里混进中间亮度的颜色，
+ * 就会有一格天生读不清。用户仍可用取色器选任意颜色。
+ */
+export const TAG_COLOR_PRESETS = [
+  '#0D9488',
+  '#0891B2',
+  '#2563EB',
+  '#7C3AED',
+  '#A21CAF',
+  '#BE185D',
+  '#BE123C',
+  '#EA580C',
+  '#D97706',
+  '#65A30D',
+  '#059669',
+  '#64748B',
+]
 
 /** 线性混合两个色：t=0 取 a，t=1 取 b。 */
 export function mixHex(a: string, b: string, t: number): string {

@@ -1,6 +1,5 @@
 /**
- * 今日待办口径验证：构造场景检查 roll-up / 逾期剔除 / 子树归属，
- * 逐条对齐 task_service.today_tree + review_service.today_counts。
+ * 今日待办口径验证：构造场景检查 roll-up / 逾期剔除 / 子树归属。
  * 用法：node scripts/todaycheck.mjs
  */
 import { execFileSync, spawn } from 'node:child_process'
@@ -88,14 +87,14 @@ check('快速添加：写入 #标签', q1tags.includes('验证标签'), q1tags.j
 const q1list = await app.evaluate(`window.zhixing.db.tasks().then(rows => rows.find(r => r.id === ${q1.id})?.list_id)`)
 check('快速添加：@列表 命中已存在的清单就绑上去', q1list != null, `list_id=${q1list}`)
 // @列表 **未命中**时的行为是刻意的：不再凭空造一个清单，而是回退到调用方给的默认
-// （渲染层不传，于是落收件箱）。这是修过的 T7/I39 —— 见 task-ops.ts:211-212 的注释。
+// （渲染层不传，于是落收件箱）。见 task-ops.ts:211-212 的注释。
 // 原先这里断言「已创建并绑定」，是行为改掉之后没跟着改的过时断言，一直是红的。
 const qMiss = await app.evaluate("window.zhixing.db.quickAdd('清单未命中验证 @一定不存在的清单XYZ')")
 const qMissList = await app.evaluate(`window.zhixing.db.tasks().then(rows => rows.find(r => r.id === ${qMiss.id})?.list_id)`)
 check('快速添加：@列表 未命中时不绑定任何清单（回退收件箱）', qMissList === null, `list_id=${qMissList}`)
 const folderNames = await app.evaluate('window.zhixing.db.listFolders().then((rows) => rows.map((r) => r.name))')
 check(
-  '快速添加：未命中时确实没有凭空造清单（T7/I39）',
+  '快速添加：未命中时确实没有凭空造清单',
   !folderNames.includes('一定不存在的清单XYZ'),
   JSON.stringify(folderNames.slice(0, 6))
 )

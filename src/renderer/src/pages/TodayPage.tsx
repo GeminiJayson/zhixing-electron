@@ -60,7 +60,7 @@ export function TodayPage({ overview, onChanged, onNotice, onOpenNote, onFocusTa
     return `${d.getMonth() + 1}月${d.getDate()}日 ${WEEKDAYS[d.getDay()]} · 今日概览`
   }, [])
 
-  // 与手册 §4.1 一致：前三张卡点击跳到任务页对应清单，闪念卡跳收件箱
+  // 与手册一致：前三张卡点击跳到任务页对应清单，闪念卡跳收件箱
   const cards = [
     {
       key: 'today',

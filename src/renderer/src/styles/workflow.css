@@ -35,7 +35,7 @@
   color: var(--fg-secondary);
   font-weight: 600;
 }
-/* 模板 / 实例树：分类 → 模板两层，行 hover 出编辑胶囊（对齐笔记树） */
+/* 模板 / 实例树：分类 → 模板两层，行 hover 出编辑胶囊 */
 .wf-tree {
   display: flex;
   flex-direction: column;

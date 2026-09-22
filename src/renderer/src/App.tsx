@@ -46,7 +46,7 @@ export default function App() {
     ids: number[]
     label: string
     action?: 'toggle' | 'restore'
-    /** 撤销「取消完成」时要回写的前一个状态（T13）；无此项则按完成/未完成反向切换 */
+    /** 撤销「取消完成」时要回写的前一个状态；无此项则按完成/未完成反向切换 */
     prevStatus?: TaskStatus
   } | null>(null)
   /** 由今日页概览卡点击带过来的任务页聚焦过滤 */
@@ -59,17 +59,17 @@ export default function App() {
   })
   /** 最近一次读到的完整设置；null 表示还没从 settings 表读到，先别铺（免得用默认值闪一下） */
   const [appearance, setAppearance] = useState<AppSettings | null>(null)
-  /** 数据库降级原因（D2）：迁移失败（只读）或完全打不开时非空，主区顶部据此弹危险横幅 */
+  /** 数据库降级原因：迁移失败（只读）或完全打不开时非空，主区顶部据此弹危险横幅 */
   const [dbIssue, setDbIssue] = useState('')
-  /** 上一个页面，供 Ctrl+Tab 往返（对齐 switch_recent） */
+  /** 上一个页面，供 Ctrl+Tab 往返 */
   const prevPage = useRef<PageKey | null>(null)
   const lastPage = useRef<PageKey>('today')
-  /** 待派发的深链精确定位目标（等目标页渲染完成后再广播，S22） */
+  /** 待派发的深链精确定位目标（等目标页渲染完成后再广播） */
   const pendingLink = useRef<{ kind: string; id: number; block: string } | null>(null)
   /** 深链计数器：目标页与当前页相同时 setPage 不会引发重渲染，靠它触发派发 effect */
   const [linkTick, setLinkTick] = useState(0)
 
-  /** 以 settings 表为准重铺外观：Python 版与 Electron 版共用同一份偏好。 */
+  /** 以 settings 表为准重铺外观。 */
   const loadAppearance = useCallback(async (): Promise<AppSettings> => {
     let s: AppSettings
     try {
@@ -81,7 +81,7 @@ export default function App() {
     }
     setAppearance(s)
     setTheme(resolveThemeMode(s.theme_mode))
-    // 主题包 + 强调色 + 字号/行高/动效一起铺开（O8）
+    // 主题包 + 强调色 + 字号/行高/动效一起铺开
     applyAppearance(s)
     return s
   }, [])
@@ -94,7 +94,7 @@ export default function App() {
         break: s.pomodoro_break_min,
         autoBreak: s.pomodoro_auto_break,
       })
-      // D2：读一次数据库状态。迁移失败（只读）或完全打不开时给主区顶部横幅取数；
+      // 读一次数据库状态。迁移失败（只读）或完全打不开时给主区顶部横幅取数；
       // 这里不能抛 —— 取不到信息也照样要放主窗出来，否则用户只会看到一个空白界面。
       try {
         const info = await window.zhixing.app.info()
@@ -102,8 +102,8 @@ export default function App() {
       } catch {
         // 主进程信息不可用时不显示横幅
       }
-      // 首屏就绪 → 主进程关闭欢迎页并显示主窗（对齐 __main__.py 的 splash 流程：
-      // 初始化全部完成后再显主窗，打开即可操作）
+      // 首屏就绪 → 主进程关闭欢迎页并显示主窗：
+      // 初始化全部完成后再显主窗，打开即可操作
       void window.zhixing.app.ready()
       // 主窗显示后再强制一次合成刷新：窗口刚显示时 Chromium 可能复用旧合成帧，
       // 表现就是「首次启动外观不对，手动切一下主题才消除」。
@@ -125,8 +125,8 @@ export default function App() {
     applyAppearance({ ...appearance, theme_mode: theme })
   }, [theme, appearance])
 
-  // 系统「减少动态效果」变化时重铺动效档位（对齐 Python 的 _os_reduce_motion 探测；
-  // applyMotion 会广播 zhixing:motion，画布类视图据此冻结物理动画）
+  // 系统「减少动态效果」变化时重铺动效档位（applyMotion 会广播 zhixing:motion，
+  // 画布类视图据此冻结物理动画）
   useEffect(() => {
     if (!appearance || typeof window.matchMedia !== 'function') return
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -137,7 +137,7 @@ export default function App() {
     return () => mq.removeEventListener('change', onChange)
   }, [appearance])
 
-  // theme_mode = system 时跟随系统明暗实时切换（对齐 Python 的 styleHints 信号）
+  // theme_mode = system 时跟随系统明暗实时切换
   useEffect(() => {
     if (appearance?.theme_mode !== 'system') return
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
@@ -175,7 +175,7 @@ export default function App() {
     void refreshOverview()
   }, [refreshOverview])
 
-  // 把主进程的写入通知接进订阅表（O3）：只调一次
+  // 把主进程的写入通知接进订阅表：只调一次
   useEffect(() => {
     bindHostEvents(window.zhixing.db)
     // 设置页换主题包/强调色/字号后，主窗口跟着重铺（浮窗各自订阅同一份广播）；
@@ -191,13 +191,13 @@ export default function App() {
     })
   }, [loadAppearance])
 
-  // 启动维护 + 跨天维护（对齐 AppController：打卡重置、等待中到期恢复）
+  // 启动维护 + 跨天维护
   useEffect(() => {
     let day = new Date().toLocaleDateString('sv-SE')
     const maintain = async (announce: boolean): Promise<void> => {
       const rolled = await window.zhixing.db.rollRecurringToday()
       const resumed = await window.zhixing.db.resumeDueToday()
-      // 回收站按保留期自动清理（对齐 app_controller 跨天流程末尾的 _purge_recycle）：
+      // 回收站按保留期自动清理：
       // 此前只有手动按钮，设置里的 recycle_retention_days 形同虚设，回收站会无限增长。
       try {
         const s = parseSettings(await window.zhixing.db.settings())
@@ -221,7 +221,7 @@ export default function App() {
       if (now === day) return
       day = now
       void maintain(false)
-      // 跨天轮询间隔对齐 app_controller.py:1211 的 600000ms（10 分钟）：60s 太密，
+      // 跨天轮询间隔取 600000ms（10 分钟）：60s 太密，
       // 而跨天维护本身只关心「日期变了没有」，10 分钟内必然发生一次足够
     }, 600_000)
     return () => window.clearInterval(timer)
@@ -243,7 +243,7 @@ export default function App() {
     // preload 的 on* 现在统一返回取消函数，这里必须接住 —— 否则每次 effect 重跑都叠一层监听
     const offDeepLink = window.zhixing.app.onDeepLink((link) => {
       // 先切页并记下待派发的「精确定位」目标；目标页可能在本次 setPage 后才挂载，
-      // 立刻派发会丢事件，因此在下面的 effect 里等页面渲染后再发（S22）。
+      // 立刻派发会丢事件，因此在下面的 effect 里等页面渲染后再发。
       if (link.kind === 'task') {
         setTaskFocus(null)
         setPage('tasks')
@@ -271,11 +271,11 @@ export default function App() {
         // 捕获窗口完成后把回执转过来：只提示，不显示主窗口
         showToast(String(payload ?? ''))
       } else if (action === 'new-note') {
-        // 托盘/浮窗「新建笔记」（对齐 _dispatch_action 的 new-note）
+        // 托盘/浮窗「新建笔记」
         setPage('notes')
         window.dispatchEvent(new CustomEvent('zhixing:new-note'))
       } else if (action === 'flash-inbox') {
-        // 托盘/浮窗「记闪念」：切到收件箱（对齐 flash-inbox）
+        // 托盘/浮窗「记闪念」：切到收件箱
         setPage('inbox')
       } else if (action === 'clipboard-notice') {
         showToast('已复制内容 — 可用快速捕获（Ctrl+N）记下来')
@@ -290,7 +290,7 @@ export default function App() {
   }, [openNote])
 
   /**
-   * 深链的精确定位（S22）：按 kind 把 id / block 交给目标页。
+   * 深链的精确定位：按 kind 把 id / block 交给目标页。
    *
    * 页面状态（选中行、滚动位置、编辑器锚点）由各页自己持有，App 只负责在页面
    * 渲染完成后广播一次「打开这个对象」。对面订阅的事件名：
@@ -378,15 +378,15 @@ export default function App() {
     const { ids, action, prevStatus } = undoBar
     setUndoBar(null)
     // 撤销动作按来源区分：完成/取消完成 → 反向切换；删除 → 从回收站恢复
-    // （对齐 app_controller._undo_last 支持撤销删除整棵子树）
+    //
     // 整批一次事务。原先是渲染层循环逐条 IPC：任一条失败即中断，而撤销条已经清掉了 ——
-    // 用户既看不到错误，也没有重试入口（T13 的 prevStatus 语义不变，仍由主进程分派）。
+    // 用户既看不到错误，也没有重试入口（prevStatus 语义不变，仍由主进程分派）。
     await window.zhixing.db.batchUndoLast(ids, action ?? 'toggle', prevStatus ?? null)
     await refreshOverview()
     setToast(action === 'restore' ? `已恢复 ${ids.length} 项` : `已撤销 ${ids.length} 项完成`)
   }, [undoBar, refreshOverview])
 
-  // Ctrl/Cmd+K 命令面板；Ctrl/Cmd+N 快速任务捕获（与手册 §5.3 / §5.4 一致）
+  // Ctrl/Cmd+K 命令面板；Ctrl/Cmd+N 快速任务捕获（与手册一致）
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const mod = e.ctrlKey || e.metaKey
@@ -431,7 +431,7 @@ export default function App() {
         setPage('settings')
         return
       }
-      // Ctrl+Tab：在最近两个页面之间往返（对齐 switch_recent）
+      // Ctrl+Tab：在最近两个页面之间往返
       if (e.key === 'Tab') {
         e.preventDefault()
         if (prevPage.current) {
@@ -441,7 +441,7 @@ export default function App() {
         }
         return
       }
-      // Ctrl+1..6：前六个导航页（对齐 main_window._install_shortcuts）
+      // Ctrl+1..6：前六个导航页
       if (/^[1-6]$/.test(e.key)) {
         const item = NAV_ITEMS[Number(e.key) - 1]
         if (item) {
@@ -454,7 +454,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [page])
 
-  // Ctrl/Cmd+Z 撤销（与 docs 手册 §4.3 的「撤销最近一次完成/恢复」一致）
+  // Ctrl/Cmd+Z 撤销（与手册的「撤销最近一次完成/恢复」一致）
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z' || !undoBar) return
@@ -483,7 +483,7 @@ export default function App() {
         onToggleTheme={toggleTheme}
         signature={appearance?.signature}
       />
-      {/* D2：数据库只读 / 打不开时的危险横幅，铺在标题栏与主区之间（全宽），
+      {/* 数据库只读 / 打不开时的危险横幅，铺在标题栏与主区之间（全宽），
           「恢复备份」跳设置页的数据页 —— 自动备份列表就在那里 */}
       {dbIssue && (
         <div className="dbwarn" role="alert">
@@ -534,7 +534,7 @@ export default function App() {
               onNotice={showToast}
             />
           ) : null}
-          {/* 右下角快捷新建浮条（S27）：只在今日/任务页显示 */}
+          {/* 右下角快捷新建浮条：只在今日/任务页显示 */}
           <FloatingDock
             page={page}
             onTask={() => void window.zhixing.capture.open('quick')}

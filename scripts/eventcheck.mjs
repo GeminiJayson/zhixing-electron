@@ -1,5 +1,5 @@
 /**
- * 数据变更事件层验证（O3）：写操作广播、域划分正确、读操作不广播、订阅能收到。
+ * 数据变更事件层验证：写操作广播、域划分正确、读操作不广播、订阅能收到。
  * 用法：node scripts/eventcheck.mjs
  */
 import { execFileSync, spawn } from 'node:child_process'

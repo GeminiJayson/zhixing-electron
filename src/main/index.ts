@@ -65,7 +65,7 @@ const isDev = !!process.env.ELECTRON_RENDERER_URL
 let mainWindow: BrowserWindow | null = null
 let widgetWindow: BrowserWindow | null = null
 let tray: Tray | null = null
-/** 启动欢迎页（对齐 view/shell/splash.py）：初始化完成后才露主窗。 */
+/** 启动欢迎页：初始化完成后才露主窗。 */
 let splashWindow: BrowserWindow | null = null
 /** 主窗是否已经过 splash 阶段正式显示。此前不参与浮窗联动，避免启动瞬间弹出浮窗。 */
 let mainReady = false
@@ -73,8 +73,8 @@ let mainReady = false
 let quitting = false
 /**
  * 浮窗形态：'full' 完整卡片 / 'ball' 悬浮球。
- * 与 Python 版「10px 把手」有意分歧：这里收成一颗会做表情的球（bloub 引擎），
- * 而且球**可以拖动、可以改大小**，不再只是贴在边缘的一个把手。
+ * 球形态是一颗会做表情的球（bloub 引擎），而且**可以拖动、可以改大小**，
+ * 不只是贴在边缘的一个把手。
  * 形态与位置是解耦的：球的位置/边长独立存在 widget_ball，贴边只是它的一种停靠状态。
  */
 let widgetMode: 'full' | 'ball' = 'full'
@@ -93,7 +93,7 @@ let widgetBallDrag: {
   startCursor: { x: number; y: number }
   start: { x: number; y: number }
 } | null = null
-/** 浮窗边缘缩放进行中的状态（对齐 desktop_widget 的 _resize_dir/_resize_start_geom）。 */
+/** 浮窗边缘缩放进行中的状态。 */
 let widgetResize: {
   edges: string
   startCursor: { x: number; y: number }
@@ -122,12 +122,12 @@ const BALL_WIN_MIN = BALL_SIZE_MIN + BALL_MARGIN * 2
  * `moved`，留白不够会被立刻重新判定为贴边，刚展开又收回去。
  */
 const DOCK_RESTORE_INSET = 12
-/** 边缘缩放命中带宽度（对齐 desktop_widget 的 _RESIZE_MARGIN） */
+/** 边缘缩放命中带宽度 */
 const WIDGET_RESIZE_MARGIN = 6
 /** 上一次托盘图标的配色，用于避免无谓的重着色 */
 let lastTrayColor = ''
 
-/** 浮窗展开尺寸与缩放下限，取自 desktop_widget.py。 */
+/** 浮窗展开尺寸与缩放下限。 */
 const WIDGET_SIZE: [number, number] = [290, 380]
 const WIDGET_MIN: [number, number] = [200, 160]
 
@@ -237,11 +237,11 @@ function createWidgetWindow(): void {
   })
   hardenWindow(widgetWindow)
   widgetWindow.setOpacity(opacity)
-  // 高于普通窗口，但不抢系统级焦点（对齐 Qt 的 WindowStaysOnTopHint 语义）
+  // 高于普通窗口，但不抢系统级焦点
   widgetWindow.setAlwaysOnTop(true, 'floating')
   widgetWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
 
-  // 几何写库（S19）：拖拽/缩放过程中 moved/resized 会连续触发，去抖到停手后只写一次。
+  // 几何写库：拖拽/缩放过程中 moved/resized 会连续触发，去抖到停手后只写一次。
   // 球形态的几何写进 widget_ball，绝不覆盖 widget_geometry —— 展开时还要靠后者还原。
   let persistTimer: NodeJS.Timeout | null = null
   const persistNow = (): void => {
@@ -299,7 +299,7 @@ function createWidgetWindow(): void {
     if (restored.active) restoreBall(restored)
     // 否则：上次停在屏幕边缘的浮窗几何 → 第一次露面就收成球，别把整卡片挤进小窗口
     else maybeDockWidget()
-    // 启动阶段只创建不显示（对齐 app_controller.startup 末尾的 self.widget.hide()）：
+    // 启动阶段只创建不显示：
     // 主窗显示→隐藏浮窗、主窗隐藏→显示浮窗，统一由 syncWidgetVisibility 裁决。
     syncWidgetVisibility()
   })
@@ -445,7 +445,7 @@ function collapseWidgetToBall(side?: 'left' | 'right'): void {
 }
 
 /**
- * 浮窗贴边：贴近屏幕左右边缘时收成悬浮球（对齐 desktop_widget 的贴边半隐语义）。
+ * 浮窗贴边：贴近屏幕左右边缘时收成悬浮球。
  * 返回是否真的收成了球 —— 调用方据此决定要不要再写浮窗几何。
  */
 function maybeDockWidget(): boolean {
@@ -566,7 +566,7 @@ function toggleWidget(): void {
 }
 
 /**
- * 主窗显隐 → 浮窗显隐联动（对齐 app_controller._on_main_shown / _on_main_hidden）：
+ * 主窗显隐 → 浮窗显隐联动：
  * 主窗显示时隐藏浮窗，主窗隐藏（关闭到浮窗/最小化）时显示浮窗并刷新今日待办。
  */
 function syncWidgetVisibility(): void {
@@ -603,7 +603,7 @@ function syncWidgetVisibility(): void {
 }
 
 /**
- * 浮窗边缘缩放（S17，对齐 desktop_widget 的 _resize_hit/_apply_resize）：
+ * 浮窗边缘缩放：
  * 渲染层判定命中的边（'n'/'se'/'w' 等）后开始，主进程按屏幕光标位移重算尺寸。
  * 之所以放主进程算：光标可能移出窗口，渲染层拿不到完整位移。
  */
@@ -644,7 +644,7 @@ function widgetResizeTo(): void {
   widgetWindow.setBounds({ x, y, width, height })
 }
 
-/** 结束缩放：清状态并写一次几何（对齐 mouseReleaseEvent 里的 save_geometry）。 */
+/** 结束缩放：清状态并写一次几何。 */
 function widgetResizeEnd(): void {
   if (!widgetResize) return
   widgetResize = null
@@ -658,7 +658,7 @@ function applyWidgetOpacity(value: number): void {
   widgetWindow?.setOpacity(Math.max(0.3, Math.min(1, value / 100)))
 }
 
-/** 鼠标穿透：开启后浮窗不挡操作（对齐 set_click_through），改用热键/托盘隐藏。 */
+/** 鼠标穿透：开启后浮窗不挡操作，改用热键/托盘隐藏。 */
 function applyWidgetClickThrough(enabled: boolean): void {
   widgetWindow?.setIgnoreMouseEvents(enabled, { forward: true })
 }
@@ -723,12 +723,12 @@ async function dispatchHotkeyAction(action: string): Promise<void> {
 }
 
 /**
- * 热键注册状态（S20）：settings 键 → 中文状态串，与 Python 的
- * app_controller.hotkey_status 同形，设置页据此显示「已注册 / 冲突降级」。
+ * 热键注册状态：settings 键 → 中文状态串，
+ * 设置页据此显示「已注册 / 冲突降级」。
  */
 const hotkeyStatus: Record<string, string> = {}
 
-/** 热键设置键 → 动作名（对齐 app_controller._hotkey_bindings）。 */
+/** 热键设置键 → 动作名。 */
 const HOTKEY_BINDINGS: { setting: string; action: string }[] = [
   { setting: 'capture_hotkey', action: 'capture' },
   { setting: 'select_quick_hotkey', action: 'select-quick' },
@@ -738,7 +738,7 @@ const HOTKEY_BINDINGS: { setting: string; action: string }[] = [
 ]
 
 /**
- * 全局热键：键名从 settings 表读（与 Python 版共用同一份配置），
+ * 全局热键：键名从 settings 表读，
  * ctrl+alt+n 这种写法由 toAccelerator 转成 Electron Accelerator。
  *
  * 每次注册都刷新 hotkeyStatus：Electron 的 globalShortcut.register 在组合键被
@@ -774,7 +774,7 @@ function registerHotkeys(): Record<string, string> {
     // 于是改完键按下去没反应也不知道为什么（用户报的就是这个现象）
     hotkeyStatus[setting] = ok ? '✓ 已注册' : '✗ 未注册：组合已被别的程序占用'
   }
-  // 开机自启（对齐 autostart.py 的跨平台注册；mac/win 由 Electron 代劳）
+  // 开机自启
   try {
     app.setLoginItemSettings({ openAtLogin: s.autostart_enabled })
   } catch (err) {
@@ -784,7 +784,7 @@ function registerHotkeys(): Record<string, string> {
 }
 
 /**
- * 托盘提示显示今日待办数（对齐 app_controller._update_tray_count）。
+ * 托盘提示显示今日待办数。
  * 此前 tooltip 是固定文案，少了一处「不打开应用也能看到今天还剩多少」的提醒。
  */
 function updateTrayTooltip(): void {
@@ -798,8 +798,8 @@ function updateTrayTooltip(): void {
 }
 
 /**
- * 托盘图标配色：取当前主题包的 fg2（对齐 main_window._update_tray_icon 的
- * ThemeEngine.t("fg2")），明暗按 theme_mode / 系统实际值取对应的一套。
+ * 托盘图标配色：取当前主题包的 fg2，
+ * 明暗按 theme_mode / 系统实际值取对应的一套。
  */
 function trayIconColor(): string {
   try {
@@ -820,8 +820,8 @@ function trayIconColor(): string {
 }
 
 /**
- * 托盘图标：把模板图按主题色重着色（Python 侧用 icons.pixmap 按主题色重渲染图标；
- * Electron 侧没有图标渲染器，改为读模板 PNG 的位图、按 alpha 做单色填充）。
+ * 托盘图标：把模板图按主题色重着色（没有图标渲染器，改为读模板 PNG 的位图、
+ * 按 alpha 做单色填充）。
  * 任何一步失败都退回原图 —— 绝不出现「托盘图标消失」这种更糟的回退。
  */
 function buildTrayImage(): Electron.NativeImage {
@@ -872,7 +872,7 @@ function buildTrayImage(): Electron.NativeImage {
   }
 }
 
-/** 主题变化后重建托盘图标（对齐 main_window._on_theme → _update_tray_icon）。 */
+/** 主题变化后重建托盘图标。 */
 function refreshTrayIcon(): void {
   if (!tray || tray.isDestroyed()) return
   const color = trayIconColor()
@@ -883,8 +883,8 @@ function refreshTrayIcon(): void {
 }
 
 /**
- * 系统托盘菜单：动作集与 Python 的 _dispatch_action 对齐
- * （quick-capture / new-note / flash-inbox / capture / select-quick / widget）。
+ * 系统托盘菜单：动作集为
+ * quick-capture / new-note / flash-inbox / capture / select-quick / widget。
  */
 function createTray(): void {
   const image = buildTrayImage()
@@ -936,7 +936,7 @@ function buildMenu(): void {
  */
 
 /**
- * 启动欢迎页（对齐 view/shell/splash.py + __main__.py:106-135）：
+ * 启动欢迎页：
  * 无边框、居中、置顶，直到渲染层报告「首屏数据已就绪」才关闭并显示主窗，
  * 避免主窗先露出半成品界面。HTML 内联为 data: URL —— 启动页只有几十行，
  * 不值得为它单独增加一个渲染产物入口。
@@ -984,7 +984,7 @@ html,body{margin:0;height:100%;background:transparent;font-family:"PingFang SC",
   })
 }
 
-/** 关闭欢迎页并显示主窗（对齐 __main__.py 的 splash.fade_out → controller.show_main）。 */
+/** 关闭欢迎页并显示主窗。 */
 function revealMain(): void {
   if (mainReady) return
   mainReady = true
@@ -1001,7 +1001,7 @@ function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1280,
     height: 820,
-    // 最小尺寸对齐 Python main_window.py:41-44 的 size=(1280, 820), min_size=(1024, 700)
+    // 尺寸 1280x820，最小尺寸 1024x700
     minWidth: 1024,
     minHeight: 700,
     show: false,
@@ -1017,7 +1017,7 @@ function createWindow(): BrowserWindow {
     },
   })
 
-  // 关闭到托盘：拦截关闭改为隐藏（对齐 close_to_widget），浮窗仍在运行。
+  // 关闭到托盘：拦截关闭改为隐藏，浮窗仍在运行。
   // 托盘「退出」走 app.quit → before-quit 已置 quitting，这里放行。
   win.on('close', (e) => {
     if (quitting) return
@@ -1026,7 +1026,7 @@ function createWindow(): BrowserWindow {
       win.hide()
     }
   })
-  // 主窗显隐 → 浮窗显隐联动（S16）。主窗显示时收起浮窗，隐藏/最小化时放出浮窗。
+  // 主窗显隐 → 浮窗显隐联动。主窗显示时收起浮窗，隐藏/最小化时放出浮窗。
   const onMainVisibility = (): void => {
     widgetManualOpen = false
     syncWidgetVisibility()
@@ -1761,20 +1761,19 @@ app.whenReady().then(() => {
   startReminderDispatch()
   registerReminderHandlers()
   scheduleTaskSync()
-  // 欢迎页要先于主窗出现（对齐 __main__.py：splash.show() 在 AppContext 构造之前）
+  // 欢迎页要先于主窗出现
   try {
     createSplash()
   } catch (err) {
     console.error('[splash] 创建欢迎页失败', err)
   }
-  // 首次运行把默认设置落库（对齐 ensure_defaults）：两版共用同一张 settings 表，
-  // 不落库就会各自回退到不同默认，切换客户端时行为跳变。
+  // 首次运行把默认设置落库，避免读取时回退到不一致的默认值。
   try {
     ensureDefaultSettings()
   } catch (err) {
     console.error('[db] 写入默认设置失败', err)
   }
-  // 剪贴板监听（对齐 app_controller 的 clipboard_monitor）：
+  // 剪贴板监听：
   // 复制后提示可快速捕获，带长度过滤、去重，且不打断用户输入。
   let lastClip = clipboard.readText()
   setInterval(() => {
@@ -1790,7 +1789,7 @@ app.whenReady().then(() => {
     }
   }, 2000)
 
-  // 启动自动备份一次（对齐 BackupService.backup("auto")，保留最近 10 份）
+  // 启动自动备份一次
   try {
     autoBackup('auto')
   } catch (err) {
@@ -1806,7 +1805,7 @@ app.whenReady().then(() => {
     // widget_enabled / close_to_widget 改动后浮窗显隐立刻跟着变，不必重启
     syncWidgetVisibility()
   })
-  // 浮窗随应用启动创建，但**不显示**（对齐 app_controller.startup 末尾的 self.widget.hide()）：
+  // 浮窗随应用启动创建，但**不显示**：
   // 启动只露主窗，之后由主窗显隐联动浮窗。
   if (currentSettings().widget_enabled) createWidgetWindow()
   // 提醒气泡窗口与浮窗同理：启动就创建，但不显示（首次派发时才露面）。
@@ -1819,7 +1818,7 @@ app.whenReady().then(() => {
     chrome: process.versions.chrome,
     node: process.versions.node,
     dbPath: dbPath(),
-    // D2：ready=库是否打开；readonly=能打开但迁移失败（只读模式）；error=完全打不开的中文原因。
+    // ready=库是否打开；readonly=能打开但迁移失败（只读模式）；error=完全打不开的中文原因。
     // 渲染层据此决定是否弹危险横幅并给「恢复备份」入口。
     dbReady: open() !== null,
     dbReadonly: dbReadonlyReason(),
@@ -1832,7 +1831,7 @@ app.whenReady().then(() => {
     // system 模式下窗口底色取系统实际明暗，避免新窗口闪出另一套配色
     const dark = theme === 'system' ? nativeTheme.shouldUseDarkColors : theme === 'dark'
     BrowserWindow.fromWebContents(e.sender)?.setBackgroundColor(dark ? '#1F1F1F' : '#F3F3F3')
-    // 托盘图标 = 主题派生色，换明暗要重建（对齐 main_window._on_theme）
+    // 托盘图标 = 主题派生色，换明暗要重建
     refreshTrayIcon()
   })
   // 系统明暗变化（theme_mode=system 时）同样要重建托盘图标
@@ -1846,11 +1845,11 @@ app.whenReady().then(() => {
 
   // 渲染层首屏就绪 → 关闭欢迎页并显示主窗（splash 流程的「完成」信号）
   ipcMain.handle('app:ready', () => revealMain())
-  // 托盘图标随主题重建（S23）：设置页改主题/主题包后由数据变更钩子触发
+  // 托盘图标随主题重建：设置页改主题/主题包后由数据变更钩子触发
   ipcMain.handle('app:refreshTray', () => refreshTrayIcon())
 
-  // 改键流程（S20）：设置页进入捕获态前注销全部热键，避免被系统层吞掉按键；
-  // 捕获完成或取消后统一重注册并回传状态（对齐 _suspend_hotkeys/_rebind_hotkeys）。
+  // 改键流程：设置页进入捕获态前注销全部热键，避免被系统层吞掉按键；
+  // 捕获完成或取消后统一重注册并回传状态。
   ipcMain.handle('app:hotkeyStatus', () => ({ ...hotkeyStatus }))
   ipcMain.handle('app:suspendHotkeys', () => {
     globalShortcut.unregisterAll()
@@ -1887,7 +1886,7 @@ app.whenReady().then(() => {
     }
   })
 
-  // 浮窗边缘缩放（S17）：渲染层命中边缘后开始/推进/结束
+  // 浮窗边缘缩放：渲染层命中边缘后开始/推进/结束
   ipcMain.handle('widget:resizeStart', (_e, edges: string) => widgetResizeStart(edges))
   ipcMain.handle('widget:resizeTo', () => widgetResizeTo())
   ipcMain.handle('widget:resizeEnd', () => widgetResizeEnd())
@@ -1912,7 +1911,7 @@ app.whenReady().then(() => {
   ipcMain.handle('widget:dragEnd', (_e, moved: boolean) => ballDragEnd(moved === true))
   // 悬浮球大小（滚轮 / 右键菜单），主进程钳在 BALL_SIZE_MIN~MAX
   ipcMain.handle('widget:setBallSize', (_e, size: number) => setBallSize(Number(size)))
-  // 浮窗右键菜单（对齐 desktop_widget 的右键项：今日视图 / 贴边 / 隐藏浮窗）
+  // 浮窗右键菜单
   ipcMain.handle('widget:contextMenu', () => {
     if (!widgetWindow) return
     const items: MenuItemConstructorOptions[] = [{ label: '今日视图', click: () => showMain() }]

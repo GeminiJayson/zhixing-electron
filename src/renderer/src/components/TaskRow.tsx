@@ -3,6 +3,7 @@ import { Morph, IconData, Pencil, Play, Plus, Trash2 } from '@renderer/lib/icons
 import { priorityColor, priorityLabel } from '@shared/priority'
 import type { TaskNode } from '@shared/task'
 import { STATUS_LABELS, STATUS_TONES } from '@shared/task'
+import { inkOn } from '@shared/color'
 import { dueLabel, rangeLabel, taskProgress } from '../lib/date'
 
 interface Props {
@@ -24,6 +25,11 @@ interface Props {
   onDragEnd: () => void
   dropHint: 'before' | 'after' | 'child' | null
   onTitleCommit: (id: number, title: string) => void
+  /**
+   * 所属清单名。只在「已完成 / 已放弃」这类跨清单视图里传 ——
+   * 终态任务被收归之后，用户仍要能看出它原来属于哪个清单。
+   */
+  listName?: string
   onAddSubtask: (id: number) => void
   onFocus: (id: number, title: string) => void
   onEdit: (id: number) => void
@@ -179,12 +185,18 @@ export function TaskRow(props: Props) {
         )}
         {node.streak > 0 && <span className="chip chip--streak">🔥{node.streak}</span>}
         {range && <span className={`chip${due.tone === 'overdue' ? ' chip--danger' : ''}`}>{range}</span>}
+        {props.listName && (
+          <span className="chip chip--list" title={`所属清单：${props.listName}`}>
+            {props.listName}
+          </span>
+        )}
         {node.tags.map((tag) => (
           <button
             key={tag.id}
             className="chip chip--tag"
-            style={{ color: tag.color, borderColor: tag.color }}
-            title="点击增删标签"
+            // 实心胶囊 + 明暗翻转的文字色：标签颜色由用户自定，浅色与深色都要看得见
+            style={{ background: tag.color, borderColor: tag.color, color: inkOn(tag.color) }}
+            title="点击增删标签或改颜色"
             onClick={(e) => {
               e.stopPropagation()
               props.onOpenTags(node.id, e.currentTarget)

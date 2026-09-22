@@ -29,9 +29,9 @@ interface Props {
    */
   onAttachTask?: (info: { text: string; blockKey: string; x: number; y: number }) => void
   placeholder?: string
-  /** 查找词：正文里全部命中高亮（N19） */
+  /** 查找词：正文里全部命中高亮 */
   highlight?: string
-  /** 右键「转为任务」/「转为任务并关联段落」（N-§1.3#10） */
+  /** 右键「转为任务」/「转为任务并关联段落」 */
   onCreateTask?: (text: string, blockKey: string | null) => void
 }
 
@@ -61,7 +61,7 @@ const editorTheme = EditorView.theme({
   '.cm-activeLine': { backgroundColor: 'var(--bg-hover)' },
   '.cm-selectionBackground, ::selection': { backgroundColor: 'var(--accent-soft)' },
   '.cm-cursor': { borderLeftColor: 'var(--accent)' },
-  // N19：查找词的全部命中高亮（Python 用 accent_soft 底色）
+  // 查找词的全部命中高亮
   '.cm-find-hit': { backgroundColor: 'var(--accent-soft)', borderBottom: '1px solid var(--accent)' },
   '.cm-tooltip': {
     background: 'var(--bg-layer-solid)',
@@ -111,7 +111,7 @@ const findField = StateField.define<FindState>({
 
 // ---------------------------------------------------------------- 段落定位锚
 
-/** 纯 JS SHA-1（渲染进程不可用 node:crypto；与 Python hashlib.sha1 同算法）。 */
+/** 纯 JS SHA-1。 */
 function sha1Hex(input: string): string {
   const utf8 = Array.from(new TextEncoder().encode(input))
   const ml = utf8.length
@@ -171,9 +171,9 @@ function sha1Hex(input: string): string {
 }
 
 /**
- * 段落定位键（对齐 Python MarkdownEditor._block_fingerprint）：
+ * 段落定位键：
  * 空白折叠 + 去首尾 + 小写后取 sha1 前 12 位，前缀 `fp:`。
- * 与 Python 共享同一张 task_note_context 表，键必须逐字一致才能互相定位。
+ * 用 task_note_context 表定位，键必须逐字一致才能互相定位。
  */
 export function blockFingerprint(text: string, length = 12): string {
   const norm = text.replace(/\s+/g, ' ').trim().toLowerCase()
@@ -181,7 +181,7 @@ export function blockFingerprint(text: string, length = 12): string {
   return 'fp:' + sha1Hex(norm).slice(0, length)
 }
 
-/** 按 block_key 在编辑器里定位并滚动到该段（对齐 markdown_editor.locate_block）。 */
+/** 按 block_key 在编辑器里定位并滚动到该段。 */
 export function locateBlockInView(view: EditorView, blockKey: string): boolean {
   if (!blockKey) return false
   const prefix = blockKey.replace(/^fp:/, '').toLowerCase()
@@ -203,7 +203,7 @@ export function locateBlockInView(view: EditorView, blockKey: string): boolean {
 }
 
 /**
- * CodeMirror 6 版 Markdown 编辑器（O9）：
+ * CodeMirror 6 版 Markdown 编辑器：
  * 语法高亮 + `[[标题]]` 补全 + 撤销栈 + 括号配对 + 查找全命中高亮 + 右键转任务。
  * 补全候选通过 ref 读取，标题变化时无需重建编辑器（避免丢焦点与光标）。
  */
@@ -231,7 +231,7 @@ export function MarkdownEditor({
     const host = hostRef.current
     if (!host) return
 
-    /** 输入 `[[` 后按前缀过滤笔记标题（对齐 Python 的链接补全语义）。 */
+    /** 输入 `[[` 后按前缀过滤笔记标题。 */
     const wikiCompletion = autocompletion({
       override: [
         (ctx) => {
@@ -295,7 +295,7 @@ export function MarkdownEditor({
     view.dispatch({ changes: { from: 0, to: current.length, insert: value } })
   }, [value])
 
-  // N19：查找词变化时重算全部命中高亮
+  // 查找词变化时重算全部命中高亮
   useEffect(() => {
     viewRef.current?.dispatch({ effects: setFindText.of(highlight) })
   }, [highlight])
@@ -337,7 +337,7 @@ export function MarkdownEditor({
               className="popmenu__item"
               role="menuitem"
               onClick={() => {
-                // 定位键取选中文本首行的指纹（对齐 Python 的 act2）
+                // 定位键取选中文本首行的指纹
                 onCreateTask(menu.text, blockFingerprint(menu.text.split('\n')[0]))
                 setMenu(null)
               }}
@@ -371,6 +371,6 @@ export function MarkdownEditor({
   )
 }
 
-// ---------------------------------------------------------------- 富文本编辑器（N-§1.3#4）
+// ---------------------------------------------------------------- 富文本编辑器
 
 export { RichTextEditor } from './RichTextEditor'

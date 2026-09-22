@@ -127,7 +127,7 @@ check(
 const j = await app.evaluate("window.zhixing.db.exportPreview('json')")
 check('JSON 导出外壳正确', j.app === 'zhixing' && j.version === 1, `app=${j.app} v=${j.version}`)
 const tables = (j.keys ?? []).filter((k) => k !== 'app' && k !== 'version')
-// 不再写死张数：15 是 Python 版的老数字，Electron 版另加了 attachment、workflow_* 等私有表。
+// 不再写死张数：Electron 版另加了 attachment、workflow_* 等私有表。
 // 写死的话每加一张表这里就变红，而真正要守的是「一张都不能漏」。
 const coreTables = ['task', 'note', 'flash', 'tag', 'settings']
 const extraTables = ['attachment', 'workflow_template', 'pomodoro_session']
@@ -141,7 +141,7 @@ check(
 check('JSON 导出行数等于库内总量', (j.count ?? 0) > 0, `rows=${j.count}`)
 const csv = await app.evaluate("window.zhixing.db.exportPreview('csv')")
 check('CSV 带 UTF-8 BOM', csv.hasBom === true)
-check('CSV 表头与 Python 一致', String(csv.head).includes('id,标题,状态,优先级'), String(csv.head).slice(0, 30))
+check('CSV 表头一致', String(csv.head).includes('id,标题,状态,优先级'), String(csv.head).slice(0, 30))
 const md = await app.evaluate("window.zhixing.db.exportPreview('markdown')")
 check('Markdown 导出有笔记且有分区', (md.count ?? 0) > 0 && (md.folders?.length ?? 0) > 0, `notes=${md.count} folders=${md.folders?.length}`)
 

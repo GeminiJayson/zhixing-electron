@@ -1,9 +1,9 @@
 /**
  * 链接笔记的条目模型：一条链接 = 标题 + 目标（URL 或本地路径）。
  *
- * 存储格式沿用 Python 版写在 content_md 里的 `[{title,target}]` JSON 数组，
+ * 存储格式是写在 content_md 里的 `[{title,target}]` JSON 数组，
  * 所以**不新增表、不迁移数据**；同时容错三种历史形态：
- *   1. `[{"title":"…","target":"…"}]`（Python 版）
+ *   1. `[{"title":"…","target":"…"}]`
  *   2. `[{"title":"…","url":"…"}]`（别的写法）
  *   3. 裸 URL / 路径字符串，甚至 Markdown 的 `- [标题](链接)` 列表
  */

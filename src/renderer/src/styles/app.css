@@ -352,7 +352,7 @@
 }
 
 /* 优先级色点：具体色值由 shared/priority.ts 的固定 8 档色阶按内联样式给出
-   （P1 绿 → P8 深红，不随主题派生，与 kit/priority.py 逐值一致）。 */
+   （P1 绿 → P8 深红，不随主题派生）。 */
 .prio {
   width: 8px;
   height: 8px;
@@ -476,7 +476,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 数据库只读 / 打不开时的危险横幅（D2）：铺在标题栏与主区之间的全宽提示条 */
+/* 数据库只读 / 打不开时的危险横幅：铺在标题栏与主区之间的全宽提示条 */
 .dbwarn {
   display: flex;
   align-items: center;

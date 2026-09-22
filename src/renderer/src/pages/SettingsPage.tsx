@@ -65,7 +65,7 @@ function parseMapDraft(raw: string): Record<string, string> {
 }
 
 /**
- * 可改键的四项全局热键（对齐 Python settings_page._build_capture 的四行）。
+ * 可改键的四项全局热键。
  * hint 是改键失败时的降级说明 —— 注册不上的热键一律回到托盘菜单。
  */
 const HOTKEY_ROWS: { key: keyof AppSettings; label: string; hint: string }[] = [
@@ -103,9 +103,9 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
   const rawRef = useRef<Record<string, string>>({})
   /** 自动备份列表（进入「数据」页时刷新） */
   const [backups, setBackups] = useState<{ name: string; path: string; bytes: number }[]>([])
-  /** 系统级「减少动态效果」探测结果（对齐 Python 的 _os_reduce_motion） */
+  /** 系统级「减少动态效果」探测结果 */
   const [osReducedMotion, setOsReducedMotion] = useState(() => prefersReducedMotion())
-  /** 热键注册状态：settings 键 → 中文状态串（对齐 Python 的 hotkey_status） */
+  /** 热键注册状态：settings 键 → 中文状态串 */
   const [hotkeys, setHotkeys] = useState<Record<string, string>>({})
   /** 正在改键的 settings 键；null = 未在改键 */
   const [rebinding, setRebinding] = useState<keyof AppSettings | null>(null)
@@ -128,7 +128,7 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
     return () => mq.removeEventListener('change', onChange)
   }, [])
 
-  // 读一次热键注册状态（对齐 Python 设置页构造时的 hotkey_status 回填）
+  // 读一次热键注册状态
   useEffect(() => {
     void window.zhixing.app
       .hotkeyStatus()
@@ -185,7 +185,7 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
     [rebinding, onNotice]
   )
 
-  /** 改键捕获：必须有修饰键；Enter 确认、Esc 取消（对齐 HotkeyCaptureDialog）。 */
+  /** 改键捕获：必须有修饰键；Enter 确认、Esc 取消。 */
   useEffect(() => {
     if (!rebinding) return
     const onKey = (e: KeyboardEvent): void => {
@@ -344,7 +344,7 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
   const update = useCallback(
     async (key: keyof AppSettings, value: string): Promise<void> => {
       // 外观是纯 UI：先用「原始表 + 本次改动」把界面立即铺开。
-      // 写库失败（库只读 / 被 Python 版占用）不该让整次切换看起来毫无反应——
+      // 写库失败不该让整次切换看起来毫无反应——
       // 旧顺序把 applyAppearance 排在 await setSetting 之后，一失败就只剩窗口底色在变。
       const optimistic = parseSettings({ ...rawRef.current, [key]: value })
       setSettings(optimistic)
@@ -535,8 +535,8 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
 
             <section className="set-card">
               <header className="set-card__head"><SlidersHorizontal size={15} /> 密度</header>
-              {/* 滑杆区间与 parseSettings 的钳位区间同源（Python constants.py：
-                  字号 9–20、控件高度 24–48、行高 24–72），不再自定一套偏移区间 */}
+              {/* 滑杆区间与 parseSettings 的钳位区间同源（字号 9–20、
+                  控件高度 24–48、行高 24–72），不再自定一套偏移区间 */}
               <label className="set-row">
                 <span>字号</span>
                 <input
@@ -901,7 +901,7 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                   capturedRef.current = ''
                   setProbe('idle')
                   setRebinding(row.key)
-                  // 捕获期间先注销全部全局热键，否则组合键被系统层吞掉（对齐 _suspend_hotkeys）
+                  // 捕获期间先注销全部全局热键，否则组合键被系统层吞掉
                   void window.zhixing.app.suspendHotkeys()
                 }}>
                   改键
@@ -997,7 +997,7 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                 >
                   笔记 Markdown
                 </button>
-                {/* D26：整包 Markdown（ZIP），与 Python 的 export_markdown_zip 对齐 */}
+                {/* 整包 Markdown（ZIP） */}
                 <button
                   className="text-btn"
                   onClick={() =>
@@ -1046,7 +1046,7 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                 >
                   从 JSON 恢复…
                 </button>
-                {/* D25：Markdown 文件夹导入（preload 已暴露，走系统目录选择框） */}
+                {/* Markdown 文件夹导入（preload 已暴露，走系统目录选择框） */}
                 <button
                   className="text-btn"
                   onClick={() =>
@@ -1260,7 +1260,7 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
         <TagManager onNotice={onNotice} onChanged={onChanged} onClose={() => setTagsOpen(false)} />
       )}
 
-      {/* 改键捕获浮层（对齐 HotkeyCaptureDialog）：按键由 window 级监听捕获，
+      {/* 改键捕获浮层：按键由 window 级监听捕获，
           Enter 保存、Esc 取消，必须有修饰键 */}
       {rebinding && (
         <div

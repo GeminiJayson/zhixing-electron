@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Plus, Trash2 } from '@renderer/lib/icons'
-import { STATUS_LABELS, buildTaskTree, effectiveDoneMap, isTerminal, type TaskNode } from '@shared/task'
+import { STATUS_LABELS, buildTaskTree, effectiveDoneMap, isTerminal, tasksInListScope, type TaskNode } from '@shared/task'
 import { filterTasks } from '@shared/query'
 import { priorityLabel } from '@shared/priority'
 import type {
@@ -15,6 +15,14 @@ import { parseSettings } from '@shared/settings'
 import { t } from '../i18n'
 import { useDialog } from '../components/Dialogs'
 import { PopMenu, type PopMenuItem } from '../components/PopMenu'
+import { TagMenu } from '../components/TagMenu'
+import {
+  ABANDONED_KEY,
+  DONE_KEY,
+  TaskLists,
+  type ListCounts,
+  type SavedQuery,
+} from '../components/TaskLists'
 import { VirtualList } from '../components/VirtualList'
 import { PriorityMenu } from '../components/PriorityMenu'
 import { StatusMenu } from '../components/StatusMenu'
@@ -46,18 +54,12 @@ const VIEWS: { key: ViewKey; label: string }[] = [
 
 type Tag = { id: number; name: string; color: string }
 
-/**
- * 「已完成」清单的筛选键。它不是真实清单 id（带下划线前缀，永不与数字冲突），
- * 只是一个视图开关：任务一旦进入终态就从当前清单收走，只在这里露面。
- */
-const DONE_KEY = '__done'
-
-/** 工作流实例状态的中文名（与 WorkflowPage 的取值口径一致，I12）。 */
+/** 工作流实例状态的中文名（与 WorkflowPage 的取值口径一致）。 */
 function wfStatusLabel(status: string): string {
   return status === 'running' ? '进行中' : status === 'done' ? '已完成' : '已中止'
 }
 
-/** 过滤规则与 Python 的 TaskFilterProxy 一致：自身命中或任一后代命中即保留。 */
+/** 过滤规则：自身命中或任一后代命中即保留。 */
 function filterTree(nodes: TaskNode[], query: string): TaskNode[] {
   if (!query.trim()) return nodes
   const q = query.trim().toLowerCase()
@@ -104,37 +106,37 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
   const [allTags, setAllTags] = useState<{ id: number; name: string; color: string }[]>([])
   const [tagMenu, setTagMenu] = useState<{ id: number; x: number; y: number } | null>(null)
   const [ctxMenu, setCtxMenu] = useState<{ id: number; x: number; y: number } | null>(null)
-  /** 移动到清单的选择器（T1）：ids 支持单选与批量共用 */
+  /** 移动到清单的选择器：ids 支持单选与批量共用 */
   const [moveMenu, setMoveMenu] = useState<{ x: number; y: number; ids: number[] } | null>(null)
-  /** 「挂到任务下」目标选择器（T17，走 task_candidates） */
+  /** 「挂到任务下」目标选择器（走 task_candidates） */
   const [parentPicker, setParentPicker] = useState<{ id: number; x: number; y: number } | null>(null)
   const [pickerQ, setPickerQ] = useState('')
   const [pickerItems, setPickerItems] = useState<Task[]>([])
-  /** 日历显示已完成（settings.calendar_show_done，默认 false；此前只写不读，T11） */
+  /** 日历显示已完成（settings.calendar_show_done，默认 false；此前只写不读） */
   const [showDone, setShowDone] = useState(false)
   const [adding, setAdding] = useState<{ parentId: number | null } | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [draftTitle, setDraftTitle] = useState('')
-  /** S22 深链目标：等父链展开、目标行进入展平结果后再滚动，然后清空 */
+  /** 深链目标：等父链展开、目标行进入展平结果后再滚动，然后清空 */
   const [pendingFocus, setPendingFocus] = useState<number | null>(null)
-  /** 选中任务关联的工作流实例（速览「工作流」卡片，I12） */
+  /** 选中任务关联的工作流实例（速览「工作流」卡片） */
   const [wfInstances, setWfInstances] = useState<WorkflowInstancePayload[]>([])
-  /** 可启动的工作流模板（「启动工作流…」菜单，I12） */
+  /** 可启动的工作流模板（「启动工作流…」菜单） */
   const [wfTemplates, setWfTemplates] = useState<WorkflowTemplateSummary[]>([])
   const [wfMenu, setWfMenu] = useState<{ x: number; y: number } | null>(null)
   const addRef = useRef<HTMLInputElement>(null)
 
+  /**
+   * 取一次数据。
+   *
+   * **始终取全量任务**，清单范围改在渲染层切：侧栏要给每个清单显示「还剩多少」，
+   * 而 tasksByList 一次只返回一个清单 —— 要么为每个清单各取一次，要么取全量。
+   * 全量一份还能让「完成任务 → 从当前清单收走 → 出现在已完成」在同一帧里算准，
+   * 不必等第二次 IPC。切换清单因此是纯前端过滤，点哪都是立刻响应。
+   */
   const load = useCallback(async () => {
-    // 选中清单时走 list_tree 的语义（根 + 后代闭包）；收件箱对应 list_id 为空
-    // 「已完成」与清单无关：完成的任务可能来自任何清单，所以从全部里筛
-    const scoped: number | null | 'all' =
-      listKey === '' || listKey === DONE_KEY
-        ? 'all'
-        : listKey === 'none'
-          ? null
-          : Number(listKey)
     const [rows, nc, tt, tg, fs, st] = await Promise.all([
-      scoped === 'all' ? window.zhixing.db.tasks() : window.zhixing.db.tasksByList(scoped),
+      window.zhixing.db.tasks(),
       window.zhixing.db.noteCounts(),
       window.zhixing.db.taskTags(),
       window.zhixing.db.tags(),
@@ -155,21 +157,18 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     setTasks(rows as Task[])
     setCounts(countMap)
     setTags(tagMap)
-  }, [listKey])
+  }, [])
 
   useEffect(() => {
     void load()
   }, [load])
-
-  // 设置页切换「日历显示已完成」后即时生效（T11，calendar_show_done 此前只写不读）
-  useEffect(() => subscribeDomain(['settings'], () => void load()), [load])
 
   // 任务域也要跟上。此前本页只订阅 settings / workflow，于是**任何不是本页自己发起**的
   // 任务改动都停在旧数据上：编辑弹窗里改完日期，列表里的日期 chip 与进度条都还是旧的。
   // 这类改动只广播事件，订阅一次就够了。
   useEffect(() => subscribeDomain(['task'], () => void load()), [load])
 
-  // 「挂到任务下」候选：走 task_candidates（q 变化即时搜索，T17）
+  // 「挂到任务下」候选：走 task_candidates（q 变化即时搜索）
   useEffect(() => {
     if (!parentPicker) return
     let alive = true
@@ -188,9 +187,7 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
   }, [adding])
 
   /** 智能清单：名称 + 表达式（表达式由 shared/query.ts 解析，在渲染层过滤） */
-  const [savedQueries, setSavedQueries] = useState<
-    { id: number; name: string; kind: string; expr: string }[]
-  >([])
+  const [savedQueries, setSavedQueries] = useState<SavedQuery[]>([])
   const [activeQueryId, setActiveQueryId] = useState<number | null>(null)
   const activeQuery = savedQueries.find((q) => q.id === activeQueryId) ?? null
 
@@ -208,38 +205,184 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     void loadSavedQueries()
   }, [loadSavedQueries])
 
+  // 设置域同时包含「日历显示已完成」与保存的查询：别处新增 / 删除智能清单之后，
+  // 清单栏第二段要跟着刷新 —— 否则刚存出来的智能清单要重开页面才看得见。
+  useEffect(
+    () =>
+      subscribeDomain(['settings'], () => {
+        void load()
+        void loadSavedQueries()
+      }),
+    [load, loadSavedQueries]
+  )
+
+  /**
+   * 点清单：切到该清单范围，并退出智能清单模式。
+   *
+   * 两者刻意不叠加：清单 + 表达式两层过滤的结果往往窄到「一条都没有」，
+   * 用户看到空列表时根本不知道是哪一层把任务滤掉的。
+   */
+  const pickList = (key: string): void => {
+    setListKey(key)
+    setActiveQueryId(null)
+  }
+
+  /** 点智能清单：清空清单筛选，改用表达式过滤 */
+  const pickQuery = (id: number): void => {
+    setActiveQueryId(id)
+    setListKey('')
+  }
+
+  /** 存为智能清单：工具栏按钮与清单栏第二段的 ＋ 共用同一条路径 */
+  const saveAsSmartList = async (): Promise<void> => {
+    const name = await dialog.prompt({ title: '保存为智能清单', label: '名称' })
+    if (!name?.trim()) return
+    const expr = await dialog.prompt({
+      title: '查询表达式',
+      label: '表达式（如 !done due<=today priority>=3）',
+      defaultValue: filter,
+    })
+    if (!expr?.trim()) return
+    const res = await window.zhixing.db.saveSavedQuery({ name: name.trim(), expr: expr.trim() })
+    if (!res.ok) {
+      onNotice('保存失败：' + res.problems.join('；'))
+      return
+    }
+    await loadSavedQueries()
+    if (res.id) pickQuery(res.id)
+    onNotice('已保存智能清单「' + name.trim() + '」')
+  }
+
+  /** 重命名智能清单：只改名称，表达式原样带回 */
+  const renameQuery = async (q: SavedQuery): Promise<void> => {
+    const name = await dialog.prompt({
+      title: '重命名智能清单',
+      label: '新名称',
+      defaultValue: q.name,
+    })
+    if (name === null) return
+    const clean = name.trim()
+    if (!clean || clean === q.name) return
+    const res = await window.zhixing.db.saveSavedQuery({
+      id: q.id,
+      name: clean,
+      kind: q.kind,
+      expr: q.expr,
+    })
+    if (!res.ok) {
+      onNotice('重命名失败：' + res.problems.join('；'))
+      return
+    }
+    await loadSavedQueries()
+    onNotice('已重命名为「' + clean + '」')
+  }
+
+  /** 删除智能清单：只删这条保存的查询，任务与清单都不受影响 */
+  const deleteQuery = async (q: SavedQuery): Promise<void> => {
+    const ok = await dialog.confirm({
+      title: '删除智能清单',
+      message: '删除「' + q.name + '」？只是删掉这条保存的查询，任务与清单都不受影响。',
+      danger: true,
+      confirmText: '删除',
+    })
+    if (!ok) return
+    await window.zhixing.db.deleteSavedQuery(q.id)
+    if (activeQueryId === q.id) setActiveQueryId(null)
+    await loadSavedQueries()
+    onNotice('已删除智能清单')
+  }
+
   const effective = useMemo(() => effectiveDoneMap(tasks), [tasks])
+
+  /**
+   * 清单范围：选中某清单时取「根 + 后代闭包」，与主进程 listTasksByList 同一套语义
+   * （根 = 该清单下的顶层任务；该清单没有任何顶层任务时回退为它的全部任务）。
+   *
+   * 子任务的 list_id 可能与父不同，闭包保证它们不会因为「根判定」被漏掉 ——
+   * 这正是此前直接调 tasksByList 时最容易出错的地方，现在同一份判定只写在这里。
+   */
+  const listScopedTasks = useMemo(() => {
+    if (listKey === '' || listKey === DONE_KEY || listKey === ABANDONED_KEY) return tasks
+    const target = listKey === 'none' ? null : Number(listKey)
+    if (target !== null && !Number.isFinite(target)) return tasks
+    return tasksInListScope(tasks, target)
+  }, [tasks, listKey])
 
   /**
    * 视图过滤：只筛根任务，子树仍由 buildTaskTree 自然挂回（与今日待办同口径）。
    *
-   * 终态任务（完成 / 放弃）不再留在当前清单里，一律收进「已完成」—— 清单里留着一排
-   * 划掉的行，既占位置，又让「还剩多少」变得不可信。唯一的例外是子树：父任务还在，
-   * 它的子任务就不该凭空消失。
+   * 终态任务（完成 / 放弃）不再留在清单里，一律收进「已完成 / 已放弃」——
+   * 清单里留着一排划掉的行，既占位置，又让「还剩多少」变得不可信。
+   * 唯一的例外是子树：父任务还在，它的子任务就不该凭空消失。
    */
   const scopedTasks = useMemo(() => {
     const day = new Date().toLocaleDateString('sv-SE')
-    const isDone = (t: Task): boolean =>
-      effective.get(t.id) ?? isTerminal(t.status)
+    const isDone = (t: Task): boolean => effective.get(t.id) ?? isTerminal(t.status)
+    const isAbandoned = (t: Task): boolean => t.status === 'abandoned'
     const match = (t: Task): boolean => {
       if (t.parent_id !== null) return true
-      // 「已完成」显示**全部**已完成（跨清单、跨时间），而不是只有今天完成的
-      if (focus === 'done' || listKey === DONE_KEY) return isDone(t)
+      if (listKey === ABANDONED_KEY) return isAbandoned(t)
+      // 「已完成」显示**全部**已完成（跨清单、跨时间），而不是只有今天完成的；
+      // 放弃的另有一格，不再混在里面 —— 两者的「该怎么处理」本来就不一样
+      if (listKey === DONE_KEY) return isDone(t) && !isAbandoned(t)
+      if (focus === 'done') return isDone(t)
       if (isDone(t)) return false
       if (focus === 'today') return t.due_date === null || t.due_date >= day
       if (focus === 'overdue') return t.due_date !== null && t.due_date < day
       return true
     }
-    return tasks.filter(match)
-  }, [tasks, focus, listKey, effective])
+    return listScopedTasks.filter(match)
+  }, [listScopedTasks, focus, listKey, effective])
+
+  /**
+   * 终态视图按「最近结束的排最前」排：完成时间才是这时候最有用的线索；
+   * 清单视图仍走 sort_key（用户拖出来的手工顺序）。
+   */
+  const orderedScopedTasks = useMemo(() => {
+    if (listKey !== DONE_KEY && listKey !== ABANDONED_KEY) return scopedTasks
+    const at = (t: Task): string => t.completed_at ?? t.updated_at ?? ''
+    return [...scopedTasks].sort((a, b) => at(b).localeCompare(at(a)))
+  }, [scopedTasks, listKey])
+
+  /** 侧栏计数：只有顶层、未终态的任务算「还剩多少」；终态收归到两个入口里 */
+  const listCounts = useMemo<ListCounts>(() => {
+    const isDone = (t: Task): boolean => effective.get(t.id) ?? isTerminal(t.status)
+    const byList = new Map<number, number>()
+    let all = 0
+    let inbox = 0
+    let done = 0
+    let abandoned = 0
+    for (const t of tasks) {
+      if (t.parent_id !== null) continue
+      if (t.status === 'abandoned') {
+        abandoned += 1
+        continue
+      }
+      if (isDone(t)) {
+        done += 1
+        continue
+      }
+      all += 1
+      if (t.list_id == null) inbox += 1
+      else byList.set(t.list_id, (byList.get(t.list_id) ?? 0) + 1)
+    }
+    return { all, inbox, done, abandoned, byList }
+  }, [tasks, effective])
+
+  /** 清单 id → 名称：终态视图里给每一行标出它原来属于哪个清单 */
+  const listNameById = useMemo(() => {
+    const m = new Map<number, string>()
+    for (const f of folders) m.set(f.id, f.name)
+    return m
+  }, [folders])
 
   /** 智能清单（保存的查询）：在聚焦过滤之后再套一层表达式过滤 */
   const queriedTasks = useMemo(() => {
-    if (!activeQuery) return scopedTasks
+    if (!activeQuery) return orderedScopedTasks
     const day = new Date().toLocaleDateString('sv-SE')
     const listNames: Record<number, string> = {}
     for (const f of folders) listNames[f.id] = f.name
-    return filterTasks(scopedTasks, activeQuery.expr, {
+    return filterTasks(orderedScopedTasks, activeQuery.expr, {
       today: day,
       listNames,
       tagsOf: (t) => (tags.get(t.id) ?? []).map((x) => x.name),
@@ -247,7 +390,7 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
       // 会和上面 scopedTasks 的判定不一致（abandoned 与 roll-up 都是分叉点）
       doneOf: (t) => effective.get(t.id) ?? isTerminal(t.status),
     })
-  }, [scopedTasks, activeQuery, folders, tags])
+  }, [orderedScopedTasks, activeQuery, folders, tags])
 
   const tree = useMemo(
     () => buildTaskTree(queriedTasks, effective, counts, tags),
@@ -292,8 +435,8 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     return find(tree)
   }, [tree, selected])
 
-  // S22：任务深链（托盘 / 图谱 / 命令面板）——切到列表视图、放开清单/聚焦/过滤等收窄条件，
-  // 选中目标并登记待定位 id；父链展开与滚动交给下面的 effect（对齐 task_page 的定位语义）
+  // 任务深链（托盘 / 图谱 / 命令面板）——切到列表视图、放开清单/聚焦/过滤等收窄条件，
+  // 选中目标并登记待定位 id；父链展开与滚动交给下面的 effect
   useEffect(() => {
     const onOpenTask = (e: Event): void => {
       const id = Number((e as CustomEvent<{ id?: number }>).detail?.id)
@@ -345,7 +488,7 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     setPendingFocus(null)
   }, [pendingFocus, tasks, collapsed, flatRows, rowH])
 
-  // I12：选中任务的工作流实例（速览卡片），工作流域有写入时跟着刷新
+  // 选中任务的工作流实例（速览卡片），工作流域有写入时跟着刷新
   const wfTaskId = selectedNode?.id ?? null
   useEffect(() => {
     if (wfTaskId == null) {
@@ -378,7 +521,7 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     await onChanged()
   }, [load, onChanged])
 
-  /** I12：为当前选中任务启动一个工作流实例（origin_task = 该任务）。 */
+  /** 为当前选中任务启动一个工作流实例（origin_task = 该任务）。 */
   const handleStartWorkflow = async (templateId: number): Promise<void> => {
     setWfMenu(null)
     const taskId = selectedNode?.id ?? null
@@ -456,7 +599,7 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
       })
       if (!confirmed) return
       await window.zhixing.db.batchDeleteTasks(ids)
-      // 删除也可撤销（对齐 app_controller 的 delete→undo 链路；此前只有回收站一条退路）
+      // 删除也可撤销
       window.dispatchEvent(
         new CustomEvent('zhixing:undoable', {
           detail: { ids, label: `已删除 ${ids.length} 项`, action: 'restore' },
@@ -467,7 +610,7 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     await refresh()
   }
 
-  /** 拖拽落点：上/下=排序，中间=改挂为该行的子任务（对齐 task_page._on_tree_drop）。 */
+  /** 拖拽落点：上/下=排序，中间=改挂为该行的子任务。 */
   const handleDropRow = async (
     targetId: number,
     pos: 'before' | 'after' | 'child'
@@ -479,8 +622,8 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     if (pos === 'child') {
       await window.zhixing.db.reparentTask(src, targetId)
     } else {
-      // 对齐 Python task_page._on_tree_drop：before/after 落到别的父级下时先显式改挂
-      // （reparent 只改父级、保留 sort_key），再 reorder 只调 sort_key（T12）。
+      // before/after 落到别的父级下时先显式改挂
+      // （reparent 只改父级、保留 sort_key），再 reorder 只调 sort_key。
       const srcTask = tasks.find((t) => t.id === src)
       const anchor = tasks.find((t) => t.id === targetId)
       if (srcTask && anchor && srcTask.parent_id !== anchor.parent_id) {
@@ -497,7 +640,7 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
       ? (effective.get(id) ?? isTerminal(before.status))
       : false
     await window.zhixing.db.toggleTask(id)
-    // 对齐 app_controller._toggle_task：撤销要记录勾选前的 prev_status（T13）
+    // 撤销要记录勾选前的 prev_status
     window.dispatchEvent(
       new CustomEvent('zhixing:undoable', {
         detail: {
@@ -507,8 +650,7 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
         },
       })
     )
-    // 完成且挂有笔记段落 → 自动把「结论」回写到原笔记（T3 的完成闭环；
-    // 对齐 app_controller._write_note_after_done 的「有关联段落」分支）
+    // 完成且挂有笔记段落 → 自动把「结论」回写到原笔记（只处理「有关联段落」的情形）
     if (!wasDone) {
       const ctxs = await window.zhixing.db.linkedContexts(id)
       if (ctxs.length) {
@@ -552,7 +694,7 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     await refresh()
   }
 
-  /** 同级上移/下移（Ctrl+↑/↓，对齐 move_relative）。 */
+  /** 同级上移/下移。 */
   const handleMoveRelative = async (id: number, delta: number): Promise<void> => {
     await window.zhixing.db.moveTaskRelative(id, delta)
     await refresh()
@@ -563,13 +705,65 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     setFolders((await window.zhixing.db.listFolders()) as typeof folders)
   }, [])
 
-  /** 新建清单：名字留空即取消 */
-  const newList = async (): Promise<void> => {
+  /** 新建清单：parentId 非空表示挂在某个分组下 */
+  const newList = async (parentId: number | null = null): Promise<void> => {
     const name = await dialog.prompt({ title: '新建清单', label: '清单名称' })
     if (!name?.trim()) return
-    await window.zhixing.db.createListFolder(name.trim(), 'list', null)
+    await window.zhixing.db.createListFolder(name.trim(), 'list', parentId)
     await reloadFolders()
     onNotice('已新建清单「' + name.trim() + '」')
+  }
+
+  /** 新建分组：分组只收纳清单，不直接装任务 */
+  const newGroup = async (parentId: number | null = null): Promise<void> => {
+    const name = await dialog.prompt({ title: '新建分组', label: '分组名称' })
+    if (!name?.trim()) return
+    await window.zhixing.db.createListFolder(name.trim(), 'group', parentId)
+    await reloadFolders()
+    onNotice('已新建分组「' + name.trim() + '」')
+  }
+
+  /** 重命名任意清单 / 分组（侧栏右键与工具栏入口共用同一实现） */
+  const renameList = async (f: ListFolder): Promise<void> => {
+    const name = await dialog.prompt({ title: '重命名', label: '新名称', defaultValue: f.name })
+    if (name === null) return // 用户取消
+    const clean = name.trim()
+    if (!clean || clean === f.name) return
+    await window.zhixing.db.renameListFolder(f.id, clean)
+    await reloadFolders()
+    onNotice('已重命名为「' + clean + '」')
+  }
+
+  /** 删除清单 / 分组：清单里的任务回落收件箱，分组下的子级上移一级 */
+  const deleteList = async (f: ListFolder): Promise<void> => {
+    const ok = await dialog.confirm({
+      title: f.kind === 'group' ? '删除分组' : '删除清单',
+      message:
+        f.kind === 'group'
+          ? '删除分组「' + f.name + '」？它下面的清单会上移一级，任务不受影响。'
+          : '删除「' + f.name + '」？清单里的任务会回到收件箱。',
+      danger: true,
+      confirmText: '删除',
+    })
+    if (!ok) return
+    await window.zhixing.db.deleteListFolder(f.id)
+    if (listKey === String(f.id)) setListKey('')
+    await reloadFolders()
+    onNotice('已删除「' + f.name + '」')
+  }
+
+  /** 把清单 / 分组移到某个分组下（null = 顶层）；环形目标由主进程拒绝 */
+  const moveList = async (id: number, parentId: number | null): Promise<void> => {
+    const n = await window.zhixing.db.moveListFolder(id, parentId)
+    await reloadFolders()
+    onNotice(n > 0 ? '已移动到「分组末尾」' : '不能移动到它自己或它的子级下')
+  }
+
+  /** 侧栏拖拽落点：把清单 / 分组放到 anchor 的上/下，父级跟随 anchor */
+  const handleReorderList = async (id: number, anchorId: number, below: boolean): Promise<void> => {
+    const n = await window.zhixing.db.reorderListFolder(id, anchorId, below)
+    await reloadFolders()
+    if (n === 0) onNotice('不能把分组拖进它自己的子级里')
   }
 
   /**
@@ -580,36 +774,16 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
    * 实测后果：在「清单设置」里取消一次，就会弹出一次删除确认，连击两下即误删清单。
    */
   const renameCurrentList = async (): Promise<void> => {
-    const id = Number(listKey)
-    const cur = folders.find((f) => f.id === id)
-    if (!cur) return
-    const name = await dialog.prompt({ title: '重命名清单', label: '新名称', defaultValue: cur.name })
-    if (name === null) return // 用户取消：什么都不做
-    const clean = name.trim()
-    if (!clean || clean === cur.name) return // 没改名：同样什么都不做
-    await window.zhixing.db.renameListFolder(id, clean)
-    await reloadFolders()
-    onNotice('已重命名为「' + clean + '」')
+    const cur = folders.find((f) => f.id === Number(listKey))
+    if (cur) await renameList(cur)
   }
 
   /** 删除当前筛选到的清单：独立入口，不会因为「名字没变」而被顺带走到。 */
   const deleteCurrentList = async (): Promise<void> => {
-    const id = Number(listKey)
-    const cur = folders.find((f) => f.id === id)
-    if (!cur) return
-    const ok = await dialog.confirm({
-      title: '删除清单',
-      message: '删除「' + cur.name + '」？清单里的任务会回到收件箱。',
-      danger: true,
-      confirmText: '删除',
-    })
-    if (!ok) return
-    await window.zhixing.db.deleteListFolder(id)
-    setListKey('')
-    await reloadFolders()
-    onNotice('已删除「' + cur.name + '」')
+    const cur = folders.find((f) => f.id === Number(listKey))
+    if (cur) await deleteList(cur)
   }
-  /** 移动到清单（T1）：收件箱 = null；复用 moveTaskToList（对齐 move_to_list）。 */
+  /** 移动到清单：收件箱 = null；复用 moveTaskToList。 */
   const handleMoveToList = async (ids: number[], listId: number | null): Promise<void> => {
     await window.zhixing.db.batchMove(ids, listId)
     setMoveMenu(null)
@@ -618,19 +792,19 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     await refresh()
   }
 
-  /** 暂停为等待中（T4）；恢复日期由编辑器「恢复于」写入。 */
+  /** 暂停为等待中；恢复日期由编辑器「恢复于」写入。 */
   const handlePause = async (id: number): Promise<void> => {
     await window.zhixing.db.pauseTask(id, null)
     await refresh()
   }
 
-  /** 从等待中恢复为待办（T4）。 */
+  /** 从等待中恢复为待办。 */
   const handleResume = async (id: number): Promise<void> => {
     await window.zhixing.db.resumeTask(id)
     await refresh()
   }
 
-  /** 「挂到任务下」：用 task_candidates 选父任务后改挂（T17）。 */
+  /** 「挂到任务下」：用 task_candidates 选父任务后改挂。 */
   const handleReparentTo = async (id: number, parentId: number): Promise<void> => {
     setParentPicker(null)
     await window.zhixing.db.reparentTask(id, parentId)
@@ -662,8 +836,26 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     await refresh()
   }
 
+  /**
+   * 改标签颜色。
+   *
+   * 取色器拖动会连续触发 onChange，所以先乐观更新本地两份状态（行内胶囊与弹层），
+   * 再把色值写库；写库后的广播会让其它页面各自对齐，不必在这里手动全量重取。
+   */
+  const handleSetTagColor = async (tagId: number, color: string): Promise<void> => {
+    setAllTags((prev) => prev.map((t) => (t.id === tagId ? { ...t, color } : t)))
+    setTags((prev) => {
+      const next = new Map<number, Tag[]>()
+      for (const [k, list] of prev) {
+        next.set(k, list.map((t) => (t.id === tagId ? { ...t, color } : t)))
+      }
+      return next
+    })
+    await window.zhixing.db.setTagColor(tagId, color)
+  }
+
   // 键盘快捷键：Space 完成 / F2 编辑 / Ctrl+↑↓ 同级移动 / ←→ 折叠展开
-  // （仅在列表视图、且焦点不在输入框内时生效，与 task_page.py 的作用域一致）
+  // （仅在列表视图、且焦点不在输入框内时生效）
   const keyCtx = useRef({ view, selected, toggle: handleToggle, move: handleMoveRelative, refresh })
   keyCtx.current = { view, selected, toggle: handleToggle, move: handleMoveRelative, refresh }
   useEffect(() => {
@@ -732,10 +924,16 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     setAdding(null)
     setDraftTitle('')
     if (!title) return
-    // 子任务：走 create_task（继承父任务的 list_id，T6）；
-    // 顶层：对齐 task_page.quickAddRequested —— 走 quick_create 并传当前清单（T7），
+    // 子任务：走 create_task（继承父任务的 list_id）；
+    // 顶层：走 quick_create 并传当前清单，
     // 未命中 @列表 时回退到该清单而不是新建。
-    const currentList = listKey !== '' && listKey !== 'none' ? Number(listKey) : null
+    // 「已完成 / 已放弃」是终态视图，不是真实清单：在这里新建的任务落回收件箱，
+    // 而不是把 '__done' 塞进 Number() —— 那会得到 NaN 并一路传进 list_id。
+    const realList =
+      listKey === '' || listKey === 'none' || listKey === DONE_KEY || listKey === ABANDONED_KEY
+        ? null
+        : Number(listKey)
+    const currentList = realList !== null && Number.isFinite(realList) ? realList : null
     const created =
       parentId !== null
         ? await window.zhixing.db.createTask(title, parentId, null)
@@ -750,6 +948,14 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
       <TaskRow
           node={node}
           depth={depth}
+          // 终态视图是跨清单的：每行标出它原来属于哪个清单，否则「收归」之后就没了去向
+          listName={
+            listKey === DONE_KEY || listKey === ABANDONED_KEY
+              ? node.list_id != null
+                ? listNameById.get(node.list_id) ?? '未知清单'
+                : '收件箱'
+              : undefined
+          }
           selected={selectedIds.has(node.id)}
           collapsed={collapsed.has(node.id)}
           onToggle={handleToggle}
@@ -846,6 +1052,8 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
           <span className="u-aux">
             共 {tree.length} 项
             {listKey === DONE_KEY ? ' · 已完成' : ''}
+            {listKey === ABANDONED_KEY ? ' · 已放弃' : ''}
+            {activeQuery ? ` · 智能清单「${activeQuery.name}」` : ''}
             {focus ? ` · 聚焦「${focus === 'today' ? '今日待办' : focus === 'done' ? '已完成' : '已逾期'}」` : ''}
           </span>
         )}
@@ -869,13 +1077,30 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
             <option value="">全部清单</option>
             <option value="none">收件箱（未归属）</option>
             <option value={DONE_KEY}>已完成</option>
+            <option value={ABANDONED_KEY}>已放弃</option>
+            {/* 顶层清单直挂；分组下的清单用 optgroup 归类，否则层级在下拉里完全看不出来 */}
             {folders
-              .filter((f) => f.kind === 'list')
+              .filter((f) => f.kind === 'list' && (f.parent_id ?? null) === null)
               .map((f) => (
                 <option key={f.id} value={String(f.id)}>
                   {f.name}
                 </option>
               ))}
+            {folders
+              .filter((f) => f.kind === 'group')
+              .map((g) => {
+                const kids = folders.filter((f) => f.kind === 'list' && f.parent_id === g.id)
+                if (kids.length === 0) return null
+                return (
+                  <optgroup key={`group-${g.id}`} label={g.name}>
+                    {kids.map((f) => (
+                      <option key={f.id} value={String(f.id)}>
+                        {f.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )
+              })}
           </select>,
           <button key="newlist" className="text-btn" title="新建清单" onClick={() => void newList()}>
             ＋ 清单
@@ -884,7 +1109,12 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
             key="editlist"
             className="text-btn"
             title="重命名 / 删除当前选中的清单"
-            disabled={!listKey || listKey === 'none'}
+            disabled={
+              !listKey ||
+              listKey === 'none' ||
+              listKey === DONE_KEY ||
+              listKey === ABANDONED_KEY
+            }
             onClick={(e) => {
               const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
               setListMenu({ x: r.left, y: r.bottom + 4 })
@@ -896,7 +1126,7 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
             key="smart"
             className="field field--compact"
             value={activeQueryId === null ? '' : String(activeQueryId)}
-            onChange={(e) => setActiveQueryId(e.target.value ? Number(e.target.value) : null)}
+            onChange={(e) => (e.target.value ? pickQuery(Number(e.target.value)) : setActiveQueryId(null))}
             aria-label="智能清单"
             title="智能清单：把「我要看什么」固化成一条表达式"
           >
@@ -913,24 +1143,7 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
             key="savesmart"
             className="text-btn"
             title="把当前筛选保存成智能清单。表达式支持 text:关键词 / tag:标签 / list:清单 / !done / priority>=3 / due<=today / due=overdue / due=none"
-            onClick={async () => {
-              const name = await dialog.prompt({ title: '保存为智能清单', label: '名称' })
-              if (!name?.trim()) return
-              const expr = await dialog.prompt({
-                title: '查询表达式',
-                label: '表达式（如 !done due<=today priority>=3）',
-                defaultValue: filter,
-              })
-              if (!expr?.trim()) return
-              const res = await window.zhixing.db.saveSavedQuery({ name: name.trim(), expr: expr.trim() })
-              if (!res.ok) {
-                onNotice('保存失败：' + res.problems.join('；'))
-                return
-              }
-              await loadSavedQueries()
-              if (res.id) setActiveQueryId(res.id)
-              onNotice('已保存智能清单「' + name.trim() + '」')
-            }}
+            onClick={() => void saveAsSmartList()}
           >
             存为智能清单
           </button>,
@@ -983,10 +1196,29 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
       />
 
       <div className="tasks-work">
+        {/* 清单栏：分组、各清单的未完成计数，以及两个终态入口都在这里 */}
+        <TaskLists
+          folders={folders}
+          activeKey={listKey}
+          counts={listCounts}
+          onPick={pickList}
+          onNewList={(parentId) => void newList(parentId)}
+          onNewGroup={(parentId) => void newGroup(parentId)}
+          onRename={(f) => void renameList(f)}
+          onDelete={(f) => void deleteList(f)}
+          onMove={(id, parentId) => void moveList(id, parentId)}
+          onReorder={(id, anchorId, below) => void handleReorderList(id, anchorId, below)}
+          queries={savedQueries}
+          activeQueryId={activeQueryId}
+          onPickQuery={pickQuery}
+          onNewQuery={() => void saveAsSmartList()}
+          onRenameQuery={(q) => void renameQuery(q)}
+          onDeleteQuery={(q) => void deleteQuery(q)}
+        />
         <div className="tasks-main">
           {view === 'quadrant' ? (
             <QuadrantBoard
-              tasks={tasks}
+              tasks={listScopedTasks}
               effective={effective}
               expanded={expanded}
               onToggle={handleToggle}
@@ -1003,7 +1235,7 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
             />
           ) : view === 'calendar' ? (
             <CalendarBoard
-              tasks={tasks}
+              tasks={listScopedTasks}
               effective={effective}
               onOpen={setEditingId}
               onToggle={handleToggle}
@@ -1012,7 +1244,7 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
             />
           ) : view === 'kanban' ? (
             <KanbanBoard
-              tasks={tasks}
+              tasks={listScopedTasks}
               effective={effective}
               expanded={expanded}
               onOpen={setEditingId}
@@ -1080,7 +1312,7 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
                     <p className="u-aux">无标签</p>
                   )}
                 </section>
-                {/* I12：工作流速览卡片 —— 该任务启动/关联的实例 + 「启动工作流…」入口 */}
+                {/* 工作流速览卡片 —— 该任务启动/关联的实例 + 「启动工作流…」入口 */}
                 <section className="inspector__card">
                   <header className="inspector__head">工作流</header>
                   {wfInstances.length ? (
@@ -1167,19 +1399,16 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
       )}
 
       {tagMenu && (
-        <PopMenu
+        <TagMenu
           x={tagMenu.x}
           y={tagMenu.y}
+          title="任务标签"
+          tags={allTags}
+          selectedIds={(tags.get(tagMenu.id) ?? []).map((t) => t.id)}
+          onToggle={(t) => void handleToggleTag(tagMenu.id, t.name)}
+          onCreate={() => void handleCreateTag(tagMenu.id)}
+          onColor={(id, color) => void handleSetTagColor(id, color)}
           onClose={() => setTagMenu(null)}
-          items={[
-            ...allTags.map((t) => ({
-              key: `tag-${t.id}`,
-              label: t.name,
-              checked: (tags.get(tagMenu.id) ?? []).some((x) => x.id === t.id),
-              onPick: () => void handleToggleTag(tagMenu.id, t.name),
-            })),
-            { key: 'tag-new', label: '＋ 新建标签…', onPick: () => void handleCreateTag(tagMenu.id) },
-          ]}
         />
       )}
 

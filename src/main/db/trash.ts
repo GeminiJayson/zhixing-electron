@@ -1,5 +1,6 @@
 import { conn, stampOf } from './connection'
 import { reindexRow, removeFromIndex } from './fts'
+import { parseHex } from '../../shared/color'
 
 // ---------------------------------------------------------------- 回收站 / 标签管理
 
@@ -10,13 +11,12 @@ export interface TrashItem {
 }
 
 /**
- * 回收站列表：三类软删除记录（对齐 RecycleBinDialog 的三个 Tab）。
+ * 回收站列表：三类软删除记录。
  *
- * 排序口径与 Python 各自的 trash() 一致（D13）：Python 的 trash() 都是复用各仓储的
- * list 查询再筛 deleted_at，并不按删除时间排：
- *   - 任务：TaskRepository.list_all → ORDER BY sort_key, id
- *   - 笔记：NoteRepository.all    → ORDER BY pinned DESC, updated_at DESC
- *   - 闪念：FlashRepository         → ORDER BY deleted_at DESC
+ * 排序口径：复用各仓储的 list 查询再筛 deleted_at，并不按删除时间排：
+ *   - 任务：ORDER BY sort_key, id
+ *   - 笔记：ORDER BY pinned DESC, updated_at DESC
+ *   - 闪念：ORDER BY deleted_at DESC
  */
 export function trashItems(kind: 'task' | 'note' | 'flash'): TrashItem[] {
   const c = conn()
@@ -41,7 +41,7 @@ export function trashItems(kind: 'task' | 'note' | 'flash'): TrashItem[] {
   )
 }
 
-/** 恢复：只清 deleted_at（对齐 TaskRepository.restore，不级联恢复子任务）。 */
+/** 恢复：只清 deleted_at。 */
 export function restoreTrash(kind: 'task' | 'note' | 'flash', id: number): number {
   const table = kind === 'task' ? 'task' : kind === 'note' ? 'note' : 'flash'
   const changes = conn().prepare(`UPDATE ${table} SET deleted_at = NULL WHERE id = ?`).run(id).changes
@@ -113,11 +113,11 @@ export function emptyAllTrash(): number {
 }
 
 /**
- * 按保留天数清理（对齐 Python 的 purge_older_than）。
+ * 按保留天数清理。
  *
- * Python 用 datetime 比较：`deleted_at < datetime.now() - timedelta(days)`（D12）。
- * 此前这里把 deleted_at 截到前 10 位再和「今天 - days」比日期，等价于保留到当天 00:00，
- * 恰 N 天前删除的记录会多留一天。改用完整时间戳比较，与 Python 逐微秒一致。
+ * 判定条件是 `deleted_at < now - days 天`。
+ * 若把 deleted_at 截到前 10 位再和「今天 - days」比日期，等价于保留到当天 00:00，
+ * 恰 N 天前删除的记录会多留一天。改用完整时间戳比较。
  */
 export function purgeTrashOlderThan(days: number): number {
   const cutoff = stampOf(new Date(Date.now() - days * 86_400_000))
@@ -130,7 +130,7 @@ export function purgeTrashOlderThan(days: number): number {
   return n
 }
 
-/** 标签 + 使用数（任务与笔记合计，对齐 TagRepository.usage_count）。 */
+/** 标签 + 使用数。 */
 export function tagsWithUsage(): { id: number; name: string; color: string; count: number }[] {
   return conn()
     .prepare(
@@ -158,6 +158,19 @@ export function renameTag(id: number, name: string): void {
   conn().prepare('UPDATE tag SET name = ? WHERE id = ?').run(clean, id)
 }
 
+/**
+ * 改标签颜色。颜色只存在 tag 表一处，任务与笔记的胶囊共用它，
+ * 所以这一处写成功，两边显示就一致。
+ *
+ * 只接受 #RRGGBB：胶囊同时把这个色当作文字色与边框色用，非法值会让某一处
+ * 变成「看不见的文字」（例如把 rgba() 或颜色名直接塞进 CSS）。
+ */
+export function setTagColor(id: number, color: string): number {
+  const clean = (color ?? '').trim()
+  if (!parseHex(clean)) return 0
+  return conn().prepare('UPDATE tag SET color = ? WHERE id = ?').run(clean, id).changes
+}
+
 /** 删除标签：task_tag / note_tag / flash_tag 由外键 ON DELETE CASCADE 连带清理。 */
 export function deleteTag(id: number): number {
   return conn().prepare('DELETE FROM tag WHERE id = ?').run(id).changes
@@ -177,7 +190,7 @@ export function batchDeleteTags(ids: number[]): number {
 
 /**
  * 合并标签：sources 的任务/笔记/闪念关联重挂到 target（同实体已挂 target 则跳过），
- * 随后删除来源标签（对齐 TagRepository.merge + note_service.merge_tags）。
+ * 随后删除来源标签。
  */
 export function mergeTags(target: number, sources: number[]): number {
   const c = conn()

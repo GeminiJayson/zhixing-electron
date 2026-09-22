@@ -13,17 +13,17 @@ import { quietFailure } from '../../shared/quiet-failure'
 
 // ---------------------------------------------------------------- 图谱
 
-/** 节点 id 空间（对齐 GraphService 常量，正负分区避免与笔记主键冲突）。 */
+/** 节点 id 空间。 */
 export const TASK_ID_OFFSET = 5_000_000
 export const FLASH_ID_OFFSET = 1_000_000
 export const FOLDER_ID_OFFSET = 2_000_000
-/** v0.15 P1-3：段落锚点独立负空间（任务→笔记段落级引用锚，唯一确定性 id）。 */
+/** 段落锚点独立负空间（任务→笔记段落级引用锚，唯一确定性 id）。 */
 export const ANCHOR_ID_OFFSET = 3_000_000
 export const folderNodeId = (id: number): number => -id - FOLDER_ID_OFFSET
 export const anchorNodeId = (contextId: number): number => -contextId - ANCHOR_ID_OFFSET
 
 /**
- * 两类边判定，逐条对齐 graph_service.classify_edge：
+ * 两类边判定：
  * - 任一端是 anchor（段落锚）→ 引用虚线；
  * - **两端**都在 {note, dangling} 内（但不含 dangling↔dangling）→ 引用虚线；
  * - 其余 → 归属实线。
@@ -46,7 +46,7 @@ export const graphNodeId = (kind: string, refId: number): number => {
 }
 
 /**
- * 归属层级边破环（对齐 _acyclic_ownership_edges）：DFS 三色标记，去掉指向当前访问栈的回边。
+ * 归属层级边破环：DFS 三色标记，去掉指向当前访问栈的回边。
  *
  * 归属 DAG 只可能被自引用父子链（folder.parent_id / task.parent_id）破坏；
  * folder→note、task→note 单向，不可能成环，无需进入本函数。
@@ -76,7 +76,7 @@ export function acyclicOwnershipEdges(edges: [number, number][]): [number, numbe
   return edges.filter(([s, d]) => !bad.has(s + ',' + d))
 }
 
-/** 把正文压成单行摘要：折叠空白/换行后按字符截断（对齐 _summarize_text）。 */
+/** 把正文压成单行摘要：折叠空白/换行后按字符截断。 */
 function summarizeText(text: string | null | undefined, limit: number): string {
   const t = (text ?? '').split(/\s+/).filter(Boolean).join(' ')
   return t.length <= limit ? t : t.slice(0, limit) + '…'
@@ -84,7 +84,7 @@ function summarizeText(text: string | null | undefined, limit: number): string {
 
 /**
  * 闪念无标题字段：取正文**首行**截断作为图谱节点标题。
- * 对齐 _flash_label：首行 trim → 截 40 字 → 空则兜底「闪念」。
+ * 首行 trim → 截 40 字 → 空则兜底「闪念」。
  */
 export function flashLabel(content: string | null | undefined): string {
   const text = (content ?? '').trim().split('\n')[0].trim()
@@ -99,12 +99,12 @@ interface NoteRow {
 }
 
 /**
- * 构建图谱数据，对齐 GraphService.build → _assemble + _finalize_edges：
+ * 构建图谱数据：
  * - 笔记节点（可按 folder_id / tag_id 过滤；onlyIds 用于邻域子图）；
  * - 文件夹层级与包含（归属）、note→note 与悬空引用（引用）；
- * - 闪念为孤立节点（仅全图，邻域子图不含，对齐 only_ids 判断）；
- * - 可选任务节点：task→note 归属 + task→note 引用 + task→task 层级 + 段落锚（G3/G4）。
- * 归属层级边最后统一破环并把被丢弃的边写入 cycleEdges（G2）。
+ * - 闪念为孤立节点；
+ * - 可选任务节点：task→note 归属 + task→note 引用 + task→task 层级 + 段落锚。
+ * 归属层级边最后统一破环并把被丢弃的边写入 cycleEdges。
  */
 export function buildGraph(query: GraphQuery = {}): GraphPayload {
   const includeTasks = query.includeTasks ?? false
@@ -127,15 +127,15 @@ export function buildGraph(query: GraphQuery = {}): GraphPayload {
     )
     notes = notes.filter((n) => tagged.has(n.id))
   }
-  // 邻域子图：only_ids 同时限制节点与边。Python 侧只用它限制边、节点仍全量，
-  // 会让图页出现一圈无边孤立点；这里按「邻域子图」语义一并裁剪（偏离点见注释）。
+  // 邻域子图：only_ids 同时限制节点与边。若只限制边、节点仍全量，
+  // 会让图页出现一圈无边孤立点；这里按「邻域子图」语义一并裁剪。
   if (onlyIds) {
     const keep = new Set(onlyIds)
     notes = notes.filter((n) => keep.has(n.id))
   }
   const allowed = new Set(notes.map((n) => n.id))
 
-  // 文件夹层级节点仅在全图（未按文件夹/标签/邻域过滤）时展示（对齐 _assemble）
+  // 文件夹层级节点仅在全图（未按文件夹/标签/邻域过滤）时展示
   const folders =
     folderId == null && tagId == null && onlyIds == null
       ? (c.prepare('SELECT id, parent_id, name FROM note_folder').all() as {
@@ -235,7 +235,7 @@ export function buildGraph(query: GraphQuery = {}): GraphPayload {
     }
   }
 
-  // 闪念：独立负空间，只入图不连线（邻域子图不含，对齐 only_ids 判断）
+  // 闪念：独立负空间，只入图不连线
   if (onlyIds == null) {
     const flashes = c
       .prepare('SELECT id, content FROM flash WHERE deleted_at IS NULL ORDER BY created_at DESC')
@@ -286,7 +286,7 @@ export function buildGraph(query: GraphQuery = {}): GraphPayload {
         edges.push([graphNodeId('task', l.task_id), l.note_id])
       }
     }
-    // G3：task_note_ref 引用边与归属并存。同一对同时存在两种关系时按「引用」呈现
+    // task_note_ref 引用边与归属并存。同一对同时存在两种关系时按「引用」呈现
     // （虚线优先），归属语义仍留在 task_note_link 数据层，避免同一条边叠画两次。
     const refs = c
       .prepare('SELECT task_id, note_id FROM task_note_ref')
@@ -298,7 +298,7 @@ export function buildGraph(query: GraphQuery = {}): GraphPayload {
       presetKinds[edge[0] + ',' + edge[1]] = 'reference'
     }
 
-    // G4：段落锚子节点——任务引用笔记内某段（task_note_context）时，
+    // 段落锚子节点——任务引用笔记内某段（task_note_context）时，
     // 在笔记下挂一个小锚点（引用虚线），锚点带定位键，图谱侧可跳转到该段。
     const ctxRows = c
       .prepare('SELECT id, task_id, note_id, block_key, snippet FROM task_note_context')
@@ -376,9 +376,9 @@ export function buildGraph(query: GraphQuery = {}): GraphPayload {
   return { nodes, edges: finalEdges, edgeKinds, cycleEdges }
 }
 
-// ---------------------------------------------------------------- 增量同步（G5）
+// ---------------------------------------------------------------- 增量同步
 
-/** 最近一帧的构建结果与构建参数（对齐 GraphService._cache / _cache_params）。 */
+/** 最近一帧的构建结果与构建参数。 */
 let graphCache: GraphPayload | null = null
 let graphParams: GraphQuery = {}
 /** 图页是否在看图谱：没人看就不必每次写入都重算 diff。 */
@@ -407,7 +407,7 @@ export function buildGraphTracked(query: GraphQuery = {}): GraphPayload {
 }
 
 /**
- * 相对上一帧的最小变更集（对齐 GraphService._sync：按缓存参数重建 → diff）。
+ * 相对上一帧的最小变更集。
  * 无上一帧时返回 full=true，消费端应整体重建但保留节点坐标。
  */
 export function graphDelta(): GraphDelta {
@@ -431,7 +431,7 @@ export function nodeChanged(a: GraphNodePayload, b: GraphNodePayload): boolean {
   )
 }
 
-/** 计算增量（对齐 GraphService.diff）。 */
+/** 计算增量。 */
 export function diffGraph(next: GraphPayload, prev: GraphPayload | null): GraphDelta {
   const key = (e: [number, number]): string => e[0] + ',' + e[1]
   if (!prev) {
@@ -472,14 +472,13 @@ export function diffGraph(next: GraphPayload, prev: GraphPayload | null): GraphD
   }
 }
 
-// ---------------------------------------------------------------- 邻域（G8）
+// ---------------------------------------------------------------- 邻域
 
 /**
- * 某笔记的 1~2 度邻域子图（对齐 GraphService.neighborhood）。
+ * 某笔记的 1~2 度邻域子图。
  *
  * 只在 note_link 上做 BFS——不掺 folder / flash / task 节点，结果不随
- * includeTasks 或文件夹节点变化。悬空引用由 buildGraph 的 onlyIds 分支自然带入
- * （Python 在 neighborhood 里又补了一遍同样的悬空节点，那一步是重复的，这里不重复）。
+ * includeTasks 或文件夹节点变化。悬空引用由 buildGraph 的 onlyIds 分支自然带入。
  */
 export function graphNeighborhood(noteId: number, degree = 1): GraphPayload {
   const c = conn()
@@ -514,7 +513,7 @@ export function graphNeighborhood(noteId: number, degree = 1): GraphPayload {
   return buildGraph({ onlyIds: [...keep] })
 }
 
-// ---------------------------------------------------------------- 节点预览（G9）
+// ---------------------------------------------------------------- 节点预览
 
 /** 所属笔记文件夹名（找不到返回空串）。 */
 function folderName(folderId: number | null): string {
@@ -526,7 +525,7 @@ function folderName(folderId: number | null): string {
 }
 
 /**
- * 按节点类型生成选中面板的预览文本（对齐 GraphService.preview_text）：
+ * 按节点类型生成选中面板的预览文本：
  * note→摘要/字数/置顶；task→状态/优先级/截止/父任务/关联笔记；
  * folder→上级/子文件夹/笔记数；flash→正文/备注/来源；anchor→引用任务/片段。
  */
@@ -650,7 +649,7 @@ export function graphPreview(node: GraphNodePayload): string {
       return lines.join('\n')
     }
   } catch (e) {
-    // 预览失败不该把侧栏带崩（对齐 Python 的 except → 兜底文本），但要留下是哪个节点
+    // 预览失败不该把侧栏带崩，但要留下是哪个节点
     quietFailure('图谱预览', e, 'kind=' + node.kind + ' id=' + node.id)
   }
   return '类型：' + node.kind + '\n链接数：' + node.degree
@@ -662,7 +661,7 @@ export function graphPreview(node: GraphNodePayload): string {
 export const EDGE_EITHER = 'either'
 
 /**
- * 允许连接矩阵（需求契约 §3.4，对齐 ALLOWED_CONNECTIONS）。
+ * 允许连接矩阵。
  * 未列出的组合一律禁止；task↔note 两个方向都归一到「任务 → 笔记」。
  */
 const ALLOWED_CONNECTIONS: Record<string, 'ownership' | 'reference'> = {
@@ -712,7 +711,7 @@ function ownershipParents(): Map<number, number> {
 
 /**
  * 归属 DAG 环检测：把 childNode 挂到 newParentNode 下是否会成环（祖先链回溯）。
- * 既有坏环数据保守拒绝（对齐 would_create_cycle）。
+ * 既有坏环数据保守拒绝。
  */
 export function wouldCreateCycle(childNodeId: number, newParentNodeId: number): boolean {
   if (childNodeId === newParentNodeId) return true
@@ -729,7 +728,7 @@ export function wouldCreateCycle(childNodeId: number, newParentNodeId: number): 
 }
 
 /**
- * 笔记↔笔记引用边（对齐 link_notes）。
+ * 笔记↔笔记引用边。
  * 已有同向行（含悬空）时只补 dst_note_id，避免撞唯一约束；反向已连视为已连。
  */
 export function linkNotes(srcId: number, dstId: number): boolean {
@@ -773,7 +772,7 @@ export function linkNotes(srcId: number, dstId: number): boolean {
   return made
 }
 
-/** 建立「任务引用笔记」关系（对齐 link_task_note_ref，幂等）。 */
+/** 建立「任务引用笔记」关系。 */
 export function linkTaskNoteRef(taskId: number, noteId: number): boolean {
   if (!taskId || !noteId || taskId <= 0 || noteId <= 0) return false
   conn()
@@ -800,7 +799,6 @@ export type EdgeKind = 'ownership' | 'reference'
  * 解除笔记↔笔记引用。
  *
  * 注意：`linkNotes` 是**双向写**的（src→dst 与 dst→src 各一行），所以这里必须对称删两侧。
- * Python 版只删单向，是因为它那边只写了单向行；照搬会只删掉一半、图谱上边看似还在。
  */
 export function unlinkNotes(srcId: number, dstId: number): boolean {
   if (!srcId || !dstId || srcId <= 0 || dstId <= 0) return false
@@ -826,12 +824,11 @@ export function connectGraphNodes(
   dstRef: number,
   edgeKind: EdgeKind
 ): boolean {
-  // 方向归一：task↔note 一律按 task 在前（对齐 Python commit_connection）
+  // 方向归一：task↔note 一律按 task 在前
   if (srcKind === 'note' && dstKind === 'task') {
     return connectGraphNodes(dstKind, dstRef, srcKind, srcRef, edgeKind)
   }
-  // G2：归属层级改挂（folder→folder / task→task）先做祖先链环路校验
-  // （对齐 commit_connection 第 3 步；避免把节点挂到自己的子孙下）。
+  // 归属层级改挂（folder→folder / task→task）先做祖先链环路校验。
   if (
     edgeKind === 'ownership' &&
     srcKind === dstKind &&
@@ -857,7 +854,6 @@ export function connectGraphNodes(
 
 /**
  * 删除一条连线：按「边类 + 端点类型」分派到真数据操作。
- * 逐条对齐 Python `graph_page.remove_edge` 的分派表。
  */
 export function removeGraphEdge(
   srcKind: string,
@@ -885,7 +881,7 @@ export function removeGraphEdge(
     quietFailure('删除连线', new Error('未支持的端点组合'), srcKind + ' × ' + dstKind)
     return false
   } catch (e) {
-    // 删除失败不该把界面带崩（对齐 Python 的 except → 提示）；
+    // 删除失败不该把界面带崩；
     // 渲染层会提示「删除失败」，但它分不清「失败」与「已被移除」，真正的原因只在这里
     quietFailure(
       '删除连线',

@@ -4,7 +4,7 @@
  * 来由（第 12 轮灌种子数据时暴露）：
  *  ① 任务正文里先写 [[标题]]、之后才建同名笔记 —— 链接永远落不上。
  *     syncTaskNoteLinks 在建任务/改正文时就解析，那时笔记还不存在；
- *     而应用没有「笔记建好后重新解析任务正文」的入口（Python 版有 link_wiki_notes）。
+ *     而应用没有「笔记建好后重新解析任务正文」的入口。
  *  ② 中文检索跨分词边界查不到 —— **复核后不成立，这条是我此前误判**。
  *     我当时拿裸 SQL「task_fts MATCH '多步写'」测得 0 条就下了结论；
  *     而应用自己的检索路径会先用 jieba 把查询词切开再拼前缀匹配
@@ -62,7 +62,7 @@ const BROWSER = [
   '  const hitNone = await db.globalSearch("这个串一定不存在zz" + stamp)',
   '  out.noneHits = ((hitNone && hitNone.task) || []).length',
   '',
-  // 显式重解析入口（对齐 Python 的 link_wiki_notes）—— 修历史数据要用它
+  // 显式重解析入口—— 修历史数据要用它
   '  const repaired = await db.linkTaskWikiNotes(t2.id)',
   '  out.repairIsArray = Array.isArray(repaired)',
   '',

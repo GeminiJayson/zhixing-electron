@@ -8,7 +8,7 @@ interface Props {
   onClose: () => void
 }
 
-/** 点任务行旗子弹出的优先级菜单：无 / P1–P8（与手册 §5.3 一致）。 */
+/** 点任务行旗子弹出的优先级菜单：无 / P1–P8（与手册一致）。 */
 export function PriorityMenu({ anchor, current, onPick, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null)
 

@@ -46,9 +46,9 @@ export function InboxPage({ onNotice, onChanged }: Props) {
   /** 「转笔记」正在选目录的闪念 id */
   const [folderFor, setFolderFor] = useState<number | null>(null)
   const [noteFolders, setNoteFolders] = useState<NoteFolder[]>([])
-  /** 删除闪念后的页内撤销槽（对齐 app_controller 的 delete-flash → Ctrl+Z 链路） */
+  /** 删除闪念后的页内撤销槽 */
   const [undoFlash, setUndoFlash] = useState<{ id: number; label: string } | null>(null)
-  /** S22 闪念深链目标：切到闪念 Tab 后定位/高亮该条，2.6s 后自动取消高亮 */
+  /** 闪念深链目标：切到闪念 Tab 后定位/高亮该条，2.6s 后自动取消高亮 */
   const [flashFocus, setFlashFocus] = useState<number | null>(null)
 
   const loadTasks = useCallback(async () => {
@@ -75,12 +75,12 @@ export function InboxPage({ onNotice, onChanged }: Props) {
     if (flashes.length > 0 && tasks.length === 0) setTab('flash')
   }, [flashes, tasks, initialTabSettled])
 
-  // 转笔记的目录候选（对齐 flash_service.to_note 的 folder_id）
+  // 转笔记的目录候选
   useEffect(() => {
     void (async () => setNoteFolders(await window.zhixing.db.noteFolders()))()
   }, [])
 
-  // S22：闪念深链（托盘「记闪念」/ 图谱双击闪念）——切到闪念 Tab 并登记待定位 id
+  // 闪念深链（托盘「记闪念」/ 图谱双击闪念）——切到闪念 Tab 并登记待定位 id
   useEffect(() => {
     const onOpenFlash = (e: Event): void => {
       const id = Number((e as CustomEvent<{ id?: number }>).detail?.id)
@@ -118,7 +118,7 @@ export function InboxPage({ onNotice, onChanged }: Props) {
     return buildTaskTree(tasks, effective, new Map(), new Map())
   }, [tasks])
 
-  /** 未完成计数含子任务（对齐 inbox_page._count_undone 的 walk）。 */
+  /** 未完成计数含子任务。 */
   const undone = useMemo(() => {
     const count = (nodes: TaskNode[]): number =>
       nodes.reduce((n, node) => n + (node.effectiveDone ? 0 : 1) + count(node.children), 0)
@@ -143,7 +143,7 @@ export function InboxPage({ onNotice, onChanged }: Props) {
     const text = draft.trim()
     if (!text) return
     setDraft('')
-    // I1：内容是从剪贴板粘进来的就顺带记下来源 URL（与划词捕获同一套解析，
+    // 内容是从剪贴板粘进来的就顺带记下来源 URL（与划词捕获同一套解析，
     // 只传剪贴板里**确实包含这段文字**的情形，避免给手打的闪念误挂无关链接）。
     let sourceUrl = ''
     try {
@@ -163,13 +163,13 @@ export function InboxPage({ onNotice, onChanged }: Props) {
     await refresh()
   }
 
-  /** I7 打开目录选择（对齐 flash_service.to_note 的 folder_id 参数）。 */
+  /** 打开目录选择。 */
   const handleToNote = (f: Flash): void => {
     setSubtaskFor(null)
     setFolderFor(f.id)
   }
 
-  /** I7 转笔记到指定目录；`null` = 不指定（落到默认目录，与原来一致）。 */
+  /** 转笔记到指定目录；`null` = 不指定（落到默认目录，与原来一致）。 */
   const handleToNoteInto = async (f: Flash, folderId: number | null): Promise<void> => {
     const id = await window.zhixing.db.flashToNote(f.id, folderId)
     setFolderFor(null)
@@ -178,7 +178,7 @@ export function InboxPage({ onNotice, onChanged }: Props) {
     await refresh()
   }
 
-  /** I6 转子任务：挂到所选父任务下（对齐 flash_service.to_subtask）。 */
+  /** 转子任务：挂到所选父任务下。 */
   const handleToSubtask = async (f: Flash, parentId: number, parentName: string): Promise<void> => {
     const id = await window.zhixing.db.flashToSubtask(f.id, parentId)
     setSubtaskFor(null)
@@ -193,7 +193,7 @@ export function InboxPage({ onNotice, onChanged }: Props) {
     await refresh()
   }
 
-  /** 改备注（对齐 update_remark）。 */
+  /** 改备注。 */
   const handleRemark = async (f: Flash): Promise<void> => {
     const next = await dialog.prompt({
       title: '备注',
@@ -205,7 +205,7 @@ export function InboxPage({ onNotice, onChanged }: Props) {
     await refresh()
   }
 
-  /** 打标签（对齐 tag：按名 ensure 后整体覆盖）。 */
+  /** 打标签。 */
   const handleTag = async (f: Flash): Promise<void> => {
     const raw = await dialog.prompt({ title: '打标签', label: '标签（逗号分隔）', defaultValue: '' })
     if (raw == null) return
@@ -218,7 +218,7 @@ export function InboxPage({ onNotice, onChanged }: Props) {
     await refresh()
   }
 
-  /** 合并选中（对齐 merge）：正文拼接、标签取并集、原条进回收站。 */
+  /** 合并选中：正文拼接、标签取并集、原条进回收站。 */
   const handleMerge = async (): Promise<void> => {
     const ids = [...picked]
     if (ids.length < 2) {
@@ -241,13 +241,13 @@ export function InboxPage({ onNotice, onChanged }: Props) {
     })
     if (!confirmed) return
     await window.zhixing.db.deleteFlash(f.id)
-    // I8：删除后给撤销槽（对齐 app_controller._on_flash_deleted → flash_service.restore）；
+    // 删除后给撤销槽；
     // 之前只有 confirm + 软删，没有任何回退路径。
     setUndoFlash({ id: f.id, label: (f.content || '').split('\n')[0].slice(0, 30) })
     await refresh()
   }
 
-  /** I8 撤销删除：从回收站恢复这条闪念。 */
+  /** 撤销删除：从回收站恢复这条闪念。 */
   const handleUndoDeleteFlash = async (): Promise<void> => {
     if (!undoFlash) return
     await window.zhixing.db.restoreTrash('flash', undoFlash.id)
@@ -422,7 +422,7 @@ export function InboxPage({ onNotice, onChanged }: Props) {
                   {f.remark && <p className="flash-card__remark">└ {f.remark}</p>}
                   <div className="flash-card__meta">
                     <span className="u-aux">{f.created_at.slice(0, 16)}</span>
-                    {/* 来源应用/URL（对齐 inbox_page 的「来自 X」；source_url 由 I1/I2 写入） */}
+                    {/* 来源应用/URL（显示「来自 X」；source_url 在捕获时写入） */}
                     <span className="u-aux">来自 {f.source_app || '未知'}</span>
                     {f.source_url && <span className="u-aux">{f.source_url}</span>}
                     {f.status === 'converted' && (

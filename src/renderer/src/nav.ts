@@ -26,11 +26,11 @@ export interface NavItem {
   /** 文案 key，实际文字由 i18n 的 t() 提供 */
   labelKey: MessageKey
   icon: LucideIcon
-  /** top = 主导航区，bottom = 贴底（对齐主窗口 _add_navigation 的分区） */
+  /** top = 主导航区，bottom = 贴底 */
   zone: 'top' | 'bottom'
 }
 
-/** 导航结构与 zhixing/view/shell/main_window.py 的 8 项一一对应。 */
+/** 导航结构（8 项）。 */
 export const NAV_ITEMS: NavItem[] = [
   { key: 'today', labelKey: 'nav.today', icon: CalendarCheck, zone: 'top' },
   { key: 'tasks', labelKey: 'nav.tasks', icon: ClipboardList, zone: 'top' },

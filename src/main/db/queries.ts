@@ -2,7 +2,7 @@
  * 保存的查询（智能清单）。
  *
  * 表达式本身由 shared/query.ts 解析、在渲染层过滤；这里只负责把「名称 + 表达式」存下来。
- * 用私有表，不动 Python 的迁移链。
+ * 用私有表，不动 schema 迁移链。
  */
 import { conn } from './connection'
 

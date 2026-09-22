@@ -84,13 +84,13 @@ export function rowToNode(r: WorkflowNodeRow): WorkflowNodePayload {
 }
 
 
-/** 按 order_index 升序、其次 id（对齐 WorkflowTemplate.ordered_nodes）。 */
+/** 按 order_index 升序、其次 id。 */
 export const orderedNodes = (nodes: WorkflowNodePayload[]): WorkflowNodePayload[] =>
   [...nodes].sort((a, b) => (a.order_index || 0) - (b.order_index || 0) || a.id - b.id)
 
 /**
  * 某节点的下一步：优先条件分支，否则按顺序取下一个；
- * nodeId 为空时回到第一步（对齐 WorkflowTemplate.next_node）。
+ * nodeId 为空时回到第一步。
  */
 export function nextWorkflowNode(
   nodes: WorkflowNodePayload[],
@@ -103,7 +103,7 @@ export function nextWorkflowNode(
   return nextNodeOf(ordered, ordered[idx], true)
 }
 
-/** 拓扑校验，逐条对齐 WorkflowTemplate.validate；返回问题列表（空 = 可保存）。 */
+/** 拓扑校验；返回问题列表（空 = 可保存）。 */
 export function validateWorkflowTemplate(nodes: WorkflowNodePayload[]): string[] {
   const problems: string[] = []
   const ordered = orderedNodes(nodes)
@@ -153,7 +153,7 @@ export function getWorkflowTemplate(id: number): WorkflowTemplatePayload | null 
 
 /**
  * 保存模板（节点整体替换）。校验不过返回 problems 且不落库，
- * 避免存下无法运行的流程（对齐 save_template 的拒绝语义）。
+ * 避免存下无法运行的流程。
  */
 export function saveWorkflowTemplate(tpl: {
   id?: number | null
@@ -163,7 +163,7 @@ export function saveWorkflowTemplate(tpl: {
   nodes: { id?: number | null; title: string; detail?: string; order_index?: number; note_id?: number | null; note_ids?: number[]; action_kind?: string; action_value?: string; action_expect?: string; action_runtime?: string; condition?: string; branch_node_id?: number | null; branch_false_node_id?: number | null; pos_x?: number | null; pos_y?: number | null }[]
 }): { ok: boolean; problems: string[]; templateId?: number } {
   const draft: WorkflowNodePayload[] = tpl.nodes.map((n, i) => {
-    // SOP 多绑定的唯一真相是 note_ids；note_id 只作为兼容列同步写出（Python 版仍按单值读）
+    // SOP 多绑定的唯一真相是 note_ids；note_id 只作为兼容列同步写出
     const noteIds = parseNoteIds(
       n.note_ids ? JSON.stringify(n.note_ids) : null,
       n.note_id ?? null
@@ -191,9 +191,8 @@ export function saveWorkflowTemplate(tpl: {
   if (problems.length) return { ok: false, problems }
 
   const c = conn()
-  // 对齐 Python save_template：更新一个不存在的模板时返回失败而**不是抛异常**
-  // （Python 返回 None，页面按「保存失败：problems」提示；抛异常会让 IPC reject，
-  // 渲染层拿不到 problems，只能看到一个未捕获的 Promise 拒绝）。
+  // 更新一个不存在的模板时返回失败而**不是抛异常**：抛异常会让 IPC reject，
+  // 渲染层拿不到 problems，只能看到一个未捕获的 Promise 拒绝。
   if (tpl.id) {
     const exists = c.prepare('SELECT id FROM workflow_template WHERE id = ?').get(tpl.id)
     if (!exists) return { ok: false, problems: ['模板不存在或已被删除'] }
@@ -241,7 +240,7 @@ export function saveWorkflowTemplate(tpl: {
           stamp
         )
       const rowId = Number(info.lastInsertRowid)
-      // 任意非零 id 都进映射表（对齐 Python 的 `if n.id is not None`）：
+      // 任意非零 id 都进映射表：
       // 新增步骤用的是**负临时 id**，分支引用必须能重映射到真实 id，否则分支会悬空。
       if (n.id !== 0) idMap.set(n.id, rowId)
       inserted.push({ rowId, oldId: n.id, raw: n })
@@ -265,7 +264,7 @@ export function saveWorkflowTemplate(tpl: {
 
 export function deleteWorkflowTemplate(id: number): number {
   const c = conn()
-  // 对齐 workflow_service.delete_template：有运行中实例就拒绝删除（返回 0）。
+  // 有运行中实例就拒绝删除（返回 0）。
   // 此前直接删，会留下悬空实例与孤儿步骤任务。
   const running = c
     .prepare(
@@ -281,8 +280,8 @@ export function deleteWorkflowTemplate(id: number): number {
 }
 
 /**
- * 复制模板（对齐 duplicate_template）：名称加「 副本」，节点与分支引用整体复制，
- * **不复制坐标**（Python 的 clone 只带 order/note/action/condition/branch），副本重新排布。
+ * 复制模板：名称加「 副本」，节点与分支引用整体复制，
+ * **不复制坐标**，副本重新排布。
  */
 export function duplicateWorkflowTemplate(id: number): WorkflowTemplatePayload | null {
   const src = getWorkflowTemplate(id)
@@ -313,8 +312,8 @@ export function duplicateWorkflowTemplate(id: number): WorkflowTemplatePayload |
 }
 
 /**
- * 一键对齐（对齐 _auto_layout）：按执行顺序重置为纵向网格，pos_x=0、pos_y=i*行距。
- * 只写坐标，不动其它字段（Python 是 silent save_template，不广播模板变更）。
+ * 一键对齐：按执行顺序重置为纵向网格，pos_x=0、pos_y=i*行距。
+ * 只写坐标，不动其它字段。
  */
 export function autoLayoutWorkflowNodes(templateId: number, yGap: number): number {
   const c = conn()
@@ -334,8 +333,8 @@ export function autoLayoutWorkflowNodes(templateId: number, yGap: number): numbe
 }
 
 /**
- * 某任务启动/关联的所有实例（对齐 instances_of_task，任务速览「工作流」卡片用）。
- * Python 不带排序，这里同样保持自然顺序。
+ * 某任务启动/关联的所有实例。
+ * 不带排序，保持自然顺序。
  */
 export function listWorkflowInstancesByTask(taskId: number): WorkflowInstancePayload[] {
   const rows = conn()
@@ -411,7 +410,7 @@ function createWorkflowParentTask(tplName: string, instanceTitle: string): numbe
   return taskId
 }
 
-/** 把一步下发为真实任务并建立绑定（对齐 _spawn_step_task）。 */
+/** 把一步下发为真实任务并建立绑定。 */
 export function spawnStepTask(
   instanceId: number,
   node: WorkflowNodePayload,
@@ -513,7 +512,7 @@ export function getWorkflowInstance(id: number): WorkflowInstancePayload | null 
     )
     .get(id) as (Omit<WorkflowInstancePayload, 'steps' | 'last_result'> & { last_result: string | null }) | undefined
   if (!inst) return null
-  // 步骤集合 = **已生成的步骤绑定**（对齐 workflow_service.get_instance 遍历 binds）：
+  // 步骤集合 = **已生成的步骤绑定**：
   // 不能 LEFT JOIN 全部模板节点，否则 policy=first 时进度分母是模板节点数、
   // 且出现 task_id 为空的「空步骤行」。
   const rows = c
@@ -535,7 +534,7 @@ export function getWorkflowInstance(id: number): WorkflowInstancePayload | null 
     node_id: r.node_id,
     title: r.title ?? '',
     task_id: r.task_id,
-    // 对齐 _task_done_map：只认 status=='done'（放弃不算完成）
+    // 只认 status=='done'（放弃不算完成）
     done: r.task_status === 'done',
   }))
   // last_result 在库里是 JSON 文本：解析失败按「没有结果」处理，不让坏数据把实例读崩
@@ -545,7 +544,7 @@ export function getWorkflowInstance(id: number): WorkflowInstancePayload | null 
 
 export function listWorkflowInstances(status?: string | null): WorkflowInstancePayload[] {
   const c = conn()
-  // 对齐 list_instances：按 id desc（创建先后），不是按 created_at 字符串
+  // 按 id desc（创建先后），不是按 created_at 字符串
   const rows = (
     status
       ? c.prepare('SELECT id FROM workflow_instance WHERE status = ? ORDER BY id DESC').all(status)
@@ -712,7 +711,7 @@ export async function pumpInstance(instanceId: number): Promise<void> {
 }
 
 /**
- * 某步骤任务完成时推进实例（对齐 complete_step_task）：
+ * 某步骤任务完成时推进实例：
  * 有下一步则生成其任务并前移 current_node_id，最后一步则完结实例。
  */
 export async function completeWorkflowStep(taskId: number): Promise<boolean> {
@@ -917,8 +916,8 @@ async function runScript(runtime: ScriptRuntime, script: string): Promise<ChildO
 /**
  * 执行一个自动节点，返回它的结果。
  *
- * 命令：按 shlex 规则拆 argv、不经 shell 直接 spawn；
- * 脚本：按 action_runtime 选解释器（PowerShell / cmd / Python / Node），
+ * 命令：按 shell 词法规则拆 argv、不经 shell 直接 spawn；
+ * 脚本：按 action_runtime 选解释器，
  *       除 cmd 外都把脚本文本从 stdin 喂进去，cmd 落一个临时 .cmd 再执行。
  * 两者都以「退出码是否等于 action_expect（默认 0）」为成败判据。
  */
@@ -1027,14 +1026,14 @@ export async function rerunWorkflowInstance(id: number): Promise<WorkflowInstanc
 type ShlexState = 'plain' | 'single' | 'double' | 'escape' | 'escapeDouble'
 
 /**
- * POSIX shlex.split 等价实现（对齐 Python `shlex.split`，供 RUN_COMMAND 拆分 argv）。
+ * POSIX shell 词法切分的等价实现。
  *
- * 与原「简化版」的差别正是它与 Python 的差别：
+ * 与原先「简化版」的差别：
  * - 引号外 `\x` 是转义（`a\ b` → 一个参数 `a b`），`\` 后跟换行是续行；
  * - 双引号内只有 `\"` 与 `\\` 被反转义，其余反斜杠原样保留；
  * - 单引号内一切原样（含反斜杠）；
  * - 空引号（`''` / `""`）产生一个**空参数**，相邻引号与裸字符拼接；
- * - 引号未闭合**抛错**（Python 抛 ValueError('No closing quotation')），
+ * - 引号未闭合**抛错**，
  *   不再静默吞掉，由 runWorkflowAction 转成「执行失败：…」。
  *
  * 仍不解析管道/重定向——执行时不经 shell，这些字符只是普通参数。
@@ -1092,7 +1091,7 @@ export function splitCommand(cmd: string): string[] {
 }
 
 /**
- * 人类可读的动作描述（逐字对齐 describe_action，用于执行前确认/步骤提示）：
+ * 人类可读的动作描述：
  * 绑定笔记能查到标题时给「打开笔记「标题」」，否则退回「打开关联笔记」；
  * 无动作给「无动作」而不是空串。
  */
@@ -1111,7 +1110,7 @@ const CONDITION_TIMEOUT_MS = 15_000
  *   - prev：读实例上下文里的「上一步结果」（命令/脚本的退出码、任务的完成状态）——
  *           ctx.lastResult 由推进逻辑在调用前写入，这就是自动步骤把结果交给条件节点的通道
  */
-// ---------------------------------------------------------------- 模板分类（对齐笔记树）
+// ---------------------------------------------------------------- 模板分类
 
 export interface WorkflowGroup {
   id: number
@@ -1332,7 +1331,7 @@ export function describeWorkflowAction(
     return `运行 ${scriptRuntimeLabel(actionRuntime)} 脚本：${brief}${brief ? '…' : '（空）'}（等待退出，期望退出码 ${parseExpectCode(actionExpect)}）`
   }
   if (kind === 'open_note') {
-    // 对齐 Python 的 `(action_value or "").isdigit()` 判定
+    // 值全为数字时按笔记 id 处理
     const title = /^\d+$/.test(actionValue || '') ? getNote(Number(actionValue))?.title ?? '' : ''
     return title ? `打开笔记「${title}」` : '打开关联笔记'
   }
@@ -1401,7 +1400,7 @@ export async function runWorkflowAction(
     const cmd = (actionValue || '').trim()
     if (!cmd) return { ok: false, message: '未填写要运行的命令', kind, code: null, output: '' }
     let argv: string[] = []
-    // splitCommand 会抛「引号未闭合」；与 Python 一样归到 try 里，
+    // splitCommand 会抛「引号未闭合」；归到 try 里，
     // 转成 { ok:false, message:'执行失败：…' }，而不是让 IPC reject。
     // spawn 的失败是**异步**通过 'error' 事件报告的，try/catch 根本捕不到：
     // 必须等 'spawn'（进程真的起来了）或 'error'（如 ENOENT）才能给出准确结果。

@@ -1,5 +1,5 @@
 /**
- * 快速捕获语法糖，逐条对齐 model/domain/capture_grammar.py + task_rules.parse_natural_date：
+ * 快速捕获语法糖：
  * `周五前 交付方案 !2 @工作 #客户` → 标题「交付方案」、P5、列表「工作」、标签「客户」、截止=本周五。
  * 时刻短语（明天3点 / 周五 14:30）解析为 reminder_at。
  */
@@ -41,7 +41,7 @@ const dayOf = (d: Date): string => d.toISOString().slice(0, 10)
 const parseDay = (s: string): Date => new Date(`${s}T00:00:00Z`)
 const addDays = (d: Date, n: number): Date => new Date(d.getTime() + n * 86_400_000)
 
-/** 解析日期词（含可选时刻），对齐 parse_natural_date / parse_natural_datetime。 */
+/** 解析日期词（含可选时刻）。 */
 export function parseNaturalDate(
   word: string,
   today: string
@@ -61,11 +61,11 @@ export function parseNaturalDate(
       const min = clockMatch[3] ? 30 : clockMatch[4] ? Number(clockMatch[4]) : 0
       if (['下午', '傍晚', '晚上', '夜里', '夜晚'].includes(part) && h < 12) h += 12
       else if (part === '中午' && h < 12) h += 12
-      // 无修饰的 1-6 点按口语「下午」处理（对齐 _resolve_hour：3点 → 15:00）
+      // 无修饰的 1-6 点按口语「下午」处理（3点 → 15:00）
       else if (!part && h >= 1 && h <= 6) h += 12
       clock = [h, min]
     }
-    // 非法时刻一律丢弃（对齐 parse_clock 的 h<24 / m<60 校验）；
+    // 非法时刻一律丢弃；
     // 此前「明天25:99」会把 (25,99) 直接写进 reminder_at。
     if (clock && !(clock[0] >= 0 && clock[0] < 24 && clock[1] >= 0 && clock[1] < 60)) clock = null
     text = text.slice(0, clockMatch.index).trim()
@@ -78,8 +78,6 @@ export function parseNaturalDate(
   else if (text === '大后天') date = dayOf(addDays(t, 3))
   else {
     // 「周X / 下周X」按字面语义：周X 落在本周（已过则顺延到下周同一天），下周X 落在下一周。
-    // 注：Python 的 parse_natural_date 把「下周X」实现成了「下一个 X」，与字面不符，
-    // 这里按字面语义实现（差异已记入 docs/optimization-proposals.md）。
     const wk = text.match(WEEK_RE)
     if (wk) {
       const target = WEEKDAY_CN[wk[2]]
@@ -101,7 +99,7 @@ export function parseNaturalDate(
         const m = Number((cn ?? md)![1])
         const d = Number((cn ?? md)![2])
         let candidate = new Date(Date.UTC(t.getUTCFullYear(), m - 1, d))
-        // JS 的 Date 会把 2月30日 自动进位成 3月2日；Python 的 date() 直接抛错返回 None。
+        // JS 的 Date 会把 2月30日 自动进位成 3月2日。
         // 只有回写后仍在同一月（含闰年 2/29 合法）才认这个日期，否则视为非法。
         if (Number.isNaN(candidate.getTime()) || candidate.getUTCMonth() !== m - 1) {
           return { date: null, clock }
@@ -164,7 +162,7 @@ export function parseCapture(input: string, today: string): ParsedCapture {
   }
   text = text.replace(tagRe, ' ').replace(/\s+/g, ' ').trim()
 
-  // 有日期词时清掉「周五前 / 明天之内」残留的修饰词（对齐 capture_grammar 的 _DATE_WORDS 后处理）
+  // 有日期词时清掉「周五前 / 明天之内」残留的修饰词
   if (dm) {
     text = text
       .replace(/^(前|之前|以前|之内|内)(?=\s|$)/, ' ')
@@ -172,7 +170,7 @@ export function parseCapture(input: string, today: string): ParsedCapture {
       .replace(/\s{2,}/g, ' ')
       .trim()
   }
-  // 首尾的「-，,」清掉（对齐 Python 的 strip(" -，,")）
+  // 首尾的「-，,」清掉
   result.title = text.replace(/\s{2,}/g, ' ').trim().replace(/^[\s\-，,]+|[\s\-，,]+$/g, '')
   return result
 }

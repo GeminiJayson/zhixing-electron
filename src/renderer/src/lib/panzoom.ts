@@ -19,8 +19,8 @@ export interface CursorRatio {
   ry: number
 }
 
-// 与 Python 版 graph_page.wheelEvent 的钳位一致：`max(0.15, min(4.0, _zoom))`。
-// 早期实现取下限 0.25，比 Python 少一级缩小档，大图上退不出来。
+// 缩放钳位：`max(0.15, min(4.0, _zoom))`。
+// 早期实现取下限 0.25，少一级缩小档，大图上退不出来。
 export const MIN_SCALE = 0.15
 export const MAX_SCALE = 4
 
@@ -58,7 +58,6 @@ export function zoomAt(
 
 /**
  * 镜头飞入：把视图中心移到指定世界坐标，保持当前缩放不变。
- * 对齐 Python graph_page._focus_node_search 里的 view.centerOn(target)。
  */
 export function centerView(view: ViewBox, worldX: number, worldY: number): ViewBox {
   return { ...view, x: worldX - view.w / 2, y: worldY - view.h / 2 }

@@ -1,5 +1,5 @@
 /**
- * [[wiki 链接]] 解析，与 zhixing/model/domain/link_parser.py 逐条对齐。
+ * [[wiki 链接]] 解析。
  * 链接按标题引用：[[标题]] → note_link.dst_title，可解析则绑定 dst_note_id。
  */
 
@@ -30,7 +30,7 @@ export function extractLinks(md: string): string[] {
 /**
  * 把 [[标题]] 换成 Markdown 链接后交给 marked 渲染：
  * 已解析 → zhixing-note://<id>；悬空 → zhixing-note://new/<标题>（可一键建笔记）。
- * 代码块内不替换（对齐 link_parser.render_wiki_links 的保护范围）。
+ * 代码块内不替换。
  */
 export function linkifyWiki(md: string, resolved: Map<string, number>): string {
   const parts = md.split(/(```[\s\S]*?```)/g)
@@ -69,7 +69,7 @@ export function firstHeading(md: string, fallback = '无标题'): string {
   return fallback
 }
 
-/** 与 Python 侧一致的字数估算：中日韩按字计，其余按空白分词。 */
+/** 字数估算：中日韩按字计，其余按空白分词。 */
 export function countWords(md: string): number {
   const cjk = (md.match(/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/g) ?? []).length
   const latin = (md.replace(/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/g, ' ').match(/[A-Za-z0-9_'-]+/g) ?? []).length

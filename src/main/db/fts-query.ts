@@ -1,12 +1,11 @@
 /**
- * FTS5 的分词与查询表达式（对齐 Python 的 zhixing/model/infrastructure/fts.py）。
+ * FTS5 的分词与查询表达式。
  *
  * 单独成文件是为了能在 vitest（node 环境）里直接验证分词结果：fts.ts 依赖
  * better-sqlite3（Electron ABI 的原生模块），在单测里加载不了。
  *
- * 两端必须用同一套分词：Python 在写入时就用 jieba 的 cut_for_search 把正文切成
- * 空格分隔的词交给 unicode61 索引，两版共用同一个 FTS 表 —— 分词不一致会让
- * 跨客户端检索互相漏检。
+ * 写入与查询必须用同一套分词：写入时用 jieba 的 cut_for_search 把正文切成
+ * 空格分隔的词交给 unicode61 索引 —— 分词不一致会让检索互相漏检。
  */
 type JiebaLike = {
   cut(s: string): string[]
@@ -27,10 +26,10 @@ try {
   console.warn('[fts] 中文分词原生模块加载失败，退化为逐字分词：', err)
 }
 
-/** FTS5 词法：只保留数字/字母/汉字，其余当分隔符（对齐 Python 的 _TOKEN_PAT）。 */
+/** FTS5 词法：只保留数字/字母/汉字，其余当分隔符。 */
 const TOKEN_PAT = /[0-9A-Za-z\u4e00-\u9fff]+/g
 
-/** 索引时用的分词（对齐 fts.tokenize：cut_for_search，异常时按字回退）。 */
+/** 索引时用的分词。 */
 export function tokenize(text: string): string {
   const t = (text ?? '').trim()
   if (!t) return ''
@@ -46,7 +45,7 @@ export function tokenize(text: string): string {
   }
 }
 
-/** 把用户查询拆成安全的 FTS 词（对齐 fts._fts_terms）。 */
+/** 把用户查询拆成安全的 FTS 词。 */
 function ftsTerms(text: string): string[] {
   const t = (text ?? '').trim()
   if (!t) return []
@@ -73,7 +72,7 @@ function ftsTerms(text: string): string[] {
   return out.slice(0, 8)
 }
 
-/** 用户查询 → FTS5 MATCH 表达式：前缀匹配 AND 组合（对齐 fts.query_terms）。 */
+/** 用户查询 → FTS5 MATCH 表达式：前缀匹配 AND 组合。 */
 export function queryTerms(q: string): string {
   const tokens = ftsTerms(q)
   if (!tokens.length) return ''

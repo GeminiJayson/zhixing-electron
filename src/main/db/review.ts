@@ -10,10 +10,10 @@ import { conn, nowStamp, TASK_COLUMNS } from './connection'
 export const dayOf = (value: string | null): string | null => (value ? value.slice(0, 10) : null)
 
 /**
- * completed_at 落在 [start, end) 的完成时间串（对齐 TaskRepository.completed_between）。
+ * completed_at 落在 [start, end) 的完成时间串。
  *
  * 关键口径：该查询**不过滤 deleted_at、也不看 status**，只看完成时间是否落在区间内。
- * 周趋势 / 热力图 / 连续天数都直接使用它，与 Python 侧逐值一致。
+ * 周趋势 / 热力图 / 连续天数都直接使用它。
  */
 function completedBetween(start: string, end: string): string[] {
   const rows = conn()
@@ -24,11 +24,11 @@ function completedBetween(start: string, end: string): string[] {
   return rows.map((r) => r.completed_at)
 }
 
-/** 某天 00:00:00 的时间戳串（对齐 datetime.combine(day, datetime.min.time())）。 */
+/** 某天 00:00:00 的时间戳串。 */
 const dayStartStamp = (day: string): string => day + ' 00:00:00'
 
 /**
- * 今日待办根集合（对齐 task_rules.today_roots）：
+ * 今日待办根集合：
  * 顶层 + 有效未完成 + 未逾期（无截止 或 截止 >= 今天）。
  */
 export function todayRoots(tasks: Task[], effective: Map<number, boolean>, today: string): Task[] {
@@ -58,8 +58,7 @@ export function reviewStats(weeks = 12, days = 7): ReviewStats {
     (t) => t.due_date !== null && t.due_date < today && !isEffectiveDone(t)
   ).length
   const inbox = tasks.length
-  // 闪念计数 = 全部未删除闪念（含 archived）。对齐 review_service.today_counts 的
-  // `len(self.flashes.list(s))`——那里 status=None，不过滤状态。
+  // 闪念计数 = 全部未删除闪念（含 archived），不过滤状态。
   const flash = (
     c.prepare('SELECT COUNT(*) AS c FROM flash WHERE deleted_at IS NULL').get() as { c: number }
   ).c
@@ -84,7 +83,7 @@ export function reviewStats(weeks = 12, days = 7): ReviewStats {
     const diff = Math.round((new Date(`${day}T00:00:00Z`).getTime() - new Date(`${startKey}T00:00:00Z`).getTime()) / 86400000)
     return diff >= 0 && diff < days ? diff : -1
   }
-  // 完成数取 completed_between（不按 deleted_at / status 过滤），与 Python 周趋势同口径
+  // 完成数取 completed_between（不按 deleted_at / status 过滤）
   for (const stamp of completedBetween(dayStartStamp(start.toLocaleDateString('sv-SE')), nowStamp())) {
     const i = idxOf(dayOf(stamp) ?? '')
     if (i >= 0) completed[i] += 1
@@ -107,7 +106,7 @@ export function reviewStats(weeks = 12, days = 7): ReviewStats {
     if (i >= 0) notes[i] += 1
   }
 
-  // 热力图：近 weeks 周，[weeks][7]；start 对齐到周一列（与 Python 的 offset 一致）
+  // 热力图：近 weeks 周，[weeks][7]；start 对齐到周一列
   const todayDate = new Date(`${today}T00:00:00Z`)
   const weekday0 = (todayDate.getUTCDay() + 6) % 7 // 周一=0
   const gridStart = new Date(todayDate)
@@ -164,7 +163,7 @@ export function reviewStats(weeks = 12, days = 7): ReviewStats {
     { name: '织网者', desc: '建立 5 条双向链接', unlocked: linkCount >= 5 },
   ]
 
-  // 标签分布：任务标签 + 笔记标签合并计数（对齐 TagRepository.distribution）
+  // 标签分布：任务标签 + 笔记标签合并计数
   const dist = new Map<string, { color: string; count: number }>()
   const tagRows = c
     .prepare(

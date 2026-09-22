@@ -75,6 +75,128 @@
   gap: var(--space-3);
   align-items: stretch;
 }
+/* 清单栏：分组、各清单的未完成计数，底部固定「已完成 / 已放弃」两个终态入口 */
+.tasklists {
+  flex: 0 0 208px;
+  width: 208px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.tasklists__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  font-size: var(--text-aux);
+  color: var(--fg-secondary);
+}
+.tasklists__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 var(--space-1) var(--space-2);
+}
+.tasklists__foot {
+  padding: var(--space-1) var(--space-1) var(--space-2);
+  border-top: var(--border-w) solid var(--border);
+}
+.tasklists__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding-right: var(--space-1);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-body);
+  color: var(--fg-primary);
+  cursor: pointer;
+  user-select: none;
+}
+.tasklists__row:hover {
+  background: var(--bg-hover);
+}
+/* 选中项用强调色的淡底 + 强调色文字：一眼能看出「现在看的是哪个清单」 */
+.tasklists__row--on,
+.tasklists__row--on:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.tasklists__row--group {
+  color: var(--fg-secondary);
+  font-weight: 500;
+}
+.tasklists__icon {
+  flex: 0 0 auto;
+  color: var(--fg-tertiary);
+}
+.tasklists__row--on .tasklists__icon {
+  color: var(--accent);
+}
+.tasklists__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tasklists__count {
+  font-size: 11px;
+  color: var(--fg-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+/* 行内操作只在悬浮 / 键盘聚焦时出现，否则整栏都是小图标 */
+.tasklists__more {
+  opacity: 0;
+}
+.tasklists__row:hover .tasklists__more,
+.tasklists__more:focus-visible {
+  opacity: 1;
+}
+.tasklists__hint {
+  margin: 2px 0 6px;
+  font-size: var(--text-aux);
+}
+/* 第二段：智能清单。与上面的清单树分块，中间一条分隔线 */
+.tasklists__section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 42%;
+  border-top: var(--border-w) solid var(--border);
+}
+.tasklists__head--sub {
+  padding-top: var(--space-1);
+}
+.tasklists__body--sub {
+  flex: 1;
+  min-height: 0;
+}
+/* 拖拽：正在拖的行变淡；落点画插入线；拖进分组时整行高亮（虚线框） */
+.tasklists__row[draggable='true'] {
+  cursor: grab;
+}
+.tasklists__row--dragging {
+  opacity: 0.4;
+}
+.tasklists__row--drop-before {
+  box-shadow: inset 0 2px 0 0 var(--accent);
+}
+.tasklists__row--drop-after {
+  box-shadow: inset 0 -2px 0 0 var(--accent);
+}
+.tasklists__row--drop-inside {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  outline: var(--border-w) dashed var(--accent);
+  outline-offset: -2px;
+}
+
 .tasks-main {
   display: flex;
   flex-direction: column;
@@ -292,8 +414,50 @@
 .chip--streak {
   color: var(--accent-warm);
 }
+/* 标签胶囊：底色与文字色由行内 style 给出（颜色是用户自选的），
+   这里只负责形状、按钮手感与最小尺寸 —— 不能再在这里写死 background */
 .chip--tag {
+  border-color: currentColor;
+  font-weight: 500;
+}
+button.chip--tag {
+  cursor: pointer;
+  font: inherit;
+}
+button.chip--tag:hover {
+  filter: brightness(1.12);
+}
+button.chip--tag:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 1px;
+}
+/* 笔记树里的小号胶囊：只占一行高度的一点点 */
+.chip--tag--mini {
+  padding: 0 5px;
+  font-size: 10px;
+  line-height: 15px;
+  border-radius: var(--radius-pill);
+}
+/* 「加标签」是个描边按钮，不该长得像一枚已有标签 */
+.chip--tag-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--fg-secondary);
   background: transparent;
+  border-color: var(--border);
+  cursor: pointer;
+}
+.chip--tag-add:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+/* 终态视图里标出「原来属于哪个清单」 */
+.chip--list {
+  color: var(--fg-tertiary);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 状态胶囊：五种状态五种颜色。
@@ -368,6 +532,140 @@ button.chip--status:focus-visible {
   width: 8px;
   height: 8px;
   border-radius: var(--radius-pill);
+}
+
+/* 标签弹层：勾选已有标签 + 就地改色 + 新建（任务页与笔记页共用同一个组件） */
+.tagmenu {
+  position: fixed;
+  z-index: var(--z-menu);
+  width: 240px;
+  max-height: 72vh;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-2);
+  gap: var(--space-2);
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  animation: toast-in var(--dur-fast) var(--ease-enter);
+}
+.tagmenu__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--text-aux);
+  color: var(--fg-secondary);
+}
+.tagmenu__back {
+  padding: 0 4px;
+}
+.tagmenu__list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tagmenu__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tagmenu__swatch {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+.tagmenu__swatch:hover {
+  transform: scale(1.12);
+}
+.tagmenu__name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--control-h-sm);
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+  color: var(--fg-primary);
+  text-align: left;
+  cursor: pointer;
+}
+.tagmenu__name:hover {
+  background: var(--bg-hover);
+}
+.tagmenu__tick {
+  flex: 0 0 auto;
+  width: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-text);
+}
+.tagmenu__chip {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 7px;
+  font-size: 11px;
+  line-height: 16px;
+  border-radius: var(--radius-pill);
+}
+.tagmenu__empty {
+  padding: 4px;
+}
+.tagmenu__colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: var(--space-1);
+  border-top: var(--border-w) solid var(--border);
+}
+.tagmenu__color {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+.tagmenu__color--on {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 1px;
+}
+/* 取色器：原生 input 长得不像色块，用外壳统一成圆点，input 透明覆盖在上面 */
+.tagmenu__custom {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  border: var(--border-w) dashed var(--border);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  cursor: pointer;
+  background: conic-gradient(from 0deg, #ef4444, #f59e0b, #22c55e, #06b6d4, #6366f1, #d946ef, #ef4444);
+}
+.tagmenu__custom input[type='color'] {
+  position: absolute;
+  inset: -4px;
+  width: calc(100% + 8px);
+  height: calc(100% + 8px);
+  padding: 0;
+  border: none;
+  opacity: 0;
+  cursor: pointer;
+}
+.tagmenu__foot {
+  padding-top: var(--space-1);
+  border-top: var(--border-w) solid var(--border);
 }
 
 /* 时刻选择器：一个长得像输入框的按钮（.field 负责边框 / 背景 / 高度） */
@@ -906,7 +1204,7 @@ button.chip--status:focus-visible {
   flex: 0 0 auto;
   margin-top: 3px;
 }
-/* 关联笔记段落（T3）：一行 = 笔记按钮 + block_key/摘要 + 解除按钮 */
+/* 关联笔记段落：一行 = 笔记按钮 + block_key/摘要 + 解除按钮 */
 .ctx-list {
   list-style: none;
   margin: 0;

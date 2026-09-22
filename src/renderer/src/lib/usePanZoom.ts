@@ -168,7 +168,7 @@ export function usePanZoom({ baseW, baseH, onMove, onEnd }: PanZoomOptions): Pan
 
   const reset = useCallback(() => setView(fitView(baseW, baseH)), [baseW, baseH])
 
-  /** G7：镜头飞入 —— 只改中心，不动缩放（搜索命中节点时用）。 */
+  /** 镜头飞入 —— 只改中心，不动缩放（搜索命中节点时用）。 */
   const centerOn = useCallback((worldX: number, worldY: number) => {
     setView((v) => centerView(v, worldX, worldY))
   }, [])

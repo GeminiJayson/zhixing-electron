@@ -14,7 +14,7 @@ import { PopMenu, type PopMenuItem } from './components/PopMenu'
 import { useDialog } from './components/Dialogs'
 
 /**
- * 边缘缩放命中带（S17）。取 4px 与 .widget 的 padding 等宽：
+ * 边缘缩放命中带。取 4px 与 .widget 的 padding 等宽：
  * 卡片（.widget__card）带 -webkit-app-region: drag，落在卡片上的 mousedown 会被
  * 窗口拖拽吞掉；只有这圈透明外边距上的按下才会作为普通事件到达这里。
  */
@@ -25,7 +25,7 @@ const RESIZE_MARGIN = 4
  * 顶部快速输入 + 今日待办（含子树）+ 底部「打开主程序」。
  * 与主窗口共用同一份数据层，勾选/新增都直接落库。
  *
- * 与 Python desktop_widget 对齐的浮窗能力（S17/S18）：边缘缩放、优先级 / 标签
+ * 浮窗能力：边缘缩放、优先级 / 标签
  * 就地编辑、删除可撤销、hover 展示关联段落 snippet。
  */
 export function WidgetApp() {
@@ -52,9 +52,9 @@ export function WidgetApp() {
   const [tagMenu, setTagMenu] = useState<{ id: number; anchor: HTMLElement } | null>(null)
   /** 任务 → 标签名（标签菜单用） */
   const [tagNames, setTagNames] = useState<Map<number, string[]>>(new Map())
-  /** hover 展示的关联段落 snippet（对齐 desktop_widget._snippet_for_task） */
+  /** hover 展示的关联段落 snippet */
   const [snippet, setSnippet] = useState<{ id: number; text: string } | null>(null)
-  /** 浮窗内的删除撤销（对齐 desktop_widget 的删除可撤销） */
+  /** 浮窗内的删除撤销 */
   const [undo, setUndo] = useState<{ id: number; title: string } | null>(null)
 
   const load = useCallback(async () => {
@@ -77,7 +77,7 @@ export function WidgetApp() {
     if (mode === 'ball') return
     void load()
     // 主窗口改了数据后，浮窗下一次轮询即同步（跨窗口没有共享状态，靠轮询最省心）；
-    // 主窗隐藏时主进程会推一次 widget-refresh，避免先看到过期列表（S16）
+    // 主窗隐藏时主进程会推一次 widget-refresh，避免先看到过期列表
     const timer = window.setInterval(() => void load(), 5000)
     return () => window.clearInterval(timer)
   }, [load, mode])
@@ -106,7 +106,7 @@ export function WidgetApp() {
    */
   useEffect(() => window.zhixing.widget.onNotice(setReminderCount), [])
 
-  // 主进程的显隐联动会推 widget-refresh（对齐 _on_main_hidden 里的 widget.reload_tasks）
+  // 主进程的显隐联动会推 widget-refresh
   // 依赖是 [load]，load 一变就会重注册 —— 不接住取消函数就会持续叠层
   useEffect(
     () =>
@@ -133,8 +133,8 @@ export function WidgetApp() {
   }, [])
 
   /**
-   * 边缘缩放（S17）：命中四边 4px 内时切换光标样式，按下后交给主进程按屏幕光标
-   * 位移重算尺寸（对齐 desktop_widget 的 _resize_hit / _apply_resize / 光标反馈）。
+   * 边缘缩放：命中四边 4px 内时切换光标样式，按下后交给主进程按屏幕光标
+   * 位移重算尺寸。
    * 用捕获阶段监听，确保先于卡片内部的交互拿到事件。
    */
   useEffect(() => {
@@ -225,7 +225,7 @@ export function WidgetApp() {
     await load()
   }
 
-  /** 「改优先级」就地生效（对齐 desktop_widget._edit_priority → task_service.update） */
+  /** 「改优先级」就地生效 */
   const pickPriority = async (id: number, value: number): Promise<void> => {
     await window.zhixing.db.setPriority(id, value)
     await load()
@@ -237,7 +237,7 @@ export function WidgetApp() {
     await load()
   }
 
-  /** 标签菜单项：移除已有标签 / 添加新标签（对齐 _edit_tags / _remove_tag / _prompt_add_tag） */
+  /** 标签菜单项：移除已有标签 / 添加新标签 */
   const tagItems = (id: number): PopMenuItem[] => {
     const current = tagNames.get(id) ?? []
     const items: PopMenuItem[] = current.map((name) => ({
@@ -267,7 +267,7 @@ export function WidgetApp() {
     return items
   }
 
-  /** 删除走浮窗内撤销（对齐 desktop_widget：删除可撤销） */
+  /** 删除走浮窗内撤销 */
   const removeTask = async (id: number, title: string): Promise<void> => {
     const confirmed = await dialog.confirm({
       title: '删除任务',
@@ -290,7 +290,7 @@ export function WidgetApp() {
   }
 
   /**
-   * hover 展示关联段落 snippet（对齐 desktop_widget._snippet_for_task）：
+   * hover 展示关联段落 snippet：
    * 取该任务第一条 task_note_context 的引文，折叠空白后截断。
    */
   const showSnippet = async (id: number): Promise<void> => {

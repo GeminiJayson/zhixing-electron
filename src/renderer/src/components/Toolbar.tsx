@@ -13,7 +13,7 @@
  *   page   页面级：两层（第一层标题 + 主操作）
  *   panel  面板级：只有第二层 —— 侧栏、编辑器这类「没有页面标题的工具条」用
  *
- * 约定：样式里控件高度一律取 --control-h 家族（见 docs/03 §2.7、npm run check:ctlheight）。
+ * 约定：样式里控件高度一律取 --control-h 家族（见 docs/03、npm run check:ctlheight）。
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { MoreHorizontal, SlidersHorizontal } from '@renderer/lib/icons'

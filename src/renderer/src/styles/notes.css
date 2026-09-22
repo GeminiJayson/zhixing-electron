@@ -59,7 +59,7 @@
 .ntree__folder:hover {
   background: var(--bg-hover);
 }
-/* 深链定位到的文件夹：短暂高亮（S22） */
+/* 深链定位到的文件夹：短暂高亮 */
 .ntree__folder--on {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
   color: var(--fg-primary);
@@ -112,6 +112,15 @@
   line-height: 1.35;
   font-size: var(--text-body);
 }
+/* 行内标签：标题右侧的小胶囊；标题可以换行，胶囊保持第一行居中 */
+.ntree__tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 auto;
+  max-width: 100px;
+  overflow: hidden;
+}
 /* 行内操作：不悬浮时**不占位**（否则会把右侧的笔记数挤到中间）。
    与任务行 .trow__actions 同一套做法：0 宽 + 透明 + 不收指针事件。 */
 .ntree__actions {
@@ -156,7 +165,7 @@
   gap: var(--space-1);
   padding: 0 0 var(--space-2);
 }
-/* 按钮与搜索框同宽：占满一行，文字居中（整宽按钮左对齐会显得偏） */
+/* 按钮与搜索框同宽：占满一行，文字居中 */
 .ntree__topbar .text-btn {
   width: 100%;
   justify-content: center;
@@ -206,6 +215,24 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+}
+/* 笔记标签条：与上方标题卡片同一视觉语言（同底、同圆角），只是矮得多。
+   点任一胶囊或「加标签」打开标签弹层 —— 增删与改色都在那一处。 */
+.note-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--control-h);
+  padding: var(--space-1) var(--space-4);
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.note-tags .chip {
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
 }
 /* 编辑区的标题与工具栏包在**同一张卡片**里：两者同属「笔记头部」，
    中间不必再画分割线，分区靠留白表达就够。 */
@@ -434,7 +461,7 @@
   word-break: break-word;
 }
 /* diff 行：只用底色区分增删，文字保持 --fg-primary —— 用 success/danger 当正文色
-   在浅底上只有 3.2:1，达不到 R4 的 4.5:1 下限。段头/文件头是结构性标记，走弱化色。 */
+   在浅底上只有 3.2:1，达不到 4.5:1 的对比下限。段头/文件头是结构性标记，走弱化色。 */
 .history__diff-line {
   padding: 0 2px;
   border-radius: 2px;
@@ -613,7 +640,7 @@
 .editor__office-body img {
   max-width: 100%;
 }
-/* Excel 可编辑网格（N-§1.3#5）：单元格是 contentEditable，聚焦要留下可见落点 */
+/* Excel 可编辑网格：单元格是 contentEditable，聚焦要留下可见落点 */
 .xlsx-grid {
   /* 撑满容器宽度：格数少的表只占左边一条、右边全是空，看着就不像「编辑区」 */
   width: 100%;
@@ -627,7 +654,7 @@
 .xlsx-grid td {
   font-variant-numeric: tabular-nums;
 }
-/* CodeMirror 编辑器容器（O9）：滚动交给 .cm-scroller */
+/* CodeMirror 编辑器容器：滚动交给 .cm-scroller */
 .md-editor {
   flex: 1;
   min-height: 0;
@@ -639,7 +666,7 @@
 .md-editor .cm-editor {
   height: 100%;
 }
-/* 富文本编辑器（N4）：工具栏 + contenteditable 正文，外层与 .md-editor 同构 */
+/* 富文本编辑器：工具栏 + contenteditable 正文，外层与 .md-editor 同构 */
 .rt-editor {
   flex: 1;
   min-height: 0;

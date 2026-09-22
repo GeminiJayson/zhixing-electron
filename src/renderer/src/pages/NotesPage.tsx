@@ -1,8 +1,9 @@
 import type { EditorView } from '@codemirror/view'
 import { sanitizeHtml } from '@shared/sanitize-html'
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
-import { ExternalLink, FileText, Morph, IconData, Link2, Plus, Sparkles, Trash2, UserPlus } from '@renderer/lib/icons'
+import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react'
+import { ExternalLink, FileText, Morph, IconData, Link2, Plus, Sparkles, Tag, Trash2, UserPlus } from '@renderer/lib/icons'
+import { inkOn } from '@shared/color'
 import { subscribeDomain } from '@shared/events'
 import { useDialog } from '../components/Dialogs'
 import type { Backlink, Note, NoteFolder, NoteLink } from '@shared/types'
@@ -17,6 +18,7 @@ import { NoteHistory } from '../components/NoteHistory'
 import { NoteTree, type NoteFormat } from '../components/NoteTree'
 import { Toolbar } from '../components/Toolbar'
 import { PopMenu } from '../components/PopMenu'
+import { TagMenu } from '../components/TagMenu'
 
 interface Props {
   onNotice: (message: string) => void
@@ -24,7 +26,10 @@ interface Props {
   initialNoteId?: number | null
 }
 
-/** 自动保存防抖：与 markdown_editor 的自动保存节奏对齐，输入停顿后落库。 */
+/** 笔记标签（与任务共用同一张 tag 表，颜色因此全局一致）。 */
+type NoteTag = { id: number; name: string; color: string }
+
+/** 自动保存防抖：输入停顿后落库。 */
 const AUTOSAVE_MS = 800
 
 /** 链接表格的列宽（与 notes.css 里的 grid 定义保持一致）。 */
@@ -34,7 +39,7 @@ const LINK_OPS_W = 76
 const LINK_SPLIT_MIN = 0.15
 const LINK_SPLIT_MAX = 0.85
 
-/** 五种格式的展示名（对齐 NOTE_FORMAT_LABELS）。 */
+/** 五种格式的展示名。 */
 const FORMAT_LABELS: { value: string; label: string }[] = [
   { value: 'markdown', label: 'Markdown' },
   { value: 'richtext', label: '富文本' },
@@ -59,6 +64,12 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
   /** 新建笔记时使用的格式 */
   const [historyId, setHistoryId] = useState<number | null>(null)
   const [ctxMenu, setCtxMenu] = useState<{ id: number; x: number; y: number } | null>(null)
+  /** 全部标签（任务与笔记共用一套）：标签弹层用它列候选 */
+  const [allTags, setAllTags] = useState<NoteTag[]>([])
+  /** 每篇笔记的标签：左侧树与编辑器都从这里取胶囊 */
+  const [tagsOf, setTagsOf] = useState<Map<number, NoteTag[]>>(new Map())
+  /** 标签弹层的锚点（点胶囊或「加标签」时打开） */
+  const [tagMenu, setTagMenu] = useState<{ x: number; y: number } | null>(null)
   const [templateMenu, setTemplateMenu] = useState<{ x: number; y: number } | null>(null)
   const [templates, setTemplates] = useState<string[]>([])
   const [panel, setPanel] = useState<{ kind: 'orphan' | 'broken'; x: number; y: number } | null>(null)
@@ -70,15 +81,15 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
   const viewRef = useRef<EditorView | null>(null)
   const [panelItems, setPanelItems] = useState<{ key: string; label: string; id: number }[]>([])
   const timer = useRef<number | null>(null)
-  /** 「移动到文件夹…」目标菜单（N-§1.3#9） */
+  /** 「移动到文件夹…」目标菜单 */
   const [moveMenu, setMoveMenu] = useState<{ noteId: number; x: number; y: number } | null>(null)
-  /** 「归属」动作菜单（N-§1.3#8）：关联任务 / 移动到文件夹 */
+  /** 「归属」动作菜单：关联任务 / 移动到文件夹 */
   const [attachMenu, setAttachMenu] = useState<{ x: number; y: number } | null>(null)
   /** 归属选择器：候选任务列表 */
   const [taskPick, setTaskPick] = useState<{ x: number; y: number; items: { id: number; title: string }[] } | null>(null)
   /** 本笔记归属的任务（链接面板「归属」分组） */
   const [attachedTasks, setAttachedTasks] = useState<{ id: number; title: string }[]>([])
-  /** Word/Excel 可编辑内容（N-§1.3#5） */
+  /** Word/Excel 可编辑内容 */
   const [officeEdit, setOfficeEdit] = useState<{ kind: string; html: string; rows: string[][]; message: string } | null>(null)
   const [excelRows, setExcelRows] = useState<string[][]>([])
   /** AI 整理进行中（请求可能跑几十秒，期间按钮要禁用并给出文案） */
@@ -149,9 +160,27 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
 
   const isOffice = current?.format === 'word' || current?.format === 'excel'
 
+  /**
+   * 标签：一次取「全部标签 + 每篇笔记挂的标签」。
+   *
+   * 颜色写在共用的 tag 表里，所以这里读到的色值同时决定任务页胶囊与笔记胶囊的颜色；
+   * 改色之后也是重新走这个函数对齐两份状态。
+   */
+  const loadNoteTags = useCallback(async (): Promise<void> => {
+    const [tg, nt] = await Promise.all([window.zhixing.db.tags(), window.zhixing.db.noteTags()])
+    setAllTags(tg)
+    const map = new Map<number, NoteTag[]>()
+    for (const r of nt) {
+      const list = map.get(r.note_id) ?? []
+      list.push({ id: r.id, name: r.name, color: r.color })
+      map.set(r.note_id, list)
+    }
+    setTagsOf(map)
+  }, [])
+
   const load = useCallback(async () => {
     const fs0 = await window.zhixing.db.noteFolders()
-    // N-§1.3#13：文件夹为空时补默认文件夹（对齐 note_page._reload_tree）
+    // 文件夹为空时补默认文件夹
     if (fs0.length === 0) {
       await window.zhixing.db.ensureDefaultFolder()
     }
@@ -161,7 +190,8 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
     ])
     setNotes(rows)
     setFolders(fs)
-  }, [])
+    await loadNoteTags()
+  }, [loadNoteTags])
 
   useEffect(() => {
     void load()
@@ -226,14 +256,16 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
   }, [current])
 
   // 别的页面改了笔记（新建/删除/改标题）会影响反链；这里只更新反链与归属，
-  // 不重载正文 —— 当前笔记可能正在编辑，整篇重载会覆盖输入（O3）。
+  // 不重载正文 —— 当前笔记可能正在编辑，整篇重载会覆盖输入。
   useEffect(() => {
     if (selectedId == null) return
     return subscribeDomain(['note'], () => {
       void window.zhixing.db.backlinks(selectedId).then(setBacklinks)
       void window.zhixing.db.noteAttachedTasks(selectedId).then(setAttachedTasks)
+      // 标签是 note 域的数据（note_tag）：别的页面改了标签颜色 / 关联，这里要跟着换
+      void loadNoteTags()
     })
-  }, [selectedId])
+  }, [selectedId, loadNoteTags])
 
   /** 已解析标题表：驱动 [[标题]] 的链接化（未命中的即悬空）。 */
   const resolved = useMemo(() => new Map(notes.map((n) => [n.title, n.id])), [notes])
@@ -254,7 +286,7 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
    *
    * 装载 effect 会把 dirty 重置为 false，自动保存 effect 随即清掉排队中的定时器
    * （NotesPage.tsx 自动保存 effect 的 cleanup），于是切换前 <800ms 的输入会被
-   * 静默丢弃。Python 侧由 note_page._commit_current_editor 兜底，这里补齐。
+   * 静默丢弃。这里补齐。
    */
   const flushPending = useCallback(async (): Promise<void> => {
     if (!current || !dirty) return
@@ -436,8 +468,8 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
     [flushPending]
   )
 
-  // N1：关窗/刷新前也把未落盘的编辑冲出去（Python 由窗口关闭流程 commit 编辑器，
-  // 之前只有「切笔记」8 个入口会 flush，直接关窗会丢最后 <800ms 的输入）。
+  // 关窗/刷新前也把未落盘的编辑冲出去：
+  // 之前只有「切笔记」8 个入口会 flush，直接关窗会丢最后 <800ms 的输入。
   useEffect(() => {
     const onBeforeUnload = (): void => {
       if (!current || !dirty) return
@@ -506,12 +538,12 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
   }
   useEffect(() => () => flushOnUnmount.current(), [])
 
-  /** 在正文里找下一个匹配并选中（循环；对齐 Python _find_next）。 */
+  /** 在正文里找下一个匹配并选中。 */
   const findNext = useCallback((): void => {
     const needle = findText
     if (!needle) return
     if (current?.format === 'richtext') {
-      // 富文本用浏览器原生查找（对齐 Python 对 QTextEdit 的 find 支持）；
+      // 富文本用浏览器原生查找；
       // window.find 未进 TS 标准库，这里显式声明
       const w = window as Window & {
         find?: (text: string, caseSensitive?: boolean, backwards?: boolean, wrap?: boolean) => boolean
@@ -536,7 +568,7 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
     view.focus()
   }, [current, findText, onNotice])
 
-  /** 查找下一处并替换（循环；对齐 Python _replace）。 */
+  /** 查找下一处并替换。 */
   const replaceNext = useCallback((): void => {
     const view = viewRef.current
     const needle = findText
@@ -562,9 +594,9 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
   }, [content, findText, replaceText, onNotice])
 
   /**
-   * 新建笔记（对齐 note_create_dialog + app_controller._prompt_create_note）：
+   * 新建笔记：
    * 类型由左栏选择；Word/Excel/链接 额外问一次目标（文件路径或 URL），
-   * Word/Excel 留空时自动生成空白文件（N3）。
+   * Word/Excel 留空时自动生成空白文件。
    */
   const handleCreateNote = useCallback(
     async (folderId: number | null, createFormat: NoteFormat): Promise<void> => {
@@ -604,7 +636,7 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
     [flushPending, dialog, load, onNotice]
   )
 
-  // 应用内快捷键由 App 统一监听，页面只负责自己的动作（对齐 note_page 的 toggle_preview / 查找）
+  // 应用内快捷键由 App 统一监听，页面只负责自己的动作
   useEffect(() => {
     const onNew = (): void => void handleCreateNote(null, 'markdown')
     const onPreview = (): void => setPreview((p) => !p)
@@ -619,7 +651,7 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
     }
   }, [handleCreateNote])
 
-  /** 点击悬空 [[标题]]：按标题新建并绑定该引用（对齐 materialize_dangling）。 */
+  /** 点击悬空 [[标题]]：按标题新建并绑定该引用。 */
   const handleCreateFromLink = async (linkTitle: string): Promise<void> => {
     if (selectedId == null) return
     const dst = await window.zhixing.db.materializeDangling(selectedId, linkTitle)
@@ -630,7 +662,7 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
     await selectNote(dst)
   }
 
-  /** 主动建引用（对齐 note_page._prompt_reference → add_reference_link）。 */
+  /** 主动建引用。 */
   const handleAddReference = async (): Promise<void> => {
     if (selectedId == null) return
     const target = await dialog.prompt({
@@ -655,7 +687,7 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
     setOutLinks(await window.zhixing.db.outLinks(selectedId))
   }
 
-  /** 归属到任务（对齐 note_page 的 attach_note_to_task → task_note_link）。 */
+  /** 归属到任务。 */
   const handleAttachTask = async (taskId: number, taskTitle: string): Promise<void> => {
     if (selectedId == null) return
     const added = await window.zhixing.db.attachTaskNote(taskId, selectedId)
@@ -686,7 +718,7 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
     await openTaskPick(info.x, info.y)
   }
 
-  /** 把右键选中的那一段挂到任务上（对齐 attachBlock）。 */
+  /** 把右键选中的那一段挂到任务上。 */
   const handleAttachBlock = async (taskId: number, taskTitle: string): Promise<void> => {
     if (selectedId == null || !blockDraft) return
     const res = await window.zhixing.db.attachBlock(
@@ -700,13 +732,13 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
     onNotice(res ? `已把这段文字关联到「${taskTitle}」` : '关联失败或已存在')
   }
 
-  /** 打开任务候选选择器（对齐 TaskRepository.candidates）。 */
+  /** 打开任务候选选择器。 */
   const openTaskPick = async (x: number, y: number, q = ''): Promise<void> => {
     const items = await window.zhixing.db.noteTaskCandidates(q)
     setTaskPick({ x, y, items })
   }
 
-  /** 移动到文件夹（对齐 note_service.attach_note_to_folder）。 */
+  /** 移动到文件夹。 */
   const handleMoveNote = async (noteId: number, folderId: number | null): Promise<void> => {
     const saved = await window.zhixing.db.saveNote(noteId, { folder_id: folderId })
     const name = folderId == null ? '全部笔记' : folders.find((f) => f.id === folderId)?.name ?? ''
@@ -721,7 +753,7 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
     await load()
   }
 
-  /** 重命名文件夹（对齐 note_page._rename_folder_dialog）。 */
+  /** 重命名文件夹。 */
   const handleRenameFolder = async (id: number, currentName: string): Promise<void> => {
     const name = await dialog.prompt({ title: '重命名文件夹', label: '文件夹名称', defaultValue: currentName })
     if (!name?.trim()) return
@@ -730,7 +762,7 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
     onNotice('已重命名文件夹')
   }
 
-  /** 删除文件夹（对齐 note_page._delete_folder：笔记不删，只回落「全部笔记」）。 */
+  /** 删除文件夹。 */
   const handleDeleteFolder = async (id: number): Promise<void> => {
     const ok = await dialog.confirm({
       title: '删除文件夹',
@@ -744,7 +776,7 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
     onNotice('已删除文件夹（笔记已移回全部笔记）')
   }
 
-  /** 移动文件夹到新父级（对齐 note_service.move_folder 的环校验）。 */
+  /** 移动文件夹到新父级。 */
   const handleMoveFolder = async (id: number, parentId: number | null): Promise<void> => {
     const res = await window.zhixing.db.moveNoteFolder(id, parentId)
     if (!res) {
@@ -777,7 +809,7 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
     onNotice('已删除（可在回收站恢复）')
   }
 
-  /** 改笔记格式（N3：saveNote.format 入口）。 */
+  /** 改笔记格式（saveNote.format 入口）。 */
   const handleChangeFormat = async (format: string): Promise<void> => {
     if (!current) return
     const saved = await window.zhixing.db.saveNote(current.id, { format })
@@ -788,7 +820,7 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
     await load()
   }
 
-  /** 选文转任务（N-§1.3#10）：建任务、备注带回源引用，blockKey 非空时落段落锚。 */
+  /** 选文转任务：建任务、备注带回源引用，blockKey 非空时落段落锚。 */
   const handleCreateTaskFromSelection = async (text: string, blockKey: string | null): Promise<void> => {
     if (!current || !text.trim()) return
     const quote = text.trim()
@@ -805,7 +837,7 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
     onNotice(blockKey ? `已创建任务「${taskTitle}」并关联本段` : `已创建任务「${taskTitle}」`)
   }
 
-  /** Word 写回（对齐 WordEditView.commit）。 */
+  /** Word 写回。 */
   const commitWord = useCallback(
     async (html: string) => {
       if (!current || current.format !== 'word') return
@@ -815,7 +847,7 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
     [current, onNotice]
   )
 
-  /** Excel 写回（对齐 ExcelEditView.commit，1s 防抖）。 */
+  /** Excel 写回。 */
   const scheduleExcelSave = useCallback(
     (rows: string[][]) => {
       if (!current || current.format !== 'excel') return
@@ -830,7 +862,7 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
   )
 
   /**
-   * 段落锚定位（对齐 note_page.locate_in_note）：任务/图谱/深链想跳到笔记的某一段时
+   * 段落锚定位：任务/图谱/深链想跳到笔记的某一段时
    * 派发 `zhixing:locate-note-block` 事件，本页负责切笔记并滚动高亮该段。
    */
   const locateBlock = useCallback((blockKey: string): void => {
@@ -854,7 +886,7 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
     return () => window.removeEventListener('zhixing:locate-note-block', onLocate)
   }, [locateBlock, selectNote, selectedId])
 
-  // N-§1.3#10 后半：深链段落定位。主进程把 block 一并下发（preload onDeepLink），
+  // 深链段落定位。主进程把 block 一并下发（preload onDeepLink），
   // 这里独立消费，不必改 App.tsx 的跨页路由。
   const locateRef = useRef(locateBlock)
   locateRef.current = locateBlock
@@ -870,6 +902,58 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
       }),
     []
   )
+
+  /** 当前笔记的标签胶囊 */
+  const currentTags = useMemo(
+    () => (current ? tagsOf.get(current.id) ?? [] : []),
+    [current, tagsOf]
+  )
+
+  const openTagMenu = (e: ReactMouseEvent): void => {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    setTagMenu({ x: r.left, y: r.bottom + 4 })
+  }
+
+  /**
+   * 笔记标签与任务标签共用一套：覆盖式写回（清空后重插），标签不存在时按名新建，
+   * 与任务侧 handleToggleTag 同一套语义 —— 于是「标签管理」里的重命名 / 合并 / 删除
+   * 自动同时作用于任务与笔记。
+   */
+  const handleToggleNoteTag = async (tag: NoteTag): Promise<void> => {
+    if (!current) return
+    const cur = (tagsOf.get(current.id) ?? []).map((x) => x.name)
+    const next = cur.includes(tag.name) ? cur.filter((n) => n !== tag.name) : [...cur, tag.name]
+    await window.zhixing.db.setNoteTags(current.id, next)
+    await loadNoteTags()
+  }
+
+  const handleCreateNoteTag = async (): Promise<void> => {
+    if (!current) return
+    const name = await dialog.prompt({ title: '新建标签', label: '标签名称（可逗号分隔多个）' })
+    if (!name?.trim()) return
+    const added = name
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    if (added.length === 0) return
+    const cur = (tagsOf.get(current.id) ?? []).map((x) => x.name)
+    await window.zhixing.db.setNoteTags(current.id, [...cur, ...added])
+    await loadNoteTags()
+    onNotice('已添加标签')
+  }
+
+  /** 改标签颜色：取色器拖动会连续触发，所以先乐观更新本地两份状态，再把色值写库 */
+  const handleSetTagColor = async (id: number, color: string): Promise<void> => {
+    setAllTags((prev) => prev.map((x) => (x.id === id ? { ...x, color } : x)))
+    setTagsOf((prev) => {
+      const next = new Map<number, NoteTag[]>()
+      for (const [k, list] of prev) {
+        next.set(k, list.map((x) => (x.id === id ? { ...x, color } : x)))
+      }
+      return next
+    })
+    await window.zhixing.db.setTagColor(id, color)
+  }
 
   const dangling = outLinks.filter((l) => l.dst_note_id == null)
 
@@ -891,6 +975,7 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
           onTogglePin={(id, pinned) => void handleTogglePin(id, pinned)}
           onDeleteNote={(id) => void handleDelete(id)}
           onContextMenuNote={(id, x, y) => setCtxMenu({ id, x, y })}
+          tagsOf={(id) => tagsOf.get(id) ?? []}
           onRenameFolder={(id, name) => void handleRenameFolder(id, name)}
           onDeleteFolder={(id) => void handleDeleteFolder(id)}
           onMoveFolder={(id, parentId) => void handleMoveFolder(id, parentId)}
@@ -1016,8 +1101,32 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
                   ]}
                 />
 
+              {/* 标签胶囊：点任一胶囊或「加标签」打开弹层，勾选与改色都在那一处 */}
+              <div className="note-tags" aria-label="笔记标签">
+                {currentTags.map((tg) => (
+                  <button
+                    key={tg.id}
+                    type="button"
+                    className="chip chip--tag"
+                    style={{ background: tg.color, borderColor: tg.color, color: inkOn(tg.color) }}
+                    title="点击增删标签或改颜色"
+                    onClick={openTagMenu}
+                  >
+                    {tg.name}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className="chip chip--tag-add"
+                  title="添加 / 编辑标签"
+                  onClick={openTagMenu}
+                >
+                  <Tag size={12} /> {currentTags.length === 0 ? '加标签' : '标签'}
+                </button>
+              </div>
+
               {current.format === 'link' ? (
-                // 链接笔记：content_md 存 [{title,target}] JSON（兼容 Python 版写法与裸 URL）。
+                // 链接笔记：content_md 存 [{title,target}] JSON。
                 // 这里是**可编辑**的多链接列表 —— 「一条笔记多条链接、每条带标题」正是这个格式的用处，
                 // AI 整理会按标题把每条链接归纳到对应的链接笔记（没有就新建）。
                 ((items: NoteLinkItem[]) => (
@@ -1123,7 +1232,7 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
                   </div>
                 ))(linkDraft ?? parseLinkItems(content))
               ) : isOffice ? (
-                // N-§1.3#5：Word/Excel 直接可编辑并自动写回原文件
+                // Word/Excel 直接可编辑并自动写回原文件
                 <div className="editor__office">
                   <div className="editor__office-head">
                     <span className="u-aux">
@@ -1329,7 +1438,7 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
                 )
               )}
             </section>
-            {/* N-§1.3#8：归属分组（任务关联 + 所在文件夹） */}
+            {/* 归属分组（任务关联 + 所在文件夹） */}
             <section className="links__card">
               <header className="links__head">
                 归属 · {attachedTasks.length + (current.folder_id ? 1 : 0)}
@@ -1359,6 +1468,20 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
         </div>
       </div>
       </div>
+
+      {tagMenu && current && (
+        <TagMenu
+          x={tagMenu.x}
+          y={tagMenu.y}
+          title="笔记标签"
+          tags={allTags}
+          selectedIds={currentTags.map((t) => t.id)}
+          onToggle={(t) => void handleToggleNoteTag(t)}
+          onCreate={() => void handleCreateNoteTag()}
+          onColor={(id, color) => void handleSetTagColor(id, color)}
+          onClose={() => setTagMenu(null)}
+        />
+      )}
 
       {ctxMenu && (
         <PopMenu

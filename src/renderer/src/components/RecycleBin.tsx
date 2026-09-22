@@ -146,7 +146,7 @@ export function RecycleBin({ onNotice, onChanged, onClose }: Props) {
               className="text-btn text-btn--danger"
               disabled={items.length === 0}
               onClick={() => {
-                // 对齐 recycle_bin 的「清空」：任务/笔记/闪念三类一起清（此前只清当前 Tab）
+                // 清空回收站：任务/笔记/闪念三类一起清（此前只清当前 Tab）
                 void (async () => {
                   const confirmed = await dialog.confirm({
                     title: '清空回收站',

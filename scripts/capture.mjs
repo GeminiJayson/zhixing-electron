@@ -27,7 +27,7 @@ const PORT = 9223
  * 库也要隔离。
  *
  * 这个脚本刻意要「真实数据」的截图，但**没有理由动真实库**：阶段 1 会把 theme_mode
- * 写进 settings 表，而那是用户的真实数据（还与 Python 版共用）。以前它没设 ZHIXING_HOME，
+ * 写进 settings 表，而那是用户的真实数据。以前它没设 ZHIXING_HOME，
  * 于是跑一次截图就把用户的主题改掉了。
  * 复制一份副本、把 ZHIXING_HOME 指过去 —— 截图看到的是同一份数据，改的却是副本。
  */
@@ -105,7 +105,7 @@ if (!firstConn) {
   process.exit(1)
 }
 await firstConn.waitForRender()
-// 主题的真源是 settings 表（与 Python 版共用），localStorage 仅作快速缓存
+// 主题的真源是 settings 表，localStorage 仅作快速缓存
 await firstConn.evaluate(`window.zhixing.db.setSetting('theme_mode', '${theme}')`)
 await firstConn.evaluate(`localStorage.setItem('zhixing.theme', '${theme}')`)
 await sleep(400)

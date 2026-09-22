@@ -47,9 +47,9 @@ export interface AppSettings {
   widget_opacity: number
   widget_click_through: boolean
   widget_hotkey: string
-  /** 关闭主窗口时最小化到托盘/浮窗而不是退出（对齐 Python 的 close_to_widget） */
+  /** 关闭主窗口时最小化到托盘/浮窗而不是退出 */
   close_to_widget: boolean
-  /** 开机自启（对齐 autostart） */
+  /** 开机自启 */
   autostart_enabled: boolean
   /** 剪贴板监听：复制后提示可快速捕获 */
   clipboard_monitor: boolean
@@ -122,13 +122,11 @@ const MOTION_LEVELS = ['full', 'essential', 'none'] as const
 /** 原始设置表 → 类型化设置。所有默认值与取值范围都集中在这里。 */
 export function parseSettings(raw: Record<string, string> = {}): AppSettings {
   return {
-    // theme_mode 与 Python 一致地支持 system；非法值回退到 Python 的默认 system。
+    // theme_mode 支持 system；非法值回退到默认 system。
     theme_mode: raw.theme_mode === 'dark' ? 'dark' : raw.theme_mode === 'light' ? 'light' : 'system',
     theme_pack: str(raw.theme_pack, '青竹'),
     accent_color: str(raw.accent_color, '#0D9488'),
-    // 默认值与范围逐项对齐 Python：core/constants.py 的 FONT_SIZE_/CONTROL_HEIGHT_ 常量
-    // 与 settings_page.py 的 setRange。两版共用同一张 settings 表，默认值不一致会让
-    // 来回切换客户端时行为跳变。
+    // 默认值与范围随共用的 settings 表；默认值不一致会让来回切换客户端时行为跳变。
     font_size: num(raw.font_size, 14, 9, 20),
     task_row_height: num(raw.task_row_height, 38, 24, 72),
     task_indent: num(raw.task_indent, 20, 8, 48),
@@ -157,7 +155,7 @@ export function parseSettings(raw: Record<string, string> = {}): AppSettings {
     autostart_enabled: bool(raw.autostart_enabled, false),
     clipboard_monitor: bool(raw.clipboard_monitor, false),
     select_quick_hotkey: str(raw.select_quick_hotkey, 'ctrl+shift+u'),
-    // 本应用私有键，不进 DEFAULT_SETTINGS（那是与 Python 共用的默认集合）
+    // 本应用私有键，不进 DEFAULT_SETTINGS
     flash_quick_hotkey: str(raw.flash_quick_hotkey, 'ctrl+shift+f'),
     signature: str(raw.signature, '知行合一'),
     widget_hotkey: str(raw.widget_hotkey, 'ctrl+shift+d'),
@@ -165,7 +163,7 @@ export function parseSettings(raw: Record<string, string> = {}): AppSettings {
     capture_hotkey: str(raw.capture_hotkey, 'ctrl+shift+s'),
     ui_state: str(raw.ui_state, '{}'),
     // AI 整理：默认「没配」——地址/Key/模型都留空，界面据此提示先去设置里填。
-    // 这几项不进 DEFAULT_SETTINGS：它们是本应用私有的键，没必要写进与 Python 共用的默认集合。
+    // 这几项不进 DEFAULT_SETTINGS：它们是本应用私有的键，没必要写进共用的默认集合。
     ai_base_url: (raw.ai_base_url ?? '').trim(),
     ai_api_key: (raw.ai_api_key ?? '').trim(),
     ai_protocol: normalizeAiProtocol(raw.ai_protocol),
@@ -194,8 +192,7 @@ function numOrNull(raw: string | undefined): number | null {
 }
 
 /**
- * 启动时写入 settings 表的默认值，逐项对齐 Python 的 ensure_defaults
- * （zhixing/model/application/settings.py:77-95）。
+ * 启动时写入 settings 表的默认值。
  *
  * 此前 Electron 只在内存里回退默认值、从不落库，于是同一个库被两个客户端
  * 先后打开时会各自回退到不同默认（主题包、字号、行高、自动休息、捕获热键），

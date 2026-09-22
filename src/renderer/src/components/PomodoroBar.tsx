@@ -19,20 +19,20 @@ interface Session {
   running: boolean
 }
 
-/** 手动中断专注的预设原因（对齐 pomodoro.py 的 _ask_interrupt_reason）。 */
+/** 手动中断专注的预设原因。 */
 const INTERRUPT_REASONS = ['被打断', '临时有事', '分心', '任务调整', '其他']
 
 /**
  * 番茄钟浮条：由任务行的「专注」按钮（派发 zhixing:pomodoro 事件）启动。
  *
- * 记账口径对齐 Python 的 PomodoroController（D18/D20）：
+ * 记账口径：
  * - stop() 不区分阶段：专注与休息只要走过 ≥1 分钟都落库，completed = 是否手动放弃；
  * - 手动中断专注先选原因并写入 reason 列（取消也会记一次，只是不带原因）；
  * - 新的一轮先 stop() 记完上一轮，而不是直接覆盖会话。
  */
 export function PomodoroBar({ focusMinutes, breakMinutes, autoBreak, onNotice }: Props) {
   const [session, setSession] = useState<Session | null>(null)
-  // 专注手动中断时的原因选择（D18）：true 表示正在询问
+  // 专注手动中断时的原因选择：true 表示正在询问
   const [askReason, setAskReason] = useState(false)
   const [customReason, setCustomReason] = useState('')
   const ref = useRef<Session | null>(null)
@@ -53,7 +53,7 @@ export function PomodoroBar({ focusMinutes, breakMinutes, autoBreak, onNotice }:
   const start = useCallback(
     (taskId: number | null, title: string) => {
       const prev = ref.current
-      // 对齐 pomodoro.start：非 idle 先 stop()（abandoned=False）记完上一轮再开新一轮
+      // 非 idle 先 stop()（abandoned=False）记完上一轮再开新一轮
       if (prev) record(prev, false)
       setAskReason(false)
       setCustomReason('')
@@ -92,8 +92,8 @@ export function PomodoroBar({ focusMinutes, breakMinutes, autoBreak, onNotice }:
           setSession(null)
         }
       } else {
-        // 休息自然走完：对齐 pomodoro._tick 的 else 分支——直接回 idle、不落库；
-        // 只有手动「结束」走 stop() 时才把已休息的分钟数记账（见下方按钮分支，D20）
+        // 休息自然走完：直接回 idle、不落库；
+        // 只有手动「结束」走 stop() 时才把已休息的分钟数记账（见下方按钮分支）
         onNotice('休息结束')
         setSession(null)
       }
@@ -101,7 +101,7 @@ export function PomodoroBar({ focusMinutes, breakMinutes, autoBreak, onNotice }:
     return () => window.clearInterval(timer)
   }, [breakMinutes, autoBreak, onNotice, record])
 
-  /** 选中/输入原因后结束本轮（D18）：取消等于不带原因，但同样落库。 */
+  /** 选中/输入原因后结束本轮：取消等于不带原因，但同样落库。 */
   const stopWithReason = (reason: string): void => {
     const cur = ref.current
     if (cur) record(cur, cur.phase === 'focus' && cur.remain > 0, reason.trim())
@@ -144,12 +144,12 @@ export function PomodoroBar({ focusMinutes, breakMinutes, autoBreak, onNotice }:
           onClick={() => {
             const cur = ref.current
             if (!cur) return
-            // 专注且还剩时间 = 手动中断：先问原因（对齐 _request_stop，D18）
+            // 专注且还剩时间 = 手动中断：先问原因
             if (cur.phase === 'focus' && cur.remain > 0) {
               setAskReason(true)
               return
             }
-            // 休息提前结束：仍按「已完成」记账（对齐 stop(abandoned=False)，D20）
+            // 休息提前结束：仍按「已完成」记账
             record(cur, false)
             setSession(null)
           }}

@@ -1,10 +1,10 @@
 /**
- * Office 文档内嵌预览与可编辑写回（O11 / N-§1.3#5）。
+ * Office 文档内嵌预览与可编辑写回。
  *
- * 只读预览与 Python 的 python-docx / openpyxl 预览等价；因为要把解析结果交给渲染进程，
+ * 只读预览解析 Word / Excel 文档；因为要把解析结果交给渲染进程，
  * 这里对外部文档产出的 HTML 做一次白名单清洗——文档是用户提供的输入，不能直接注入页面。
  *
- * 可编辑写回对齐 Python note_previews 的 WordEditView / ExcelEditView：
+ * 可编辑写回：
  * - Word：把富文本编辑器的 HTML 重建成 .docx（保留标题层级/粗斜下划线/字号/颜色）；
  * - Excel：读原工作簿、只改单元格值再写回，尽量保留原有格式。
  * 因为不希望为一个写回能力引入新的打包依赖，.docx 的写回用 node:zlib 自实现的
@@ -93,7 +93,7 @@ export async function officeDocNote(noteId: number): Promise<OfficeDoc> {
     return { kind: 'none', html: '', rows: [], message: '链接笔记请用浏览器打开' }
   }
   if (!existsSync(target)) {
-    // 与 Python 一致：文件缺失时仍给出可编辑的空白骨架，用户可直接开始写
+    // 文件缺失时仍给出可编辑的空白骨架，用户可直接开始写
     return note.format === 'excel'
       ? { kind: 'xlsx', html: '', rows: [['', '', ''], ['', '', ''], ['', '', '']], message: '文件尚未创建，保存时会新建' }
       : { kind: 'docx', html: '<p>（新建 Word 文档，开始编辑…）</p>', rows: [], message: '文件尚未创建，保存时会新建' }
@@ -122,7 +122,7 @@ export async function officeDocNote(noteId: number): Promise<OfficeDoc> {
   return { kind: 'none', html: '', rows: [], message: '仅支持 .docx / .xlsx 编辑写回' }
 }
 
-/** 新建空白 .docx/.xlsx（对齐 app_controller._create_blank_office_file）。 */
+/** 新建空白 .docx/.xlsx。 */
 export function createBlankOfficeFile(
   format: string,
   title: string
@@ -146,7 +146,7 @@ export function createBlankOfficeFile(
   }
 }
 
-/** 把富文本 HTML 写回笔记关联的 .docx（对齐 WordEditView.commit / html_to_docx）。 */
+/** 把富文本 HTML 写回笔记关联的 .docx。 */
 export function saveWordNote(noteId: number, html: string): { ok: boolean; message: string } {
   const note = getNote(noteId)
   if (!note) return { ok: false, message: '笔记不存在' }
@@ -162,7 +162,7 @@ export function saveWordNote(noteId: number, html: string): { ok: boolean; messa
   }
 }
 
-/** 把单元格网格写回笔记关联的 .xlsx（对齐 ExcelEditView.commit，保留原格式）。 */
+/** 把单元格网格写回笔记关联的 .xlsx。 */
 export function saveExcelNote(noteId: number, rows: string[][]): { ok: boolean; message: string } {
   const note = getNote(noteId)
   if (!note) return { ok: false, message: '笔记不存在' }
@@ -175,7 +175,7 @@ export function saveExcelNote(noteId: number, rows: string[][]): { ok: boolean; 
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Sheet1')
     } else {
       const ws = wb.Sheets[wb.SheetNames[0]]
-      // 只改单元格的值，不清空整表 —— 尽量保留原有格式（对齐「保留格式」口径）
+      // 只改单元格的值，不清空整表 —— 尽量保留原有格式
       for (let i = 0; i < rows.length; i++) {
         for (let j = 0; j < rows[i].length; j++) {
           const addr = XLSX.utils.encode_cell({ r: i, c: j })

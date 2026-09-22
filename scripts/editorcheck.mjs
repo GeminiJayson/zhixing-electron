@@ -1,5 +1,5 @@
 /**
- * 笔记编辑器验证（O9）：CodeMirror 挂载、语法高亮、[[ 补全、内容同步落库。
+ * 笔记编辑器验证：CodeMirror 挂载、语法高亮、[[ 补全、内容同步落库。
  * 用法：node scripts/editorcheck.mjs
  */
 import { execFileSync, spawn } from 'node:child_process'

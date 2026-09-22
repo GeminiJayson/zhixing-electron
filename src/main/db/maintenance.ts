@@ -17,7 +17,7 @@ export const shiftDay = (day: string, delta: number): string =>
   new Date(new Date(`${day}T00:00:00Z`).getTime() + delta * 86_400_000).toISOString().slice(0, 10)
 
 /**
- * 循环子任务打卡重置（启动 / 跨天调用），对齐 task_service.roll_recurring_today：
+ * 循环子任务打卡重置（启动 / 跨天调用）：
  * 只在重置前**已勾选完成**的才累加 streak，避免跳过周期也算连续。
  * 返回被重置的任务数。
  */
@@ -57,7 +57,7 @@ export function rollRecurringToday(): number {
 }
 
 /**
- * 等待中任务到期恢复为待办（对齐 task_service.resume_due_today）：
+ * 等待中任务到期恢复为待办：
  * resume_at 到期的自动回到 todo 并清掉恢复日期。
  */
 export function resumeDueToday(): number {
@@ -71,10 +71,10 @@ export function resumeDueToday(): number {
 // ---------------------------------------------------------------- 番茄钟 / 到点提醒
 
 /**
- * 记录一次番茄钟（对齐 PomodoroRepository.add）。
+ * 记录一次番茄钟。
  *
- * reason 允许为 null：Python 从不中断的会话写的是 None（NULL），只有手动中断
- * 才写入原因字符串（D18）。整列口径要一致，否则导出/统计里同一件事两种形态。
+ * reason 允许为 null：未中断的会话存 NULL，只有手动中断
+ * 才写入原因字符串。整列口径要一致，否则导出/统计里同一件事两种形态。
  */
 export function recordPomodoro(
   taskId: number | null,
@@ -83,7 +83,7 @@ export function recordPomodoro(
   reason: string | null = null
 ): number {
   const m = Math.round(minutes)
-  // 不足 1 分钟不落库（对齐 pomodoro.py：minutes<1 跳过，避免 0 分钟记录污染统计与导出）
+  // 不足 1 分钟不落库
   if (!(m >= 1)) return 0
   const clean = reason && reason.trim() ? reason.trim() : null
   const info = conn()
@@ -173,7 +173,7 @@ export function dismissReminder(taskId: number): Task | null {
   return getTask(taskId)
 }
 
-/** 稍后提醒：从「现在或原定时刻」起顺延 N 分钟（对齐 snooze）。 */
+/** 稍后提醒：从「现在或原定时刻」起顺延 N 分钟。 */
 export function snoozeReminder(taskId: number, minutes: number): Task | null {
   const t = getTask(taskId)
   if (!t) return null
@@ -189,7 +189,7 @@ export function snoozeReminder(taskId: number, minutes: number): Task | null {
   return getTask(taskId)
 }
 
-/** 浮窗几何写入 ui_state.widget_geometry（对齐 DesktopWidget.save_geometry）。 */
+/** 浮窗几何写入 ui_state.widget_geometry。 */
 export function saveWidgetGeometry(x: number, y: number, w: number, h: number): void {
   try {
     if (!open()) return
@@ -250,7 +250,7 @@ export function saveWidgetBall(ball: {
 
 // ---------------------------------------------------------------- 首次启动种子数据
 
-/** 欢迎笔记正文（逐字对齐 Python core/context.py 的 seed_if_empty）。 */
+/** 欢迎笔记正文。 */
 const WELCOME_NOTE = [
   '# 开始使用「知行」',
   '',
@@ -267,13 +267,13 @@ const WELCOME_NOTE = [
 ].join('\n')
 
 /**
- * 首次启动写入欢迎内容（对齐 Python AppContext.seed_if_empty，D24）：
+ * 首次启动写入欢迎内容：
  * 任务表为空时建「工作 / 生活」两个分组 + 「我的清单」+ 2 条欢迎任务
  * （第一条为 P5 中等优先级）；笔记表为空时建一篇欢迎笔记。
  * 已有任意任务/笔记就不动，重复调用安全。只读模式不写。
  */
 export function seedIfEmpty(): boolean {
-  // 只读模式下不写盘（对齐 Python：readonly 时启动流程直接 return）
+  // 只读模式下不写盘
   if (dbReadonlyReason()) return false
   const c = conn()
   const count = (table: string): number =>
@@ -286,7 +286,7 @@ export function seedIfEmpty(): boolean {
     createListFolder('生活', 'group', null)
     const list = createListFolder('我的清单', 'list', null)
     const first = createTask('欢迎使用知行：试试 Ctrl+Alt+N 快速添加任务', null, list.id)
-    // Python 侧第一条欢迎任务是 Priority.MID = P5
+    // 第一条欢迎任务用中等优先级 P5
     if (first) setPriority(first.id, 5)
     createTask('在笔记里输入 [[ 会弹出链接补全', null, list.id)
   }

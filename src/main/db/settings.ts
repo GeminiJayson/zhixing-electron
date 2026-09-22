@@ -5,7 +5,7 @@ import { DEFAULT_SETTINGS } from '../../shared/settings'
 
 // ---------------------------------------------------------------- 设置
 
-/** settings 表是键值对，Python 版与 Electron 版共用同一份，切换客户端时偏好一致。 */
+/** settings 表是键值对，偏好读写都落在同一份数据上。 */
 export function listSettings(): Record<string, string> {
   const rows = conn().prepare('SELECT key, value FROM settings').all() as {
     key: string
@@ -17,8 +17,8 @@ export function listSettings(): Record<string, string> {
 }
 
 /**
- * 把默认设置写入 settings 表（对齐 Python 的 ensure_defaults）。
- * 只补缺失的键，绝不覆盖用户已改过的值 —— 两个客户端因此看到同一组默认。
+ * 把默认设置写入 settings 表。
+ * 只补缺失的键，绝不覆盖用户已改过的值。
  */
 export function ensureDefaultSettings(): number {
   const c = conn()
