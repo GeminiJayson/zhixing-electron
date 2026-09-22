@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseSettings, type AppSettings } from '@shared/settings'
+import { contrastRatio } from '@shared/color'
 import { DEFAULT_THEME_PACK, THEME_PACKS } from '@shared/theme-packs'
 import { applyAppearance } from './theme'
 
@@ -58,5 +59,31 @@ describe('外观应用（主窗口与浮窗共用）', () => {
     const { root, vars } = fakeRoot()
     applyAppearance(settings({ theme_mode: 'light', theme_pack: '不存在的包' }), root)
     expect(vars.get('--bg-canvas')).toBe(THEME_PACKS[DEFAULT_THEME_PACK].light.canvas)
+  })
+
+  it('自定义配色覆盖主题包，且浅色 / 深色两套互不影响', () => {
+    const { root, vars } = fakeRoot()
+    const custom = JSON.stringify({ canvas: '#010203', layer: '#040506' })
+    applyAppearance(settings({ theme_mode: 'dark', theme_custom_dark: custom }), root)
+    expect(vars.get('--bg-canvas')).toBe('#010203')
+    expect(vars.get('--bg-layer')).toBe('#040506')
+    // 深色的自定义不该影响浅色：切回浅色仍是主题包原值
+    applyAppearance(settings({ theme_mode: 'light', theme_custom_dark: custom }), root)
+    expect(vars.get('--bg-canvas')).toBe(THEME_PACKS[DEFAULT_THEME_PACK].light.canvas)
+  })
+
+  it('自定义的正文色仍被校正到可读下限 —— 自定义不绕过对比度守卫', () => {
+    const { root, vars } = fakeRoot()
+    applyAppearance(
+      settings({
+        theme_mode: 'light',
+        theme_pack: '墨黑',
+        theme_custom_light: JSON.stringify({ canvas: '#FFFFFF', fg: '#EEEEEE' }),
+      }),
+      root
+    )
+    const fg = vars.get('--fg-primary') ?? ''
+    expect(fg).not.toBe('#EEEEEE')
+    expect(contrastRatio(fg, '#FFFFFF')).toBeGreaterThanOrEqual(4.5)
   })
 })

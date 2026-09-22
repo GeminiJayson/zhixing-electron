@@ -104,3 +104,56 @@ export const DEFAULT_THEME_PACK = '青竹'
 export function resolveThemePack(name: string | undefined): ThemePack {
   return THEME_PACKS[name ?? ''] ?? THEME_PACKS[DEFAULT_THEME_PACK]
 }
+
+// ---------------------------------------------------------------- 用户自定义配色
+
+/**
+ * 可自定义的主题 token。
+ *
+ * 只收 #RRGGBB 的几项：其余 token（input / scroll 等）要么是 rgba()，
+ * 要么是滚动条细节，塞进 <input type="color"> 只会让用户改出坏值。
+ */
+export const CUSTOM_THEME_TOKENS: { key: keyof ThemeColors; label: string }[] = [
+  { key: 'canvas', label: '页面背景' },
+  { key: 'layer', label: '卡片背景' },
+  { key: 'fg', label: '正文文字' },
+  { key: 'fg2', label: '次要文字' },
+  { key: 'border', label: '边框' },
+  { key: 'accent_soft', label: '强调浅底' },
+]
+
+const HEX_COLOR = /^#[0-9a-f]{6}$/i
+
+/**
+ * 解析用户自定义的主题色覆盖（settings 里存的 JSON 串）。
+ *
+ * 只认白名单里的键 + #RRGGBB：这些值最终会被写进 CSS 变量，
+ * 一个坏值会让某一处静默变成「看不见的文字」，所以在入口就丢掉。
+ * 空串 / 坏 JSON 一律当「没有自定义」，回退到主题包原值。
+ */
+export function parseThemeOverrides(json: string | null | undefined): Partial<ThemeColors> {
+  if (!json) return {}
+  let raw: unknown
+  try {
+    raw = JSON.parse(json)
+  } catch {
+    return {}
+  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const out: Partial<ThemeColors> = {}
+  for (const { key } of CUSTOM_THEME_TOKENS) {
+    const value = (raw as Record<string, unknown>)[key]
+    if (typeof value === 'string' && HEX_COLOR.test(value.trim())) out[key] = value.trim()
+  }
+  return out
+}
+
+/** 主题包 + 用户覆盖之后的实际配色：应用主题与设置页显示当前值共用同一份计算。 */
+export function effectiveThemeColors(
+  packName: string,
+  mode: 'light' | 'dark',
+  overrides: Partial<ThemeColors> = {}
+): ThemeColors {
+  const pack = resolveThemePack(packName)
+  return { ...(mode === 'dark' ? pack.dark : pack.light), ...overrides }
+}

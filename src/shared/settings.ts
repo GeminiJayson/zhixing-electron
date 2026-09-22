@@ -15,6 +15,10 @@ export interface AppSettings {
   theme_mode: ThemeMode
   theme_pack: string
   accent_color: string
+  /** 自定义主题包配色：浅色模式下被用户改过的 token（JSON 串，空 = 全跟随主题包） */
+  theme_custom_light: string
+  /** 同上，深色模式 */
+  theme_custom_dark: string
   font_size: number
   task_row_height: number
   task_indent: number
@@ -126,6 +130,10 @@ export function parseSettings(raw: Record<string, string> = {}): AppSettings {
     theme_mode: raw.theme_mode === 'dark' ? 'dark' : raw.theme_mode === 'light' ? 'light' : 'system',
     theme_pack: str(raw.theme_pack, '青竹'),
     accent_color: str(raw.accent_color, '#0D9488'),
+    // 自定义配色是**本应用私有**设置：解析（白名单 + 颜色格式校验）在 theme-packs.ts，
+    // 这一层只负责原样透传 JSON 串。
+    theme_custom_light: str(raw.theme_custom_light, ''),
+    theme_custom_dark: str(raw.theme_custom_dark, ''),
     // 默认值与范围随共用的 settings 表；默认值不一致会让来回切换客户端时行为跳变。
     font_size: num(raw.font_size, 14, 9, 20),
     task_row_height: num(raw.task_row_height, 38, 24, 72),
@@ -202,6 +210,8 @@ export const DEFAULT_SETTINGS: Record<string, string> = {
   theme_mode: 'system',
   theme_pack: '青竹',
   accent_color: '#0D9488',
+  theme_custom_light: '',
+  theme_custom_dark: '',
   motion_level: 'full',
   pomodoro_focus_min: '25',
   pomodoro_break_min: '5',

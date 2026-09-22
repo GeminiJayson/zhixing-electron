@@ -3,7 +3,11 @@
  * 数据来自 shared/theme-packs.ts，
  * 所以新增主题包只需加数据，不用改这里的代码。
  */
-import { resolveThemePack, type ThemeColors } from '@shared/theme-packs'
+import {
+  effectiveThemeColors,
+  parseThemeOverrides,
+  type ThemeColors,
+} from '@shared/theme-packs'
 import { ensureTextContrast } from '@shared/color'
 import type { AppSettings, ThemeMode } from '@shared/settings'
 
@@ -35,17 +39,20 @@ const TOKEN_VARS: Record<keyof ThemeColors, string[]> = {
 }
 
 /**
- * 应用主题：先铺主题包的语义色，再单独写入强调色。
+ * 应用主题：先铺主题包的语义色（可被用户自定义色覆盖），再单独写入强调色。
  * 强调色与主题包正交——换主题包不会改掉你选的强调色。
+ *
+ * `overrides` 是用户在设置页改过的那几个 token；没给的键仍跟随主题包，
+ * 所以换主题包时只有用户明确改过的地方保持不变。
  */
 export function applyTheme(
   mode: 'light' | 'dark',
   packName: string,
   accentColor: string,
-  root: HTMLElement = document.documentElement
+  root: HTMLElement = document.documentElement,
+  overrides: Partial<ThemeColors> = {}
 ): void {
-  const pack = resolveThemePack(packName)
-  const colors: ThemeColors = { ...(mode === 'dark' ? pack.dark : pack.light) }
+  const colors: ThemeColors = { ...effectiveThemeColors(packName, mode, overrides) }
   // 主题包的文字色是按观感调的柔和色，对 canvas / layer 的对比度大量落在 4.5 以下
   // （实测 168 组里 74 组不达标）。这里按同一套下限做校正：
   // 正文/次要 4.5:1、辅助文字 4.0:1；已达标的值原样保留。
@@ -169,7 +176,14 @@ export function applyAppearance(
   s: AppSettings,
   root: HTMLElement = document.documentElement
 ): void {
-  applyTheme(resolveThemeMode(s.theme_mode), s.theme_pack, s.accent_color, root)
+  const mode = resolveThemeMode(s.theme_mode)
+  applyTheme(
+    mode,
+    s.theme_pack,
+    s.accent_color,
+    root,
+    parseThemeOverrides(mode === 'dark' ? s.theme_custom_dark : s.theme_custom_light)
+  )
   // 「设置值 → CSS 像素」的映射只在这里一处；s.font_size 已是 number，不可能再被字符串拼接
   root.style.setProperty('--text-body', `${s.font_size}px`)
   root.style.setProperty('--row-h', `${s.task_row_height}px`)

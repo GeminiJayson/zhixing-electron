@@ -7,10 +7,16 @@ import {
   DEFAULT_AI_PROMPT,
   normalizeAiProtocol,
 } from '@shared/ai-note'
-import { THEME_PACK_NAMES } from '@shared/theme-packs'
+import {
+  CUSTOM_THEME_TOKENS,
+  THEME_PACK_NAMES,
+  effectiveThemeColors,
+  parseThemeOverrides,
+  type ThemeColors,
+} from '@shared/theme-packs'
 import { t } from '../i18n'
 import { Toolbar } from '../components/Toolbar'
-import { applyAppearance, prefersReducedMotion } from '../theme'
+import { applyAppearance, prefersReducedMotion, resolveThemeMode } from '../theme'
 import { useDialog } from '../components/Dialogs'
 import type { AppInfo } from '@shared/types'
 import { RecycleBin } from '../components/RecycleBin'
@@ -367,6 +373,24 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
     [onNotice]
   )
 
+  // ---- 主题自定义：强调色任意取色 + 主题包 token 覆盖（按当前模式分别存） ----
+  /** 实际生效的明暗模式（theme_mode=system 时按系统解析） */
+  const themeMode = resolveThemeMode(settings.theme_mode)
+  /** 自定义覆盖存在哪个键：浅色与深色各一套，互不影响 */
+  const themeCustomKey: keyof AppSettings = themeMode === 'dark' ? 'theme_custom_dark' : 'theme_custom_light'
+  const themeOverrides = parseThemeOverrides(settings[themeCustomKey])
+  /** 当前实际生效的配色（主题包 + 用户覆盖），设置页用它显示色块的当前值 */
+  const themeColors = effectiveThemeColors(settings.theme_pack, themeMode, themeOverrides)
+
+  const setCustomToken = (token: keyof ThemeColors, color: string): void => {
+    void update(themeCustomKey, JSON.stringify({ ...themeOverrides, [token]: color }))
+  }
+
+  /** 清空当前模式的自定义配色，回到主题包原样 */
+  const resetCustomTheme = (): void => {
+    void update(themeCustomKey, '')
+  }
+
   const toggleThemeMode = (mode: 'light' | 'dark' | 'system'): void => {
     // 主题由 App 的主题状态驱动（会同步写回 settings），这里只派发一次切换请求
     document.documentElement.dataset.theme = mode
@@ -466,6 +490,56 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                       onClick={() => void update('accent_color', c)}
                     />
                   ))}
+                  {/* 预设之外任选：色块本身就是取色器，改完立即预览 */}
+                  <label
+                    className={
+                      'swatch swatch--custom' +
+                      (ACCENTS.includes(settings.accent_color) ? '' : ' swatch--on')
+                    }
+                    title={`自定义强调色（当前 ${settings.accent_color}）`}
+                    style={{ background: settings.accent_color }}
+                  >
+                    <input
+                      type="color"
+                      value={
+                        /^#[0-9a-f]{6}$/i.test(settings.accent_color) ? settings.accent_color : '#0D9488'
+                      }
+                      aria-label="自定义强调色"
+                      onChange={(e) => void update('accent_color', e.target.value)}
+                    />
+                  </label>
+                </div>
+              </div>
+              <div className="set-row set-row--stack">
+                <span>主题包配色</span>
+                <div className="theme-tokens">
+                  {CUSTOM_THEME_TOKENS.map(({ key, label }) => {
+                    const value = themeColors[key]
+                    const custom = typeof themeOverrides[key] === 'string'
+                    return (
+                      <label
+                        key={key}
+                        className={'theme-token' + (custom ? ' theme-token--custom' : '')}
+                        title={custom ? `${label}：已自定义` : `${label}：跟随主题包`}
+                      >
+                        <input
+                          type="color"
+                          value={/^#[0-9a-f]{6}$/i.test(value) ? value : '#000000'}
+                          aria-label={`${label}颜色`}
+                          onChange={(e) => setCustomToken(key, e.target.value)}
+                        />
+                        <span className="theme-token__label">{label}</span>
+                        <code className="theme-token__value">{value}</code>
+                      </label>
+                    )
+                  })}
+                  <button
+                    className="text-btn"
+                    disabled={Object.keys(themeOverrides).length === 0}
+                    onClick={resetCustomTheme}
+                  >
+                    恢复主题包默认
+                  </button>
                 </div>
               </div>
               <label className="set-row">

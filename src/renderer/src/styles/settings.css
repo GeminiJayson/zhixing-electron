@@ -88,6 +88,72 @@
 .swatch--on {
   border-color: var(--fg-primary);
 }
+/* 自定义强调色：色板末尾一个取色器 —— 底色就是当前色，点它开系统取色器 */
+.swatch--custom {
+  position: relative;
+  display: inline-block;
+  overflow: hidden;
+  border-style: dashed;
+  cursor: pointer;
+}
+.swatch--custom input[type='color'] {
+  position: absolute;
+  inset: -4px;
+  width: calc(100% + 8px);
+  height: calc(100% + 8px);
+  padding: 0;
+  border: none;
+  opacity: 0;
+  cursor: pointer;
+}
+/* 主题包配色：一行说明 + 一组 token 编辑格（窄窗口自动回落成一列）。
+   用 grid 而不是 flex-column —— .set-row 的「标签」是 flex: 0 0 132px，
+   换到 column 方向后那 132px 会变成**高度**，标题下面白白空一大块。 */
+.set-row--stack {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-2);
+  align-items: start;
+}
+.theme-tokens {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: var(--space-1) var(--space-3);
+  width: 100%;
+  align-items: center;
+}
+.theme-token {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-h);
+  font-size: var(--text-aux);
+  color: var(--fg-secondary);
+  cursor: pointer;
+}
+/* 被改过的 token 用强调色标出来，一眼能看出「哪些已经和主题包不一样」 */
+.theme-token--custom .theme-token__label {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.theme-token input[type='color'] {
+  width: 28px;
+  height: var(--control-h-sm);
+  padding: 0;
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-ctl);
+  background: transparent;
+  cursor: pointer;
+}
+.theme-token__label {
+  flex: 1;
+  min-width: 0;
+}
+.theme-token__value {
+  font-size: 11px;
+  color: var(--fg-tertiary);
+  font-variant-numeric: tabular-nums;
+}
 /* 回收站 / 标签管理 */
 .trash-list, .tag-list {
   list-style: none;

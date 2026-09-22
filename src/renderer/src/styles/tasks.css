@@ -148,16 +148,21 @@
 }
 .tasklists__count {
   font-size: 11px;
-  color: var(--fg-tertiary);
+  /* 跟主题强调色走：计数是「还剩多少」的读数，用强调色比灰字更该被看到 */
+  color: var(--accent);
   font-variant-numeric: tabular-nums;
 }
-/* 行内操作只在悬浮 / 键盘聚焦时出现，否则整栏都是小图标 */
+/* 行内操作只在悬浮 / 键盘聚焦时出现，且**不显示时不占位**：
+   只写 opacity:0 的话按钮仍占着宽度，清单名会一直少一截、右侧数字也左右不齐 */
 .tasklists__more {
-  opacity: 0;
+  /* 不显示时**整块不参与布局**：只要还占宽度，清单名就永远少一截、
+     右侧计数也不在最右。用 display 切换而不是 opacity/max-width ——
+     后两者都会给固定尺寸的 .icon-btn 留下十几像素的占位。 */
+  display: none;
 }
 .tasklists__row:hover .tasklists__more,
-.tasklists__more:focus-visible {
-  opacity: 1;
+.tasklists__row:focus-within .tasklists__more {
+  display: inline-flex;
 }
 .tasklists__hint {
   margin: 2px 0 6px;
