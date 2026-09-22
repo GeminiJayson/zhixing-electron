@@ -3,7 +3,7 @@
 > 日期：2026-09-21 ｜ 范围：全库（140 个源文件、约 30.6k 行，排除 vendor）+ scripts/ + 构建配置
 > 覆盖：**6/6 模块全部完成**（数据层 · 主进程+preload · 页面 · 组件 · 纯逻辑 · 脚手架），共 **72 条**
 > 复核：抽查 13 条回代码验证（含 3 条实跑），**全部属实**；同时拦下 2 条自己的误报（见第七节）
-> 视角：**代码库自身的设计缺陷**。刻意不重复 `docs/parity-audit.md` / `docs/audit/*` 的「与 Python 对齐」结论。
+> 视角：**代码库自身的设计缺陷**。
 > 方法：`ocr scan`/go 的 LLM 模式因未配置端点不可用，走 `ocr delegate`——OCR 出规则集与文件清单（其系统规则见文末），判断由 agent 完成。6 组并行审计 + 横切机械核对。
 > 证据规范：每条带 `文件:行号`；`复核` 一栏标注父 agent 是否回代码验证过。
 
@@ -597,14 +597,13 @@ applyMru 的 sort+reverse、listTasksByList 漏 start_time/due_time、图谱增�
 
 ### [中] 主题包默认值两处且不一致，未知包名静默换主题 —— **已修（2026-09-22）**
 
-以 Python 版为准统一到「青竹」（core/constants.py、settings.py、fluent_bridge.py 三处都是它，
-accent #0D9488），并加 src/shared/theme-default.test.ts 把 DEFAULT_THEME_PACK、
+默认值统一到「青竹」（accent #0D9488），并加 src/shared/theme-default.test.ts 把 DEFAULT_THEME_PACK、
 DEFAULT_SETTINGS.theme_pack、parseSettings({}).theme_pack 三个值钉在一起。
 
 以前没暴露的原因值得记：E2E 跑在用户库上，而库里存着 theme_pack=墨黑，
 于是 themecheck 里「默认主题包是墨黑」的断言一直是「过」的 —— 它测的是用户的设置，
 不是代码的默认值。E2E 改成跑夹具库（空库）之后立刻现形。
-- 证据：\`shared/settings.ts:106/176\` 默认 \`'青竹'\`；\`shared/theme-packs.ts:91\` DEFAULT_THEME_PACK=\`'墨黑'\`。两版共用同一只 settings 表。
+- 证据：\`shared/settings.ts:106/176\` 默认 \`'青竹'\`；\`shared/theme-packs.ts:91\` DEFAULT_THEME_PACK=\`'墨黑'\`。
 - 复核：未核实
 
 ### [中] 整库整理 N 篇 × 全表扫描 + 重建同一份提示词片段
@@ -650,7 +649,7 @@ DEFAULT_SETTINGS.theme_pack、parseSettings({}).theme_pack 三个值钉在一起
 - 复核：未核实
 
 ### [高] 打包/诊断链依赖写死的 POSIX 路径
-- 证据：`officecheck.mjs:29` `join(repoRoot, '.venv/bin/python')`（Windows 应为 `.venv\Scripts\python.exe`，必 ENOENT）；`bigcapture.mjs:63` `writeFileSync('/tmp/big-…png')`。
+- 证据：`officecheck.mjs:29` `join(repoRoot, '.venv/bin/python')`（Windows 应为 `.venv\Scripts\python.exe`，必 ENOENT）（后续已修复：改为 `ZHIXING_PYTHON` 或 PATH 上的 python）；`bigcapture.mjs:63` `writeFileSync('/tmp/big-…png')`。
 - 复核：未核实
 
 ### [高] 静态审计脚本用手写正则解析 TS / CSS 源码
@@ -697,11 +696,6 @@ DEFAULT_SETTINGS.theme_pack、parseSettings({}).theme_pack 三个值钉在一起
 
 ### [中] 终态判定重复实现
 - 证据：`src/shared/task.ts:37` `isTerminal(status: TaskStatus)`；`src/renderer/src/components/TargetSelector.tsx:53` 又写一个 `(status: string)`，注释还写着「对齐 Task.is_done」。
-- 复核：✓ 已核实
-
-### [过程] 既有审计结论已大幅滞后
-- `docs/audit/task.md` 标注「仍成立」的三条高风险条目，逐条回代码核对后**全部已修**：`resume_at` 已在 `EDITABLE_FIELDS`（`tasks.ts:374`）、清单体系齐全（`lists.ts` 五个函数）、任务↔笔记关联三条写入路径都在（`tasks.ts:79/92/426`）。
-- 影响：照这份文档排期会做无用功。
 - 复核：✓ 已核实
 
 ### 父 agent 的两次自我纠错（记录在案）

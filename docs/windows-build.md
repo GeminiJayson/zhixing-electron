@@ -80,39 +80,16 @@ ls dist/win-unpacked/resources/app.asar.unpacked/node_modules/@node-rs/jieba-win
 - Windows：`%APPDATA%/ZhiXing/zhixing.db`
 - macOS：`~/Library/Application Support/ZhiXing/zhixing.db`
 
-也支持 `ZHIXING_HOME` 环境变量覆盖（与 Python 版同语义），便于便携使用或测试。
+也支持 `ZHIXING_HOME` 环境变量覆盖，便于便携使用或测试。
 
-## 与 Python 版共存
-
-两个版本读写同一份 SQLite（schema v12），**不要同时打开**——避免并发写入冲突。
-
-Electron 版首次运行会自己创建数据目录与库文件：建库 DDL 由
-`electron/scripts/export-schema.py` 从 Python 侧导出（落在 `src/main/db/schema.ts`），
-两版 schema 逐字一致——Python 版随后打开既不会报错，也不会触发迁移。
-Python 版的打包脚本 `build_windows.bat` 仍然可用，互不影响。
-
-## postdist：出包后还原本机 ABI（对应差异 P2）
+## postdist：出包后还原本机 ABI
 
 `better-sqlite3` 是原生模块，开发环境的 ABI 与 electron-builder 打包时重建出来的不同。
 ``dist:win`` / ``dist:dir`` 结束时会自动跑 ``postdist:win`` / ``postdist:dir``（``npm run rebuild`` →
 ``electron-rebuild -f -w better-sqlite3``），把 `node_modules` 里的二进制还原成开发机 Electron 的 ABI。
 否则下次 ``npm run dev`` 会以「数据库不可用 / 设置全部回退默认值」的形式失败。
 
-Python 侧没有对应步骤：PyInstaller 的 ``COLLECT`` 一次性收集 Qt/Python 依赖，不存在开发态与产物
-ABI 不一致的问题。npm 会自动执行 ``pre<script>`` / ``post<script>`` 钩子，所以不必手动跑 postdist。
-
-## 与 Python 版打包形态的差异（对应差异 P1 / P5 / P6 / P7）
-
-| 项 | Python（PyInstaller） | Electron（electron-builder） |
-| --- | --- | --- |
-| 分发形态 | ``COLLECT`` 出 ``ZhiXing/`` 整目录（``build_windows.bat``、``zhixing.spec:72-80``） | NSIS 安装包 + 免安装 portable 单文件；需要目录形态时用 ``npm run dist:dir``，产物 ``dist/win-unpacked/`` |
-| 原生依赖 | PyInstaller 收集，无 ABI 重建 | ``asarUnpack`` 解包 better-sqlite3 / @node-rs，``postdist`` 还原本机 ABI（见上） |
-| 代码签名 | 未配置（``zhixing.spec:67``） | 未配置，Windows 会弹 SmartScreen 提示「未知发布者」 |
-| 自动更新 | 无 | 未接入 ``electron-updater``（与 Python 版一致地「手动下载覆盖」） |
-| 目标平台 | ``zhixing.spec:2`` 声明跨平台通用 | 仅配置 Windows 目标；macOS 需要 `.icns` 与公证流程 |
-
-> 目录形态的 ``dist/win-unpacked/`` 与 Python 的 ``ZhiXing/`` 都是「整目录分发」，但两者**不可混用**：
-> 原生模块与运行时完全不同。
+npm 会自动执行 ``pre<script>`` / ``post<script>`` 钩子，所以不必手动跑 postdist。
 
 ## 尚未配置的部分
 

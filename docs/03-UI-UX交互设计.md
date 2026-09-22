@@ -23,7 +23,6 @@
 > **文档对象**：知行 ZhiXing 的 Electron 重构实现（拆分后仓库 `zhixing-electron`）。
 > **路径约定**：代码路径相对 **Electron 项目根**（当前工作区内为 `electron/`）。
 > **事实基准**：`src/renderer/src/styles/`（11 个 CSS）、`src/renderer/src/**` 组件与页面、`src/shared/{color,theme-packs,settings}.ts`。
-> 本文只描述 Electron 实现自身；与 Python 版外观口径的差异见 `04-与Python实现的差异点.md`（S6/S7/S10/S30 等）。
 
 ---
 
@@ -77,7 +76,7 @@
 
 问题：主题包的文字色是按观感调的柔和色，对 `canvas`/`layer` 的对比度大量落在 2.4–4.5 之间（实测 168 组里 74 组不达标，辅助文字最低 2.36:1）。
 
-做法（`theme.ts:49-68`）：应用主题时按与 Python 版同一套下限做**运行时校正**，而不是手改 168 个色值。
+做法（`theme.ts:49-68`）：应用主题时按统一下限做**运行时校正**，而不是手改 168 个色值。
 
 | 目标 | 下限 | 证据 |
 | --- | ---: | --- |
@@ -101,7 +100,7 @@
 | `--radius-pill` | 999px | 胶囊 / 滚动条 |
 | `--border-w` / `--focus-w` | 1px / 2px | 描边 / 焦点环 |
 
-（`tokens.css:45-53`，注释显式声明「与 Python 版 `theme.COMPONENT_TOKENS` 对齐」。）
+
 
 ### 2.5 间距：4px 节奏
 
@@ -253,7 +252,7 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 
 - 格子：重要且紧急 / 重要不紧急 / 紧急不重要 / 不重要不紧急（`QuadrantBoard.tsx:8-13`）。
 - 归格规则：`important = isImportant(priority)`，`urgent = due_date !== null && due_date <= today`（`:65-72`）；**只有根任务归格**，父行可展开未完成的直接子任务，子任务自身优先级/日期不参与归格（`:42-45` 注释）。
-- 拖拽换格写入 `priority + due_date` 组合（`:16-30`，与 Python 的 `_on_quadrant_changed` 逐值一致）。
+- 拖拽换格写入 `priority + due_date` 组合（`:16-30`）。
 
 ### 4.3 日历
 

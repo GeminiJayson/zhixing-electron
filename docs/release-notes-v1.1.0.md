@@ -29,7 +29,7 @@
 
 ### 兼容性
 
-- 数据库仍是 schema v12，只增加了一列 Electron 私有附加列（`branch_false_node_id`），打开旧库会自动补列；与 Python 版继续共用同一只库文件，顺序打开即可，不要同时打开。
+- 数据库仍是 schema v12，只增加了一列 Electron 私有附加列（`branch_false_node_id`），打开旧库会自动补列。
 - 升级安装不会动你的数据；卸载也不会删除数据。
 
 ### 运行环境
