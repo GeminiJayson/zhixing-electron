@@ -207,7 +207,6 @@ function createWidgetWindow(): void {
   }
   const geo = readWidgetGeometry()
   const s = currentSettings()
-  const opacity = Math.max(0.3, Math.min(1, s.widget_opacity / 100))
 
   widgetWindow = new BrowserWindow({
     width: geo.width,
@@ -236,7 +235,9 @@ function createWidgetWindow(): void {
     },
   })
   hardenWindow(widgetWindow)
-  widgetWindow.setOpacity(opacity)
+  // 刻意**不用** setOpacity：在 Windows 上它给窗口设的是全局 alpha（layered window），
+  // 会顶掉透明窗口的逐像素透明 —— 悬浮球四周本该透明的那块矩形会变成一层底色
+  // （亮色 / 暗色主题都一样）。透明度改由渲染层的 CSS opacity 画，见 applyWidgetOpacity。
   // 高于普通窗口，但不抢系统级焦点
   widgetWindow.setAlwaysOnTop(true, 'floating')
   widgetWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
@@ -654,8 +655,18 @@ function widgetResizeEnd(): void {
   saveWidgetGeometry(x, y, w, h)
 }
 
+/**
+ * 浮窗透明度：只把百分比推给渲染层，由它写成 CSS opacity 画出来。
+ *
+ * 窗口自己的 setOpacity 在 Windows 上会破坏透明窗口的逐像素透明（见 createWidgetWindow
+ * 里的注释），这里只传值；渲染层挂载时还会主动问一次（widget:opacityGet），
+ * 免得推送早于它挂载。
+ */
 function applyWidgetOpacity(value: number): void {
-  widgetWindow?.setOpacity(Math.max(0.3, Math.min(1, value / 100)))
+  const pct = Math.max(30, Math.min(100, Math.round(Number(value) || 100)))
+  if (widgetWindow && !widgetWindow.isDestroyed()) {
+    widgetWindow.webContents.send('widget:opacity', pct)
+  }
 }
 
 /** 鼠标穿透：开启后浮窗不挡操作，改用热键/托盘隐藏。 */
@@ -1828,9 +1839,14 @@ app.whenReady().then(() => {
   // 主题同时驱动系统外观与窗口底色，避免新窗口或缩放时闪出另一套配色
   ipcMain.handle('theme:set', (e, theme: 'light' | 'dark' | 'system') => {
     nativeTheme.themeSource = theme
-    // system 模式下窗口底色取系统实际明暗，避免新窗口闪出另一套配色
+    // system 模式下窗口底色取系统实际明暗，避免新窗口闪出另一套配色。
+    // **只给主窗**：底色是给不透明窗口防闪屏用的，而浮窗 / 提醒气泡 / 划词捕获都是
+    // 透明窗口 —— 给它们设 backgroundColor 会让周围本该透明的部分变成一块方形底色。
     const dark = theme === 'system' ? nativeTheme.shouldUseDarkColors : theme === 'dark'
-    BrowserWindow.fromWebContents(e.sender)?.setBackgroundColor(dark ? '#1F1F1F' : '#F3F3F3')
+    const sender = BrowserWindow.fromWebContents(e.sender)
+    if (sender && sender === mainWindow && !sender.isDestroyed()) {
+      sender.setBackgroundColor(dark ? '#1F1F1F' : '#F3F3F3')
+    }
     // 托盘图标 = 主题派生色，换明暗要重建
     refreshTrayIcon()
   })
@@ -1838,8 +1854,9 @@ app.whenReady().then(() => {
   nativeTheme.on('updated', () => {
     refreshTrayIcon()
     const dark = nativeTheme.shouldUseDarkColors
-    for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) win.setBackgroundColor(dark ? '#1F1F1F' : '#F3F3F3')
+    // 同上：只碰主窗，透明窗口的底色必须一直是全透明
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setBackgroundColor(dark ? '#1F1F1F' : '#F3F3F3')
     }
   })
 
@@ -1898,6 +1915,8 @@ app.whenReady().then(() => {
   // 浮窗上的「隐藏」= 收起成悬浮球（球留在桌面上，点它随时展开回来）
   ipcMain.handle('widget:close', () => collapseWidgetToBall())
   ipcMain.handle('widget:setOpacity', (_e, value: number) => applyWidgetOpacity(value))
+  /** 渲染层挂载时问一次当前透明度（推送可能早于它挂载） */
+  ipcMain.handle('widget:opacityGet', () => currentSettings().widget_opacity)
   ipcMain.handle('widget:setClickThrough', (_e, enabled: boolean) => applyWidgetClickThrough(enabled))
   ipcMain.handle('widget:undock', () => expandWidget())
   /** 浮窗当前形态：'ball' 悬浮球 / 'full' 完整卡片（渲染层挂载时先问一次） */

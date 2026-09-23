@@ -106,6 +106,23 @@ export function WidgetApp() {
    */
   useEffect(() => window.zhixing.widget.onNotice(setReminderCount), [])
 
+  /**
+   * 浮窗透明度（百分比）：主进程只推值，真正画的是根上的 --widget-opacity（见 widget.css）。
+   * 挂载时主动问一次 —— 与形态 / 体型同一套路，推送可能早于渲染层挂载。
+   */
+  const [opacityPct, setOpacityPct] = useState(100)
+  useEffect(() => {
+    void window.zhixing.widget.opacity().then(setOpacityPct)
+    return window.zhixing.widget.onOpacity(setOpacityPct)
+  }, [])
+
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      '--widget-opacity',
+      String(Math.max(0.3, Math.min(1, opacityPct / 100)))
+    )
+  }, [opacityPct])
+
   // 主进程的显隐联动会推 widget-refresh
   // 依赖是 [load]，load 一变就会重注册 —— 不接住取消函数就会持续叠层
   useEffect(

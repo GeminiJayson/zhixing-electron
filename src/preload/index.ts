@@ -723,7 +723,18 @@ const api = {
   widget: {
     toggle: (): Promise<boolean> => ipcRenderer.invoke('widget:toggle'),
     close: (): Promise<void> => ipcRenderer.invoke('widget:close'),
+    /**
+     * 浮窗透明度（百分比）。值由主进程推给渲染层，真正画出来的是 CSS opacity ——
+     * 窗口自己的 setOpacity 在 Windows 上会破坏透明窗口的逐像素透明（见 main/index.ts）。
+     */
     setOpacity: (value: number): Promise<void> => ipcRenderer.invoke('widget:setOpacity', value),
+    /** 当前透明度：挂载时问一次，之后靠 onOpacity 推送（推送可能早于渲染层挂载） */
+    opacity: (): Promise<number> => ipcRenderer.invoke('widget:opacityGet'),
+    onOpacity: (cb: (value: number) => void): (() => void) => {
+      const handler = (_e: unknown, value: number): void => cb(value)
+      ipcRenderer.on('widget:opacity', handler)
+      return () => ipcRenderer.removeListener('widget:opacity', handler)
+    },
     setClickThrough: (enabled: boolean): Promise<void> =>
       ipcRenderer.invoke('widget:setClickThrough', enabled),
     undock: (): Promise<void> => ipcRenderer.invoke('widget:undock'),

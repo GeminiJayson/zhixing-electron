@@ -11,6 +11,10 @@ html[data-surface='widget'] #root {
   /* 不留内边距：卡片直接铺满窗口，窗口那层矩形（平台可能补的直角底）就没有露出来的地方。
      原来留 4px，露出的正是一圈直角。 */
   padding: 0;
+  /* 透明度由渲染层画，而不是窗口的 setOpacity：Windows 上后者会给透明窗口设全局
+     alpha，顶掉逐像素透明，球 / 卡片四周本该透明的矩形会变成一块底色。
+     值由主进程推来（WidgetApp 写到根上的 --widget-opacity）。 */
+  opacity: var(--widget-opacity, 1);
 }
 .widget__card {
   display: flex;
@@ -78,6 +82,8 @@ html[data-surface='widget'] #root {
 .wball {
   display: grid;
   place-items: center;
+  /* 与卡片同一份透明度（见 .widget 的注释）——球形态也不能靠窗口 alpha */
+  opacity: var(--widget-opacity, 1);
   width: 100%;
   height: 100%;
   padding: 8px;

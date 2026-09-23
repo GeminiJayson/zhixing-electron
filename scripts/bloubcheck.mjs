@@ -125,6 +125,36 @@ try {
     J({ before, after })
   )
 
+  // ------------------------------------------------ 透明窗口：底色 / 全局 alpha 都不能碰
+  // 球是画在**透明窗口**上的：主进程只要给这个窗口设过底色或全局 alpha，球周围本该
+  // 透明的那块矩形就会浮出一层底（亮暗主题都有）。这里钉住两件事：窗口根节点没有底色；
+  // 设置里的「透明度」走的是渲染层的 CSS 变量，而不是 win.setOpacity。
+  const bg = await conn.evaluate(`(() => {
+    const g = (el) => getComputedStyle(el).backgroundColor
+    return { html: g(document.documentElement), body: g(document.body), root: g(document.getElementById('root')) }
+  })()`)
+  check(
+    '浮窗的 html / body / #root 都没有底色（窗口才透得过去）',
+    [bg.html, bg.body, bg.root].every((c) => c === 'rgba(0, 0, 0, 0)'),
+    J(bg)
+  )
+
+  await app.evaluate(`window.zhixing.widget.setOpacity(70)`)
+  await sleep(800)
+  const transp = await conn.evaluate(`(() => {
+    const root = document.documentElement
+    const v = getComputedStyle(root).getPropertyValue('--widget-opacity').trim()
+    const el = document.querySelector('.wball') || document.querySelector('.widget')
+    return { surface: root.dataset.surface, v, opacity: el ? getComputedStyle(el).opacity : null }
+  })()`)
+  check(
+    '浮窗透明度由 CSS 变量画（不再用窗口 setOpacity 设全局 alpha）',
+    transp.surface === 'widget' && transp.v === '0.7' && transp.opacity === '0.7',
+    J(transp)
+  )
+  await app.evaluate(`window.zhixing.widget.setOpacity(85)`)
+  await sleep(400)
+
   // 截图：先回到默认圆，再看三角与水滴（球窗口很小，看图时自行放大）
   await conn.evaluate(`window.zhixing.widget.setBallShape('cercle')`)
   await sleep(900)
