@@ -1,6 +1,6 @@
 /** 任务状态与终态语义。 */
 
-import type { Task, TaskStatus } from './types'
+import type { ListFolder, Task, TaskStatus } from './types'
 
 /** 编辑页下拉与看板列的顺序。 */
 export const STATUS_CHOICES: readonly { value: TaskStatus; label: string }[] = [
@@ -102,6 +102,30 @@ export function tasksInListScope(tasks: Task[], listId: number | null): Task[] {
   }
   for (const r of seed) walk(r)
   return tasks.filter((t) => keep.has(t.id))
+}
+
+/**
+ * 某个分组（含子分组）下所有清单的 id。
+ *
+ * 分组自身**不装任务**（见 TaskLists 的 groupTotal），所以「选中分组」在语义上
+ * 就是「选中它下面所有清单」：这里只展开出清单 id，任务闭包仍交给
+ * tasksInListScope 逐个算 —— 一套判定只写一次。
+ * seen 兜住数据异常里的环，避免无限递归。
+ */
+export function listIdsInFolder(folders: ListFolder[], groupId: number): number[] {
+  const out: number[] = []
+  const seen = new Set<number>()
+  const walk = (parentId: number): void => {
+    if (seen.has(parentId)) return
+    seen.add(parentId)
+    for (const f of folders) {
+      if ((f.parent_id ?? null) !== parentId) continue
+      if (f.kind === 'list') out.push(f.id)
+      else walk(f.id)
+    }
+  }
+  walk(groupId)
+  return out
 }
 
 /** 合并任务与有效完成态，供列表勾选显示 */

@@ -96,6 +96,12 @@
   font-size: var(--text-aux);
   color: var(--fg-secondary);
 }
+/* 标题占满剩余宽度、行内按钮贴右。没有这条，space-between 会把「新建 / 收起」
+   两个按钮摊到行的中间与右侧，标题与它们各占一段。 */
+.tasklists__head > span:first-child {
+  flex: 1;
+  min-width: 0;
+}
 .tasklists__body {
   flex: 1;
   min-height: 0;
@@ -131,6 +137,11 @@
 .tasklists__row--group {
   color: var(--fg-secondary);
   font-weight: 500;
+}
+/* 选中的分组：底色由 --on 给，这里要挡住上面那条次要文字色 —— 同权重下后写的赢，
+   否则选中的分组只有一层淡底、名字仍是灰的。 */
+.tasklists__row--group.tasklists__row--on {
+  color: var(--accent-text);
 }
 .tasklists__icon {
   flex: 0 0 auto;
@@ -200,6 +211,17 @@
   background: color-mix(in srgb, var(--accent) 18%, transparent);
   outline: var(--border-w) dashed var(--accent);
   outline-offset: -2px;
+}
+
+/* 整栏收起：只剩表头那个展开按钮，宽度让给任务列表。
+   与分组行的 caret 分工明确 —— caret 收的是「那个分组」，这里收的是「整栏」。 */
+.tasklists--rail {
+  flex: 0 0 40px;
+  width: 40px;
+}
+.tasklists--rail .tasklists__head {
+  justify-content: center;
+  padding: var(--space-2) var(--space-1);
 }
 
 .tasks-main {

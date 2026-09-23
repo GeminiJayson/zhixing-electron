@@ -7,6 +7,8 @@ import {
   Inbox,
   List,
   MoreHorizontal,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   SlidersHorizontal,
   X,
@@ -93,6 +95,8 @@ export function TaskLists({
 }: Props) {
   /** 折叠的分组（只影响分组自身的展开状态；空分组展开后什么也不显示） */
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
+  /** 整栏收起（只留一个展开按钮，把宽度让给任务列表）——与「折叠某个分组」是两件事 */
+  const [rail, setRail] = useState(false)
   /** 行右键菜单（重命名 / 删除 / 新建子级 / 移动到分组） */
   const [menu, setMenu] = useState<{ id: number; x: number; y: number } | null>(null)
   /** 「移动到分组…」二级菜单 */
@@ -240,12 +244,18 @@ export function TaskLists({
   const groupNode = (g: ListFolder, depth: number): ReactNode => {
     const kids = childrenOf(g.id)
     const open = !collapsed.has(g.id)
+    const on = activeKey === String(g.id)
     return (
       <div key={g.id}>
         <div
-          className={rowCls(false, ' tasklists__row--group' + dragCls(g.id))}
+          className={rowCls(on, ' tasklists__row--group' + dragCls(g.id))}
           style={{ paddingLeft: 4 + depth * 12 }}
-          onClick={() => toggle(g.id)}
+          role="treeitem"
+          aria-selected={on}
+          // 点分组 = 选中它（看这个分组下所有清单的任务），折叠交给左侧的 caret。
+          // 此前整行都是折叠开关：分组因此点不「选中」，而 caret 又藏在一个 14px 的
+          // 小按钮里，想选中分组根本没有入口。
+          onClick={() => onPick(String(g.id))}
           onContextMenu={(e) => {
             e.preventDefault()
             setMenu({ id: g.id, x: e.clientX, y: e.clientY })
@@ -321,129 +331,156 @@ export function TaskLists({
   const menuQuery = queryMenu ? queries.find((q) => q.id === queryMenu.id) : undefined
 
   return (
-    <aside className="tasklists" aria-label="清单">
+    <aside className={'tasklists' + (rail ? ' tasklists--rail' : '')} aria-label="清单">
       <div className="tasklists__head">
-        <span>清单</span>
-        <button
-          className="icon-btn"
-          title="新建清单"
-          aria-label="新建清单"
-          onClick={() => onNewList(null)}
-        >
-          <Plus size={13} />
-        </button>
-      </div>
-
-      <div className="tasklists__body" role="tree" aria-label="清单树">
-        <div
-          className={rowCls(activeKey === '')}
-          style={{ paddingLeft: 8 }}
-          role="treeitem"
-          aria-selected={activeKey === ''}
-          onClick={() => onPick('')}
-        >
-          <List size={13} className="tasklists__icon" aria-hidden />
-          <span className="tasklists__name">全部任务</span>
-          <span className="tasklists__count">{counts.all}</span>
-        </div>
-        <div
-          className={rowCls(activeKey === 'none')}
-          style={{ paddingLeft: 8 }}
-          role="treeitem"
-          aria-selected={activeKey === 'none'}
-          onClick={() => onPick('none')}
-        >
-          <Inbox size={13} className="tasklists__icon" aria-hidden />
-          <span className="tasklists__name">收件箱</span>
-          <span className="tasklists__count">{counts.inbox}</span>
-        </div>
-
-        {childrenOf(null).map((f) => (f.kind === 'group' ? groupNode(f, 0) : listRow(f, 0)))}
-
-        {folders.length === 0 && (
-          <p className="u-aux tasklists__hint" style={{ paddingLeft: 8 }}>
-            还没有清单。点上方 ＋ 新建一个。
-          </p>
+        {rail ? (
+          <button
+            className="icon-btn"
+            title="展开清单栏"
+            aria-label="展开清单栏"
+            onClick={() => setRail(false)}
+          >
+            <PanelLeftOpen size={13} />
+          </button>
+        ) : (
+          <>
+            <span>清单</span>
+            <button
+              className="icon-btn"
+              title="新建清单"
+              aria-label="新建清单"
+              onClick={() => onNewList(null)}
+            >
+              <Plus size={13} />
+            </button>
+            <button
+              className="icon-btn"
+              title="收起清单栏"
+              aria-label="收起清单栏"
+              onClick={() => setRail(true)}
+            >
+              <PanelLeftClose size={13} />
+            </button>
+          </>
         )}
       </div>
 
-      {/* 第二段：智能清单 —— 和清单一样是「我要看什么」的入口，只是过滤条件由表达式给出 */}
-      <div className="tasklists__section">
-        <div className="tasklists__head tasklists__head--sub">
-          <span>智能清单</span>
-          <button
-            className="icon-btn"
-            title="把当前筛选保存成智能清单"
-            aria-label="新建智能清单"
-            onClick={onNewQuery}
+      {/* 收起态只留上面那个展开按钮：不渲染树本身，而不是把它藏起来 ——
+          藏起来的行仍会被查询/自动化脚本当成「看得见」，那是在骗读 DOM 的人。 */}
+      {!rail && (
+        <>
+        <div className="tasklists__body" role="tree" aria-label="清单树">
+          <div
+            className={rowCls(activeKey === '')}
+            style={{ paddingLeft: 8 }}
+            role="treeitem"
+            aria-selected={activeKey === ''}
+            onClick={() => onPick('')}
           >
-            <Plus size={13} />
-          </button>
-        </div>
-        <div className="tasklists__body tasklists__body--sub" role="tree" aria-label="智能清单">
-          {queries.length === 0 && (
+            <List size={13} className="tasklists__icon" aria-hidden />
+            <span className="tasklists__name">全部任务</span>
+            <span className="tasklists__count">{counts.all}</span>
+          </div>
+          <div
+            className={rowCls(activeKey === 'none')}
+            style={{ paddingLeft: 8 }}
+            role="treeitem"
+            aria-selected={activeKey === 'none'}
+            onClick={() => onPick('none')}
+          >
+            <Inbox size={13} className="tasklists__icon" aria-hidden />
+            <span className="tasklists__name">收件箱</span>
+            <span className="tasklists__count">{counts.inbox}</span>
+          </div>
+
+          {childrenOf(null).map((f) => (f.kind === 'group' ? groupNode(f, 0) : listRow(f, 0)))}
+
+          {folders.length === 0 && (
             <p className="u-aux tasklists__hint" style={{ paddingLeft: 8 }}>
-              还没有智能清单。
+              还没有清单。点上方 ＋ 新建一个。
             </p>
           )}
-          {queries.map((q) => (
-            <div
-              key={q.id}
-              className={rowCls(activeQueryId === q.id)}
-              style={{ paddingLeft: 8 }}
-              role="treeitem"
-              aria-selected={activeQueryId === q.id}
-              onClick={() => onPickQuery(q.id)}
-              onContextMenu={(e) => {
-                e.preventDefault()
-                setQueryMenu({ id: q.id, x: e.clientX, y: e.clientY })
-              }}
+        </div>
+
+        {/* 第二段：智能清单 —— 和清单一样是「我要看什么」的入口，只是过滤条件由表达式给出 */}
+        <div className="tasklists__section">
+          <div className="tasklists__head tasklists__head--sub">
+            <span>智能清单</span>
+            <button
+              className="icon-btn"
+              title="把当前筛选保存成智能清单"
+              aria-label="新建智能清单"
+              onClick={onNewQuery}
             >
-              <SlidersHorizontal size={13} className="tasklists__icon" aria-hidden />
-              <span className="tasklists__name" title={q.expr}>
-                {q.name}
-              </span>
-              <button
-                className="icon-btn tasklists__more"
-                title="更多操作"
-                aria-label={`智能清单「${q.name}」的更多操作`}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                  setQueryMenu({ id: q.id, x: r.left, y: r.bottom + 4 })
+              <Plus size={13} />
+            </button>
+          </div>
+          <div className="tasklists__body tasklists__body--sub" role="tree" aria-label="智能清单">
+            {queries.length === 0 && (
+              <p className="u-aux tasklists__hint" style={{ paddingLeft: 8 }}>
+                还没有智能清单。
+              </p>
+            )}
+            {queries.map((q) => (
+              <div
+                key={q.id}
+                className={rowCls(activeQueryId === q.id)}
+                style={{ paddingLeft: 8 }}
+                role="treeitem"
+                aria-selected={activeQueryId === q.id}
+                onClick={() => onPickQuery(q.id)}
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  setQueryMenu({ id: q.id, x: e.clientX, y: e.clientY })
                 }}
               >
-                <MoreHorizontal size={13} />
-              </button>
-            </div>
-          ))}
+                <SlidersHorizontal size={13} className="tasklists__icon" aria-hidden />
+                <span className="tasklists__name" title={q.expr}>
+                  {q.name}
+                </span>
+                <button
+                  className="icon-btn tasklists__more"
+                  title="更多操作"
+                  aria-label={`智能清单「${q.name}」的更多操作`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                    setQueryMenu({ id: q.id, x: r.left, y: r.bottom + 4 })
+                  }}
+                >
+                  <MoreHorizontal size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
 
-      <div className="tasklists__foot">
-        <div
-          className={rowCls(activeKey === DONE_KEY)}
-          style={{ paddingLeft: 8 }}
-          role="treeitem"
-          aria-selected={activeKey === DONE_KEY}
-          onClick={() => onPick(DONE_KEY)}
-        >
-          <CheckCircle2 size={13} className="tasklists__icon" aria-hidden />
-          <span className="tasklists__name">已完成</span>
-          <span className="tasklists__count">{counts.done}</span>
+        <div className="tasklists__foot">
+          <div
+            className={rowCls(activeKey === DONE_KEY)}
+            style={{ paddingLeft: 8 }}
+            role="treeitem"
+            aria-selected={activeKey === DONE_KEY}
+            onClick={() => onPick(DONE_KEY)}
+          >
+            <CheckCircle2 size={13} className="tasklists__icon" aria-hidden />
+            <span className="tasklists__name">已完成</span>
+            <span className="tasklists__count">{counts.done}</span>
+          </div>
+          <div
+            className={rowCls(activeKey === ABANDONED_KEY)}
+            style={{ paddingLeft: 8 }}
+            role="treeitem"
+            aria-selected={activeKey === ABANDONED_KEY}
+            onClick={() => onPick(ABANDONED_KEY)}
+          >
+            <X size={13} className="tasklists__icon" aria-hidden />
+            <span className="tasklists__name">已放弃</span>
+            <span className="tasklists__count">{counts.abandoned}</span>
+          </div>
         </div>
-        <div
-          className={rowCls(activeKey === ABANDONED_KEY)}
-          style={{ paddingLeft: 8 }}
-          role="treeitem"
-          aria-selected={activeKey === ABANDONED_KEY}
-          onClick={() => onPick(ABANDONED_KEY)}
-        >
-          <X size={13} className="tasklists__icon" aria-hidden />
-          <span className="tasklists__name">已放弃</span>
-          <span className="tasklists__count">{counts.abandoned}</span>
-        </div>
-      </div>
+        </>
+      )}
 
       {menu && menuFolder && (
         <PopMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)} items={menuItems} />

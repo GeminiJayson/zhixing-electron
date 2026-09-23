@@ -30,6 +30,12 @@ interface Props {
    * 终态任务被收归之后，用户仍要能看出它原来属于哪个清单。
    */
   listName?: string
+  /**
+   * 是否处于「已完成」视图。「已完成」是按 roll-up 收归的：父任务可能自身还是
+   * todo，但子任务全完成了 —— 此时状态胶囊若仍读自身 status，已完成清单里就会
+   * 写着一排「待办」。这个开关让胶囊在这一个视图里统一读有效完成态。
+   */
+  doneView?: boolean
   onAddSubtask: (id: number) => void
   onFocus: (id: number, title: string) => void
   onEdit: (id: number) => void
@@ -52,6 +58,9 @@ export function TaskRow(props: Props) {
   }, [node.title])
 
   const hasChildren = node.children.length > 0
+  // 「已完成」视图里的行必然是有效完成：胶囊跟着它走，字与勾选圈就不会互相打架
+  const statusLabel = props.doneView && node.effectiveDone ? '已完成' : STATUS_LABELS[node.status]
+  const statusTone = props.doneView && node.effectiveDone ? 'success' : STATUS_TONES[node.status]
   const due = dueLabel(node.due_date)
   const range = rangeLabel(node.start_date, node.due_date)
   // 时间进度：缺了开始或截止就没有「进度」可言（见 taskProgress 的注释）
@@ -169,14 +178,14 @@ export function TaskRow(props: Props) {
         {/* 状态胶囊放最前：它是这一行最该先看到的信息。点它直接改状态，不必开编辑弹窗 */}
         <button
           type="button"
-          className={`chip chip--status chip--status-${STATUS_TONES[node.status]}`}
-          title={`状态：${STATUS_LABELS[node.status]}（点击修改）`}
+          className={`chip chip--status chip--status-${statusTone}`}
+          title={`状态：${statusLabel}（点击修改）`}
           onClick={(e) => {
             e.stopPropagation()
             props.onOpenStatus(node.id, e.currentTarget)
           }}
         >
-          {STATUS_LABELS[node.status]}
+          {statusLabel}
         </button>
         {node.repeat_period !== 'none' && (
           <span className="chip" title={`循环：${node.repeat_period}`}>

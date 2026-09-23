@@ -6,9 +6,10 @@ import {
   buildTaskTree,
   effectiveDoneMap,
   isTerminal,
+  listIdsInFolder,
   tasksInListScope,
 } from '@shared/task'
-import type { Task } from '@shared/types'
+import type { ListFolder, Task } from '@shared/types'
 
 const mk = (id: number, parent: number | null, status: Task['status'], extra: Partial<Task> = {}): Task =>
   ({
@@ -123,5 +124,40 @@ describe('清单范围：根 + 后代闭包', () => {
 
   it('空清单返回空数组', () => {
     expect(tasksInListScope([mk(1, null, 'todo', { list_id: 8 })], 7)).toEqual([])
+  })
+})
+
+describe('分组展开：分组下所有清单的 id', () => {
+  const folder = (id: number, parent: number | null, kind: 'group' | 'list'): ListFolder => ({
+    id,
+    parent_id: parent,
+    kind,
+    name: `${kind}${id}`,
+    icon: null,
+    collapsed: 0,
+    sort: id,
+  })
+
+  it('展开分组下所有清单，含子分组里的', () => {
+    const folders = [
+      folder(1, null, 'group'),
+      folder(2, 1, 'list'),
+      folder(3, 1, 'group'),
+      folder(4, 3, 'list'),
+      // 顶层清单不属于分组 1，不该被带上
+      folder(5, null, 'list'),
+    ]
+    expect(listIdsInFolder(folders, 1)).toEqual([2, 4])
+  })
+
+  it('没有清单的空分组返回空数组（选中它看到的就是空列表）', () => {
+    expect(listIdsInFolder([folder(1, null, 'group')], 1)).toEqual([])
+  })
+
+  it('数据异常成环时不会无限递归', () => {
+    const folders = [folder(1, null, 'group'), folder(2, 1, 'group')]
+    // 手工造一个环：1 的父是 2、2 的父是 1
+    folders[0].parent_id = 2
+    expect(listIdsInFolder(folders, 1)).toEqual([])
   })
 })

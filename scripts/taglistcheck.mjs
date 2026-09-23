@@ -137,6 +137,38 @@ try {
     J(doneRow)
   )
 
+  // 父子任务：「已完成」清单是按 roll-up 收归的，但未完成的子任务不该跟着混进来
+  await app.evaluate(`(async () => {
+    const db = window.zhixing.db
+    const p = await db.createTask('验收父-子全完成', null, null)
+    const c1 = await db.createTask('验收子-已完成', p.id, null)
+    const c2 = await db.createTask('验收子-已完成2', p.id, null)
+    await db.toggleTask(c1.id)
+    await db.toggleTask(c2.id)
+    const q = await db.createTask('验收父-子未完成', null, null)
+    await db.createTask('验收子-留一个待办', q.id, null)
+    await db.toggleTask(q.id)
+    return true
+  })()`)
+  await sleep(1500)
+  await app.evaluate(clickRow('已完成'))
+  await sleep(800)
+  const doneTree = await app.evaluate(`(() => [...document.querySelectorAll('.trow')].map((r) => ({
+    title: r.querySelector('.trow__title')?.textContent.trim() || '',
+    chip: r.querySelector('.chip--status')?.textContent.trim() || '',
+  })))()`)
+  const rollup = doneTree.find((r) => r.title === '验收父-子全完成')
+  check(
+    'roll-up 完成的父任务在「已完成」里显示为已完成（不再写着待办）',
+    !!rollup && rollup.chip === '已完成',
+    J(rollup)
+  )
+  check(
+    '未完成的子任务不会混进「已完成」清单',
+    !doneTree.some((r) => r.title === '验收子-留一个待办'),
+    J(doneTree.map((r) => r.title))
+  )
+
   const myList = await app.evaluate(clickRow('我的清单'))
   await sleep(700)
   const myRows = await app.evaluate(ROWS)

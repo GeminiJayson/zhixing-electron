@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Plus, Trash2 } from '@renderer/lib/icons'
-import { STATUS_LABELS, buildTaskTree, effectiveDoneMap, isTerminal, tasksInListScope, type TaskNode } from '@shared/task'
+import {
+  STATUS_LABELS,
+  buildTaskTree,
+  effectiveDoneMap,
+  isTerminal,
+  listIdsInFolder,
+  tasksInListScope,
+  type TaskNode,
+} from '@shared/task'
 import { filterTasks } from '@shared/query'
 import { priorityLabel } from '@shared/priority'
 import type {
@@ -301,12 +309,38 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
    * 子任务的 list_id 可能与父不同，闭包保证它们不会因为「根判定」被漏掉 ——
    * 这正是此前直接调 tasksByList 时最容易出错的地方，现在同一份判定只写在这里。
    */
+  /**
+   * 选中的是**分组**时，它下面所有清单的 id（含子分组的）。null = 当前选的不是分组。
+   *
+   * 分组自己不装任务（见 TaskLists 的 groupTotal），所以「选中分组」就是「选中它下面
+   * 所有清单」。展开成清单 id 之后再走同一套 tasksInListScope 闭包 —— 清单范围的判定
+   * 只写一次，不与主进程 listTasksByList 的语义打架。
+   */
+  const folderScopeIds = useMemo(() => {
+    if (listKey === '' || listKey === 'none' || listKey === DONE_KEY || listKey === ABANDONED_KEY) {
+      return null
+    }
+    const id = Number(listKey)
+    if (!Number.isFinite(id)) return null
+    const f = folders.find((x) => x.id === id)
+    if (!f || f.kind !== 'group') return null
+    return listIdsInFolder(folders, id)
+  }, [listKey, folders])
+
   const listScopedTasks = useMemo(() => {
     if (listKey === '' || listKey === DONE_KEY || listKey === ABANDONED_KEY) return tasks
+    if (folderScopeIds) {
+      // 各清单的闭包取并集；最后按 tasks 的原顺序过滤，保住 sort_key 排出来的手工顺序
+      const keep = new Set<number>()
+      for (const id of folderScopeIds) {
+        for (const t of tasksInListScope(tasks, id)) keep.add(t.id)
+      }
+      return tasks.filter((t) => keep.has(t.id))
+    }
     const target = listKey === 'none' ? null : Number(listKey)
     if (target !== null && !Number.isFinite(target)) return tasks
     return tasksInListScope(tasks, target)
-  }, [tasks, listKey])
+  }, [tasks, listKey, folderScopeIds])
 
   /**
    * 视图过滤：只筛根任务，子树仍由 buildTaskTree 自然挂回（与今日待办同口径）。
@@ -318,14 +352,20 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
   const scopedTasks = useMemo(() => {
     const day = new Date().toLocaleDateString('sv-SE')
     const isDone = (t: Task): boolean => effective.get(t.id) ?? isTerminal(t.status)
-    const isAbandoned = (t: Task): boolean => t.status === 'abandoned'
+    /** 终态视图（已完成 / 已放弃 / 今日页「已完成」聚焦）：跨清单，清单范围不参与 */
+    const terminalView = listKey === DONE_KEY || listKey === ABANDONED_KEY || focus === 'done'
     const match = (t: Task): boolean => {
+      if (terminalView) {
+        // 终态视图里**逐行**判定：未完成的行哪怕挂在一条已完成的任务下，也不该出现在这里。
+        // 此前「子任务一律放行」（parent_id !== null → true）是给普通清单视图留的例外，
+        // 却让已完成清单里混进一排写着「待办」的子任务。
+        if (listKey === ABANDONED_KEY) return t.status === 'abandoned'
+        // 「已完成」显示**全部**有效已完成（跨清单、跨时间），而不是只有今天完成的；
+        // 放弃的另有一格，不再混在里面 —— 两者的「该怎么处理」本来就不一样
+        if (listKey === DONE_KEY) return isDone(t) && t.status !== 'abandoned'
+        return isDone(t)
+      }
       if (t.parent_id !== null) return true
-      if (listKey === ABANDONED_KEY) return isAbandoned(t)
-      // 「已完成」显示**全部**已完成（跨清单、跨时间），而不是只有今天完成的；
-      // 放弃的另有一格，不再混在里面 —— 两者的「该怎么处理」本来就不一样
-      if (listKey === DONE_KEY) return isDone(t) && !isAbandoned(t)
-      if (focus === 'done') return isDone(t)
       if (isDone(t)) return false
       if (focus === 'today') return t.due_date === null || t.due_date >= day
       if (focus === 'overdue') return t.due_date !== null && t.due_date < day
@@ -368,6 +408,9 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     }
     return { all, inbox, done, abandoned, byList }
   }, [tasks, effective])
+
+  /** 工具栏「清单设置」里的当前目标：分组与清单的文案、后果都不同（分组不装任务） */
+  const curFolderKind = folders.find((f) => f.id === Number(listKey))?.kind ?? null
 
   /** 清单 id → 名称：终态视图里给每一行标出它原来属于哪个清单 */
   const listNameById = useMemo(() => {
@@ -929,8 +972,13 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     // 未命中 @列表 时回退到该清单而不是新建。
     // 「已完成 / 已放弃」是终态视图，不是真实清单：在这里新建的任务落回收件箱，
     // 而不是把 '__done' 塞进 Number() —— 那会得到 NaN 并一路传进 list_id。
+    // 分组也不装任务：选中分组时新建的任务落回收件箱，而不是挂到一个不是清单的节点上
     const realList =
-      listKey === '' || listKey === 'none' || listKey === DONE_KEY || listKey === ABANDONED_KEY
+      listKey === '' ||
+      listKey === 'none' ||
+      listKey === DONE_KEY ||
+      listKey === ABANDONED_KEY ||
+      folderScopeIds !== null
         ? null
         : Number(listKey)
     const currentList = realList !== null && Number.isFinite(realList) ? realList : null
@@ -956,6 +1004,9 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
                 : '收件箱'
               : undefined
           }
+          // 「已完成」视图里状态胶囊改按「有效完成」显示：收归进来的行必然是有效完成，
+          // 若这里还读自身 status，就会出现「已完成清单里写着待办」
+          doneView={listKey === DONE_KEY || focus === 'done'}
           selected={selectedIds.has(node.id)}
           collapsed={collapsed.has(node.id)}
           onToggle={handleToggle}
@@ -1373,8 +1424,17 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
           y={listMenu.y}
           onClose={() => setListMenu(null)}
           items={[
-            { key: 'rename', label: '重命名清单', onPick: () => void renameCurrentList() },
-            { key: 'delete', label: '删除清单', danger: true, onPick: () => void deleteCurrentList() },
+            {
+              key: 'rename',
+              label: curFolderKind === 'group' ? '重命名分组' : '重命名清单',
+              onPick: () => void renameCurrentList(),
+            },
+            {
+              key: 'delete',
+              label: curFolderKind === 'group' ? '删除分组' : '删除清单',
+              danger: true,
+              onPick: () => void deleteCurrentList(),
+            },
           ]}
         />
       )}

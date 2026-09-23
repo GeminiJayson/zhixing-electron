@@ -159,6 +159,50 @@ try {
     removed !== false && !queriesAfter.includes('验收智能'),
     J({ removed, queriesAfter })
   )
+
+  // ---------------------------------------------------------------- 7. 分组可点选中 + 整栏可收起
+  const pickedGroup = await app.evaluate(`(() => {
+    const rows = [...document.querySelectorAll('.tasklists__body:not(.tasklists__body--sub) .tasklists__row')]
+    const g = rows.find((r) => r.classList.contains('tasklists__row--group'))
+    if (!g) return null
+    const name = g.querySelector('.tasklists__name')?.textContent.trim() || ''
+    g.click()
+    return name
+  })()`)
+  await sleep(1000)
+  const pickedState = await app.evaluate(`(() => ({
+    on: [...document.querySelectorAll('.tasklists__body:not(.tasklists__body--sub) .tasklists__row--on .tasklists__name')].map((n) => n.textContent.trim()),
+  }))()`)
+  check(
+    '点分组会选中它（折叠交给左侧 caret，两个动作不再抢同一次点击）',
+    !!pickedGroup && pickedState.on.includes(pickedGroup),
+    J({ pickedGroup, pickedState })
+  )
+
+  const railClicked = await app.evaluate(`(() => {
+    const b = [...document.querySelectorAll('.tasklists__head button')].find((x) => x.title === '收起清单栏')
+    if (!b) return false
+    b.click()
+    return true
+  })()`)
+  await sleep(500)
+  const railState = await app.evaluate(`(() => ({
+    rail: !!document.querySelector('.tasklists--rail'),
+    body: !!document.querySelector('.tasklists__body'),
+  }))()`)
+  const railBack = await app.evaluate(`(() => {
+    const b = [...document.querySelectorAll('.tasklists__head button')].find((x) => x.title === '展开清单栏')
+    if (!b) return false
+    b.click()
+    return true
+  })()`)
+  await sleep(500)
+  const railAfter = await app.evaluate("!!document.querySelector('.tasklists__body')")
+  check(
+    '清单栏能整栏收起并再展开',
+    railClicked && railState.rail && !railState.body && railBack && railAfter,
+    J({ railClicked, railState, railBack, railAfter })
+  )
 } catch (err) {
   check('脚本跑完', false, err instanceof Error ? err.message : String(err))
 }
