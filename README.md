@@ -109,7 +109,7 @@ npm run dev                           # 开发模式（HMR）
 
 ## 6. 验证脚本体系
 
-`scripts/` 顶层 **66 个 `.mjs`**（另有 `verify-seed.cjs`）验证与构建脚本，以及 `scripts/fixtures/gen-office-fixtures.py` 夹具生成器。
+`scripts/` 顶层 **69 个 `.mjs`**（另有 `verify-seed.cjs`）验证与构建脚本，以及 `scripts/fixtures/gen-office-fixtures.py` 夹具生成器。
 
 统一方法论：**拷贝备份库到临时 `ZHIXING_HOME` → 启动真实 Electron（`--remote-debugging-port`）+ WebSocket/CDP → 经 IPC 操作 → 用 `sqlite3` CLI 校验落库**；多数脚本只在副本库上跑，绝不碰真实库。
 
@@ -128,14 +128,14 @@ npm run dev                           # 开发模式（HMR）
 | 链路写入 | `writecheck`(18)、`notecheck`(28)、`inboxcheck`(16)、`workflowcheck`(17)、`taskopscheck`(14) |
 | 口径 / 维护 | `todaycheck`(20)、`rollcheck`(25)、`recyclecheck`(18) |
 | 数据安全 | `importcheck`(13)、`securitycheck`(5) |
-| UI / 交互 | `dialogcheck`(10)、`editorcheck`(8)、`layoutcheck`、`vlistcheck`(8)、`officecheck`(13)、`interactioncheck`(32)、`themecheck`(18)、`graphcheck`(5) |
+| UI / 交互 | `dialogcheck`(10)、`editorcheck`(8)、`layoutcheck`、`vlistcheck`(8)、`officecheck`(13)、`interactioncheck`(32)、`themecheck`(18)、`graphcheck`(5)、`richpiccheck`(5)、`tasklistuxcheck`(11)、`taglistcheck`(22)、`bloubcheck`(11) |
 | 架构 / 可访问性 | `eventcheck`(8)、`contrast-audit`、`check-jieba-fallback`(4) |
 | 构建 / 发布 | `ensure-jieba-win-binding`、`upload-release` |
 | 视觉诊断 | `capture`、`bigcapture`、`diag-today` |
 
 进 `package.json` 的 npm 入口共 6 条：`typecheck` / `test` / `check:jieba` / `check:security` / `check:contrast` / `check:interaction`；其余按需手工执行。
 
-单元测试为 vitest：**37 个测试文件 / 405 个用例**，只覆盖纯函数（`vitest.config.ts:11-19` 明确排除涉及 SQLite / IPC / 真实窗口的部分，那部分留在 `scripts/*.mjs`）。
+单元测试为 vitest：**37 个测试文件 / 415 个用例**，只覆盖纯函数（`vitest.config.ts:11-19` 明确排除涉及 SQLite / IPC / 真实窗口的部分，那部分留在 `scripts/*.mjs`）。
 
 ## 7. 打包与发布
 
