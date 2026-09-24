@@ -2,7 +2,7 @@ import type { EditorView } from '@codemirror/view'
 import { sanitizeHtml } from '@shared/sanitize-html'
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react'
-import { ExternalLink, FileText, Morph, IconData, Link2, Plus, Sparkles, Tag, Trash2, UserPlus } from '@renderer/lib/icons'
+import { ChevronRight, ExternalLink, FileText, Maximize2, Morph, IconData, Link2, Plus, Sparkles, Tag, Trash2, UserPlus } from '@renderer/lib/icons'
 import { inkOn } from '@shared/color'
 import { subscribeDomain } from '@shared/events'
 import { useDialog } from '../components/Dialogs'
@@ -24,6 +24,8 @@ interface Props {
   onNotice: (message: string) => void
   /** 由其他页面（如图谱）跳转过来时要打开的笔记 */
   initialNoteId?: number | null
+  /** 全屏编辑：状态交给 App，左侧主导航才能一起让位 */
+  onZenChange?: (zen: boolean) => void
 }
 
 /** 笔记标签（与任务共用同一张 tag 表，颜色因此全局一致）。 */
@@ -48,7 +50,7 @@ const FORMAT_LABELS: { value: string; label: string }[] = [
   { value: 'link', label: '链接' },
 ]
 
-export function NotesPage({ onNotice, initialNoteId = null }: Props) {
+export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props) {
   const dialog = useDialog()
   const [notes, setNotes] = useState<Note[]>([])
   const [folders, setFolders] = useState<NoteFolder[]>([])
@@ -60,6 +62,17 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
   const [backlinks, setBacklinks] = useState<Backlink[]>([])
   const [outLinks, setOutLinks] = useState<NoteLink[]>([])
   const [linksOpen, setLinksOpen] = useState(true)
+  /**
+   * 信息区（属性 / 反向链接 / 引用 / 归属）默认**收起**成一行计数。
+   * 为何改：这三组在空态下字数很少，却固定吃掉编辑区约三成高度，
+   * 还把「标题 → 正文」的连续阅读打断成四段。展开后与改动前可见性一致。
+   */
+  const [linksExpanded, setLinksExpanded] = useState(false)
+  /** 全屏编辑：只留笔记正文（隐藏页面标题、笔记树、信息区，App 侧同时收起导航） */
+  const [zen, setZen] = useState(false)
+  /** 编辑区自身宽度是否窄到放不下并排信息卡 —— 窄了改用覆盖式抽屉 */
+  const [narrow, setNarrow] = useState(false)
+  const mainRef = useRef<HTMLDivElement | null>(null)
   const [dirty, setDirty] = useState(false)
   /** 新建笔记时使用的格式 */
   const [historyId, setHistoryId] = useState<number | null>(null)
@@ -957,8 +970,75 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
 
   const dangling = outLinks.filter((l) => l.dst_note_id == null)
 
+  /** 属性条数：信息条收起时也要能看到「有几条」，不然用户不知道点开有什么 */
+  const propCount = propDraft.split('\n').filter((l) => l.trim()).length
+
+  /**
+   * 编辑区宽度自查：量的是 `.notes-main` 而不是窗口 ——
+   * 1280 窗口下这里约 776px，三组信息并排够用；1024 窗口下只剩约 520px，
+   * 再并排就会把「还没有其他笔记引用它。」折成两行。窄了就换覆盖式抽屉。
+   */
+  useEffect(() => {
+    const el = mainRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver((entries) => {
+      // 阈值取 660：1280 窗口下编辑区约 736px（并排刚好够用），
+      // 取 720 会让默认窗口贴着断点，拖动笔记树宽度就来回跳形态
+      setNarrow((entries[0]?.contentRect.width ?? el.clientWidth) < 660)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  // 全屏编辑：Esc 退出（与浮层一致，按一次就能回来）
+  useEffect(() => {
+    if (!zen) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setZen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [zen])
+
+  // 全屏状态同步给 App（收起左侧主导航）；离开笔记页时还回去
+  useEffect(() => {
+    onZenChange?.(zen)
+  }, [zen, onZenChange])
+  useEffect(() => () => onZenChange?.(false), [onZenChange])
+
+  /**
+   * 链接体检：孤儿笔记 / 失效链接。
+   * 入口已挪到笔记树（整库视角的操作），结果仍用同一个浮层列出。
+   */
+  const handleLinkAudit = async (
+    kind: 'orphan' | 'broken',
+    anchor: { x: number; y: number }
+  ): Promise<void> => {
+    if (kind === 'orphan') {
+      const rows = await window.zhixing.db.orphanNotes()
+      setPanelItems(rows.map((n) => ({ key: `o-${n.id}`, label: n.title, id: n.id })))
+    } else {
+      const rows = await window.zhixing.db.brokenLinks()
+      setPanelItems(
+        rows.map((b, i) => ({
+          key: `b-${i}`,
+          label: `${b.src_title} → [[${b.dst_title}]]`,
+          id: b.src_note_id,
+        }))
+      )
+    }
+    setPanel({ kind, x: anchor.x, y: anchor.y })
+  }
+
+  /** 归属 chip 文案：优先文件夹名，其次关联任务数，都没有就是「归属」 */
+  const attachLabel = current?.folder_id
+    ? (folders.find((f) => f.id === current.folder_id)?.name ?? '已归属')
+    : attachedTasks.length > 0
+      ? `关联 ${attachedTasks.length} 个任务`
+      : '归属'
+
   return (
-    <div className="page page--notes">
+    <div className={'page page--notes' + (zen ? ' page--zen' : '')}>
       <div className="page__head">
         <h1 className="page__title">{t('page.notes')}</h1>
         <p className="page__subtitle">{t('page.notes.sub')}</p>
@@ -981,14 +1061,16 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
           onMoveFolder={(id, parentId) => void handleMoveFolder(id, parentId)}
           libJob={libJob}
           onOrganizeLibrary={() => void handleLibraryOrganize()}
-        onAddAttachment={() => void handleAddAttachment()}
+          onAddAttachment={() => void handleAddAttachment()}
+          onLinkAudit={(kind, anchor) => void handleLinkAudit(kind, anchor)}
         />
 
         {/* 编辑区与链接面板纵向排列：链接面板从右侧栏挪到了编辑区下方 */}
-        <div className="notes-main">
+        <div className={'notes-main' + (zen ? ' notes-main--zen' : '')} ref={mainRef}>
         <div className="editor">
           {current ? (
-            <>
+            /* 一张「笔记纸」装下头部、标签与正文：卡片只标记容器，不再标记分区 */
+            <div className="sheet">
                 <Toolbar
                   variant="page"
                   sticky={false}
@@ -1010,7 +1092,7 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
                   filters={[
                     <select
                       key="format"
-                      className="field field--compact"
+                      className="field field--compact note-format"
                       value={current.format}
                       aria-label="笔记格式"
                       title="笔记格式"
@@ -1044,17 +1126,6 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
                       <Link2 size={13} /> 引用
                     </button>,
                     <button
-                      key="attach"
-                      className="text-btn"
-                      title="把本笔记归属到某任务或某文件夹"
-                      onClick={(e) => {
-                        const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                        setAttachMenu({ x: r.left, y: r.bottom + 4 })
-                      }}
-                    >
-                      <UserPlus size={13} /> 归属
-                    </button>,
-                    <button
                       key="tpl"
                       className="text-btn"
                       onClick={(e) => {
@@ -1065,43 +1136,20 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
                       <Plus size={13} /> 模板
                     </button>,
                     <button
-                      key="orphan"
+                      key="zen"
                       className="text-btn"
-                      onClick={(e) => {
-                        const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                        void (async () => {
-                          const rows = await window.zhixing.db.orphanNotes()
-                          setPanelItems(rows.map((n) => ({ key: `o-${n.id}`, label: n.title, id: n.id })))
-                          setPanel({ kind: 'orphan', x: r.left, y: r.bottom + 4 })
-                        })()
-                      }}
+                      aria-pressed={zen}
+                      title={zen ? '退出全屏编辑（Esc）' : '全屏编辑：只留笔记正文，隐藏导航、笔记树与信息区'}
+                      onClick={() => setZen((v) => !v)}
                     >
-                      孤儿
-                    </button>,
-                    <button
-                      key="broken"
-                      className="text-btn"
-                      onClick={(e) => {
-                        const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                        void (async () => {
-                          const rows = await window.zhixing.db.brokenLinks()
-                          setPanelItems(
-                            rows.map((b, i) => ({
-                              key: `b-${i}`,
-                              label: `${b.src_title} → [[${b.dst_title}]]`,
-                              id: b.src_note_id,
-                            }))
-                          )
-                          setPanel({ kind: 'broken', x: r.left, y: r.bottom + 4 })
-                        })()
-                      }}
-                    >
-                      失效链接
+                      <Maximize2 size={13} /> {zen ? '退出全屏' : '全屏'}
                     </button>,
                   ]}
                 />
 
-              {/* 标签胶囊：点任一胶囊或「加标签」打开弹层，勾选与改色都在那一处 */}
+              {/* 元信息行：标签 + 归属。两者与标题同属「这一篇是什么」，
+                  此前分别占一张卡和一个工具栏按钮，把「标题 → 正文」的阅读打断成三段 */}
+              <div className="sheet__meta">
               <div className="note-tags" aria-label="笔记标签">
                 {currentTags.map((tg) => (
                   <button
@@ -1124,7 +1172,22 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
                   <Tag size={12} /> {currentTags.length === 0 ? '加标签' : '标签'}
                 </button>
               </div>
+                <button
+                  type="button"
+                  className="chip chip--meta"
+                  title="把本笔记归属到某任务或某文件夹"
+                  onClick={(e) => {
+                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                    setAttachMenu({ x: r.left, y: r.bottom + 4 })
+                  }}
+                >
+                  <UserPlus size={12} /> {attachLabel}
+                </button>
+              </div>
 
+              {/* 正文：Markdown / 富文本 / Word / Excel / 链接 / 预览。
+                  容器一律不再自带边框 —— 纸只有一张，分层靠留白 */}
+              <div className="sheet__body">
               {current.format === 'link' ? (
                 // 链接笔记：content_md 存 [{title,target}] JSON。
                 // 这里是**可编辑**的多链接列表 —— 「一条笔记多条链接、每条带标题」正是这个格式的用处，
@@ -1344,7 +1407,8 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
                   }}
                 />
               )}
-              </>
+              </div>
+            </div>
             ) : (
               <p className="empty-hint">从左侧选择一篇笔记，或点右上角新建。</p>
             )}
@@ -1386,11 +1450,52 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
         </div>
 
         {linksOpen && current && (
-          <aside className="links" aria-label="链接面板">
+          <>
+            {/* 窄窗口：展开态改成覆盖式抽屉，不挤压正文（挤压会把提示文案折成两行） */}
+            {narrow && linksExpanded && (
+              <div className="links__scrim" aria-hidden onClick={() => setLinksExpanded(false)} />
+            )}
+            <aside
+              className={
+                'links' +
+                (linksExpanded ? ' links--open' : ' links--collapsed') +
+                (narrow && linksExpanded ? ' links--drawer' : '')
+              }
+              aria-label="链接面板"
+            >
+            {/* 收起态只有这一行：信息区默认收起，正文才能拿到最大高度 */}
+            <div className="links__bar">
+              <button
+                type="button"
+                className="links__toggle"
+                aria-expanded={linksExpanded}
+                title={linksExpanded ? '收起信息区' : '展开属性 / 反向链接 / 引用 / 归属'}
+                onClick={() => setLinksExpanded((v) => !v)}
+              >
+                <ChevronRight size={13} className={'links__caret' + (linksExpanded ? ' links__caret--open' : '')} />
+                信息
+              </button>
+              <span className="links__counts">
+                属性 {propCount} · 反链 {backlinks.length} · 引用 {outLinks.length} · 归属{' '}
+                {attachedTasks.length + (current.folder_id ? 1 : 0)}
+              </span>
+              <span className="links__spacer" />
+              {narrow && linksExpanded ? (
+                <button className="text-btn" onClick={() => setLinksExpanded(false)}>
+                  关闭
+                </button>
+              ) : (
+                <button className="text-btn" onClick={() => setLinksOpen(false)}>
+                  隐藏
+                </button>
+              )}
+            </div>
+            {linksExpanded && (
+            <div className="links__body">
             <section className="links__card">
               <div className="note-props">
                   <header className="links__head">
-                    属性 · {propDraft.split('\n').filter((l) => l.trim()).length}
+                    属性 · {propCount}
                   </header>
                   <textarea
                     className="field note-props__editor"
@@ -1463,7 +1568,10 @@ export function NotesPage({ onNotice, initialNoteId = null }: Props) {
             {dangling.length > 0 && (
               <p className="u-aux">有 {dangling.length} 条待建链接，点击即可创建目标笔记。</p>
             )}
+            </div>
+            )}
           </aside>
+          </>
         )}
         </div>
       </div>

@@ -344,11 +344,25 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 
 ## 8. 编辑器与笔记交互
 
-### 8.1 三栏布局（`NotesPage.tsx`）
+### 8.1 布局：一张笔记纸 + 一条信息条（`NotesPage.tsx`，2026-09 重排）
 
+```text
+笔记树 240px（可拖 180–460）│ 笔记纸（编辑区唯一的卡片）
+                              ├─ 标题行：标题 · 未保存状态
+                              ├─ 元信息行：格式下拉 168px · 标签胶囊 · 归属 chip
+                              ├─ 工具行：预览 · AI 整理 · 链接 · 引用 · 模板 · 全屏
+                              └─ 正文：Markdown / 富文本 / Word / Excel / 链接 / 预览（一律无内层边框）
+                            信息条（默认收起，34px）
+```
 
-
-链接面板可整体开关（`linksOpen`），三栏均在 `global.css:126-134` 的 `overscroll-behavior: contain` 名单内。
+- **卡片只标记容器，不标记分区**：编辑区曾是「头部卡 + 标签卡 + 正文卡」三张独立卡片，加上信息区共 6 张带边框的矩形 + 4 段间隙，把「标题 → 正文」的连续阅读切成四段。重排后是 **1 张纸（`.sheet`）+ 1 条信息条**，分层靠留白，不新增分割线。正文各形态容器（`.md-editor` / `.rt-editor` / `.editor__preview` / `.editor__office` / `.editor__link`）统一去掉 `border`、`border-radius` 与底色。
+- **格式下拉固定 168px**：通用工具栏的 `.tb__subright--fill` 会把剩余宽度给第一个控件，在笔记编辑器里会把按钮整组推到右边、并把「模板 / 全屏」挤进「⋯」。笔记页用更具体的规则退出这次填充（`notes.css` 里 `.editor .tb .tb__subright.tb__subright--fill`）。
+- **信息条默认收起**：`linksExpanded` 默认 `false`，收起态只显示「属性 N · 反链 N · 引用 N · 归属 N」计数，高度 34px；展开后与重排前可见性一致（三组并排、`max-height: 220px`、内部滚动）。实测正文可用高度占比由空态约 46% 升到约 74%（1280×820）。
+- **窄窗口换形态**：判据是编辑区**自身**宽度（`ResizeObserver` 量 `.notes-main`）而不是窗口宽度，阈值 660px。低于阈值时展开态改为覆盖式抽屉 `.links--drawer`（`position: fixed` + `.links__scrim` 遮罩），不挤压正文 —— 1024 窗口下编辑区只剩约 480px，并排会把提示文案折成两行。
+- **全屏编辑**：工具栏「全屏」把状态提到 App（`.app--zen`），页面头、笔记树、左侧主导航一起让位，**标题栏保留**（窗口按钮还在上面）；Esc 退出，离开笔记页自动复位。样式见 `notes.css` 的 `.page--zen` / `.notes-main--zen`。
+- **链接体检入口在树上**：「孤儿笔记 / 失效链接」查的是整库链接健康度，不属于「这一篇怎么编辑」，2026-09 从单篇笔记工具栏移到笔记树工具行（`.ntree__topbar` 的「链接体检」）。单篇工具栏因此从 8 个控件降到 6 个，1280 窗口下不再发生折叠。
+- 信息区可整体开关（`linksOpen`，默认开）；滚动容器均在 `global.css:126-134` 的 `overscroll-behavior: contain` 名单内。
+- 回归：`node scripts/notesheetcheck.mjs`（18 项，含卡片收敛、信息条两态、抽屉形态、全屏、树上入口）。
 
 ### 8.2 CodeMirror 6 编辑器（`components/MarkdownEditor.tsx`）
 

@@ -48,7 +48,8 @@ try {
        const parent = office.parentElement
        const body = office.querySelector('.editor__office-body')
        const rt = office.querySelector('.rt-editor')
-       const grid = office.querySelector('.xlsx-grid')
+       // Excel 编辑 2026-09 换成 ag-grid 社区版：容器是 .xlsx-ag（旧的 .xlsx-grid 已不存在）
+       const grid = office.querySelector('.xlsx-grid, .xlsx-ag')
        const r = office.getBoundingClientRect()
        return {
          alignItems: cs.alignItems,
@@ -59,7 +60,12 @@ try {
          height: Math.round(r.height),
          parentWidth: parent ? parent.clientWidth : 0,
          parentHeight: parent ? parent.clientHeight : 0,
-         bodyInner: body ? body.clientHeight - parseFloat(getComputedStyle(body).paddingTop) * 2 : 0,
+         // 上下内边距不一定相等（正文区横向内边距交给 .sheet，纵向上下可以不同）
+         bodyInner: body
+           ? body.clientHeight -
+             parseFloat(getComputedStyle(body).paddingTop) -
+             parseFloat(getComputedStyle(body).paddingBottom)
+           : 0,
          rtHeight: rt ? Math.round(rt.getBoundingClientRect().height) : null,
          gridWidth: grid ? Math.round(grid.getBoundingClientRect().width) : null,
          bodyInnerWidth: body ? body.clientWidth - parseFloat(getComputedStyle(body).paddingLeft) * 2 : 0

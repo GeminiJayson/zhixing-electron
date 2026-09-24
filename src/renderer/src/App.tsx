@@ -51,6 +51,12 @@ export default function App() {
   } | null>(null)
   /** 由今日页概览卡点击带过来的任务页聚焦过滤 */
   const [taskFocus, setTaskFocus] = useState<'today' | 'done' | 'overdue' | null>(null)
+  /**
+   * 全屏编辑：由笔记页发起的「只留正文」模式。
+   * 状态放在 App 而不是笔记页 —— 左侧主导航也在 `.app__body` 里，
+   * 只有提到这一层才能连导航一起让位；离开笔记页时由笔记页负责复位。
+   */
+  const [zen, setZen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [pomo, setPomo] = useState({ focus: 25, break: 5, autoBreak: true })
   const [theme, setTheme] = useState<Theme>(() => {
@@ -476,7 +482,7 @@ export default function App() {
 
   return (
     <DialogProvider>
-      <div className="app">
+      <div className={'app' + (zen ? ' app--zen' : '')}>
         <TitleBar
         title={`知行 ZhiXing · ${t(current.labelKey)}`}
         theme={theme}
@@ -518,7 +524,7 @@ export default function App() {
               onClearFocus={() => setTaskFocus(null)}
             />
           ) : page === 'notes' ? (
-            <NotesPage onNotice={showToast} initialNoteId={openNoteId} />
+            <NotesPage onNotice={showToast} initialNoteId={openNoteId} onZenChange={setZen} />
           ) : page === 'settings' ? (
             <SettingsPage onNotice={showToast} onChanged={refreshOverview} />
           ) : page === 'review' ? (

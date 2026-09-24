@@ -216,36 +216,98 @@
   flex-direction: column;
   gap: var(--space-2);
 }
-/* 笔记标签条：与上方标题卡片同一视觉语言（同底、同圆角），只是矮得多。
-   点任一胶囊或「加标签」打开标签弹层 —— 增删与改色都在那一处。 */
-.note-tags {
+/* 笔记纸：头部（标题 + 元信息 + 工具行）与正文同处一张卡。
+   改造前它们是「头部卡 + 标签卡 + 正文卡」三张各自带边框的卡，
+   再加上四个间隙，把「标题 → 正文」的连续阅读切成四段。 */
+.sheet {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-3) var(--space-4) var(--space-2);
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+}
+/* 元信息行：标签 + 归属紧跟标题。留一个最小高度，
+   免得「有标签 / 没标签」两种笔记的头部高度来回跳。 */
+.sheet__meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  min-height: var(--control-h);
-  padding: var(--space-1) var(--space-4);
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--border);
-  border-radius: var(--radius-lg);
+  min-height: 26px;
+  padding-top: var(--space-1);
+}
+/* 正文区：吃掉剩余高度；内部各种编辑器一律不再自带边框 */
+.sheet__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding-top: var(--space-2);
+}
+/* 「归属」chip：工具栏里的一个按钮降级成元信息，点它仍是同一个归属菜单 */
+.chip--meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 7px;
+  background: transparent;
+  border-color: var(--border);
+  color: var(--fg-secondary);
+  cursor: pointer;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chip--meta:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+/* 标签条并入了元信息行：不再是一张独立卡片，也不占一整行高度。
+   点任一胶囊或「加标签」打开标签弹层 —— 增删与改色都在那一处。 */
+.note-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
 }
 .note-tags .chip {
   padding: 2px 8px;
   border-radius: var(--radius-pill);
   font-size: 11px;
 }
-/* 编辑区的标题与工具栏包在**同一张卡片**里：两者同属「笔记头部」，
-   中间不必再画分割线，分区靠留白表达就够。 */
+/* 头部不再是独立卡片：整张「笔记纸」（.sheet）才是那一个容器，
+   这里只负责把标题与工具行排好，内边距统一由 .sheet 给。
+   分区靠留白，不靠边框 —— 边框只标记容器。 */
 .editor .tb {
-  padding: var(--space-3) var(--space-4);
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--border);
-  border-radius: var(--radius-lg);
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
 }
 .editor .tb__sub {
   margin-top: var(--space-1);
   padding-top: 0;
   border-top: none;
+}
+/* 笔记编辑区不参与「首个控件吃掉剩余宽度」的通用填充（.tb__subright--fill）：
+   格式下拉只有 5 个短选项，拉宽会把按钮整组推到右边 ——
+   全屏时更夸张（整行都是下拉框），还会把「模板 / 全屏」挤进「⋯」。
+   这里必须比 toolbar.css 的那组规则更具体才能盖住它的 flex: 1 1 auto。 */
+.editor .tb .tb__subright.tb__subright--fill > :first-child,
+.editor .tb .tb__subright.tb__subright--fill > :first-child > * {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+.editor .note-format {
+  width: 168px;
 }
 /* 标题分区：标题与编辑状态**同一行**。此前把状态放在标题下面，会把标题行整体撑高，
    与页面的其它标题行不协调。 */
@@ -296,13 +358,11 @@
 .editor__area:focus {
   border-color: var(--accent);
 }
+/* 预览不再自带边框：纸只有一张（.sheet），预览是纸上的一段内容 */
 .editor__preview {
   flex: 1;
   min-height: 0;
-  padding: var(--space-4);
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--border);
-  border-radius: var(--radius-lg);
+  padding: var(--space-2) 0 var(--space-4);
   overflow: auto;
 }
 /* 编辑区 + 链接面板的纵向容器 */
@@ -314,15 +374,62 @@
   flex-direction: column;
   gap: var(--space-3);
 }
-/* 链接面板：原来贴在右侧当第三栏，现在放到编辑区下方。
-   两张卡片横向并排，省纵向空间；面板自己有高度上限并内部滚动。 */
+/* 信息区：属性 / 反向链接 / 引用 / 归属。
+   默认**收起**成一行计数 —— 空态下它们字数很少，改造前却固定吃掉编辑区约三成高度。
+   展开后与改造前可见性一致；窄窗口下展开态改走覆盖式抽屉（.links--drawer）。 */
 .links {
   flex: 0 0 auto;
-  max-height: 220px;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+}
+/* 收起态就是这一行：左侧开关 + 计数，右侧「隐藏」 */
+.links__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-h);
+  padding: 0 var(--space-3);
+}
+.links__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--fg-secondary);
+  font-size: var(--text-aux);
+  flex: 0 0 auto;
+}
+.links__toggle:hover {
+  color: var(--fg-primary);
+}
+.links__caret {
+  transition: transform var(--dur-fast) var(--ease-enter);
+}
+.links__caret--open {
+  transform: rotate(90deg);
+}
+.links__counts {
+  font-size: var(--text-aux);
+  color: var(--fg-secondary);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.links__spacer {
+  flex: 1;
+}
+/* 展开态：三组横向并排，高度上限 220px（与改造前一致），超出内部滚动 */
+.links__body {
   display: flex;
   flex-direction: row;
   gap: var(--space-3);
+  max-height: 220px;
+  overflow: auto;
+  padding: 0 var(--space-3) var(--space-3);
 }
 .links__card {
   flex: 1;
@@ -330,10 +437,41 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: var(--space-3);
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--border);
-  border-radius: var(--radius-lg);
+}
+/* 信息条本身就是那张卡，内部三组用细竖线分隔 —— 不再卡中卡
+   （改造前这里是三张各自带边框的卡片并排） */
+.links__card + .links__card {
+  padding-left: var(--space-3);
+  border-left: var(--border-w) solid var(--border);
+}
+/* 窄窗口：展开态是覆盖式抽屉，盖在正文之上而不是把正文挤窄 */
+.links--drawer {
+  position: fixed;
+  top: var(--titlebar-h);
+  right: 0;
+  bottom: 0;
+  width: min(400px, 86vw);
+  z-index: var(--z-menu);
+  border-right: none;
+  border-radius: 0;
+  box-shadow: var(--shadow-lg);
+  overflow: auto;
+}
+.links--drawer .links__body {
+  flex-direction: column;
+  max-height: none;
+}
+.links--drawer .links__card + .links__card {
+  padding-left: 0;
+  padding-top: var(--space-3);
+  border-left: none;
+  border-top: var(--border-w) solid var(--border);
+}
+.links__scrim {
+  position: fixed;
+  inset: var(--titlebar-h) 0 0 0;
+  z-index: calc(var(--z-menu) - 1);
+  background: var(--overlay);
 }
 .links__head {
   font-size: var(--text-aux);
@@ -533,6 +671,9 @@
   padding: var(--space-4);
   text-align: center;
   color: var(--fg-secondary);
+  /* 纸面上的一段「出口」，用淡底标记一块，不需要边框 */
+  background: var(--bg-hover);
+  border-radius: var(--radius-md);
 }
 .editor__office-path {
   max-width: 100%;
@@ -546,10 +687,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-4);
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--border);
-  border-radius: var(--radius-lg);
+  padding: var(--space-2) 0 var(--space-4);
 }
 /* 头部一行：左边是「链接笔记 · N 条」，右边是「添加链接」 */
 .editor__link-head {
@@ -583,15 +721,12 @@
   border: var(--border-w) solid var(--border-strong);
   border-radius: var(--radius-lg);
 }
-/* Office 内嵌预览：整块吃掉编辑区的剩余空间（头部 + 正文两段） */
+/* Office 内嵌预览：整块吃掉纸面剩余空间（头部 + 正文两段），不自带边框 */
 .editor__office {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--border);
-  border-radius: var(--radius-lg);
   overflow: hidden;
 }
 .editor__office-head {
@@ -611,7 +746,7 @@
   display: flex;
   flex-direction: column;
   overflow: auto;
-  padding: var(--space-4);
+  padding: var(--space-2) 0 var(--space-4);
   line-height: 1.7;
 }
 /* 编辑器嵌在 Office 卡片里：外层已经有一圈边框和底色，
@@ -655,34 +790,30 @@
   font-variant-numeric: tabular-nums;
 }
 /* CodeMirror 编辑器容器：滚动交给 .cm-scroller */
+/* Markdown 编辑器：同样吃掉纸面剩余高度，不自带边框 */
 .md-editor {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--border);
-  border-radius: var(--radius-lg);
 }
 .md-editor .cm-editor {
   height: 100%;
 }
-/* 富文本编辑器：工具栏 + contenteditable 正文，外层与 .md-editor 同构 */
+/* 富文本编辑器：工具栏 + contenteditable 正文，外层与 .md-editor 同构（无边框） */
 .rt-editor {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--border);
-  border-radius: var(--radius-lg);
 }
 
 .rt-editor__body {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: var(--space-3) var(--space-4);
+  /* 横向内边距交给 .sheet：正文与标题、标签左对齐 */
+  padding: var(--space-2) 0 var(--space-4);
   line-height: 1.75;
 }
 /* 空编辑器用 data-placeholder 当占位符（contenteditable 没有原生 placeholder） */
@@ -895,3 +1026,27 @@
 .xlsx-ag {
   min-height: 240px;
 }
+
+/* =============================================================================
+   全屏编辑（.page--zen / .notes-main--zen）
+   页面标题、笔记树、信息区一起让位，只留正文。
+   左侧主导航由 App 层的 .app--zen 收起（状态在 App，见 App.tsx）——
+   只有提到 App 那一层才能连导航一起让位；标题栏保留，窗口按钮还要用。
+   Esc 退出（笔记页里监听）。
+   ============================================================================= */
+.page--zen {
+  padding: 0;
+}
+.page--zen .page__head {
+  display: none;
+}
+.page--zen .notes-wrap {
+  gap: 0;
+}
+.page--zen .ntree {
+  display: none;
+}
+.notes-main--zen {
+  padding: var(--space-3) var(--space-4);
+}
+

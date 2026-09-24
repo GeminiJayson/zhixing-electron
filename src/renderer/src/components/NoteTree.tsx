@@ -68,6 +68,12 @@ interface Props {
   onOrganizeLibrary?: () => void
   /** 把本地文件归档成当前笔记的附件 */
   onAddAttachment?: () => void
+  /**
+   * 链接体检：孤儿笔记 / 失效链接。
+   * 它查的是「整个库」的链接健康度，与「这一篇怎么编辑」不在一个语义层；
+   * 2026-09 从编辑区工具栏挪到树上 —— 单篇工具栏因此少两个常驻按钮。
+   */
+  onLinkAudit?: (kind: 'orphan' | 'broken', anchor: { x: number; y: number }) => void
   /** 每篇笔记的标签：行内显示小胶囊（最多两个，其余折成 +N） */
   tagsOf?: (noteId: number) => { id: number; name: string; color: string }[]
 }
@@ -89,6 +95,7 @@ export function NoteTree({
   libJob = null,
   onOrganizeLibrary,
   onAddAttachment,
+  onLinkAudit,
   tagsOf = () => [],
 }: Props) {
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
@@ -104,6 +111,8 @@ export function NoteTree({
   const [folderFocus, setFolderFocus] = useState<number | null>(null)
   /** 新建类型菜单：点行内「新建」时弹出，选完类型才创建（替代工具栏里的格式下拉） */
   const [formatMenu, setFormatMenu] = useState<{ x: number; y: number; parentId: number | null } | null>(null)
+  /** 「链接体检」菜单：孤儿笔记 / 失效链接（结果面板由宿主页弹出） */
+  const [auditMenu, setAuditMenu] = useState<{ x: number; y: number } | null>(null)
   /** 从某个行内按钮弹出类型菜单（阻止冒泡，免得顺带选中该行） */
   const openFormatMenu = (e: React.MouseEvent, parentId: number | null): void => {
     e.stopPropagation()
@@ -323,7 +332,7 @@ export function NoteTree({
         />
       </div>
       {/* 树级动作：整库整理属于「整棵树」的操作，放在搜索框下面比塞进编辑器工具栏更顺手 */}
-      {(onOrganizeLibrary || onAddAttachment) && (
+      {(onOrganizeLibrary || onAddAttachment || onLinkAudit) && (
         <div className="ntree__topbar">
           <button
             className={libJob ? 'text-btn text-btn--danger' : 'text-btn'}
@@ -343,6 +352,18 @@ export function NoteTree({
               onClick={() => onAddAttachment()}
             >
               <FilePlus2 size={13} /> 添加附件
+            </button>
+          )}
+          {onLinkAudit && (
+            <button
+              className="text-btn"
+              title="链接体检：没有入链的孤儿笔记 / 指向不存在笔记的失效链接"
+              onClick={(e) => {
+                const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                setAuditMenu({ x: r.left, y: r.bottom + 4 })
+              }}
+            >
+              <Link2 size={13} /> 链接体检
             </button>
           )}
           {libJob && (
@@ -464,6 +485,26 @@ export function NoteTree({
               label: f.name,
               onPick: () => onMoveFolder(moveMenu.id, f.id),
             })),
+          ]}
+        />
+      )}
+
+      {auditMenu && (
+        <PopMenu
+          x={auditMenu.x}
+          y={auditMenu.y}
+          onClose={() => setAuditMenu(null)}
+          items={[
+            {
+              key: 'orphan',
+              label: '孤儿笔记（没有入链）',
+              onPick: () => onLinkAudit?.('orphan', auditMenu),
+            },
+            {
+              key: 'broken',
+              label: '失效链接（指向不存在的笔记）',
+              onPick: () => onLinkAudit?.('broken', auditMenu),
+            },
           ]}
         />
       )}

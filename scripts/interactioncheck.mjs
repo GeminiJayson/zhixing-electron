@@ -81,13 +81,21 @@ if (promptShown) {
   check('弹框已关闭（不残留遮罩）', closed === true)
 }
 
-// 3) 笔记树工具栏不能溢出卡片（240px 宽，格式选择器曾是 200px 固定宽）
+// 3) 笔记树的搜索框与工具行不能溢出卡片（树最窄 180px，控件宽度写死就会顶破）
+//    旧断言量的是 .ntree__tools —— 那个类早已不存在（工具行现在是 .ntree__topbar），
+//    于是恒为 null 恒失败；这里改成量真实存在的两个子项。
 await app.evaluate(`document.querySelector('[data-nav-item="notes"]')?.click()`)
 await sleep(900)
 const overflow = await app.evaluate(
-  `(() => { const el = document.querySelector('.ntree__tools'); return el ? el.scrollWidth - el.clientWidth : null })()`
+  `(() => {
+     const els = ['.ntree__search-wrap', '.ntree__topbar']
+       .map((s) => document.querySelector(s))
+       .filter(Boolean)
+     if (!els.length) return null
+     return els.reduce((n, el) => Math.max(n, el.scrollWidth - el.clientWidth), 0)
+   })()`
 )
-check('笔记树工具栏不溢出卡片', overflow !== null && overflow <= 1, `溢出 ${overflow}px`)
+check('笔记树里的搜索框与工具行不溢出卡片', overflow !== null && overflow <= 1, `溢出 ${overflow}px`)
 
 // 4) 每个页面的标题行都要有副标题
 const navKeys = ['today', 'tasks', 'inbox', 'notes', 'workflow', 'graph', 'review', 'settings']
