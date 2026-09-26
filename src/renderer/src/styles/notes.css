@@ -496,6 +496,135 @@
   flex-direction: column;
   gap: var(--space-3);
 }
+/* 笔记多标签页：编辑区顶部一条 30px 的横向列表。
+   ≥2 个 tab 才渲染（只有一篇时不占位）；全屏编辑时整块不渲染。
+   与下面的「一张纸」只留 4px —— tab 属于编辑区，不该像两个并列区块那样分开。 */
+.note-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  margin-bottom: calc(4px - var(--space-3));
+}
+/* 可横向滚动的 tab 列表：装不下时不画滚动条（滚轮 / 触控板横滑即可），
+   由右侧的「选择」入口兜底 —— 横向滚动是个不可见的手势，不能只靠它。 */
+.note-tabs__list {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.note-tabs__list::-webkit-scrollbar {
+  display: none;
+}
+/* 装不下时才出现的「选择」入口：点开列出全部已打开的笔记 */
+.note-tabs__pick {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 22px;
+  padding: 0 6px;
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--fg-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.note-tabs__pick:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+.note-tab {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 180px;
+  height: 22px;
+  padding: 0 3px 0 8px;
+  border-radius: var(--radius-pill);
+  color: var(--fg-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.note-tab:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+/* 选中态用强调色淡底：与 hover 的 --bg-hover 区分得开，又不至于像按钮那样抢眼 */
+.note-tab--active {
+  background: var(--accent-soft);
+  color: var(--fg-primary);
+}
+.note-tab__title {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* 类型图标与笔记树共用同一组色值（.ntree__type--*），两处不会分叉 */
+.note-tab__type {
+  flex: 0 0 auto;
+}
+.note-tab__type--markdown {
+  color: var(--fg-tertiary);
+}
+.note-tab__type--richtext {
+  color: var(--accent);
+}
+.note-tab__type--word {
+  color: #2b579a;
+}
+.note-tab__type--excel {
+  color: #217346;
+}
+.note-tab__type--link {
+  color: var(--accent-warm);
+}
+/* 未保存圆点：与标题行的保存胶囊同一套色（--accent-warm） */
+.note-tab__dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-warm);
+}
+/* 关闭按钮只在 hover / 选中 / 键盘聚焦时出现 —— 一排 × 太吵 */
+.note-tab__close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  opacity: 0;
+  cursor: pointer;
+}
+.note-tab:hover .note-tab__close,
+.note-tab--active .note-tab__close,
+.note-tab__close:focus-visible {
+  opacity: 0.65;
+}
+.note-tab__close:hover {
+  opacity: 1;
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
 /* 信息区：属性 / 反向链接 / 引用 / 归属。
    默认**收起**成一行计数 —— 空态下它们字数很少，改造前却固定吃掉编辑区约三成高度。
    展开后与改造前可见性一致；窄窗口下展开态改走覆盖式抽屉（.links--drawer）。 */

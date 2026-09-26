@@ -16,6 +16,7 @@ import { MarkdownView } from '../components/MarkdownView'
 const XlsxGrid = lazy(() => import('../components/XlsxGrid'))
 import { NoteHistory } from '../components/NoteHistory'
 import { NoteTree, type NoteFormat } from '../components/NoteTree'
+import { NoteTabs, type NoteTab } from '../components/NoteTabs'
 import { Toolbar } from '../components/Toolbar'
 import { PopMenu } from '../components/PopMenu'
 import { TagMenu } from '../components/TagMenu'
@@ -34,6 +35,31 @@ type NoteTag = { id: number; name: string; color: string }
 /** 自动保存防抖：输入停顿后落库。 */
 const AUTOSAVE_MS = 800
 
+/** 笔记多标签页：上限。到顶时最久未使用的那个被挤出去（见 docs/note-tabs-plan.md）。 */
+const TAB_MAX = 12
+/** 已打开笔记的持久化键：纯界面偏好，与 `zhixing.tree.notes` 同一套路，不跟着数据导出。 */
+const TABS_KEY = 'zhixing.noteTabs'
+
+/**
+ * 读上次的 tab 列表。
+ *
+ * 这里的输入来自 localStorage，**什么都不可信**：可能被手工改过、可能是旧版本
+ * 残留、可能记着一个已经不存在的笔记 id。所以一律过滤成合法形态 ——
+ * 只留正整数、去重、截到上限，`active` 必须真的在列表里。
+ */
+function readStoredTabs(): { ids: number[]; active: number | null } {
+  try {
+    const raw = JSON.parse(localStorage.getItem(TABS_KEY) ?? '') as { ids?: unknown; active?: unknown }
+    const ids = Array.isArray(raw?.ids)
+      ? [...new Set(raw.ids.filter((x): x is number => Number.isInteger(x) && (x as number) > 0))].slice(-TAB_MAX)
+      : []
+    const active = Number.isInteger(raw?.active) && ids.includes(raw.active as number) ? (raw.active as number) : null
+    return { ids, active }
+  } catch {
+    return { ids: [], active: null }
+  }
+}
+
 /** 链接表格的列宽（与 notes.css 里的 grid 定义保持一致）。 */
 const LINK_GAP_W = 6
 const LINK_OPS_W = 76
@@ -45,7 +71,26 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   const dialog = useDialog()
   const [notes, setNotes] = useState<Note[]>([])
   const [folders, setFolders] = useState<NoteFolder[]>([])
-  const [selectedId, setSelectedId] = useState<number | null>(null)
+  /**
+   * 已打开的笔记（顺序即打开顺序）与当前 tab。
+   *
+   * 初次进入从 localStorage 恢复；带 initialNoteId 跳进来时直接把它并进列表并激活 ——
+   * 省掉"先激活列表末尾、再切过去"的一次多余读库与内容闪现。
+   */
+  const bootTabs = useMemo(() => {
+    const stored = readStoredTabs()
+    if (initialNoteId == null) return stored
+    return {
+      ids: stored.ids.includes(initialNoteId) ? stored.ids : [...stored.ids, initialNoteId].slice(-TAB_MAX),
+      active: initialNoteId,
+    }
+    // 只在首次渲染算一次：此后 initialNoteId 的变化由下面的 effect 处理
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const [openTabs, setOpenTabs] = useState<number[]>(bootTabs.ids)
+  const [selectedId, setSelectedId] = useState<number | null>(bootTabs.active)
+  /** 笔记列表是否已经拉过一次：tab 收敛要等它，否则会把恢复出来的 id 全当「已删除」清掉。 */
+  const [notesLoaded, setNotesLoaded] = useState(false)
   const [current, setCurrent] = useState<Note | null>(null)
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
@@ -210,6 +255,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     ])
     setNotes(rows)
     setFolders(fs)
+    setNotesLoaded(true)
     await loadNoteTags()
   }, [loadNoteTags])
 
@@ -218,9 +264,12 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     void window.zhixing.db.noteTemplates().then(setTemplates)
   }, [load])
 
-  // 跨页跳转：带着笔记 id 进来时直接选中它
+  // 跨页跳转：带着笔记 id 进来时打开（或激活）它。首次挂载那一次已经并进 bootTabs，
+  // 这里负责「人已经在笔记页、又被别处跳过来」的情况。
   useEffect(() => {
-    if (initialNoteId != null) setSelectedId(initialNoteId)
+    if (initialNoteId != null) void selectNote(initialNoteId)
+    // selectNote 每次渲染都是新引用，进依赖会让它每渲染跑一遍
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialNoteId])
 
   // 打开笔记：装载正文、出链、反链与归属任务
@@ -484,14 +533,80 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     }
   }
 
-  /** 所有「切换笔记」的入口都走这里：先落盘，再切换。 */
+  /**
+   * 所有「打开笔记」的入口都走这里（笔记树、`[[标题]]`、反链 / 出链、命令面板、
+   * 跨页跳转…）：先落盘，再把这篇放进 tab 列表并激活。
+   *
+   * 已打开的笔记**只激活、不重复开** —— 树上反复点是安全的；未打开的才新开一个，
+   * 超过 TAB_MAX 时最久未使用的那个被挤出去（当前这篇刚进队尾，不会挤到自己）。
+   */
   const selectNote = useCallback(
     async (id: number | null): Promise<void> => {
       await flushPending()
+      if (id == null) {
+        setSelectedId(null)
+        return
+      }
+      setOpenTabs((prev) => {
+        if (prev.includes(id)) return prev
+        const next = [...prev, id]
+        return next.length > TAB_MAX ? next.slice(next.length - TAB_MAX) : next
+      })
       setSelectedId(id)
     },
     [flushPending]
   )
+
+  /**
+   * 关掉一个 tab，并决定接下来激活谁：**右邻 → 左邻 → 空态**。
+   *
+   * `flush` 决定关闭前要不要把未落盘的正文写回去：正常关闭要（否则丢掉最后 <800ms
+   * 的输入），**删除笔记时必须传 false** —— 那篇已经从库里没了，落盘会写一篇本不该存在的笔记。
+   */
+  const dropTab = useCallback(
+    async (id: number, flush: boolean): Promise<void> => {
+      const idx = openTabs.indexOf(id)
+      if (idx < 0) return
+      const next = openTabs.filter((x) => x !== id)
+      if (id === selectedId) {
+        if (flush) await flushPending()
+        setSelectedId(next[idx] ?? next[idx - 1] ?? null)
+      }
+      setOpenTabs(next)
+    },
+    [openTabs, selectedId, flushPending]
+  )
+
+  /** 给 tab 条用的关闭入口（事件回调不 await，包一层）。 */
+  const handleCloseTab = useCallback(
+    (id: number): void => {
+      void dropTab(id, true)
+    },
+    [dropTab]
+  )
+
+  // tab 列表里不允许有已经不存在的笔记：删笔记、换库、回收站恢复之后都要收敛。
+  // 必须等第一次 load() 完成 —— 否则启动瞬间 notes 还是空的，恢复出来的 id 会被全当「已删除」清掉。
+  useEffect(() => {
+    if (!notesLoaded) return
+    const alive = new Set(notes.map((n) => n.id))
+    setOpenTabs((prev) => {
+      const next = prev.filter((id) => alive.has(id))
+      return next.length === prev.length ? prev : next
+    })
+  }, [notes, notesLoaded])
+
+  // 不变量：当前笔记必须属于 tab 列表（列表为空时才没有当前笔记）。
+  // 守住它，「树上高亮的那篇」与「tab 条里选中的那枚」才永远指同一篇。
+  useEffect(() => {
+    if (selectedId != null && openTabs.includes(selectedId)) return
+    setSelectedId(openTabs.length ? openTabs[openTabs.length - 1] : null)
+  }, [openTabs, selectedId])
+
+  // 持久化：切页会卸载整个笔记页，重启更不用说 —— 恢复全靠这里记下的这一份
+  useEffect(() => {
+    localStorage.setItem(TABS_KEY, JSON.stringify({ ids: openTabs, active: selectedId }))
+  }, [openTabs, selectedId])
 
   // 关窗/刷新前也把未落盘的编辑冲出去：
   // 之前只有「切笔记」8 个入口会 flush，直接关窗会丢最后 <800ms 的输入。
@@ -829,7 +944,9 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     })
     if (!confirmed) return
     await window.zhixing.db.deleteNote(id)
-    if (selectedId === id) setSelectedId(null)
+    // 删掉的笔记不该在 tab 里留一个死标签：关掉它，并激活右邻。
+    // flush=false —— 这篇已经从库里没了，落盘会写一篇本不该存在的笔记。
+    await dropTab(id, false)
     await load()
     onNotice('已删除（可在回收站恢复）')
   }
@@ -1109,6 +1226,22 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     </button>,
   ]
 
+  /** tab 条的数据：标题与格式只从已加载的 notes 取，不额外查库。 */
+  const tabItems: NoteTab[] = useMemo(
+    () =>
+      openTabs.map((id) => {
+        const n = notes.find((x) => x.id === id)
+        return {
+          id,
+          title: n?.title ?? '（已删除）',
+          format: (n?.format ?? 'markdown') as NoteFormat,
+          // 只有当前 tab 可能「还没落盘」—— 切走前都会 flush，其余 tab 一定是已保存的
+          unsaved: id === selectedId && (dirty || officePending),
+        }
+      }),
+    [openTabs, notes, selectedId, dirty, officePending]
+  )
+
   return (
     <div className={'page page--notes' + (zen ? ' page--zen' : '')}>
       <div className="page__head">
@@ -1153,6 +1286,16 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
 
         {/* 编辑区与链接面板纵向排列：链接面板从右侧栏挪到了编辑区下方 */}
         <div className={'notes-main' + (zen ? ' notes-main--zen' : '')} ref={mainRef}>
+        {/* 笔记多标签页：全屏编辑时随页面头一起让位。
+            只有 1 个 tab 时 NoteTabs 自己返回 null —— 不给单篇笔记白占那 30px。 */}
+        {zen ? null : (
+          <NoteTabs
+            tabs={tabItems}
+            activeId={selectedId}
+            onActivate={(id) => void selectNote(id)}
+            onClose={handleCloseTab}
+          />
+        )}
         <div className="editor">
           {current ? (
             /* 一张「笔记纸」装下头部、标签与正文：卡片只标记容器，不再标记分区 */

@@ -35,7 +35,8 @@ const FORMAT_ICON: Record<string, { Comp: typeof FileText; tone: string }> = {
   link: { Comp: Link2, tone: 'link' },
 }
 
-function noteIcon(format: string | undefined): { Comp: typeof FileText; tone: string } {
+/** 格式 → 图标 + 色调：笔记树与笔记多标签页共用同一套，两处的图标不会分叉。 */
+export function noteIcon(format: string | undefined): { Comp: typeof FileText; tone: string } {
   return FORMAT_ICON[format ?? 'markdown'] ?? FORMAT_ICON.markdown
 }
 export const NOTE_FORMATS: { key: NoteFormat; label: string }[] = [
