@@ -1057,6 +1057,8 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
    * 位置同样是编辑区顶部、同样靠左，视觉上仍是同一条。
    */
   const wordEditing = isOffice && current?.format === 'word'
+  /** Excel 可编辑：没有格式条可挂，出口按钮挂到页面工具栏的 primary（不折叠位）。 */
+  const excelEditing = isOffice && current?.format === 'excel'
   const usesRichToolbar = !preview && (current?.format === 'richtext' || wordEditing)
 
   /** 编辑区的操作组：回答「怎么编辑这一篇」，所以归工具栏，且一律排在左侧。 */
@@ -1214,6 +1216,21 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                   /* 操作组一律靠左：富文本形态下它是空的（那六个入口挂到了格式条左侧），
                      工具行随之整行不渲染 —— 见 Toolbar 的 hasSubRow。 */
                   nav={usesRichToolbar ? undefined : editorActions}
+                  /* Office 的出口按钮落在同一条工具栏的最右端（不折叠位）：
+                     Word 走 RichTextEditor 的 primary，Excel 没有格式条，挂在这里 ——
+                     两者位置与样式一致，Excel 也不再为此单占一行头部。 */
+                  primary={
+                    excelEditing ? (
+                      <button
+                        className="text-btn"
+                        onClick={() =>
+                          void window.zhixing.db.openNoteFile(current.id).then((r) => onNotice(r.message))
+                        }
+                      >
+                        用系统应用打开
+                      </button>
+                    ) : undefined
+                  }
                 />
 
               {/* 正文：Markdown / 富文本 / Word / Excel / 链接 / 预览。
@@ -1329,25 +1346,9 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
               ) : isOffice ? (
                 // Word/Excel 直接可编辑并自动写回原文件
                 <div className="editor__office">
-                  {/* Word 的状态与两个按钮并进了格式条（见下面的 leadingMeta / primary）——
-                      头部那一行原本只装一句话加两个按钮，白白占掉 40px。
-                      Excel 没有格式条可挂，头部保持原样。 */}
-                  {current.format === 'word' ? null : (
-                    <div className="editor__office-head">
-                      <span className="u-aux">
-                        Excel 可编辑（自动写回 .xlsx）
-                        {officeEdit?.message ? ` · ${officeEdit.message}` : ''}
-                      </span>
-                      <button
-                        className="text-btn"
-                        onClick={() =>
-                          void window.zhixing.db.openNoteFile(current.id).then((r) => onNotice(r.message))
-                        }
-                      >
-                        用系统应用打开
-                      </button>
-                    </div>
-                  )}
+                  {/* Word / Excel 的出口按钮都并进了工具栏（Word 见下面 RichTextEditor 的
+                      primary，Excel 见上面页面工具栏的 primary）—— 头部那一行原本只装一句
+                      状态文案加一个按钮，白占 40px。 */}
                   {current.format === 'word' ? (
                     <div className="editor__office-body">
                       <RichTextEditor

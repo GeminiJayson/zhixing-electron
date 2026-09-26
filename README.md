@@ -128,7 +128,7 @@ npm run dev                           # 开发模式（HMR）
 | 链路写入 | `writecheck`(18)、`notecheck`(28)、`inboxcheck`(16)、`workflowcheck`(18)、`taskopscheck`(14) |
 | 口径 / 维护 | `todaycheck`(20)、`rollcheck`(25)、`recyclecheck`(18) |
 | 数据安全 | `importcheck`(13)、`securitycheck`(5) |
-| UI / 交互 | `dialogcheck`(10)、`editorcheck`(8)、`layoutcheck`、`vlistcheck`(8)、`officecheck`(18)、`interactioncheck`(32)、`themecheck`(18)、`graphcheck`(5)、`richpiccheck`(5)、`tasklistuxcheck`(12)、`taglistcheck`(22)、`bloubcheck`(11)、`notesheetcheck`(44) |
+| UI / 交互 | `dialogcheck`(10)、`editorcheck`(8)、`layoutcheck`、`vlistcheck`(8)、`officecheck`(18)、`interactioncheck`(32)、`themecheck`(18)、`graphcheck`(5)、`richpiccheck`(5)、`tasklistuxcheck`(12)、`taglistcheck`(22)、`bloubcheck`(11)、`notesheetcheck`(47) |
 | 架构 / 可访问性 | `eventcheck`(8)、`contrast-audit`、`check-jieba-fallback`(4) |
 | 构建 / 发布 | `ensure-jieba-win-binding`、`upload-release` |
 | 视觉诊断 | `capture`、`bigcapture`、`diag-today` |

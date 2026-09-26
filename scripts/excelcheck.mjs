@@ -56,11 +56,14 @@ try {
   const clicked = await ev('(async () => { const f = [...document.querySelectorAll(".ntree__note")].find((x) => x.textContent.indexOf("Excel 验证") >= 0); if (!f) return false; f.click(); return true })()')
   ck('在笔记树里点开了它', clicked === true, J({ clicked }))
   await sleep(3000)
-  const g = await ev('(() => { const w = document.querySelector(".xlsx-ag"); const h = document.querySelector(".editor__office-head .u-aux"); return { wrap: !!w, ag: !!(document.querySelector(".xlsx-ag .ag-root") || document.querySelector(".ag-root")), rows: document.querySelectorAll(".ag-row").length, head: (document.querySelector(".ag-header-cell-text") || {}).textContent || null, msg: h ? h.textContent.trim() : null } })()')
+  const g = await ev('(() => { const w = document.querySelector(".xlsx-ag"); const bar = document.querySelector(".sheet > .tb .tb__subright"); const btns = bar ? [...bar.querySelectorAll("button")].map((b) => (b.textContent || "").trim()) : []; return { wrap: !!w, ag: !!(document.querySelector(".xlsx-ag .ag-root") || document.querySelector(".ag-root")), rows: document.querySelectorAll(".ag-row").length, head: (document.querySelector(".ag-header-cell-text") || {}).textContent || null, headGone: document.querySelector(".editor__office-head") === null, inBar: btns.includes("用系统应用打开"), openIsLast: btns[btns.length - 1] === "用系统应用打开" } })()')
   ck('渲染出了 ag-grid 网格', g && g.wrap === true && g.ag === true, J(g))
-  console.log('【诊断】编辑区提示：' + (g && g.msg))
-  ck('表头来自 .xlsx 的真实列名', g && g.head === '编号', J({ head: g && g.head, msg: g && g.msg }))
+  ck('表头来自 .xlsx 的真实列名', g && g.head === '编号', J({ head: g && g.head }))
   ck('虚拟滚动生效（3000 行只渲染可见的少数行）', g && g.rows > 0 && g.rows < 200, J({ rendered: g && g.rows, total: 3000 }))
+  // 与 Word 一致：出口按钮落在页面工具栏的最右端不折叠位，独立的头部整行已撤
+  ck('「用系统应用打开」在工具栏最右端，头部整行已撤（与 Word 一致）',
+    g && g.headGone === true && g.inBar === true && g.openIsLast === true,
+    J({ headGone: g && g.headGone, inBar: g && g.inBar, openIsLast: g && g.openIsLast }))
 } catch (e) { ck('脚本跑完', false, e instanceof Error ? e.message : String(e)) }
 const bad = R.filter((x) => !x).length
 console.log('')

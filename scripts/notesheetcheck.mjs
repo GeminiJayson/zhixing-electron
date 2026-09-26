@@ -459,6 +459,43 @@ try {
    })()`)
   check('写回完成后胶囊回到「已保存」',
     chipAfterSave?.dirty === false && chipAfterSave?.text === '已保存', J(chipAfterSave))
+
+  // ------------------------------------------------ Excel：出口按钮与 Word 落在同一条工具栏
+  // Excel 没有格式条可挂，「用系统应用打开」挂到页面工具栏的最右端不折叠位；
+  // 原先那条只装一句状态文案 + 一个按钮的头部整块撤掉 —— 与 Word 的结构一致。
+  const excelTitle = STAMP + ' Excel 出口'
+  const excelId = await app.evaluate(
+    `window.zhixing.db.createNote(${J(excelTitle)}, null, '', 'excel').then((n) => n && n.id)`
+  )
+  check('已建 Excel 待验证笔记', Boolean(excelId), J({ excelId }))
+  await app.evaluate(`document.querySelector('[data-nav-item="today"]').click()`)
+  await sleep(600)
+  await app.evaluate(`document.querySelector('[data-nav-item="notes"]').click()`)
+  await sleep(1000)
+  const excelOpened = await app.evaluate(`(() => {
+     const b = [...document.querySelectorAll('.ntree__note')].find((x) => (x.querySelector('.ntree__title')?.textContent || '') === ${J(excelTitle)})
+     if (!b) return false
+     b.click()
+     return true
+   })()`)
+  check('能打开 Excel 笔记', excelOpened)
+  await sleep(2200)
+  const excelRow = await app.evaluate(`(() => {
+     const head = document.querySelector('.editor__office-head')
+     const bar = document.querySelector('.sheet > .tb .tb__subright')
+     const labels = bar ? [...bar.querySelectorAll('button')].map((b) => (b.textContent || '').trim()) : []
+     return {
+       headGone: head === null,
+       labels,
+       inBar: labels.includes('用系统应用打开'),
+       openIsLast: labels[labels.length - 1] === '用系统应用打开',
+       subRows: document.querySelectorAll('.sheet .tb__sub').length
+     }
+   })()`)
+  check('Excel：出口按钮在工具栏最右端不折叠位，头部整行已撤',
+    excelRow.headGone === true && excelRow.inBar === true && excelRow.openIsLast === true && excelRow.subRows === 1,
+    J(excelRow))
+
   // 回到 Markdown 笔记：后面的断言继续在它上面跑
   await app.evaluate(`(() => {
      const b = [...document.querySelectorAll('.ntree__note')].find((x) => (x.querySelector('.ntree__title')?.textContent || '') === ${J(title)})
