@@ -102,6 +102,55 @@ try {
   check('笔记树能收起并再展开（收起时不占位）',
     ntreeBefore && ntreeToggle && !ntreeHidden && ntreeBack,
     J({ ntreeBefore, ntreeToggle, ntreeHidden, ntreeBack }))
+
+  // 笔记树与编辑区之间的分隔条：规格必须与工作流的模板树分隔条（.wf-splitter）一致 ——
+  // 12px 命中区 + 伪元素画的 2px 细线 + 可聚焦可键盘调宽（← → 各 16px，Home 复位）。
+  const splitter = await app.evaluate(`(() => {
+     const el = document.querySelector('.ntree__resizer')
+     if (!el) return null
+     const line = getComputedStyle(el, '::after')
+     const r = el.getBoundingClientRect()
+     return {
+       role: el.getAttribute('role'),
+       orientation: el.getAttribute('aria-orientation'),
+       now: Number(el.getAttribute('aria-valuenow')),
+       min: Number(el.getAttribute('aria-valuemin')),
+       max: Number(el.getAttribute('aria-valuemax')),
+       tabIndex: el.tabIndex,
+       hitW: Math.round(r.width),
+       lineW: Math.round(parseFloat(line.width || '0')),
+       lineBg: line.backgroundColor
+     }
+   })()`)
+  check('分隔栏与工作流同款：12px 命中区 + 2px 细线 + 可聚焦 + 完整 ARIA',
+    splitter != null &&
+      splitter.role === 'separator' &&
+      splitter.orientation === 'vertical' &&
+      splitter.tabIndex === 0 &&
+      splitter.hitW === 12 &&
+      splitter.lineW === 2 &&
+      splitter.lineBg !== 'rgba(0, 0, 0, 0)' &&
+      splitter.min === 180 &&
+      splitter.max === 460,
+    J(splitter))
+
+  const readWidth = () => app.evaluate(`Number(document.querySelector('.ntree__resizer').getAttribute('aria-valuenow'))`)
+  const pressOnSplitter = async (key) => {
+    await app.evaluate(`(() => {
+       const el = document.querySelector('.ntree__resizer')
+       el.focus()
+       el.dispatchEvent(new KeyboardEvent('keydown', { key: ${J(key)}, bubbles: true, cancelable: true }))
+     })()`)
+    await sleep(220)
+    return readWidth()
+  }
+  const kbBefore = await readWidth()
+  const kbRight = await pressOnSplitter('ArrowRight')
+  const kbHome = await pressOnSplitter('Home')
+  check('分隔栏可用键盘调宽：→ 一格 16px、Home 复位到 240',
+    kbRight === kbBefore + 16 && kbHome === 240,
+    J({ before: kbBefore, right: kbRight, home: kbHome }))
+
   const tb = await box('.editor .tb')
   // 按当前笔记类型取对应的正文容器（Markdown / 富文本 / Word / Excel / 链接）
   const bodyBox = await app.evaluate(`(() => {

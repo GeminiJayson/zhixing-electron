@@ -19,19 +19,40 @@
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius-lg);
 }
-/* 右边缘的宽度手柄：拖它调整笔记树宽度 */
+/* 右边缘的分隔条：拖它调整笔记树宽度。
+   与工作流的模板树分隔条（workflow.css 的 .wf-splitter）同一套做法与数值：
+   12px 命中区 + 伪元素画的 2px 细线（线用伪元素才腾得出够宽的命中区），
+   hover / 聚焦 / 拖拽中细线变强调色。差别只在定位 —— 工作流的侧栏是 flex 列，
+   分隔条自己占位；笔记树是张卡片，手柄贴它的右边缘，12px 恰好落在
+   .notes-wrap 那道 12px 的间隙里。 */
 .ntree__resizer {
   position: absolute;
   top: 0;
   bottom: 0;
-  right: -3px;
-  width: 7px;
-  border-radius: var(--radius-pill);
+  right: calc(-1 * var(--space-3));
+  width: var(--space-3);
   cursor: col-resize;
+  touch-action: none;
+  outline: none;
 }
-.ntree__resizer:hover,
-.ntree__resizer:active {
-  background: color-mix(in srgb, var(--accent) 45%, transparent);
+.ntree__resizer::after {
+  content: '';
+  position: absolute;
+  inset: 8px 5px;
+  border-radius: 999px;
+  background: var(--border);
+  transition: background var(--dur-fast);
+}
+.ntree__resizer:hover::after,
+.ntree__resizer:focus-visible::after,
+.ntree.is-resizing .ntree__resizer::after {
+  background: var(--accent);
+}
+/* 拖动期间：整块禁止选中文本，否则会把树里的行拖成蓝底
+   （与工作流 .wf-wrap.is-resizing 同一件事） */
+.ntree.is-resizing {
+  cursor: col-resize;
+  user-select: none;
 }
 
 /* 树总宽 240px：格式选择器若沿用 .field--compact 的 200px，再加上搜索框与两个

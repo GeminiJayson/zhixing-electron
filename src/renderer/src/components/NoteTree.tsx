@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { PointerEvent as ReactPointerEvent } from 'react'
 import {
   ChevronDown,
   ChevronRight,
@@ -27,6 +28,20 @@ export type NoteFormat = 'markdown' | 'richtext' | 'word' | 'excel' | 'link'
  * 图标只有五个可用（word 与 markdown 都落在 FileText 上），所以靠颜色区分 ——
  * 树里扫一眼就能分辨类型，不必点开看。
  */
+/**
+ * 笔记树宽度：可拖右边缘调节，也可聚焦后用 ← → 微调。
+ *
+ * 规格与工作流的模板树侧栏（`WorkflowPage.tsx` 的 `SIDE_*`）**取同一组数** ——
+ * 默认 / 上下界 / 键盘步长都一样，两页的侧栏拖起来是同一手感、同一套键盘操作。
+ */
+const TREE_DEFAULT = 240
+const TREE_MIN = 180
+const TREE_MAX = 460
+/** 键盘调节宽度时的步长（← → 各一格） */
+const TREE_KEY_STEP = 16
+/** 宽度持久化键：纯界面偏好，与 `zhixing.tree.notes`（收放）同一路 */
+const TREE_WIDTH_KEY = 'notes.treeWidth'
+
 const FORMAT_ICON: Record<string, { Comp: typeof FileText; tone: string }> = {
   markdown: { Comp: FileText, tone: 'markdown' },
   richtext: { Comp: NotebookPen, tone: 'richtext' },
@@ -101,9 +116,41 @@ export function NoteTree({
 }: Props) {
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const [query, setQuery] = useState('')
-  /** 树宽（可拖右边缘调整），默认与 CSS 里的 240px 一致 */
-  const [treeWidth, setTreeWidth] = useState(240)
+  /** 树宽（可拖右边缘调整 / 键盘微调），默认与 CSS 里的 240px 一致 */
+  const [treeWidth, setTreeWidth] = useState<number>(() => {
+    try {
+      const v = Number(localStorage.getItem(TREE_WIDTH_KEY))
+      return Number.isFinite(v) && v >= TREE_MIN && v <= TREE_MAX ? v : TREE_DEFAULT
+    } catch {
+      return TREE_DEFAULT
+    }
+  })
+  /** 拖拽中：根元素挂 is-resizing，细线跟着变强调色、整块禁止选中文本 */
+  const [resizing, setResizing] = useState(false)
   const resizeRef = useRef<{ x: number; w: number } | null>(null)
+  /** 键盘调节读它：闭包里的 treeWidth 可能是旧值（React 会把几次更新合并掉） */
+  const treeWidthRef = useRef(treeWidth)
+  treeWidthRef.current = treeWidth
+  /** 宽度落盘：拖动过程中不写，松手 / 键盘调节时才写一次 */
+  const persistTreeWidth = (w: number): void => {
+    try {
+      localStorage.setItem(TREE_WIDTH_KEY, String(Math.round(w)))
+    } catch {
+      // 存不下就只在本次会话里生效
+    }
+  }
+  /** 松手 / 指针取消：落盘并收起拖拽态 */
+  const endTreeDrag = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    if (!resizeRef.current) return
+    resizeRef.current = null
+    setResizing(false)
+    persistTreeWidth(treeWidthRef.current)
+    try {
+      e.currentTarget.releasePointerCapture?.(e.pointerId)
+    } catch {
+      // 指针已经松开就无所谓
+    }
+  }
   /** 文件夹右键菜单：重命名 / 移动 / 删除 */
   const [folderMenu, setFolderMenu] = useState<{ id: number; x: number; y: number } | null>(null)
   /** 「移动到…」二级菜单：列出可作为父级的文件夹 */
@@ -316,7 +363,7 @@ export function NoteTree({
 
   return (
     <div
-      className="ntree"
+      className={'ntree' + (resizing ? ' is-resizing' : '')}
       role="tree"
       aria-label="笔记树"
       style={{ width: treeWidth, flexBasis: treeWidth }}
@@ -390,13 +437,25 @@ export function NoteTree({
           </div>
         )}
       </div>
-      {/* 右边缘手柄：拖动调整树宽。宽度放在组件内，根元素内联 style 覆盖 CSS 里的默认值 */}
+      {/* 右边缘分隔条：拖动调整树宽。
+          与工作流的模板树分隔条（`.wf-splitter`）同一套规格与做法：
+          12px 命中区 + 伪元素画的 2px 细线，hover / 聚焦 / 拖拽中变强调色；
+          可聚焦，← → 各一格、Home 复位。宽度放在组件内，根元素内联 style 覆盖 CSS 默认值。 */}
       <div
         className="ntree__resizer"
         role="separator"
+        aria-orientation="vertical"
         aria-label="调整笔记树宽度"
+        aria-valuenow={Math.round(treeWidth)}
+        aria-valuemin={TREE_MIN}
+        aria-valuemax={TREE_MAX}
+        tabIndex={0}
+        title="拖动调整笔记树宽度（← → 微调，Home 复位）"
         onPointerDown={(e) => {
+          // 不 preventDefault：让分隔条能被点击聚焦（聚焦后 ← → 可微调），
+          // 拖动期间靠 .is-resizing 的 user-select:none 防止选中文本
           resizeRef.current = { x: e.clientX, w: treeWidth }
+          setResizing(true)
           try {
             e.currentTarget.setPointerCapture?.(e.pointerId)
           } catch {
@@ -406,14 +465,23 @@ export function NoteTree({
         onPointerMove={(e) => {
           const start = resizeRef.current
           if (!start) return
-          setTreeWidth(Math.min(460, Math.max(180, start.w + (e.clientX - start.x))))
+          setTreeWidth(Math.min(TREE_MAX, Math.max(TREE_MIN, start.w + (e.clientX - start.x))))
         }}
-        onPointerUp={(e) => {
-          resizeRef.current = null
-          try {
-            e.currentTarget.releasePointerCapture?.(e.pointerId)
-          } catch {
-            // 同上
+        onPointerUp={endTreeDrag}
+        onPointerCancel={endTreeDrag}
+        onKeyDown={(e) => {
+          const delta = e.key === 'ArrowLeft' ? -TREE_KEY_STEP : e.key === 'ArrowRight' ? TREE_KEY_STEP : 0
+          if (delta) {
+            e.preventDefault()
+            const next = Math.min(TREE_MAX, Math.max(TREE_MIN, treeWidthRef.current + delta))
+            setTreeWidth(next)
+            persistTreeWidth(next)
+            return
+          }
+          if (e.key === 'Home') {
+            e.preventDefault()
+            setTreeWidth(TREE_DEFAULT)
+            persistTreeWidth(TREE_DEFAULT)
           }
         }}
       />
