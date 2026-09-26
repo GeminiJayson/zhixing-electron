@@ -1,7 +1,7 @@
 import type { EditorView } from '@codemirror/view'
 import { sanitizeHtml } from '@shared/sanitize-html'
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react'
+import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { ChevronRight, ExternalLink, FileText, Maximize2, Morph, IconData, Link2, Plus, Sparkles, Tag, Trash2, UserPlus } from '@renderer/lib/icons'
 import { inkOn } from '@shared/color'
 import { subscribeDomain } from '@shared/events'
@@ -41,15 +41,6 @@ const LINK_OPS_W = 76
 const LINK_SPLIT_MIN = 0.15
 const LINK_SPLIT_MAX = 0.85
 
-/** 五种格式的展示名。 */
-const FORMAT_LABELS: { value: string; label: string }[] = [
-  { value: 'markdown', label: 'Markdown' },
-  { value: 'richtext', label: '富文本' },
-  { value: 'word', label: 'Word' },
-  { value: 'excel', label: 'Excel' },
-  { value: 'link', label: '链接' },
-]
-
 export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props) {
   const dialog = useDialog()
   const [notes, setNotes] = useState<Note[]>([])
@@ -70,10 +61,26 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   const [linksExpanded, setLinksExpanded] = useState(false)
   /** 全屏编辑：只留笔记正文（隐藏页面标题、笔记树、信息区，App 侧同时收起导航） */
   const [zen, setZen] = useState(false)
+  /**
+   * 笔记树是否收起。与任务页、工作流页同一个约定：纯界面偏好，
+   * 存 localStorage（不该跟着数据一起被导出 / 同步）。
+   */
+  const [treeHidden, setTreeHidden] = useState(() => localStorage.getItem('zhixing.tree.notes') === '1')
+  useEffect(() => {
+    localStorage.setItem('zhixing.tree.notes', treeHidden ? '1' : '0')
+  }, [treeHidden])
   /** 编辑区自身宽度是否窄到放不下并排信息卡 —— 窄了改用覆盖式抽屉 */
   const [narrow, setNarrow] = useState(false)
   const mainRef = useRef<HTMLDivElement | null>(null)
   const [dirty, setDirty] = useState(false)
+  /**
+   * Word/Excel「还没写回本地文件」的状态，与 dirty 分开记。
+   *
+   * 为什么要分：dirty 说的是「标题 / content_md 还没落库」，而 Word 的正文不在 content_md 里 ——
+   * 它走 commitWord 写回 .docx。混成一个的话，自动保存那条 effect 会在 800ms 后把 dirty 清掉，
+   * 于是文件还没写回、标题栏已经显示「已保存」。胶囊取两者的并集。
+   */
+  const [officePending, setOfficePending] = useState(false)
   /** 新建笔记时使用的格式 */
   const [historyId, setHistoryId] = useState<number | null>(null)
   const [ctxMenu, setCtxMenu] = useState<{ id: number; x: number; y: number } | null>(null)
@@ -267,6 +274,11 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
       alive = false
     }
   }, [current])
+
+  // 换一篇笔记就重置「写回待完成」：文件是另一篇的
+  useEffect(() => {
+    setOfficePending(false)
+  }, [current?.id])
 
   // 别的页面改了笔记（新建/删除/改标题）会影响反链；这里只更新反链与归属，
   // 不重载正文 —— 当前笔记可能正在编辑，整篇重载会覆盖输入。
@@ -822,17 +834,6 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     onNotice('已删除（可在回收站恢复）')
   }
 
-  /** 改笔记格式（saveNote.format 入口）。 */
-  const handleChangeFormat = async (format: string): Promise<void> => {
-    if (!current) return
-    const saved = await window.zhixing.db.saveNote(current.id, { format })
-    if (!saved) return
-    setCurrent(saved)
-    setNotes((prev) => prev.map((n) => (n.id === saved.id ? saved : n)))
-    onNotice(`已改为「${FORMAT_LABELS.find((f) => f.value === format)?.label ?? format}」格式`)
-    await load()
-  }
-
   /** 选文转任务：建任务、备注带回源引用，blockKey 非空时落段落锚。 */
   const handleCreateTaskFromSelection = async (text: string, blockKey: string | null): Promise<void> => {
     if (!current || !text.trim()) return
@@ -855,7 +856,10 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     async (html: string) => {
       if (!current || current.format !== 'word') return
       const res = await window.zhixing.db.saveWordNote(current.id, html)
-      onNotice(res.message)
+      // 成功不弹提示：保存状态由标题栏的胶囊表达 —— 每停一次手就弹一条「已写回 …」是纯噪音。
+      // 失败必须说，那时胶囊还停在「未保存」，用户需要知道为什么。
+      if (res.ok) setOfficePending(false)
+      else onNotice(res.message)
     },
     [current, onNotice]
   )
@@ -865,10 +869,15 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     (rows: string[][]) => {
       if (!current || current.format !== 'excel') return
       setExcelRows(rows)
+      setOfficePending(true)
       if (officeTimer.current) window.clearTimeout(officeTimer.current)
       const id = current.id
       officeTimer.current = window.setTimeout(() => {
-        void window.zhixing.db.saveExcelNote(id, rows).then((res) => onNotice(res.message))
+        void window.zhixing.db.saveExcelNote(id, rows).then((res) => {
+          // 与 Word 同一口径：成功静默，失败才提示
+          if (res.ok) setOfficePending(false)
+          else onNotice(res.message)
+        })
       }, 1000)
     },
     [current, onNotice]
@@ -1031,39 +1040,108 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   }
 
   /** 归属 chip 文案：优先文件夹名，其次关联任务数，都没有就是「归属」 */
+  /** 标题栏胶囊的状态：库内改动与 Word/Excel 的文件写回，任一没落地都算「未保存」。 */
+  const unsaved = dirty || officePending
+
   const attachLabel = current?.folder_id
     ? (folders.find((f) => f.id === current.folder_id)?.name ?? '已归属')
     : attachedTasks.length > 0
       ? `关联 ${attachedTasks.length} 个任务`
       : '归属'
 
+  /**
+   * 正文自带格式条的形态：富文本，以及 Word 可编辑（同一套 RichTextEditor，
+   * 挂在 .editor__office-body 里）。这两种形态下，下面那组操作挂到格式条的**最左侧**，
+   * 两者合成一条工具栏 —— Word 不再多出一条只放 6 个入口的行。
+   * 其余形态（Markdown / Excel / 链接 / 预览）没有格式条可挂，这一行自成一行，
+   * 位置同样是编辑区顶部、同样靠左，视觉上仍是同一条。
+   */
+  const wordEditing = isOffice && current?.format === 'word'
+  const usesRichToolbar = !preview && (current?.format === 'richtext' || wordEditing)
+
+  /** 编辑区的操作组：回答「怎么编辑这一篇」，所以归工具栏，且一律排在左侧。 */
+  const editorActions: ReactNode[] = [
+    <button key="preview" className="text-btn" aria-pressed={preview} onClick={() => setPreview((v) => !v)}>
+      <Morph icon={preview ? IconData.Pencil : IconData.Eye} size={13} />
+      <span className="tb-label">{preview ? '编辑' : '预览'}</span>
+    </button>,
+    <button
+      key="ai"
+      className="text-btn"
+      title="把这篇笔记交给大模型：Markdown 重排正文、Word/Excel 只归类、链接笔记分配每条链接的去向（结果先过审计再入库）"
+      disabled={aiBusy}
+      onClick={() => void handleAiOrganize()}
+    >
+      <Sparkles size={13} /> <span className="tb-label">{aiBusy ? '整理中…' : 'AI 整理'}</span>
+    </button>,
+    <button key="links" className="text-btn" aria-pressed={linksOpen} onClick={() => setLinksOpen((v) => !v)}>
+      <Link2 size={13} /> <span className="tb-label">链接</span>
+    </button>,
+    <button key="ref" className="text-btn" title="添加指向其他笔记的引用" onClick={() => void handleAddReference()}>
+      <Link2 size={13} /> <span className="tb-label">引用</span>
+    </button>,
+    <button
+      key="tpl"
+      className="text-btn"
+      onClick={(e) => {
+        const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+        setTemplateMenu({ x: r.left, y: r.bottom + 4 })
+      }}
+    >
+      <Plus size={13} /> <span className="tb-label">模板</span>
+    </button>,
+    <button
+      key="zen"
+      className="text-btn"
+      aria-pressed={zen}
+      title={zen ? '退出全屏编辑（Esc）' : '全屏编辑：只留笔记正文，隐藏导航、笔记树与信息区'}
+      onClick={() => setZen((v) => !v)}
+    >
+      <Maximize2 size={13} /> <span className="tb-label">{zen ? '退出全屏' : '全屏'}</span>
+    </button>,
+  ]
+
   return (
     <div className={'page page--notes' + (zen ? ' page--zen' : '')}>
       <div className="page__head">
         <h1 className="page__title">{t('page.notes')}</h1>
         <p className="page__subtitle">{t('page.notes.sub')}</p>
+        {/* 笔记树的收放：就在副标题旁边 */}
+        <button
+          className="icon-btn page__head-toggle"
+          aria-pressed={!treeHidden}
+          aria-label={treeHidden ? '展开笔记树' : '收起笔记树'}
+          title={treeHidden ? '展开笔记树' : '收起笔记树'}
+          onClick={() => setTreeHidden((prev) => !prev)}
+        >
+          <Morph icon={treeHidden ? IconData.PanelLeftOpen : IconData.PanelLeftClose} size={15} />
+        </button>
       </div>
       <div className="page__body">
       <div className="notes-wrap">
-        <NoteTree
-          notes={notes}
-          folders={folders}
-          selectedId={selectedId}
-          onSelect={(id) => void selectNote(id)}
-          onCreateNote={handleCreateNote}
-          onCreateFolder={handleCreateFolder}
-          onTogglePin={(id, pinned) => void handleTogglePin(id, pinned)}
-          onDeleteNote={(id) => void handleDelete(id)}
-          onContextMenuNote={(id, x, y) => setCtxMenu({ id, x, y })}
-          tagsOf={(id) => tagsOf.get(id) ?? []}
-          onRenameFolder={(id, name) => void handleRenameFolder(id, name)}
-          onDeleteFolder={(id) => void handleDeleteFolder(id)}
-          onMoveFolder={(id, parentId) => void handleMoveFolder(id, parentId)}
-          libJob={libJob}
-          onOrganizeLibrary={() => void handleLibraryOrganize()}
-          onAddAttachment={() => void handleAddAttachment()}
-          onLinkAudit={(kind, anchor) => void handleLinkAudit(kind, anchor)}
-        />
+        {/* 笔记树：收起时整块不渲染（而不是藏起来），宽度全部让给编辑区。
+            收放按钮在页面副标题旁边；全屏编辑时页面头整体让位，树也随之不显示。 */}
+        {!treeHidden ? (
+          <NoteTree
+            notes={notes}
+            folders={folders}
+            selectedId={selectedId}
+            onSelect={(id) => void selectNote(id)}
+            onCreateNote={handleCreateNote}
+            onCreateFolder={handleCreateFolder}
+            onTogglePin={(id, pinned) => void handleTogglePin(id, pinned)}
+            onDeleteNote={(id) => void handleDelete(id)}
+            onContextMenuNote={(id, x, y) => setCtxMenu({ id, x, y })}
+            tagsOf={(id) => tagsOf.get(id) ?? []}
+            onRenameFolder={(id, name) => void handleRenameFolder(id, name)}
+            onDeleteFolder={(id) => void handleDeleteFolder(id)}
+            onMoveFolder={(id, parentId) => void handleMoveFolder(id, parentId)}
+            libJob={libJob}
+            onOrganizeLibrary={() => void handleLibraryOrganize()}
+            onAddAttachment={() => void handleAddAttachment()}
+            onLinkAudit={(kind, anchor) => void handleLinkAudit(kind, anchor)}
+          />
+        ) : null}
 
         {/* 编辑区与链接面板纵向排列：链接面板从右侧栏挪到了编辑区下方 */}
         <div className={'notes-main' + (zen ? ' notes-main--zen' : '')} ref={mainRef}>
@@ -1085,108 +1163,62 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                         }}
                         aria-label="笔记标题"
                       />
-                      {/* 编辑状态只在真的在编辑时出现；常驻在标题右侧会一直占着标题的宽度 */}
-                      {dirty ? <span className="editor__status">未保存…</span> : null}
+                      {/* 保存状态：图标 + 文案。此前只在脏的时候冒出一行「未保存…」，
+                          干净时什么都不显示 —— 于是「没在动」和「已经存好」看起来一样。 */}
+                      <span
+                        className={'chip chip--save' + (unsaved ? ' chip--save-dirty' : '')}
+                        role="status"
+                        aria-label={unsaved ? '未保存' : '已保存'}
+                        title={unsaved ? '改动还没落盘（停顿后自动保存；Word / Excel 是写回本地文件）' : '已保存'}
+                      >
+                        <Morph icon={unsaved ? IconData.CircleAlert : IconData.Check} size={12} />
+                        {unsaved ? '未保存' : '已保存'}
+                      </span>
+                      {/* 标签与归属从原来的元信息行并进标题行：标题、状态、标签、归属
+                          回答的都是「这一篇是什么」，拆成两行只是把一句话读成两半。 */}
+                      <div className="note-tags" aria-label="笔记标签">
+                        {currentTags.map((tg) => (
+                          <button
+                            key={tg.id}
+                            type="button"
+                            className="chip chip--tag"
+                            style={{ background: tg.color, borderColor: tg.color, color: inkOn(tg.color) }}
+                            title="点击增删标签或改颜色"
+                            onClick={openTagMenu}
+                          >
+                            {tg.name}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          className="chip chip--tag-add"
+                          title="添加 / 编辑标签"
+                          onClick={openTagMenu}
+                        >
+                          <Tag size={12} /> {currentTags.length === 0 ? '加标签' : '标签'}
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        className="chip chip--meta"
+                        title="把本笔记归属到某任务或某文件夹"
+                        onClick={(e) => {
+                          const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                          setAttachMenu({ x: r.left, y: r.bottom + 4 })
+                        }}
+                      >
+                        <UserPlus size={12} /> {attachLabel}
+                      </button>
                     </>
                   }
-                  filters={[
-                    <select
-                      key="format"
-                      className="field field--compact note-format"
-                      value={current.format}
-                      aria-label="笔记格式"
-                      title="笔记格式"
-                      onChange={(e) => void handleChangeFormat(e.target.value)}
-                    >
-                      {FORMAT_LABELS.map((f) => (
-                        <option key={f.value} value={f.value}>
-                          {f.label}
-                        </option>
-                      ))}
-                    </select>,
-                  ]}
-                  secondary={[
-                    <button key="preview" className="text-btn" aria-pressed={preview} onClick={() => setPreview((v) => !v)}>
-                      <Morph icon={preview ? IconData.Pencil : IconData.Eye} size={13} />
-                      {preview ? '编辑' : '预览'}
-                    </button>,
-                    <button
-                      key="ai"
-                      className="text-btn"
-                      title="把这篇笔记交给大模型：Markdown 重排正文、Word/Excel 只归类、链接笔记分配每条链接的去向（结果先过审计再入库）"
-                      disabled={aiBusy}
-                      onClick={() => void handleAiOrganize()}
-                    >
-                      <Sparkles size={13} /> {aiBusy ? '整理中…' : 'AI 整理'}
-                    </button>,
-                    <button key="links" className="text-btn" aria-pressed={linksOpen} onClick={() => setLinksOpen((v) => !v)}>
-                      <Link2 size={13} /> 链接
-                    </button>,
-                    <button key="ref" className="text-btn" title="添加指向其他笔记的引用" onClick={() => void handleAddReference()}>
-                      <Link2 size={13} /> 引用
-                    </button>,
-                    <button
-                      key="tpl"
-                      className="text-btn"
-                      onClick={(e) => {
-                        const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                        setTemplateMenu({ x: r.left, y: r.bottom + 4 })
-                      }}
-                    >
-                      <Plus size={13} /> 模板
-                    </button>,
-                    <button
-                      key="zen"
-                      className="text-btn"
-                      aria-pressed={zen}
-                      title={zen ? '退出全屏编辑（Esc）' : '全屏编辑：只留笔记正文，隐藏导航、笔记树与信息区'}
-                      onClick={() => setZen((v) => !v)}
-                    >
-                      <Maximize2 size={13} /> {zen ? '退出全屏' : '全屏'}
-                    </button>,
-                  ]}
+                  /* 操作组一律靠左：富文本形态下它是空的（那六个入口挂到了格式条左侧），
+                     工具行随之整行不渲染 —— 见 Toolbar 的 hasSubRow。 */
+                  nav={usesRichToolbar ? undefined : editorActions}
                 />
 
-              {/* 元信息行：标签 + 归属。两者与标题同属「这一篇是什么」，
-                  此前分别占一张卡和一个工具栏按钮，把「标题 → 正文」的阅读打断成三段 */}
-              <div className="sheet__meta">
-              <div className="note-tags" aria-label="笔记标签">
-                {currentTags.map((tg) => (
-                  <button
-                    key={tg.id}
-                    type="button"
-                    className="chip chip--tag"
-                    style={{ background: tg.color, borderColor: tg.color, color: inkOn(tg.color) }}
-                    title="点击增删标签或改颜色"
-                    onClick={openTagMenu}
-                  >
-                    {tg.name}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  className="chip chip--tag-add"
-                  title="添加 / 编辑标签"
-                  onClick={openTagMenu}
-                >
-                  <Tag size={12} /> {currentTags.length === 0 ? '加标签' : '标签'}
-                </button>
-              </div>
-                <button
-                  type="button"
-                  className="chip chip--meta"
-                  title="把本笔记归属到某任务或某文件夹"
-                  onClick={(e) => {
-                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                    setAttachMenu({ x: r.left, y: r.bottom + 4 })
-                  }}
-                >
-                  <UserPlus size={12} /> {attachLabel}
-                </button>
-              </div>
-
               {/* 正文：Markdown / 富文本 / Word / Excel / 链接 / 预览。
-                  容器一律不再自带边框 —— 纸只有一张，分层靠留白 */}
+                  容器一律不再自带边框 —— 纸只有一张，分层靠留白。
+                  宽度一律铺满纸面：五种形态同宽，不再按形态分「宽体 / 书写列」。 */}
               <div className="sheet__body">
               {current.format === 'link' ? (
                 // 链接笔记：content_md 存 [{title,target}] JSON。
@@ -1297,41 +1329,61 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
               ) : isOffice ? (
                 // Word/Excel 直接可编辑并自动写回原文件
                 <div className="editor__office">
-                  <div className="editor__office-head">
-                    <span className="u-aux">
-                      {current.format === 'word' ? 'Word 可编辑（自动写回 .docx）' : 'Excel 可编辑（自动写回 .xlsx）'}
-                      {officeEdit?.message ? ` · ${officeEdit.message}` : ''}
-                    </span>
-                    {current.format === 'word' && (
+                  {/* Word 的状态与两个按钮并进了格式条（见下面的 leadingMeta / primary）——
+                      头部那一行原本只装一句话加两个按钮，白白占掉 40px。
+                      Excel 没有格式条可挂，头部保持原样。 */}
+                  {current.format === 'word' ? null : (
+                    <div className="editor__office-head">
+                      <span className="u-aux">
+                        Excel 可编辑（自动写回 .xlsx）
+                        {officeEdit?.message ? ` · ${officeEdit.message}` : ''}
+                      </span>
                       <button
                         className="text-btn"
-                        title="把当前编辑内容导出成新的 .docx（原文件保持不动）"
-                        onClick={() => {
-                          void window.zhixing.db
-                            .exportDocx(content, officeEdit?.html ?? '', current.title)
-                            .then((r) =>
-                              onNotice(r.ok ? '已导出到 ' + (r.path ?? '') : '导出失败：' + (r.message ?? ''))
-                            )
-                        }}
+                        onClick={() =>
+                          void window.zhixing.db.openNoteFile(current.id).then((r) => onNotice(r.message))
+                        }
                       >
-                        导出 .docx
+                        用系统应用打开
                       </button>
-                    )}
-                    <button
-                      className="text-btn"
-                      onClick={() =>
-                        void window.zhixing.db.openNoteFile(current.id).then((r) => onNotice(r.message))
-                      }
-                    >
-                      用系统应用打开
-                    </button>
-                  </div>
+                    </div>
+                  )}
                   {current.format === 'word' ? (
                     <div className="editor__office-body">
                       <RichTextEditor
                         noteId={current.id}
                         html={officeEdit?.html ?? ''}
-                        onChange={(h) => setOfficeEdit((prev) => (prev ? { ...prev, html: h } : prev))}
+                        leading={editorActions}
+                        primary={
+                          <>
+                            <button
+                              className="text-btn"
+                              title="把当前编辑内容导出成新的 .docx（原文件保持不动）"
+                              onClick={() => {
+                                void window.zhixing.db
+                                  .exportDocx(content, officeEdit?.html ?? '', current.title)
+                                  .then((r) =>
+                                    onNotice(r.ok ? '已导出到 ' + (r.path ?? '') : '导出失败：' + (r.message ?? ''))
+                                  )
+                              }}
+                            >
+                              导出 .docx
+                            </button>
+                            <button
+                              className="text-btn"
+                              onClick={() =>
+                                void window.zhixing.db.openNoteFile(current.id).then((r) => onNotice(r.message))
+                              }
+                            >
+                              用系统应用打开
+                            </button>
+                          </>
+                        }
+                        onChange={(h) => {
+                          setOfficeEdit((prev) => (prev ? { ...prev, html: h } : prev))
+                          // 正文还没写回 .docx —— 胶囊据此显示「未保存」
+                          setOfficePending(true)
+                        }}
                         onCommit={(h) => void commitWord(h)}
                         placeholder="从这里开始编辑 Word 正文…"
                       />
@@ -1384,6 +1436,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                 <RichTextEditor
                   noteId={current.id}
                   html={content}
+                  leading={editorActions}
                   onChange={(h) => {
                     setContent(h)
                     setDirty(true)

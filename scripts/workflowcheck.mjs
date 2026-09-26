@@ -95,6 +95,30 @@ const aborted = await app.evaluate(`window.zhixing.db.abortWorkflowInstance(${in
 const inst2After = await app.evaluate(`window.zhixing.db.workflowInstance(${inst2.id})`)
 check('中止实例置为 aborted', aborted === true && inst2After?.status === 'aborted', inst2After?.status)
 
+// 6) 模板树的收放（UI）：按钮在工具栏最左边，收起时连分隔条一起不渲染
+await app.evaluate("document.querySelector('[data-nav-item=\"workflow\"]')?.click()")
+await sleep(1600)
+const wfSideBefore = await app.evaluate("!!document.querySelector('.wf-side')")
+const wfToggle = await app.evaluate(`(() => {
+  const b = document.querySelector('.tb__subleft button[aria-label*="模板树"]')
+  if (!b) return false
+  b.click()
+  return true
+})()`)
+await sleep(500)
+const wfHidden = await app.evaluate(`(() => ({
+  side: !!document.querySelector('.wf-side'),
+  splitter: !!document.querySelector('.wf-splitter'),
+}))()`)
+await app.evaluate(`document.querySelector('.tb__subleft button[aria-label*="模板树"]')?.click()`)
+await sleep(500)
+const wfBack = await app.evaluate("!!document.querySelector('.wf-side')")
+check(
+  '模板树能收起并再展开（收起时不占位，分隔条一并隐藏）',
+  wfSideBefore && wfToggle && !wfHidden.side && !wfHidden.splitter && wfBack,
+  J({ wfSideBefore, wfToggle, wfHidden, wfBack })
+)
+
 app.ws.close()
 await sleep(600)
 

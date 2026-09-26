@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
@@ -18,6 +18,13 @@ interface RichProps {
   onCommit?: (html: string) => void
   /** 插入图片时要把原图存成这篇笔记的附件 */
   noteId?: number
+  /**
+   * 挂在格式条**最左侧**的节点：笔记页把「预览 / AI 整理 / 链接 / 引用 / 模板 / 全屏」递进来。
+   * 它们是「怎么编辑这一篇」，与格式动作同属一条工具栏，不必再独占一行。
+   */
+  leading?: ReactNode
+  /** 工具栏最右端、不参与折叠的操作（Word 的「导出 .docx / 用系统应用打开」） */
+  primary?: ReactNode
 }
 
 /** 缩略图长边上限（px）：正文里只放这个，原图另存附件。 */
@@ -93,7 +100,16 @@ function extOfDataUrl(src: string): string {
  * 存储格式不变：正文仍是 HTML 片段，已有笔记零迁移。图片按需求改成「正文缩略图 +
  * 原图存附件」，双击图片可以用原图预览。
  */
-export function RichTextEditor({ html, onChange, readOnly = false, placeholder, onCommit, noteId }: RichProps) {
+export function RichTextEditor({
+  html,
+  onChange,
+  readOnly = false,
+  placeholder,
+  onCommit,
+  noteId,
+  leading,
+  primary,
+}: RichProps) {
   const dialog = useDialog()
   const commitTimer = useRef<number | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
@@ -328,6 +344,8 @@ export function RichTextEditor({ html, onChange, readOnly = false, placeholder, 
         <Toolbar
           variant="panel"
           sticky={false}
+          nav={leading}
+          primary={primary}
           filters={[
             <select
               key="size"

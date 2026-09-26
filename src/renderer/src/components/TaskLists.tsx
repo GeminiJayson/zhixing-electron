@@ -7,8 +7,6 @@ import {
   Inbox,
   List,
   MoreHorizontal,
-  PanelLeftClose,
-  PanelLeftOpen,
   Plus,
   SlidersHorizontal,
   X,
@@ -95,8 +93,6 @@ export function TaskLists({
 }: Props) {
   /** 折叠的分组（只影响分组自身的展开状态；空分组展开后什么也不显示） */
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
-  /** 整栏收起（只留一个展开按钮，把宽度让给任务列表）——与「折叠某个分组」是两件事 */
-  const [rail, setRail] = useState(false)
   /** 行右键菜单（重命名 / 删除 / 新建子级 / 移动到分组） */
   const [menu, setMenu] = useState<{ id: number; x: number; y: number } | null>(null)
   /** 「移动到分组…」二级菜单 */
@@ -331,45 +327,24 @@ export function TaskLists({
   const menuQuery = queryMenu ? queries.find((q) => q.id === queryMenu.id) : undefined
 
   return (
-    <aside className={'tasklists' + (rail ? ' tasklists--rail' : '')} aria-label="清单">
+    <aside className="tasklists" aria-label="清单">
+      {/* 整栏的收起按钮不在这里：它挪到了任务页工具栏「列表」旁边。
+          这里只管「折叠某个分组」——两者是两件事。 */}
       <div className="tasklists__head">
-        {rail ? (
-          <button
-            className="icon-btn"
-            title="展开清单栏"
-            aria-label="展开清单栏"
-            onClick={() => setRail(false)}
-          >
-            <PanelLeftOpen size={13} />
-          </button>
-        ) : (
-          <>
-            <span>清单</span>
-            <button
-              className="icon-btn"
-              title="新建清单"
-              aria-label="新建清单"
-              onClick={() => onNewList(null)}
-            >
-              <Plus size={13} />
-            </button>
-            <button
-              className="icon-btn"
-              title="收起清单栏"
-              aria-label="收起清单栏"
-              onClick={() => setRail(true)}
-            >
-              <PanelLeftClose size={13} />
-            </button>
-          </>
-        )}
+        <span>清单</span>
+        <button
+          className="icon-btn"
+          title="新建清单"
+          aria-label="新建清单"
+          onClick={() => onNewList(null)}
+        >
+          <Plus size={13} />
+        </button>
       </div>
 
-      {/* 收起态只留上面那个展开按钮：不渲染树本身，而不是把它藏起来 ——
-          藏起来的行仍会被查询/自动化脚本当成「看得见」，那是在骗读 DOM 的人。 */}
-      {!rail && (
-        <>
-        <div className="tasklists__body" role="tree" aria-label="清单树">
+      {/* 整栏的显示与否由任务页决定（只在列表视图、且没被收起时渲染本组件）——
+          这里**不**再把树藏起来：藏起来的行仍会被查询/自动化脚本当成「看得见」。 */}
+      <div className="tasklists__body" role="tree" aria-label="清单树">
           <div
             className={rowCls(activeKey === '')}
             style={{ paddingLeft: 8 }}
@@ -478,9 +453,7 @@ export function TaskLists({
             <span className="tasklists__name">已放弃</span>
             <span className="tasklists__count">{counts.abandoned}</span>
           </div>
-        </div>
-        </>
-      )}
+      </div>
 
       {menu && menuFolder && (
         <PopMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)} items={menuItems} />

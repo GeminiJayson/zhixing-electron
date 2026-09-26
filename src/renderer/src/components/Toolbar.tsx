@@ -150,6 +150,10 @@ export function Toolbar({
   const hiddenSecondary = secondary.slice(shownSecondary.length)
   const overflowCount = hiddenFilters.length + hiddenSecondary.length
 
+  // 第二层整层为空时（例如笔记编辑区把操作挂到了富文本格式条上）不渲染这一行，
+  // 否则会留下一条只有内边距的空行。
+  const hasSubRow = Boolean(nav || meta || search || filters.length > 0 || secondary.length > 0 || primary)
+
   return (
     <div className={'tb ' + (variant === 'page' ? 'tb--page' : 'tb--panel') + (sticky ? ' tb--sticky' : '')}>
       {variant === 'page' ? (
@@ -162,6 +166,7 @@ export function Toolbar({
         </div>
       ) : null}
 
+      {hasSubRow ? (
       <div className="tb__sub">
         {/* 左侧只有真的有东西（导航 / 统计）时才与右侧工具区拉开 50px；
             左侧空着时不留这段空白，免得工具行整体看起来往右缩了一截。 */}
@@ -200,6 +205,7 @@ export function Toolbar({
           {primary}
         </div>
       </div>
+      ) : null}
     </div>
   )
 }

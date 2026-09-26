@@ -9,8 +9,10 @@ import {
   FilePlus2,
   FolderPlus,
   GitBranch,
+  IconData,
   LayoutGrid,
   Maximize2,
+  Morph,
   Pencil,
   Play,
   Plus,
@@ -197,6 +199,14 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   })
   /** 正在拖侧栏分隔条：只用来加样式（拖动期间禁止选中文本） */
   const [sideResizing, setSideResizing] = useState(false)
+  /**
+   * 模板树整栏是否收起。与「拖动调宽度」是两件事：收起时连分隔条一起不渲染，
+   * 宽度全给画布。纯界面偏好，和 sideWidth 一样存 localStorage。
+   */
+  const [treeHidden, setTreeHidden] = useState(() => localStorage.getItem('zhixing.tree.workflow') === '1')
+  useEffect(() => {
+    localStorage.setItem('zhixing.tree.workflow', treeHidden ? '1' : '0')
+  }, [treeHidden])
   /** 拖动分隔条的过程状态；width 记住最近一次的宽度，松手时按它落盘 */
   const sideDragRef = useRef<{ startX: number; startW: number; width: number } | null>(null)
   /** 键盘调节时读最新宽度：事件闭包里的 state 可能还是上一帧的值 */
@@ -1053,6 +1063,18 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   <Toolbar
     title={t('page.workflow')}
     subtitle={t('page.workflow.sub')}
+    nav={(
+      // 模板树的收放：按需求放在工具栏最左边
+      <button
+        className="icon-btn"
+        aria-pressed={!treeHidden}
+        aria-label={treeHidden ? '展开模板树' : '收起模板树'}
+        title={treeHidden ? '展开模板树' : '收起模板树'}
+        onClick={() => setTreeHidden((prev) => !prev)}
+      >
+        <Morph icon={treeHidden ? IconData.PanelLeftOpen : IconData.PanelLeftClose} size={15} />
+      </button>
+    )}
     meta={(
       <span className="u-aux">{current ? `${current.name} · ${ordered.length} 步` : '未选择模板'}</span>
     )}
@@ -1164,6 +1186,11 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   />
 
       <div className={'wf-wrap' + (sideResizing ? ' is-resizing' : '')}>
+        {/* 模板树整栏：收起时连分隔条一起不渲染，宽度全给画布 ——
+            不是「藏起来」：藏起来的节点仍会被查询与自动化脚本当成看得见。
+            收放按钮在工具栏最左边。 */}
+        {!treeHidden ? (
+        <>
         <aside
           className="wf-side"
           style={{ width: sideWidth, flexBasis: sideWidth }}
@@ -1261,6 +1288,8 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
           onPointerCancel={endSideDrag}
           onKeyDown={onSideKeyDown}
         />
+        </>
+        ) : null}
 
         <div className="wf-main">
 

@@ -179,30 +179,50 @@ try {
     J({ pickedGroup, pickedState })
   )
 
-  const railClicked = await app.evaluate(`(() => {
-    const b = [...document.querySelectorAll('.tasklists__head button')].find((x) => x.title === '收起清单栏')
+  // 整栏收放：按钮在工具栏「列表」旁边，收起后整块不渲染 ——
+  // 早先那版是 40px 的窄条（.tasklists--rail，只留一个展开按钮），仍然占位，已撤。
+  const treeBefore = await app.evaluate("!!document.querySelector('.tasklists')")
+  const collapseClicked = await app.evaluate(`(() => {
+    const b = document.querySelector('.seg .seg__panel')
     if (!b) return false
     b.click()
     return true
   })()`)
   await sleep(500)
-  const railState = await app.evaluate(`(() => ({
-    rail: !!document.querySelector('.tasklists--rail'),
-    body: !!document.querySelector('.tasklists__body'),
-  }))()`)
-  const railBack = await app.evaluate(`(() => {
-    const b = [...document.querySelectorAll('.tasklists__head button')].find((x) => x.title === '展开清单栏')
+  const treeAfterCollapse = await app.evaluate("!!document.querySelector('.tasklists')")
+  const expandClicked = await app.evaluate(`(() => {
+    const b = document.querySelector('.seg .seg__panel')
     if (!b) return false
     b.click()
     return true
   })()`)
   await sleep(500)
-  const railAfter = await app.evaluate("!!document.querySelector('.tasklists__body')")
+  const treeBack = await app.evaluate("!!document.querySelector('.tasklists')")
   check(
-    '清单栏能整栏收起并再展开',
-    railClicked && railState.rail && !railState.body && railBack && railAfter,
-    J({ railClicked, railState, railBack, railAfter })
+    '清单栏能整栏收起并再展开（收起时不占位）',
+    treeBefore && collapseClicked && !treeAfterCollapse && expandClicked && treeBack,
+    J({ treeBefore, collapseClicked, treeAfterCollapse, expandClicked, treeBack })
   )
+
+  // 只在列表视图出现：四象限 / 日历 / 看板都不按清单组织，连收放按钮一起隐藏
+  const switchQuadrant = await app.evaluate(`(() => {
+    const b = [...document.querySelectorAll('.seg button')].find((x) => (x.textContent || '').trim() === '四象限')
+    if (!b) return false
+    b.click()
+    return true
+  })()`)
+  await sleep(700)
+  const quadState = await app.evaluate(`(() => ({
+    tree: !!document.querySelector('.tasklists'),
+    toggle: !!document.querySelector('.seg .seg__panel'),
+  }))()`)
+  check(
+    '清单栏只在列表视图出现（四象限下树与收放按钮都不在）',
+    switchQuadrant && !quadState.tree && !quadState.toggle,
+    J({ switchQuadrant, quadState })
+  )
+  await app.evaluate(`[...document.querySelectorAll('.seg button')].find((x) => (x.textContent || '').trim() === '列表')?.click()`)
+  await sleep(500)
 } catch (err) {
   check('脚本跑完', false, err instanceof Error ? err.message : String(err))
 }

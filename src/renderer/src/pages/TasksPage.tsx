@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Plus, Trash2 } from '@renderer/lib/icons'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Morph, IconData, Plus, Trash2 } from '@renderer/lib/icons'
 import {
   STATUS_LABELS,
   buildTaskTree,
@@ -84,6 +84,14 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
   const [counts, setCounts] = useState<Map<number, number>>(new Map())
   const [tags, setTags] = useState<Map<number, Tag[]>>(new Map())
   const [view, setView] = useState<ViewKey>('list')
+  /**
+   * 清单树是否收起。纯界面偏好，存 localStorage 而不是库表 ——
+   * 与命令面板的 MRU 同一个理由：它不该跟着数据一起被导出 / 同步。
+   */
+  const [treeHidden, setTreeHidden] = useState(() => localStorage.getItem('zhixing.tree.tasks') === '1')
+  useEffect(() => {
+    localStorage.setItem('zhixing.tree.tasks', treeHidden ? '1' : '0')
+  }, [treeHidden])
   const [filter, setFilter] = useState('')
   const [folders, setFolders] = useState<ListFolder[]>([])
   /** 清单筛选：'' = 全部；'none' = 收件箱（list_id 为空）；其它 = 清单 id */
@@ -1093,9 +1101,26 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
         nav={(
           <div className="seg" role="group" aria-label="视图切换">
             {VIEWS.map((v) => (
-              <button key={v.key} aria-pressed={view === v.key} onClick={() => setView(v.key)}>
-                {v.label}
-              </button>
+              <Fragment key={v.key}>
+                <button aria-pressed={view === v.key} onClick={() => setView(v.key)}>
+                  {v.label}
+                </button>
+                {/* 清单树只在列表视图下出现，收放按钮就挨着「列表」这两个字 */}
+                {v.key === 'list' && view === 'list' ? (
+                  <button
+                    className="seg__panel"
+                    aria-pressed={!treeHidden}
+                    aria-label={treeHidden ? '展开清单树' : '收起清单树'}
+                    title={treeHidden ? '展开清单树' : '收起清单树'}
+                    onClick={() => setTreeHidden((prev) => !prev)}
+                  >
+                    <Morph
+                      icon={treeHidden ? IconData.PanelLeftOpen : IconData.PanelLeftClose}
+                      size={14}
+                    />
+                  </button>
+                ) : null}
+              </Fragment>
             ))}
           </div>
         )}
@@ -1247,25 +1272,30 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
       />
 
       <div className="tasks-work">
-        {/* 清单栏：分组、各清单的未完成计数，以及两个终态入口都在这里 */}
-        <TaskLists
-          folders={folders}
-          activeKey={listKey}
-          counts={listCounts}
-          onPick={pickList}
-          onNewList={(parentId) => void newList(parentId)}
-          onNewGroup={(parentId) => void newGroup(parentId)}
-          onRename={(f) => void renameList(f)}
-          onDelete={(f) => void deleteList(f)}
-          onMove={(id, parentId) => void moveList(id, parentId)}
-          onReorder={(id, anchorId, below) => void handleReorderList(id, anchorId, below)}
-          queries={savedQueries}
-          activeQueryId={activeQueryId}
-          onPickQuery={pickQuery}
-          onNewQuery={() => void saveAsSmartList()}
-          onRenameQuery={(q) => void renameQuery(q)}
-          onDeleteQuery={(q) => void deleteQuery(q)}
-        />
+        {/* 清单栏：分组、各清单的未完成计数，以及两个终态入口都在这里。
+            只在**列表视图**出现 —— 四象限 / 日历 / 看板都不按清单组织；
+            收起时整块不渲染（而不是藏起来）：藏起来的行仍会被查询与自动化脚本
+            当成「看得见」。收放按钮在工具栏「列表」旁边。 */}
+        {view === 'list' && !treeHidden ? (
+          <TaskLists
+            folders={folders}
+            activeKey={listKey}
+            counts={listCounts}
+            onPick={pickList}
+            onNewList={(parentId) => void newList(parentId)}
+            onNewGroup={(parentId) => void newGroup(parentId)}
+            onRename={(f) => void renameList(f)}
+            onDelete={(f) => void deleteList(f)}
+            onMove={(id, parentId) => void moveList(id, parentId)}
+            onReorder={(id, anchorId, below) => void handleReorderList(id, anchorId, below)}
+            queries={savedQueries}
+            activeQueryId={activeQueryId}
+            onPickQuery={pickQuery}
+            onNewQuery={() => void saveAsSmartList()}
+            onRenameQuery={(q) => void renameQuery(q)}
+            onDeleteQuery={(q) => void deleteQuery(q)}
+          />
+        ) : null}
         <div className="tasks-main">
           {view === 'quadrant' ? (
             <QuadrantBoard

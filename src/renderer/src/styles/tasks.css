@@ -29,6 +29,11 @@
   font-weight: 600;
   box-shadow: var(--shadow-sm);
 }
+/* 「列表」旁边的清单树收放按钮：同样是分段控件里的一格，只是内容换成图标 ——
+   内边距收窄一点，让它读起来是 seg 的一部分，而不是另一个控件挤了进来。 */
+.seg .seg__panel {
+  padding: 0 var(--space-2);
+}
 
 .field {
   min-height: var(--control-h);
@@ -213,16 +218,8 @@
   outline-offset: -2px;
 }
 
-/* 整栏收起：只剩表头那个展开按钮，宽度让给任务列表。
-   与分组行的 caret 分工明确 —— caret 收的是「那个分组」，这里收的是「整栏」。 */
-.tasklists--rail {
-  flex: 0 0 40px;
-  width: 40px;
-}
-.tasklists--rail .tasklists__head {
-  justify-content: center;
-  padding: var(--space-2) var(--space-1);
-}
+/* 整栏的收起不再是「窄条」形态：由任务页条件渲染整块，
+   收起时连 40px 都不占（原 .tasklists--rail 已撤，见 docs/03 §5.3）。 */
 
 .tasks-main {
   display: flex;

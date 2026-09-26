@@ -249,6 +249,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 页头里的收放按钮（笔记页的笔记树）。.page__head 是 baseline 对齐 ——
+   标题与副标题要对齐文字基线，图标按钮按 baseline 排会偏，单独居中。 */
+.page__head-toggle {
+  align-self: center;
+}
 @keyframes page-enter {
   from {
     opacity: 0;

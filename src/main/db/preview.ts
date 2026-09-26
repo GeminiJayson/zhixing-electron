@@ -16,7 +16,7 @@ import { deflateRawSync } from 'node:zlib'
 import mammoth from 'mammoth'
 import * as XLSX from 'xlsx'
 import { dataDir } from './connection'
-import { getNote } from './notes'
+import { getNote, saveNote } from './notes'
 import { escapeHtml, sanitizeHtml } from '../../shared/sanitize-html'
 
 export interface OfficePreview {
@@ -150,10 +150,10 @@ export function createBlankOfficeFile(
 export function saveWordNote(noteId: number, html: string): { ok: boolean; message: string } {
   const note = getNote(noteId)
   if (!note) return { ok: false, message: '笔记不存在' }
-  const target = (note.content_md || '').trim()
-  if (!target || /^https?:\/\//i.test(target)) return { ok: false, message: '这篇笔记没有关联本地 Word 文件' }
+  const target = resolveOfficeTarget(noteId, note.title, note.content_md, 'word')
+  if ('message' in target) return { ok: false, message: target.message }
   try {
-    const path = existsSync(target) ? target : onMissingPath(target, '.docx')
+    const path = existsSync(target.path) ? target.path : onMissingPath(target.path, '.docx')
     writeFileSync(path, buildDocx(html))
     return { ok: true, message: `已写回 ${path}` }
   } catch (err) {
@@ -166,10 +166,10 @@ export function saveWordNote(noteId: number, html: string): { ok: boolean; messa
 export function saveExcelNote(noteId: number, rows: string[][]): { ok: boolean; message: string } {
   const note = getNote(noteId)
   if (!note) return { ok: false, message: '笔记不存在' }
-  const target = (note.content_md || '').trim()
-  if (!target || /^https?:\/\//i.test(target)) return { ok: false, message: '这篇笔记没有关联本地 Excel 文件' }
+  const target = resolveOfficeTarget(noteId, note.title, note.content_md, 'excel')
+  if ('message' in target) return { ok: false, message: target.message }
   try {
-    const path = existsSync(target) ? target : onMissingPath(target, '.xlsx')
+    const path = existsSync(target.path) ? target.path : onMissingPath(target.path, '.xlsx')
     const wb = existsSync(path) ? XLSX.read(readFileSync(path), { type: 'buffer' }) : XLSX.utils.book_new()
     if (!wb.SheetNames.length) {
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Sheet1')
@@ -201,11 +201,54 @@ export function saveExcelNote(noteId: number, rows: string[][]): { ok: boolean; 
   }
 }
 
+/**
+ * 看起来是不是一个本地文件路径（盘符 / UNC / 含分隔符的相对路径）。
+ *
+ * 为什么需要这道判据：Word/Excel 笔记的 content_md 按约定存文件路径，但库里确实有
+ * 存成正文的（示例数据，或者建笔记时把正文填进了「已有文件路径」那一栏）。
+ * 不判断的话，一段正文会被当成路径一路走到 mkdir —— 报出来的是
+ * 「ENOENT … mkdir '…整段正文….docx'」，用户既看不懂也没法处理。
+ */
+function looksLikeLocalPath(target: string): boolean {
+  if (!target || target.length > 240 || /[\r\n]/.test(target)) return false
+  if (/^[a-zA-Z]:[\\/]/.test(target)) return true
+  return /[\\/]/.test(target)
+}
+
+/**
+ * 解析一篇 Office 笔记关联的文件路径。
+ *
+ * 找不到可用的文件关联时**就地补一个空白文件并把路径登记回笔记**（一次性自愈）——
+ * 否则这篇笔记永远存不上，而用户看到的只是一句「写回失败」。
+ * getNote 每次都重新读库，所以自愈只发生一次，不会每存一次就多建一个文件。
+ */
+function resolveOfficeTarget(
+  noteId: number,
+  title: string,
+  content: string | null | undefined,
+  kind: 'word' | 'excel'
+): { path: string } | { message: string } {
+  const target = (content || '').trim()
+  if (/^https?:\/\//i.test(target)) {
+    return { message: `这篇笔记关联的是网址，不是本地 ${kind === 'word' ? 'Word' : 'Excel'} 文件` }
+  }
+  if (looksLikeLocalPath(target)) return { path: target }
+  const created = createBlankOfficeFile(kind, title)
+  if (!created.ok) return { message: created.message }
+  saveNote(noteId, { content_md: created.path })
+  return { path: created.path }
+}
+
 /** 目标目录不存在时补建（notes_attach 之外的路径要求目录已存在）。 */
 function onMissingPath(target: string, ext: string): string {
   const path = /\.[a-z0-9]+$/i.test(target) ? target : target + ext
-  const dir = path.replace(/[\\/][^\\/]*$/, '')
-  if (dir && !existsSync(dir)) mkdirSync(dir, { recursive: true })
+  // 用 lastIndexOf 定位父目录：早先的正则写法在**没有分隔符**时（`foo.docx`）会算不出父目录，
+  // 把整串当成目录去 mkdir，于是报出一个路径里带着整段文字的 ENOENT。
+  const cut = Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/'))
+  if (cut > 0) {
+    const dir = path.slice(0, cut)
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  }
   return path
 }
 

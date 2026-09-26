@@ -229,24 +229,28 @@
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius-lg);
 }
-/* 元信息行：标签 + 归属紧跟标题。留一个最小高度，
-   免得「有标签 / 没标签」两种笔记的头部高度来回跳。 */
-.sheet__meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  min-height: 26px;
-  padding-top: var(--space-1);
-}
+/* 元信息行已并入标题行：标签 / 归属 / 保存状态现在与标题同行。
+   头部因此从「标题行 + 工具行 + 元信息行」三层收成两层，正文多出 32px。
+   原先为这一行写的三条规则（行盒、行内控件紧凑档、格式下拉自适应）随之撤掉。 */
 /* 正文区：吃掉剩余高度；内部各种编辑器一律不再自带边框 */
 .sheet__body {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding-top: var(--space-2);
+  /* 工具栏到正文首行只留 4px：剩下的交给编辑器自己的上内边距（Markdown / 富文本各 8px），
+     合计 12px —— 原先三层叠加是 24（富文本）/ 32（Markdown）。 */
+  padding-top: var(--space-1);
 }
+/* 标题行 / 元信息行 / 正文一律**铺满笔记纸的内容宽度**。
+   这里不需要任何宽度规则 —— .sheet 是 flex column，子项默认 stretch 就吃满左右内边距；
+   左边缘因此天然对齐（配合 .cm-content 横向内边距为 0，见 MarkdownEditor.tsx）。
+
+   曾用过一版「书写列」（三块限宽 560px 并居中，追求 43 字/行的可读行宽），
+   2026-09 按产品决定撤掉：编辑区属于「一张纸」，内容就该用满纸面。
+   代价是行宽重新随窗口增长（1280 下约 54 个中文字/行，1600 下约 78 个），
+   已记录在 docs/03 §8.1；若要恢复，在 .sheet > .tb / .sheet__body
+   上重加一条 max-width + margin-inline: auto 即可。 */
 /* 「归属」chip：工具栏里的一个按钮降级成元信息，点它仍是同一个归属菜单 */
 .chip--meta {
   display: inline-flex;
@@ -288,37 +292,142 @@
    分区靠留白，不靠边框 —— 边框只标记容器。 */
 .editor .tb {
   padding: 0;
+  /* 头部与正文之间的呼吸全交给 .sheet__body（4px）与编辑器自己的上内边距 ——
+     这里再留一段，工具栏到正文首行就会空出二十多像素。 */
+  margin-bottom: 0;
   background: none;
   border: none;
   border-radius: 0;
 }
+/* 工具行吸附在编辑区顶部：正文再长，这排入口也留在原地。
+   底色必须给实色 —— 半透明底会让滚动的内容从按钮底下透出来。 */
 .editor .tb__sub {
-  margin-top: var(--space-1);
-  padding-top: 0;
+  position: sticky;
+  top: 0;
+  z-index: var(--z-float);
+  /* 工具栏只占按钮本身那一行：上下内边距与上外边距都归零，
+     间距交给 .tb__head 的 padding-bottom 与 .sheet__body 的 padding-top。
+     原先这条上下各 4px + 4px 外边距，一行就吃掉 32px。 */
+  margin-top: 0;
+  padding: 0;
   border-top: none;
+  background: var(--bg-layer-solid);
+  /* 左侧操作组固定在左端、不参与折叠；窄窗口放不下时让格式条整组换到第二行，
+     而不是把这一行挤破。 */
+  flex-wrap: wrap;
+  row-gap: var(--space-1);
+}
+/* 工具栏里的按钮不再各自带框：工具栏是一整条，按钮直接嵌进去。
+   分区靠留白、悬浮反馈与选中底色，不靠一排描边矩形。 */
+.editor .tb .text-btn,
+.rt-editor .tb .text-btn {
+  padding: 0 var(--space-2);
+  border-color: transparent;
+  background: none;
+  color: var(--fg-secondary);
+}
+.editor .tb .text-btn:hover,
+.rt-editor .tb .text-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+/* 按下的开关（预览 / 链接 / 全屏）保留强调色底：边框去掉之后，
+   它是这一行里唯一还能看出「已经打开」的信号。 */
+.editor .tb .text-btn[aria-pressed='true'],
+.rt-editor .tb .text-btn[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+/* 按钮自带 8px 内边距（悬浮底色需要这块面积）。谁站在最左端，谁就向左挪回这 8px，
+   图标因此与标题、正文落在同一条左边缘上。
+   （只有 .tb__subright 需要 :first-child —— 有左组时它在中间，再挪就会吃掉组间距。） */
+.editor .tb .tb__subleft,
+.rt-editor .tb .tb__subleft,
+.editor .tb .tb__subright:first-child,
+.rt-editor .tb .tb__subright:first-child {
+  margin-left: calc(-1 * var(--space-2));
+}
+/* 左组（操作组）是固定内容：不压缩、不折叠 */
+.editor .tb .tb__subleft > * {
+  flex: 0 0 auto;
+}
+/* 右组（格式条）的基准宽度必须是 0 而不是「自然宽度」——
+   通用工具栏给的是 flex: 1 1 auto，自然宽度等于所有格式按钮之和，
+   在可换行的容器里它会立刻换到第二行，两组就永远凑不到一条线上。 */
+.editor .tb .tb__subright,
+.rt-editor .tb .tb__subright {
+  flex: 1 1 0;
+  min-width: 0;
+}
+/* 组间距交给 .tb__sub 的 gap（12px）；通用工具栏额外塞的 38px 在这里太宽，
+   会让格式条少放两个按钮。 */
+.editor .tb .tb__subleft--gap {
+  margin-right: 0;
+}
+/* 溢出入口「⋯ N」也在这条工具栏里，同样不带框 */
+.editor .tb .tb-btn,
+.rt-editor .tb .tb-btn {
+  padding: 0 var(--space-2);
+  border-color: transparent;
+  background: none;
+  color: var(--fg-secondary);
+}
+.editor .tb .tb-btn:hover,
+.rt-editor .tb .tb-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+/* 富文本格式条的字号下拉与颜色块同样去边框，与按钮融成一条 */
+.rt-editor .tb .field,
+.rt-editor .tb input[type='color'] {
+  border-color: transparent;
+  background: none;
+}
+/* 字号下拉按内容自适应：「字号 ▾」两个字不需要 200px（.field--compact 的默认宽），
+   那 140px 正是格式条能多放三个按钮的地方。 */
+.rt-editor .tb .field {
+  width: auto;
+  min-width: 0;
+}
+/* 纸面成为容器查询的基准：编辑区自己有多宽，决定操作组显不显示文字。
+   用编辑区宽度而不是窗口宽度 —— 笔记树拖宽一点，编辑区就窄一截。 */
+.sheet {
+  container-type: inline-size;
+}
+/* 编辑区不够宽时，左侧操作组收成纯图标，把宽度让给格式条。
+   图标都带 title，语义不丢；宽窗口（编辑区 ≥ 920px）下文字照常显示。 */
+@container (max-width: 920px) {
+  .editor .tb .tb__subleft .tb-label {
+    display: none;
+  }
+}
+.rt-editor .tb .field:hover,
+.rt-editor .tb .field:focus,
+.rt-editor .tb input[type='color']:hover {
+  background: var(--bg-hover);
 }
 /* 笔记编辑区不参与「首个控件吃掉剩余宽度」的通用填充（.tb__subright--fill）：
-   格式下拉只有 5 个短选项，拉宽会把按钮整组推到右边 ——
-   全屏时更夸张（整行都是下拉框），还会把「模板 / 全屏」挤进「⋯」。
+   工具行的第一个子项是按钮，拉宽会把整组推到右边 ——
+   全屏时更夸张，还会把「模板 / 全屏」挤进「⋯」。
    这里必须比 toolbar.css 的那组规则更具体才能盖住它的 flex: 1 1 auto。 */
 .editor .tb .tb__subright.tb__subright--fill > :first-child,
 .editor .tb .tb__subright.tb__subright--fill > :first-child > * {
   flex: 0 0 auto;
   min-width: 0;
 }
-.editor .note-format {
-  width: 168px;
-}
 /* 标题分区：标题与编辑状态**同一行**。此前把状态放在标题下面，会把标题行整体撑高，
    与页面的其它标题行不协调。 */
 .editor .tb__head {
   align-items: center;
 }
+/* 标题行现在要装「标题 + 状态 + 标签 + 归属」四组东西：窄窗口放不下时换行，
+   而不是把标题压到只剩几十像素。 */
 .editor .tb__lead {
   flex: 1 1 auto;
   min-width: 0;
   align-items: center;
-  gap: var(--space-2);
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
 }
 .editor .tb__lead .editor__title {
   flex: 1 1 auto;
@@ -329,34 +438,47 @@
   min-width: 0;
   font-size: var(--text-lead);
   font-weight: 600;
-  min-height: var(--control-h);
+  /* 密度（方案 C）：标题走紧凑档 —— 标题是「这一页的名字」，不是控件，
+     没必要时时与控件同高。下面那条 .page--notes 规则负责真正压住全局兜底。 */
+  min-height: var(--control-h-sm);
   /* 标题不画边框：它读起来是「这一页的名字」而不是一个输入控件；
-     没有边框也就不需要聚焦态变色 —— 编辑状态由下面的 .editor__status 表达 */
-  padding: 6px 0;
+     没有边框也就不需要聚焦态变色 —— 编辑状态由标题右侧的状态胶囊表达。 */
+  padding: 3px 0;
   background: none;
   border: none;
 }
-.editor__status {
-  flex: 0 0 auto;
-  /* 用主题强调色（--accent-text 是按背景校正过对比度的变体），与主题包联动 */
-  color: var(--accent-text);
-  font-size: var(--text-aux);
-  white-space: nowrap;
+/* 聚焦同样不画焦点环。点标题时 global.css 的 :focus-visible 会给一个 2px 实心环，
+   那是「控件」的语言，而标题是纸面上的字。落点由光标给出、状态由胶囊给出，
+   都不是无提示地拿掉焦点样式。 */
+.editor__title:focus,
+.editor__title:focus-visible {
+  outline: none;
 }
-.editor__area {
-  flex: 1;
-  min-height: 0;
-  padding: var(--space-3) var(--space-4);
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--border);
-  border-radius: var(--radius-lg);
-  resize: none;
-  line-height: 1.75;
-  font-family: var(--font-mono);
-  font-size: var(--text-body);
+/* 标题的紧凑档必须单独提一次特异性：global.css 的原生输入兜底
+   `input:not([type='checkbox'])…{ min-height: var(--control-h) }` 是 (0,4,1)，
+   而 .editor__title 只有 (0,1,0) —— 不压过它，上面的 min-height 就是个摆设
+   （实测：computed 仍是 32px）。
+   下限取 24px：既保证控件高度调到下限（24）时标题不被压扁，
+   也正好是 WCAG 2.2 的最小指针目标（tokens.css 的行内尺度注释同款口径）。 */
+.page--notes .editor .tb .tb__lead .editor__title {
+  min-height: max(24px, var(--control-h-sm));
 }
-.editor__area:focus {
-  border-color: var(--accent);
+/* 保存状态胶囊：图标 + 文案。沿用任务页状态胶囊那套「边框与淡底都由 currentColor 派生」，
+   换主题 / 换强调色时跟着走，不必逐条重写。
+   已保存走 --fg-tertiary（参考图里「已加载最新版本」就是这种低调），
+   未保存走 --accent-warm —— 它要的是「还有东西没落地」这一眼。 */
+/* 双类名是为了压过 tasks.css 的 `.chip` 基础样式（同特异性时靠加载顺序，
+   这里把顺序依赖显式写掉） */
+.chip.chip--save {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border-color: color-mix(in srgb, currentColor 45%, transparent);
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  color: var(--fg-tertiary);
+}
+.chip.chip--save-dirty {
+  color: var(--accent-warm);
 }
 /* 预览不再自带边框：纸只有一张（.sheet），预览是纸上的一段内容 */
 .editor__preview {
@@ -711,7 +833,8 @@
   color: var(--accent-text);
   word-break: break-all;
 }
-/* 查找替换条（固定在编辑器底部） */
+/* 查找替换条（固定在编辑器底部）：与纸同宽 —— 它出现在纸的下方，
+   比纸窄会显得与正文错位 */
 .find-bar {
   display: flex;
   align-items: center;
@@ -782,8 +905,8 @@
   border-collapse: collapse;
 }
 .xlsx-grid td:focus {
-  outline: var(--focus-w) solid var(--focus-ring);
-  outline-offset: -1px;
+  /* 聚焦落点用底色表达，不画轮廓框（编辑区内一律不出边框） */
+  outline: none;
   background: var(--accent-soft);
 }
 .xlsx-grid td {
@@ -799,6 +922,12 @@
 .md-editor .cm-editor {
   height: 100%;
 }
+/* 整块画布都可点：.cm-content 默认只有内容高，正文下方的空白不属于编辑器 ——
+   点上去不聚焦，读起来就是「只有第一行能编辑」。
+   撑到与滚动容器同高之后，点空白也会落到最近的文档位置（通常是文末）。 */
+.md-editor .cm-content {
+  min-height: 100%;
+}
 /* 富文本编辑器：工具栏 + contenteditable 正文，外层与 .md-editor 同构（无边框） */
 .rt-editor {
   flex: 1;
@@ -812,9 +941,17 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  /* 横向内边距交给 .sheet：正文与标题、标签左对齐 */
-  padding: var(--space-2) 0 var(--space-4);
+  /* 内边距挪到 .ProseMirror 上（见下）：留在这里的话，子元素撑满 100% 之后
+     还要再加上这段内边距，等于凭空多出一条滚动条。 */
+  padding: 0;
   line-height: 1.75;
+}
+/* 整块画布都可点：ProseMirror 是 contenteditable，默认只有内容高 ——
+   正文下方的空白点不聚焦（富文本 / Word 同一条链路）。
+   撑满滚动容器，点空白即落到最近的文档位置；内边距随之搬到它自己身上。 */
+.rt-editor__body .ProseMirror {
+  min-height: 100%;
+  padding: var(--space-2) 0 var(--space-4);
 }
 /* 空编辑器用 data-placeholder 当占位符（contenteditable 没有原生 placeholder） */
 .rt-editor__body:empty::before {
@@ -825,6 +962,15 @@
   max-width: 100%;
   max-height: 240px;
 }
+/* 点进富文本 / Word 正文不画焦点框：与 Markdown 编辑器的 &.cm-focused { outline: none } 对齐。
+   注意这一条必须显式写 :focus-visible —— contenteditable 在 Chromium 里**鼠标点击也算
+   :focus-visible**（它被当成「要输入文字的地方」），只写 :focus 压不住 global.css 的
+   :focus-visible 兜底规则，实测点一下就会出现 2px 的蓝色环。
+   位置由光标给出，与标题输入框的处理同一口径。 */
+.rt-editor .ProseMirror:focus,
+.rt-editor .ProseMirror:focus-visible {
+  outline: none;
+}
 
 /* 统一工具栏的面板形态在两处宿主里各自需要原有的呼吸与分隔：
    笔记树工具区原来有自己的内边距；编辑器格式条原来是「内边距 + 下边框」，
@@ -832,8 +978,16 @@
 .ntree .tb--panel {
   padding: var(--space-1) 0 var(--space-2);
 }
+/* 格式条吸附在编辑区顶部：正文滚动时它不跟着走（它是 .rt-editor 的第一个子项，
+   滚动容器是下面的 .rt-editor__body，这里再显式写一次以固定语义）。
+   上/左/右内边距收紧：格式条与标题、正文落在同一条左边缘上。 */
 .rt-editor .tb--panel {
-  padding: var(--space-2);
+  position: sticky;
+  top: 0;
+  z-index: var(--z-float);
+  /* 同 .editor .tb__sub：只占按钮那一行，下边距留一点与正文分开 */
+  padding: 0 0 var(--space-1);
+  background: var(--bg-layer-solid);
   /* 各类型笔记的编辑工具栏与内容区之间都不画分割线（显式写 border: none，
      免得别处的 border-* 规则漏过来） */
   border: none;
@@ -888,8 +1042,8 @@
   border-radius: var(--radius-ctl);
 }
 .link-table__cell:focus-visible {
-  background: var(--bg-layer-solid);
-  box-shadow: inset 0 0 0 var(--border-w) var(--accent);
+  /* 聚焦落点用底色表达，不画内描边（编辑区内一律不出边框） */
+  background: var(--bg-hover);
   outline: none;
 }
 .link-table__cell--url {

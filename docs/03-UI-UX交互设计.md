@@ -292,6 +292,20 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 - 折叠态 48px，只留图标并以 `title` 补文字（`:25`）；折叠仍保留 `aria-label`（`:46`）。
 - 图标经 `lib/icons.tsx` 由 morphicons 渲染（形状数据来自 lucide 数据包），20px / stroke 2（`:28`）。
 
+### 5.3 页面内的三处侧栏收放（2026-09-26）
+
+任务页的清单树、笔记页的笔记树、工作流页的模板树统一了收放行为：**收起时整块不渲染** —— 既不是 `display: none`（藏起来的行仍会被查询与自动化脚本当成「看得见」），也不是缩成窄条（仍然占位）。三处按钮的落点按「离它管的东西最近」定：
+
+| 位置 | 按钮落点 | 额外约束 |
+| --- | --- | --- |
+| 任务页 · 清单树 | 分段控件里「列表」两个字旁边（`.seg .seg__panel`） | **只在列表视图出现** —— 四象限 / 日历 / 看板不按清单组织，此时连按钮一起隐藏 |
+| 笔记页 · 笔记树 | 页面副标题旁边（`.page__head-toggle`，用 `align-self: center` 抵消页头的 baseline 对齐） | 全屏编辑时页面头整体让位，树也随之不显示 |
+| 工作流页 · 模板树 | 工具栏最左边（`Toolbar` 的 `nav` 槽） | 收起时**分隔条一并隐藏** —— 没有侧栏就没有可拖的边界 |
+
+状态存 localStorage（`zhixing.tree.tasks` / `.notes` / `.workflow`），与 `wf.sideWidth`、命令面板 MRU 同一个理由：纯界面偏好，不该跟着数据一起被导出 / 同步。
+
+任务页原先有一版 40px 的「窄条」形态（`.tasklists--rail`，只留一个展开按钮），按「收起不占位」的要求撤掉，组件里的 `rail` state 与两条 CSS 一并删除。回归：`tasklistuxcheck`（12 项，含整栏收放与「只在列表视图」）、`notesheetcheck`（44 项，含笔记树收放）、`workflowcheck`（18 项，含模板树收放与分隔条隐藏）。
+
 ### 5.2 标题栏（`components/TitleBar.tsx`）
 
 - 左侧：macOS 红绿灯占位（`isMac` 时渲染 `titlebar__traffic`，`:11`、`:17`）。
@@ -347,28 +361,42 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 ### 8.1 布局：一张笔记纸 + 一条信息条（`NotesPage.tsx`，2026-09 重排）
 
 ```text
-笔记树 240px（可拖 180–460）│ 笔记纸（编辑区唯一的卡片）
-                              ├─ 标题行：标题 · 未保存状态
-                              ├─ 元信息行：格式下拉 168px · 标签胶囊 · 归属 chip
-                              ├─ 工具行：预览 · AI 整理 · 链接 · 引用 · 模板 · 全屏
+笔记树 240px（可拖 180–460）│ 笔记纸（编辑区唯一的卡片，占满编辑区）
+                              ├─ 标题行：标题 · 保存状态胶囊 · 标签胶囊 · 归属胶囊
+                              ├─ 工具栏（吸附在编辑区顶部）：左端固定「预览 · AI 整理 · 链接 · 引用 · 模板 · 全屏」，
+                              │   富文本形态下它们与格式条合成同一条（操作组在左、格式按钮在右）
                               └─ 正文：Markdown / 富文本 / Word / Excel / 链接 / 预览（一律无内层边框）
-                            信息条（默认收起，34px）
+                    ↑ 以上三块铺满纸面，共用同一条左边缘
+                            信息条（默认收起，34px；全宽，与纸同宽）
 ```
 
 - **卡片只标记容器，不标记分区**：编辑区曾是「头部卡 + 标签卡 + 正文卡」三张独立卡片，加上信息区共 6 张带边框的矩形 + 4 段间隙，把「标题 → 正文」的连续阅读切成四段。重排后是 **1 张纸（`.sheet`）+ 1 条信息条**，分层靠留白，不新增分割线。正文各形态容器（`.md-editor` / `.rt-editor` / `.editor__preview` / `.editor__office` / `.editor__link`）统一去掉 `border`、`border-radius` 与底色。
-- **格式下拉固定 168px**：通用工具栏的 `.tb__subright--fill` 会把剩余宽度给第一个控件，在笔记编辑器里会把按钮整组推到右边、并把「模板 / 全屏」挤进「⋯」。笔记页用更具体的规则退出这次填充（`notes.css` 里 `.editor .tb .tb__subright.tb__subright--fill`）。
+- **铺满纸面**：标题行 / 正文一律吃满笔记纸的内容宽（`.sheet` 是 flex column，子项默认 stretch）—— 左边缘因此天然对齐，横向留白只由 `.sheet` 的内边距决定；五种形态（Markdown / 富文本 / Word / Excel / 链接）宽度一致，不再按形态分「宽体」。
+- **曾用过「书写列」**（2026-09，已撤）：那一版把这三块限宽 560px 并居中，追求 43 字/行的可读行宽（对齐上游 ui-ux-pro-max 的 `Line Length` 规则）。按产品决定撤掉后，行宽重新随窗口增长 —— 1280 窗口约 54 个中文字/行、1600 窗口约 78 个，超出中文 30–45 字的舒适区，这是**已知代价**；要恢复只需在 `.sheet > .tb` / `.sheet__body` 上加回 `max-width` + `margin-inline: auto`。
+- **标题行四合一（2026-09-26 重排）**：标题、保存状态胶囊、标签胶囊、归属胶囊同处一行，`.sheet__meta` 整行与其中的**格式下拉一并撤掉** —— 头部从三层（标题行 + 工具行 + 元信息行，实测 104px）收成两层（实测 29px + 32px = 61px），正文多出约 32px。笔记类型改为**只在新建时决定**：入口在笔记树的「新建笔记」格式菜单（`NoteTree.tsx` 的 `formatMenu` / `NOTE_FORMATS`），编辑区不再提供事后切换。
+- **保存状态胶囊**：图标 + 文案常驻（`✓ 已保存` / `未保存`）。此前只在脏时冒出一行「未保存…」，干净态什么都不显示 —— 「没在动」和「已经存好」看起来一样。配色沿用任务页状态胶囊那套「边框与淡底都由 currentColor 派生」：已保存取 `--fg-tertiary`，未保存取 `--accent-warm`，换主题 / 换强调色时跟着走。 2026-09-26 起它同时承载 **Word / Excel 的文件写回状态**：`officePending` 与 `dirty` 分开记（`dirty` 说的是标题 / `content_md` 没落库，Word 的正文不在 `content_md` 里，混成一个会让自动保存把状态提前清掉），胶囊取两者的并集。相应地，写回成功**不再弹 toast** —— 每停一次手弹一条「已写回 …」是噪音；失败仍然提示，因为那时胶囊还停在「未保存」，用户需要知道为什么。
+- **操作组并入工具栏且靠左（2026-09-26）**：那 6 个入口原来独占一行，现在挂到工具栏的**左槽**（Toolbar 的 nav 位）—— 富文本由 RichTextEditor 的 leading 接住，与格式条落在同一个 `.tb__sub` 里（左组 6 个 + 右组格式按钮），纸上因此只剩一条工具栏；其余形态没有格式条可挂，这一行自成一行，位置与对齐完全一致。左组**不参与右侧折叠**（`flex: 0 0 auto`），窄窗口放不下时由 `flex-wrap` 让格式条整组换行，而不是把这一行挤破。左组与右组的间距从通用工具栏的 38px 收到 16px。
+  三点配套：① 左组**不参与右侧折叠**（`flex: 0 0 auto`），6 个入口永远可见；右组的 flex 基底改为 `0`（通用工具栏给的是 `1 1 auto`，自然宽度等于所有格式按钮之和，在可换行容器里它一定会掉到第二行）；② **编辑区窄于 920px 时左组收成纯图标**（`.sheet` 上开 `container-type: inline-size`，用容器查询按**编辑区自身宽度**判断，与窗口宽度解耦；图标都带 `title`，语义不丢），把宽度让给格式条 —— 1280 窗口下格式条因此能显示「字号 · 颜色 · B I U S H1」，不收则只剩一个「⋯ 23」；③ 字号下拉改按内容自适应（`.field--compact` 的 200px 是给输入框的，「字号 ▾」两个字不需要）。
+- **工具栏融入编辑区顶部**：页面工具行与富文本格式条都改成**无边框**（`border-color: transparent` + 无底色，悬浮与选中才给底），整组向左挪回按钮自身的 8px 内边距，图标因此与标题、正文落在同一条左边缘；两条都 `position: sticky; top: 0` 并给实色底，正文再长也不跟着滚走。
+- **编辑区聚焦不出边框**：标题输入、**富文本 / Word 正文**（`.rt-editor .ProseMirror`）、Excel 网格单元格、链接表格单元格聚焦时都不再画焦点框/轮廓 —— 落点统一交给光标与底色（`--accent-soft` / `--bg-hover`），编辑区里不再出现任何矩形框。两个坑：① `contenteditable`（ProseMirror）在 Chromium 里**鼠标点击也算 `:focus-visible`**，只写 `:focus` 压不住 global.css 的兜底规则，必须两条伪类都写 —— 实测点一下就会出现 2px 蓝环；② 用 `element.focus()` 的自动化测不出这一条，回归脚本改成 `Input.dispatchMouseEvent` 真实点击。
+- **正文横向内边距归零**：`.cm-content` 原自带 16px 横向内边距，于是 Markdown 正文比标题右缩一格，而富文本（`.rt-editor__body`）与预览（`.editor__preview`）早已归零 —— 三种形态左边缘互不一致。横向一律交给纸面，`.sheet > .tb` / `.sheet > .sheet__body` 共用同一条左边缘（`.sheet` 是 flex column，子项默认 stretch）。
+- **整块画布都可点（2026-09-26）**：可编辑元素默认只有内容高 —— `.cm-content` 与 `.ProseMirror` 下方那片空白不属于编辑器，点上去不聚焦，读起来就是「只有第一行能编辑」。现在两者都撑满各自的滚动容器（`min-height: 100%`），点空白即把光标接到最近的文档位置；`.rt-editor__body` 的内边距随之搬到 `.ProseMirror` 身上（留在容器上会变成「100% + 内边距」，凭空多一条滚动条）。Markdown / 富文本 / Word 三条链路一并覆盖（Word 走 `.editor__office-body > .rt-editor`，同一套类名）。
+- **Word 与富文本共用一条工具栏（2026-09-26）**：Word 可编辑形态走的是同一个 `RichTextEditor`（挂在 `.editor__office-body` 里），那 6 个操作一并挂进它的格式条左侧 —— 此前 Word 会多出一条只放这 6 个入口的行，与富文本不一致。`usesRichToolbar` 因此覆盖 `richtext` 与 `wordEditing` 两种形态。
+- **工具栏高度（2026-09-26 收紧）**：`.editor .tb__sub` 的上下内边距与上外边距全部归零、`.editor .tb` 的下外边距从 12px 收到 8px、`.rt-editor .tb--panel` 同样只留一行 —— 工具栏只占按钮本身那 24px。头部（`.editor .tb`）因此从 **73px 收到 61px**，1280 窗口下正文区占比 **77% → 82%**。 2026-09-26 之后又收了一轮：`.editor .tb` 的下外边距归零、`.sheet__body` 的上内边距 8→4px、Markdown 的 `.cm-content` 上内边距 16→8px —— **工具栏到正文首行只剩 12px**（原先富文本 24px、Markdown 32px，三层间距叠加）。
+- **Word 的头部并入工具栏（2026-09-26）**：Word 可编辑原本在格式条上方另有一条 `.editor__office-head`（状态文案 + 「导出 .docx」+「用系统应用打开」，40px 高）。两个按钮进工具栏最右端的不折叠位（`RichTextEditor` 的 `primary`），那一行整块撤掉 —— 与富文本的头部结构完全一致。状态文案（「Word 可编辑（自动写回 .docx）· 已载入…」）按产品决定不再显示，`leadingMeta` 槽位随之删掉。Excel 没有格式条可挂，头部保持原样。
+- **工具行退出通用填充**：通用工具栏的 `.tb__subright--fill` 会把剩余宽度给第一个控件，在笔记编辑器里会把按钮整组推到右边、并把「模板 / 全屏」挤进「⋯」。笔记页用更具体的规则退出这次填充（`notes.css` 里 `.editor .tb .tb__subright.tb__subright--fill`）。
 - **信息条默认收起**：`linksExpanded` 默认 `false`，收起态只显示「属性 N · 反链 N · 引用 N · 归属 N」计数，高度 34px；展开后与重排前可见性一致（三组并排、`max-height: 220px`、内部滚动）。实测正文可用高度占比由空态约 46% 升到约 74%（1280×820）。
 - **窄窗口换形态**：判据是编辑区**自身**宽度（`ResizeObserver` 量 `.notes-main`）而不是窗口宽度，阈值 660px。低于阈值时展开态改为覆盖式抽屉 `.links--drawer`（`position: fixed` + `.links__scrim` 遮罩），不挤压正文 —— 1024 窗口下编辑区只剩约 480px，并排会把提示文案折成两行。
 - **全屏编辑**：工具栏「全屏」把状态提到 App（`.app--zen`），页面头、笔记树、左侧主导航一起让位，**标题栏保留**（窗口按钮还在上面）；Esc 退出，离开笔记页自动复位。样式见 `notes.css` 的 `.page--zen` / `.notes-main--zen`。
 - **链接体检入口在树上**：「孤儿笔记 / 失效链接」查的是整库链接健康度，不属于「这一篇怎么编辑」，2026-09 从单篇笔记工具栏移到笔记树工具行（`.ntree__topbar` 的「链接体检」）。单篇工具栏因此从 8 个控件降到 6 个，1280 窗口下不再发生折叠。
 - 信息区可整体开关（`linksOpen`，默认开）；滚动容器均在 `global.css:126-134` 的 `overscroll-behavior: contain` 名单内。
-- 回归：`node scripts/notesheetcheck.mjs`（18 项，含卡片收敛、信息条两态、抽屉形态、全屏、树上入口）。
+- 回归：`node scripts/notesheetcheck.mjs`（43 项，含卡片收敛、铺满对齐、标题行四合一与保存状态两态、工具栏到正文首行 ≤14px、操作组落在工具栏左端与宽窄两态、富文本与 Word 操作组并入格式条、Word 写回走胶囊且不弹提示（编辑→未保存 / 写回→已保存 / 无 toast）、正文无焦点框、点正文空白可聚焦（Markdown / 富文本各一条）、工具栏无边框、数据形态全宽、信息条两态、抽屉形态、全屏、树上入口）。
 
 ### 8.2 CodeMirror 6 编辑器（`components/MarkdownEditor.tsx`）
 
 - 扩展：`history`、`drawSelection`、`highlightActiveLine`、`closeBrackets`、`markdown()`、`syntaxHighlighting(mdHighlight)`、`[[` 补全、placeholder、行宽换行、`completionKeymap + defaultKeymap + historyKeymap + indentWithTab`（`:105-120`）。
 - 高亮配色**全部取自设计令牌**（`:27-37`）：标题用 `--accent`、行内代码用 `--accent-solid`、引用用 `--fg-secondary`。
-- 编辑区主题：字体走 `--font-ui`、行高 1.75、内边距 `--space-4`、活动行 `--bg-hover`、选区 `--accent-soft`、光标 `--accent`、补全浮层 `--bg-layer-solid` + `--radius-md`（`:39-62`）。
+- 编辑区主题：字体走 `--font-ui`、行高 1.75、内边距纵向 `--space-4`（横向 0，交给书写列）、活动行 `--bg-hover`、选区 `--accent-soft`、光标 `--accent`、补全浮层 `--bg-layer-solid` + `--radius-md`（`:39-62`）。
 - `[[` 补全按前缀过滤标题，最多 20 项（`:83-99`）。
 - 外部改正文（切笔记、回滚版本）时替换文档且不触发 onChange 回环（`:133-140`）。
 
@@ -382,13 +410,13 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 
 | 条件 | 形态 | 证据 |
 | --- | --- | --- |
-| `format === 'link'` | 链接行（支持 JSON 数组或多 URL）+「用系统应用打开」 | `NotesPage.tsx:390-424` |
-| word / excel 且有解析结果 | Office 只读预览（`dangerouslySetInnerHTML`，内容已清洗） | `:425-447` |
-| word / excel 无解析结果 | 引用路径 + 「用系统默认应用打开」 | `:448-471` |
-| markdown / richtext 且预览开 | `MarkdownView`（`[[` 可点，悬空可一键新建） | `:472-480` |
-| markdown / richtext 且预览关 | `MarkdownEditor` | `:481-494` |
+| `format === 'link'` | 链接表格（可编辑的多链接列表）+「用系统应用打开」 | `NotesPage.tsx` 的 `.editor__link` 分支 |
+| word / excel | **可编辑**：Word 走 `RichTextEditor` 并自动写回 `.docx`，Excel 走 `XlsxGrid` 自动写回 `.xlsx` | `.editor__office` 分支 |
+| 预览开（markdown / richtext） | `MarkdownView`（`[[` 可点，悬空可一键新建） | `.editor__preview` 分支 |
+| 预览关 + markdown | `MarkdownEditor`（CodeMirror 6） | |
+| 预览关 + richtext | `RichTextEditor`（tiptap） | |
 
-注意 `richtext` 与 `markdown` **一起**落到 Markdown 编辑器分支（`:425`、`:482`），这是最大的交互降级项（`01` R-N-11）。
+**Office 写回的自愈（2026-09-26）**：Word/Excel 笔记的 `content_md` 按约定存文件路径，但库里确实有存成正文的数据（示例笔记，或者建笔记时把正文填进了「已有文件路径」那一栏）。读取端 `officeDocNote` 一直知道这种情况该提示「文件尚未创建，保存时会新建」，写入端却把它当路径一路走到 `mkdir` —— 报出来的是 `ENOENT … mkdir '…整段正文….docx'`，用户既看不懂也没法处理。现在两端一致：`saveWordNote` / `saveExcelNote` 先用 `looksLikeLocalPath` 判断，不是路径就地补一个空白文件、把新路径登记回笔记再写回；自愈只发生一次（`getNote` 每次重新读库），不会每存一次就多建一个文件。`onMissingPath` 的父目录计算也改用 `lastIndexOf` —— 原先的正则在**没有分隔符**时会把整串当成目录去建。
 
 ---
 

@@ -33,6 +33,9 @@ memory/
 .commitmsg
 .commitmsg*
 
+# ---- 一次性脚本（用完即弃，不入库）----
+scripts/tmp-*.mjs
+
 dist-portable/
 
 dist-full/

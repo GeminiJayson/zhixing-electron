@@ -94,6 +94,34 @@ check('笔记不存在时降级', ghost.kind === 'none' && ghost.message.include
 const hasDanger = /<script|onerror=|onload=|javascript:/i.test(word.html + excel.html)
 check('解析结果不含危险标签/属性', !hasDanger)
 
+// ---------------------------------------------------------------- 写回
+// content_md 存成正文的历史数据（示例笔记、建笔记时把正文填进了「已有文件路径」那一栏）：
+// 早先会被当成路径一路走到 mkdir，报出「ENOENT … mkdir '…整段正文….docx'」——
+// 用户既看不懂也没法处理。现在应当就地补一个空白文件、把路径登记回笔记，再写回。
+const proseId = await mkNote(
+  '验证-写回-无关联',
+  'word',
+  '一段正文，不是路径：范围：审计清单的严重级全部清零，中低优先项登记为技术债。'
+)
+const heal1 = await ev(`window.zhixing.db.saveWordNote(${proseId}, '<p>第一次写回</p>')`)
+check('无文件关联的 Word 笔记能自愈写回（不再拿正文去 mkdir）',
+  heal1.ok === true && String(heal1.message).includes('已写回'), heal1.message)
+const healed = await ev(`window.zhixing.db.note(${proseId})`)
+check('自愈后新路径登记回笔记',
+  typeof healed?.content_md === 'string' && /\.docx$/.test(healed.content_md),
+  String(healed?.content_md ?? '').slice(-70))
+const heal2 = await ev(`window.zhixing.db.saveWordNote(${proseId}, '<p>第二次写回</p>')`)
+check('再次保存走正常路径，不会又建一个文件',
+  heal2.ok === true && heal2.message === heal1.message, heal2.message.slice(-70))
+const healedBack = await ev(`window.zhixing.db.previewNote(${proseId})`)
+check('写回的 docx 能被解析回来',
+  healedBack.kind === 'docx' && healedBack.html.includes('第二次写回'), healedBack.message)
+
+// 目标目录还不存在时：补建父目录再写入（onMissingPath 的正路）
+const deepId = await mkNote('验证-写回-深层目录', 'word', join(fixtures, '新目录', '深层.docx'))
+const deep = await ev(`window.zhixing.db.saveWordNote(${deepId}, '<p>深层</p>')`)
+check('目标目录不存在时补建目录再写回', deep.ok === true, deep.message.slice(-70))
+
 ws.close()
 child.kill()
 await sleep(500)

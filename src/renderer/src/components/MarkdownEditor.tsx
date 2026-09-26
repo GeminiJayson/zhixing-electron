@@ -55,7 +55,11 @@ const editorTheme = EditorView.theme({
     lineHeight: '1.75',
     overflow: 'auto',
   },
-  '.cm-content': { padding: 'var(--space-4)', caretColor: 'var(--accent)' },
+  // 横向内边距为 0：正文与标题、元信息行共处纸面的同一条左边缘
+  // （这里再留 16px 就会让 Markdown 正文比标题右缩一格，与富文本 / 预览形态不一致）
+  // 上内边距取 8px 与富文本对齐：工具栏下面那一截空当由 .sheet__body 的 4px + 这里 8px 组成，
+  // 原来是 16px，正文首行离工具栏三十多像素。
+  '.cm-content': { padding: 'var(--space-2) 0 var(--space-4)', caretColor: 'var(--accent)' },
   '.cm-line': { padding: '0' },
   '&.cm-focused': { outline: 'none' },
   '.cm-activeLine': { backgroundColor: 'var(--bg-hover)' },
