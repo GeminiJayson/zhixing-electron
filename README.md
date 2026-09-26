@@ -2,7 +2,7 @@
 
 **知行 ZhiXing**：一个本地优先的个人待办 + 知识图谱桌面客户端（Electron + React + TypeScript）。
 
-- 仓库：`zhixing-electron`（GitHub: [GeminiJayson/zhixing-electron](https://github.com/GeminiJayson/zhixing-electron)），当前版本 **`1.8.0`**（`package.json`），安装包与便携版见仓库 Releases。
+- 仓库：`zhixing-electron`（GitHub: [GeminiJayson/zhixing-electron](https://github.com/GeminiJayson/zhixing-electron)），当前版本 **`1.11.0`**（`package.json`），安装包与便携版见仓库 Releases。
 - 八页功能面已全部实现（`src/renderer/src/nav.ts` / `App.tsx`），分域与逐项状态见 §2；已决策不做的方向不计入缺口（见 §15）。
 - 本地优先：核心功能零网络依赖、无遥测、无账号（NFR-01）。
 - 数据全部落在本机一个 SQLite 文件里，可直接备份 / 恢复 / 整库导出导入。
@@ -54,7 +54,7 @@
 | 笔记：Markdown / 富文本工具栏 / 链接笔记表格 | ✅ | `MarkdownEditor.tsx`、`NotesPage.tsx` |
 | 笔记：文件夹树 / 双链 / 反链 / 标签 / 版本历史与回滚 | ✅ | `NoteTree.tsx`、`note-assoc.ts` |
 | 笔记：**结构化属性（`note.props`）** | ✅ 本批新增 | 笔记页「属性」卡片 |
-| 笔记：Word / Excel | ◐ 登记 + 用系统应用打开 | `shell:openPath` |
+| 笔记：Word / Excel | ✅ 可编辑 + 自动写回（`.docx` / `.xlsx`） | `NotesPage.tsx`（`.editor__office`） |
 | 笔记：AI 整理（单篇 / 整库，提示词可配） | ✅ | `src/main/ai.ts` |
 | 笔记：**附件管理**（归档 / 统计 / 清理） | ✅ | `src/main/db/attachments.ts` |
 | 捕获：三个全局热键读选中文字 + 独立小窗 | ✅ | `src/main/selection.ts`、`CaptureWindowApp.tsx` |
@@ -125,10 +125,10 @@ npm run dev                           # 开发模式（HMR）
 
 | 类别 | 脚本 |
 | --- | --- |
-| 链路写入 | `writecheck`(18)、`notecheck`(28)、`inboxcheck`(16)、`workflowcheck`(17)、`taskopscheck`(14) |
+| 链路写入 | `writecheck`(18)、`notecheck`(28)、`inboxcheck`(16)、`workflowcheck`(18)、`taskopscheck`(14) |
 | 口径 / 维护 | `todaycheck`(20)、`rollcheck`(25)、`recyclecheck`(18) |
 | 数据安全 | `importcheck`(13)、`securitycheck`(5) |
-| UI / 交互 | `dialogcheck`(10)、`editorcheck`(8)、`layoutcheck`、`vlistcheck`(8)、`officecheck`(13)、`interactioncheck`(32)、`themecheck`(18)、`graphcheck`(5)、`richpiccheck`(5)、`tasklistuxcheck`(11)、`taglistcheck`(22)、`bloubcheck`(11)、`notesheetcheck`(18) |
+| UI / 交互 | `dialogcheck`(10)、`editorcheck`(8)、`layoutcheck`、`vlistcheck`(8)、`officecheck`(18)、`interactioncheck`(32)、`themecheck`(18)、`graphcheck`(5)、`richpiccheck`(5)、`tasklistuxcheck`(12)、`taglistcheck`(22)、`bloubcheck`(11)、`notesheetcheck`(44) |
 | 架构 / 可访问性 | `eventcheck`(8)、`contrast-audit`、`check-jieba-fallback`(4) |
 | 构建 / 发布 | `ensure-jieba-win-binding`、`upload-release` |
 | 视觉诊断 | `capture`、`bigcapture`、`diag-today` |
