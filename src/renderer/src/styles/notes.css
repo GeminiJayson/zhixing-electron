@@ -811,12 +811,20 @@
   gap: var(--space-2);
   padding: var(--space-2) 0 var(--space-4);
 }
-/* 头部一行：左边是「链接笔记 · N 条」，右边是「添加链接」 */
-.editor__link-head {
-  display: flex;
+/* 「链接 N 条」chip：纯计数、不可点 —— 与「归属」同款外形，但去掉指针与 hover。
+   归属是可点的按钮（.chip--meta），计数只是陈述，两者不该看起来一样。 */
+/* 双类名压过 tasks.css 的 `.chip` 基础样式（同特异性时靠加载顺序，别赌） */
+.chip.chip--count {
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
+  gap: 3px;
+  padding: 1px 7px;
+  background: transparent;
+  border-color: var(--border);
+  color: var(--fg-secondary);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .editor__link-row {
   display: flex;

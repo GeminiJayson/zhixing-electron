@@ -384,6 +384,7 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 - **Word 与富文本共用一条工具栏（2026-09-26）**：Word 可编辑形态走的是同一个 `RichTextEditor`（挂在 `.editor__office-body` 里），那 6 个操作一并挂进它的格式条左侧 —— 此前 Word 会多出一条只放这 6 个入口的行，与富文本不一致。`usesRichToolbar` 因此覆盖 `richtext` 与 `wordEditing` 两种形态。
 - **工具栏高度（2026-09-26 收紧）**：`.editor .tb__sub` 的上下内边距与上外边距全部归零、`.editor .tb` 的下外边距从 12px 收到 8px、`.rt-editor .tb--panel` 同样只留一行 —— 工具栏只占按钮本身那 24px。头部（`.editor .tb`）因此从 **73px 收到 61px**，1280 窗口下正文区占比 **77% → 82%**。 2026-09-26 之后又收了一轮：`.editor .tb` 的下外边距归零、`.sheet__body` 的上内边距 8→4px、Markdown 的 `.cm-content` 上内边距 16→8px —— **工具栏到正文首行只剩 12px**（原先富文本 24px、Markdown 32px，三层间距叠加）。
 - **Word 的头部并入工具栏（2026-09-26）**：Word 可编辑原本在格式条上方另有一条 `.editor__office-head`（状态文案 + 「导出 .docx」+「用系统应用打开」，40px 高）。两个按钮进工具栏最右端的不折叠位（`RichTextEditor` 的 `primary`），那一行整块撤掉 —— 与富文本的头部结构完全一致。状态文案（「Word 可编辑（自动写回 .docx）· 已载入…」）按产品决定不再显示，`leadingMeta` 槽位随之删掉。**Excel 同款（2026-09-26）**：Excel 没有格式条可挂，「用系统应用打开」挂到页面工具栏的 `primary`（同样是最右端不折叠位），`.editor__office-head` 与「Excel 可编辑（自动写回 .xlsx）」那句状态文案一并撤掉 —— 两种 Office 形态的头部结构因此完全一致，Excel 正文多出 40px。
+- **链接笔记也归位（2026-09-26）**：链接笔记原先在表格上方另有一条 `.editor__link-head`（「链接笔记 · N 条」+「添加链接」，40px 高）。现在条数收成标题行的 `链接 N 条` 胶囊（`.chip.chip--count`，**纯计数、不可点** —— 与可点的「归属」`.chip--meta` 区分开，不给 `cursor: pointer` 也不给 hover），「添加链接」挂到页面工具栏的 `primary`（最右端不折叠位，与 Word 的「导出 .docx」、Excel 的「用系统应用打开」同一落点），那一行头部整块撤掉。表格空态文案随之改成「点工具栏的『添加链接』」。非 Markdown / 富文本形态的头部结构至此完全一致。
 - **工具行退出通用填充**：通用工具栏的 `.tb__subright--fill` 会把剩余宽度给第一个控件，在笔记编辑器里会把按钮整组推到右边、并把「模板 / 全屏」挤进「⋯」。笔记页用更具体的规则退出这次填充（`notes.css` 里 `.editor .tb .tb__subright.tb__subright--fill`）。
 - **信息条默认收起**：`linksExpanded` 默认 `false`，收起态只显示「属性 N · 反链 N · 引用 N · 归属 N」计数，高度 34px；展开后与重排前可见性一致（三组并排、`max-height: 220px`、内部滚动）。实测正文可用高度占比由空态约 46% 升到约 74%（1280×820）。
 - **窄窗口换形态**：判据是编辑区**自身**宽度（`ResizeObserver` 量 `.notes-main`）而不是窗口宽度，阈值 660px。低于阈值时展开态改为覆盖式抽屉 `.links--drawer`（`position: fixed` + `.links__scrim` 遮罩），不挤压正文 —— 1024 窗口下编辑区只剩约 480px，并排会把提示文案折成两行。
@@ -410,7 +411,7 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 
 | 条件 | 形态 | 证据 |
 | --- | --- | --- |
-| `format === 'link'` | 链接表格（可编辑的多链接列表）+「用系统应用打开」 | `NotesPage.tsx` 的 `.editor__link` 分支 |
+| `format === 'link'` | 链接表格（可编辑的多链接列表）；条数走标题行胶囊，动作是工具栏最右端的「添加链接」 | `NotesPage.tsx` 的 `.editor__link` 分支 |
 | word / excel | **可编辑**：Word 走 `RichTextEditor` 并自动写回 `.docx`，Excel 走 `XlsxGrid` 自动写回 `.xlsx` | `.editor__office` 分支 |
 | 预览开（markdown / richtext） | `MarkdownView`（`[[` 可点，悬空可一键新建） | `.editor__preview` 分支 |
 | 预览关 + markdown | `MarkdownEditor`（CodeMirror 6） | |

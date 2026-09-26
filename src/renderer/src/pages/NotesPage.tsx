@@ -1059,6 +1059,12 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   const wordEditing = isOffice && current?.format === 'word'
   /** Excel 可编辑：没有格式条可挂，出口按钮挂到页面工具栏的 primary（不折叠位）。 */
   const excelEditing = isOffice && current?.format === 'excel'
+  /**
+   * 链接笔记：条目草稿优先（编辑中不被入库值覆盖）。标题行的计数胶囊与工具栏的
+   * 「添加链接」都读这一份 —— 和正文表格用的是同一个来源，三处不会分叉。
+   */
+  const linkEditing = current?.format === 'link'
+  const linkItems: NoteLinkItem[] = linkEditing ? (linkDraft ?? parseLinkItems(content)) : []
   const usesRichToolbar = !preview && (current?.format === 'richtext' || wordEditing)
 
   /** 编辑区的操作组：回答「怎么编辑这一篇」，所以归工具栏，且一律排在左侧。 */
@@ -1176,6 +1182,13 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                         <Morph icon={unsaved ? IconData.CircleAlert : IconData.Check} size={12} />
                         {unsaved ? '未保存' : '已保存'}
                       </span>
+                      {/* 链接笔记的条数从编辑区头部搬到标题行：它回答的是「这一篇有多少条」，
+                          与保存状态、标签、归属同属一行身份信息，不该另占一条 40px 的行。 */}
+                      {linkEditing ? (
+                        <span className="chip chip--count" title="这篇笔记里的链接条数">
+                          <Link2 size={12} /> 链接 {linkItems.length} 条
+                        </span>
+                      ) : null}
                       {/* 标签与归属从原来的元信息行并进标题行：标题、状态、标签、归属
                           回答的都是「这一篇是什么」，拆成两行只是把一句话读成两半。 */}
                       <div className="note-tags" aria-label="笔记标签">
@@ -1229,6 +1242,15 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                       >
                         用系统应用打开
                       </button>
+                    ) : linkEditing ? (
+                      /* 链接笔记的「添加链接」也从编辑区头部搬进工具栏最右端：
+                         与 Word / Excel 的出口动作同一落点。 */
+                      <button
+                        className="text-btn"
+                        onClick={() => updateLinkItems([...linkItems, { title: '', target: '' }])}
+                      >
+                        <Plus size={13} /> 添加链接
+                      </button>
                     ) : undefined
                   }
                 />
@@ -1243,18 +1265,6 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                 // AI 整理会按标题把每条链接归纳到对应的链接笔记（没有就新建）。
                 ((items: NoteLinkItem[]) => (
                   <div className="editor__link">
-                    <div className="editor__link-head">
-                      <span className="u-aux">
-                        链接笔记 · {items.length} 条
-                        {linkDraft ? '（编辑中）' : ''}
-                      </span>
-                      <button
-                        className="text-btn"
-                        onClick={() => updateLinkItems([...items, { title: '', target: '' }])}
-                      >
-                        <Plus size={13} /> 添加链接
-                      </button>
-                    </div>
                     <div
                       className="link-table"
                       style={
@@ -1337,12 +1347,12 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                       ))}
                       {!items.length && (
                         <p className="u-aux link-table__empty">
-                          还没有链接。点「添加链接」，填上标题与地址。
+                          还没有链接。点工具栏的「添加链接」，填上标题与地址。
                         </p>
                       )}
                     </div>
                   </div>
-                ))(linkDraft ?? parseLinkItems(content))
+                ))(linkItems)
               ) : isOffice ? (
                 // Word/Excel 直接可编辑并自动写回原文件
                 <div className="editor__office">

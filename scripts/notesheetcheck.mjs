@@ -182,6 +182,24 @@ try {
    })()`)
   check('链接笔记的正文与写作形态同宽（五种形态一律铺满）',
     openedLink && wide.table && wide.bodyW != null && Math.abs(wide.bodyW - fill.inner) <= 1, J(wide))
+  // 链接笔记的结构向其它形态看齐：条数走标题行胶囊，动作走工具栏最右端，
+  // 编辑区不再为它们单占一行头部（原先「链接笔记 · N 条」+「添加链接」占一行）。
+  const linkBar = await app.evaluate(`(() => {
+     const chips = [...document.querySelectorAll('.chip--count')].map((c) => (c.textContent || '').trim())
+     const bar = document.querySelector('.sheet > .tb .tb__subright')
+     const labels = bar ? [...bar.querySelectorAll('button')].map((b) => (b.textContent || '').trim()) : []
+     return {
+       chips,
+       headGone: document.querySelector('.editor__link-head') === null,
+       inBar: labels.includes('添加链接'),
+       isLast: labels[labels.length - 1] === '添加链接',
+       rows: document.querySelectorAll('.link-table__row').length
+     }
+   })()`)
+  const linkChipN = Number(((linkBar.chips.find((t) => /链接 \d+ 条/.test(t)) || '').match(/(\d+)/) || [])[1] ?? -1)
+  check('链接笔记：条数胶囊在标题行（与表格行数一致），「添加链接」在工具栏最右端，头部整行已撤',
+    linkBar.headGone === true && linkBar.inBar === true && linkBar.isLast === true && linkChipN === linkBar.rows,
+    J({ ...linkBar, chipN: linkChipN }))
   // 回到刚才那篇 Markdown 笔记：后面的断言继续在它上面跑
   await app.evaluate(`(() => {
      const b = [...document.querySelectorAll('.ntree__note')]
