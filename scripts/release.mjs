@@ -61,12 +61,17 @@ function run(bin, argv, opts = {}) {
   })
 }
 /**
- * Windows 上 npx 是 .cmd，而 Node ≥20 出于安全不再允许不经 shell 直接 spawn .cmd
- * （报 `spawnSync npx.cmd EINVAL`），所以这两个调用必须在 shell 里跑。
- * 只给它们开 shell：gh / git 的参数里有带空格的中文标题，直连能绕开 cmd 代码页的坑。
+ * 直接用本地依赖的入口 JS 跑，而不是 `npx xxx`。
+ *
+ * 两个理由，第二个才是决定性的：
+ * 1. npx 在 Windows 上是 .cmd，Node ≥20 不经 shell 拒绝 spawn（`spawnSync npx.cmd EINVAL`），
+ *    所以必须开 shell —— 而一旦经 cmd，中文参数又要跟代码页打交道；
+ * 2. 受限环境里（PATH 上没有 node，脚本只能借 Electron 的 Node 模式跑），
+ *    npx.cmd 内部再 spawn `node` 时找不到真实 node.exe，直接失败。
+ * 用 process.execPath 跑入口文件在「正常 node」与「Electron 的 Node 模式」下都成立。
  */
-function runNpx(argv) {
-  return run(npx, argv, { shell: process.platform === 'win32' })
+function runBin(relPath, argv) {
+  return run(process.execPath, [join(root, 'node_modules', relPath), ...argv])
 }
 function capture(bin, argv) {
   // stderr 必须自吞：查「标签还不存在」时 git rev-parse 会往 stderr 写 fatal，
@@ -100,8 +105,6 @@ const gh =
     : ['gh', '/usr/local/bin/gh', '/opt/homebrew/bin/gh']
   ).find((c) => exists(c, ['--version']))
 if (!gh) fail('找不到 gh CLI：请先安装 GitHub CLI 并登录（gh auth login）')
-const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx'
-const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 const version = String(pkg.version)
@@ -149,8 +152,8 @@ if (SKIP_BUILD) {
   step('跳过构建与打包（--skip-build）')
 } else if (DRY) {
   step('将会构建与打包')
-  log('  ' + npm + ' run build → electron-vite build')
-  log('  ' + npx + ' electron-builder --win --x64 --config.directories.output=dist-full')
+  log('  electron-vite build')
+  log('  electron-builder --win --x64 --config.directories.output=dist-full')
   log('  然后把两个 exe 复制到 dist/')
 } else {
   step('构建与打包')
@@ -159,8 +162,12 @@ if (SKIP_BUILD) {
   // execFileSync 不带 shell 时**不会解析 .cmd 包装**，裸名必然 spawnSync ENOENT；
   // 而正常的 node 环境下 process.execPath 就是 node.exe —— 两种环境都对。
   run(process.execPath, ['scripts/ensure-jieba-win-binding.mjs'])
-  runNpx(['electron-vite', 'build'])
-  runNpx(['electron-builder', '--win', '--x64', '--config.directories.output=dist-full'])
+  runBin(join('electron-vite', 'bin', 'electron-vite.js'), ['build'])
+  runBin(join('electron-builder', 'cli.js'), [
+    '--win',
+    '--x64',
+    '--config.directories.output=dist-full',
+  ])
   mkdirSync(distDir, { recursive: true })
   // 直接用 fs 复制，别再绕 `node -e`：那串表达式里有空格，经 shell 会被拆成多个参数
   for (const asset of assets) copyFileSync(join(fullDir, basename(asset)), asset)
