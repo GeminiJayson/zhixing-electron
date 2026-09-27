@@ -154,7 +154,11 @@ if (SKIP_BUILD) {
   log('  然后把两个 exe 复制到 dist/')
 } else {
   step('构建与打包')
-  run('node', ['scripts/ensure-jieba-win-binding.mjs'])
+  // 用 process.execPath，而不是裸名 'node'：
+  // 受限环境里（本机 PATH 里没有 node，脚本只能借 Electron 的 Node 模式跑）
+  // execFileSync 不带 shell 时**不会解析 .cmd 包装**，裸名必然 spawnSync ENOENT；
+  // 而正常的 node 环境下 process.execPath 就是 node.exe —— 两种环境都对。
+  run(process.execPath, ['scripts/ensure-jieba-win-binding.mjs'])
   runNpx(['electron-vite', 'build'])
   runNpx(['electron-builder', '--win', '--x64', '--config.directories.output=dist-full'])
   mkdirSync(distDir, { recursive: true })
