@@ -224,6 +224,42 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 > caret 的「展开」不再靠 CSS 旋转 90°：`ChevronRight ↔ ChevronDown` 的形变本身就是旋转，
 > 于是 `.trow__caret--open` 与 svg 的 `transition: transform` 都已删除。
 
+### 2.12 应用图标（exe / 窗口 / 托盘，2026-09-27 重做）
+
+**寓意**：一本**摊开的书**（知）+ 书页上的**对勾**（行）—— 知行合一。
+颜色分三层以上，不是纯色块：
+
+| 层 | 内容 | 是否随主题 |
+| --- | --- | --- |
+| 底 | 深墨渐变圆角方 + 顶部一圈 9% 白内描边 | 否（固定） |
+| 中 | 摊开的书：强调色三段渐变（亮一档 → 本体 → 暗一档） | **是** |
+| 顶 | 左页两条文字线（知识）+ 右页粗对勾（行动），白 | 否 |
+| 氛围 | 底部一层强调色径向光晕 | 是 |
+
+**真源**：`resources/icon.svg`（应用图标）与 `resources/icon-tray.svg`（托盘版：去掉文字线与光晕、
+书页与对勾都加粗，保证缩到 16px 还认得出）。两者用 `{{ACCENT}}` / `{{ACCENT_LIGHT}}` / `{{ACCENT_DARK}}` 表示"随强调色的那一层"。
+
+**生成**：`npm run gen:app-icons`（`scripts/gen-app-icons.cjs`，靠 `@resvg/resvg-js` 光栅化，
+不依赖浏览器）产出：
+
+| 产物 | 用途 |
+| --- | --- |
+| `resources/icon.ico` | 打包进 exe / 快捷方式（16/24/32/48/64/128/256 七档，ICO 内嵌 PNG） |
+| `resources/icon-256.png` | 运行时取不到主题图标时的兜底 |
+| `resources/theme-icons/app-<hex>.png` | 窗口 / 任务栏图标，8 个预设强调色各一张 |
+| `resources/theme-icons/tray-<hex>.png` | 托盘图标，同 8 色 |
+
+**跟随强调色**：主进程 `accentIconKey()` 用当前 `accent_color` 去选对应文件，
+换色时 `refreshTrayIcon()` **同时**更新窗口图标（`setIcon`）与托盘图标（`setImage`）。
+设置页色板之外的**自定义色**取最接近的预设兜底（256px 位图上这点色差看不出来）。
+
+**两处限制**（都是平台事实，不是没做）：
+
+1. **exe 图标是静态资源** —— Windows 只在构建时读取它，所以 `icon.ico` 固定用默认的「青竹」，
+   运行时跟随的只有窗口图标与托盘图标；
+2. **macOS 托盘仍用模板图**（`trayTemplate.png` + `setTemplateImage`）—— 菜单栏会按明暗自动反色，
+   彩色图标在菜单栏里反而是异类。
+
 ## 3. 布局框架
 
 ### 3.0 滚动驱动（2026-09-27）

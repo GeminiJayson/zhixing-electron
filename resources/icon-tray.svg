@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!--
+    托盘版：同一套寓意，但为 16px 做了减法 ——
+    去掉文字线与底部光晕，书页加厚、对勾加粗，保证缩到 16px 仍认得出「书 + 勾」。
+    颜色占位符同 icon.svg。
+  -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#2B3A52"/>
+      <stop offset="1" stop-color="#0C1322"/>
+    </linearGradient>
+    <linearGradient id="page" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="{{ACCENT_LIGHT}}"/>
+      <stop offset="1" stop-color="{{ACCENT_DARK}}"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="64" fill="url(#bg)"/>
+  <path d="M128 80
+           C110 64 82 58 58 63
+           C50 64 46 69 46 77
+           V166 C46 175 52 180 61 178
+           C84 174 110 178 128 196
+           C146 178 172 174 195 178
+           C204 180 210 175 210 166
+           V77 C210 69 206 64 198 63
+           C174 58 146 64 128 80 Z" fill="url(#page)"/>
+  <path d="M128 80 V196" stroke="#0A1120" stroke-opacity="0.34" stroke-width="8"/>
+  <path d="M88 136 L116 164 L172 100" fill="none" stroke="#ffffff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -125,7 +125,8 @@ const DOCK_RESTORE_INSET = 12
 /** 边缘缩放命中带宽度 */
 const WIDGET_RESIZE_MARGIN = 6
 /** 上一次托盘图标的配色，用于避免无谓的重着色 */
-let lastTrayColor = ''
+/** 上一次应用过的图标强调色 key：换色时才重建图标，避免无谓的 setIcon / setImage */
+let lastAccentKey = ''
 
 /** 浮窗展开尺寸与缩放下限。 */
 const WIDGET_SIZE: [number, number] = [290, 380]
@@ -809,86 +810,92 @@ function updateTrayTooltip(): void {
 }
 
 /**
- * 托盘图标配色：取当前主题包的 fg2，
- * 明暗按 theme_mode / 系统实际值取对应的一套。
+ * 图标的强调色跟随（2026-09-27）。
+ *
+ * 图标按「预设强调色」在**构建期**烘好（scripts/gen-app-icons.cjs：8 色 × 应用/托盘两形态）。
+ * Windows 的窗口图标与托盘图标都能在运行时 setIcon / setImage，但换色意味着重新光栅化 SVG，
+ * 而主进程里没有渲染器 —— 与其在运行时背一个渲染器，不如把 8 个预设色都烘出来按需取文件。
+ * 设置页的自定义强调色取**最接近的预设**兜底（图标是 256px 的位图，色差在视觉上几乎看不出来）。
  */
-function trayIconColor(): string {
-  try {
-    const s = currentSettings()
-    const mode: 'light' | 'dark' =
-      s.theme_mode === 'dark'
-        ? 'dark'
-        : s.theme_mode === 'light'
-          ? 'light'
-          : nativeTheme.shouldUseDarkColors
-            ? 'dark'
-            : 'light'
-    const pack = resolveThemePack(s.theme_pack)
-    return (mode === 'dark' ? pack.dark : pack.light).fg2 || '#666666'
-  } catch {
-    return '#666666'
+const PRESET_ACCENTS = [
+  '#0D9488',
+  '#2563EB',
+  '#7C3AED',
+  '#DB2777',
+  '#EA580C',
+  '#16A34A',
+  '#D97706',
+  '#0891B2',
+]
+
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.replace('#', '')
+  const f = h.length === 3 ? h.split('').map((c) => c + c).join('') : h
+  return [parseInt(f.slice(0, 2), 16), parseInt(f.slice(2, 4), 16), parseInt(f.slice(4, 6), 16)]
+}
+
+function nearestAccent(hex: string): string {
+  const raw = (hex || '').trim()
+  if (!/^#?[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(raw)) return PRESET_ACCENTS[0]
+  const [r, g, b] = hexToRgb(raw)
+  let best = PRESET_ACCENTS[0]
+  let bestD = Number.POSITIVE_INFINITY
+  for (const cand of PRESET_ACCENTS) {
+    const [cr, cg, cb] = hexToRgb(cand)
+    const d = (r - cr) ** 2 + (g - cg) ** 2 + (b - cb) ** 2
+    if (d < bestD) {
+      bestD = d
+      best = cand
+    }
   }
+  return best
+}
+
+/** 当前强调色对应的图标 key（文件名里的小写 6 位 hex） */
+function accentIconKey(): string {
+  try {
+    return nearestAccent(currentSettings().accent_color || '#0D9488').replace('#', '').toLowerCase()
+  } catch {
+    return '0d9488'
+  }
+}
+
+/** 主题图标路径；文件缺失时由调用方退回打包图标，绝不让图标空掉 */
+function themeIconPath(kind: 'app' | 'tray'): string {
+  return join(__dirname, '../../resources/theme-icons/' + kind + '-' + accentIconKey() + '.png')
 }
 
 /**
- * 托盘图标：把模板图按主题色重着色（没有图标渲染器，改为读模板 PNG 的位图、
- * 按 alpha 做单色填充）。
- * 任何一步失败都退回原图 —— 绝不出现「托盘图标消失」这种更糟的回退。
+ * 托盘图标：直接读当前强调色对应的那份 PNG（构建期烘好，见上面 PRESET_ACCENTS 的注释）。
+ * 任何一步失败都要退回**打包图标**——绝不出现「托盘图标消失」这种更糟的回退。
  */
 function buildTrayImage(): Electron.NativeImage {
-  const base = nativeImage.createFromPath(join(__dirname, '../../resources/trayTemplate.png'))
-  if (base.isEmpty()) return base
-  // macOS 用模板图自动适配菜单栏明暗，不做重着色
+  // macOS 仍然用模板图：菜单栏会按明暗自动反色，彩色图标在菜单栏里反而是异类
   if (process.platform === 'darwin') {
-    base.setTemplateImage(true)
+    const base = nativeImage.createFromPath(join(__dirname, '../../resources/trayTemplate.png'))
+    if (!base.isEmpty()) base.setTemplateImage(true)
     return base
   }
-  try {
-    const { width, height } = base.getSize()
-    const src = base.toBitmap()
-    if (!width || !height) return base
-    // 目录里有 trayTemplate@2x.png，toBitmap 可能返回 2 倍光栅：
-    // 必须先按字节数反推出倍数，否则 createFromBitmap 会按 16×16 解读 32×32 的缓冲。
-    let scale = 0
-    for (const cand of [1, 2, 3]) {
-      if (src.length === width * cand * height * cand * 4) {
-        scale = cand
-        break
-      }
-    }
-    if (!scale) return base
-    const hex = trayIconColor().replace('#', '')
-    const full = hex.length === 3 ? hex.split('').map((c) => c + c).join('') : hex
-    if (!/^[0-9a-fA-F]{6}$/.test(full)) return base
-    const r = parseInt(full.slice(0, 2), 16)
-    const g = parseInt(full.slice(2, 4), 16)
-    const b = parseInt(full.slice(4, 6), 16)
-    const out = Buffer.from(src)
-    // toBitmap 是 BGRA；按 alpha 加权写入，兼容预乘/非预乘两种排布
-    for (let i = 0; i < out.length; i += 4) {
-      const a = out[i + 3]
-      out[i] = Math.round((b * a) / 255)
-      out[i + 1] = Math.round((g * a) / 255)
-      out[i + 2] = Math.round((r * a) / 255)
-    }
-    const img = nativeImage.createFromBitmap(out, {
-      width: width * scale,
-      height: height * scale,
-      scaleFactor: scale,
-    })
-    return img.isEmpty() ? base : img
-  } catch (err) {
-    console.error('[tray] 图标重着色失败，沿用原图', err)
-    return base
-  }
+  const img = nativeImage.createFromPath(themeIconPath('tray'))
+  if (!img.isEmpty()) return img
+  return nativeImage.createFromPath(join(__dirname, '../../resources/icon-256.png'))
 }
 
-/** 主题变化后重建托盘图标。 */
+/**
+ * 强调色变化后重建图标：**窗口图标与托盘图标一起换**。
+ *
+ * 原本这里只换托盘（按主题包的 fg2 单色重着色）；现在两者都跟随强调色 ——
+ * 窗口图标决定任务栏上显示什么，用户换强调色时它也该跟着变。
+ */
 function refreshTrayIcon(): void {
+  const key = accentIconKey()
+  if (key === lastAccentKey) return
+  lastAccentKey = key
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    const appIcon = nativeImage.createFromPath(themeIconPath('app'))
+    if (!appIcon.isEmpty()) mainWindow.setIcon(appIcon)
+  }
   if (!tray || tray.isDestroyed()) return
-  const color = trayIconColor()
-  if (color === lastTrayColor) return
-  lastTrayColor = color
   const img = buildTrayImage()
   if (!img.isEmpty()) tray.setImage(img)
 }
@@ -900,7 +907,7 @@ function refreshTrayIcon(): void {
 function createTray(): void {
   const image = buildTrayImage()
   if (image.isEmpty()) return
-  lastTrayColor = trayIconColor()
+  lastAccentKey = accentIconKey()
   tray = new Tray(image)
   updateTrayTooltip()
   tray.setContextMenu(
@@ -1020,6 +1027,8 @@ function createWindow(): BrowserWindow {
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 18 },
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#1F1F1F' : '#F3F3F3',
+    // 窗口图标 = 任务栏图标：跟随当前强调色（换色时由 refreshTrayIcon 调 setIcon）
+    icon: themeIconPath('app'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,
