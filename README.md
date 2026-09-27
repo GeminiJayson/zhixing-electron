@@ -2,7 +2,7 @@
 
 **知行 ZhiXing**：一个本地优先的个人待办 + 知识图谱桌面客户端（Electron + React + TypeScript）。
 
-- 仓库：`zhixing-electron`（GitHub: [GeminiJayson/zhixing-electron](https://github.com/GeminiJayson/zhixing-electron)），当前版本 **`1.12.0`**（`package.json`），安装包与便携版见仓库 Releases。
+- 仓库：`zhixing-electron`（GitHub: [GeminiJayson/zhixing-electron](https://github.com/GeminiJayson/zhixing-electron)），当前版本 **`1.13.0`**（`package.json`），安装包与便携版见仓库 Releases。
 - 八页功能面已全部实现（`src/renderer/src/nav.ts` / `App.tsx`），分域与逐项状态见 §2；已决策不做的方向不计入缺口（见 §15）。
 - 本地优先：核心功能零网络依赖、无遥测、无账号（NFR-01）。
 - 数据全部落在本机一个 SQLite 文件里，可直接备份 / 恢复 / 整库导出导入。
