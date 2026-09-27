@@ -29,10 +29,32 @@
   font-weight: 600;
   box-shadow: var(--shadow-sm);
 }
-/* 「列表」旁边的清单树收放按钮：同样是分段控件里的一格，只是内容换成图标 ——
-   内边距收窄一点，让它读起来是 seg 的一部分，而不是另一个控件挤了进来。 */
-.seg .seg__panel {
+/* 「列表」那一格的右内边距收窄：清单树收放按钮要贴着这两个字，
+   而不是隔着两段内边距飘在它右边。（:has 选中「下一个兄弟是 seg__panel」的那一格） */
+.seg button:has(+ .seg__panel) {
+  padding-right: var(--space-2);
+}
+/* 折叠按钮与「列表」之间**不留缝**：.seg 默认 gap: 2px，那 2px 会露出容器的 --bg-hover 底色，
+   在两枚紧挨的按钮之间画出一条竖缝 —— 用户读到的"被分隔开了"就是它。
+   只在确实带折叠按钮时把 gap 归零；其他格之间仍保留 2px（那是分段控件自己的分隔语汇）。 */
+.seg:has(> .seg__panel) {
+  gap: 0;
+}
+/* 「列表」旁边的清单树收放按钮：它属于「列表」那一格，不是另起一格控件 ——
+   所以自己不画底、不画框，只有悬浮时才浮起一层底色（和同组其他格同一套规则）。
+   原来它跟着 [aria-pressed='true'] 拿到 --bg-layer-solid 底 + --shadow-sm 投影，
+   紧挨着的两枚白色胶囊之间就显出一道缝，看着像「另一个控件挤了进来」。
+   按下态（aria-pressed）只留给无障碍，视觉上不再单独占一枚胶囊。 */
+.seg button.seg__panel,
+.seg button.seg__panel[aria-pressed='true'] {
   padding: 0 var(--space-2);
+  background: transparent;
+  box-shadow: none;
+  color: var(--fg-secondary);
+}
+.seg button.seg__panel:hover {
+  background: var(--bg-pressed);
+  color: var(--fg-primary);
 }
 
 .field {
@@ -260,6 +282,61 @@
   gap: var(--space-2);
   max-height: 100%;
   overflow: auto;
+}
+/* ------------------------------------------------------------------
+   活动记录时间轴（速览里的「活动记录」卡片）
+
+   左侧一条点线 + 每行「时刻 / 分类 / 说明」，说明下面可挂一行原因。
+   用 grid 三列而不是 flex 换行：时刻与分类是定宽短文本，说明才是那个长字段，
+   列对齐后一屏能扫出"什么时候发生了什么"，换行布局会把这个节奏打散。
+   ------------------------------------------------------------------ */
+.tl {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  /* 左内边距让内容与点线拉开一点，否则文字会贴着线 */
+  padding: 0 0 0 var(--space-3);
+  border-left: var(--border-w) dotted var(--border-strong);
+  list-style: none;
+}
+.tl__item {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: baseline;
+  font-size: var(--text-aux);
+}
+.tl__time {
+  color: var(--fg-tertiary);
+  /* 时刻是数字列：等宽才不会随分钟数抖动 */
+  font-variant-numeric: tabular-nums;
+}
+.tl__kind {
+  color: var(--accent-text);
+}
+/* 用户"处理掉了"的两类与状态变更分开着色：扫一眼就能看出哪些是他主动做的决定 */
+.tl__item--dismiss .tl__kind,
+.tl__item--mute .tl__kind {
+  color: var(--fg-tertiary);
+}
+.tl__item--status .tl__kind {
+  color: var(--success);
+}
+.tl__what {
+  color: var(--fg-secondary);
+  overflow-wrap: anywhere;
+}
+.tl__reason {
+  display: block;
+  font-style: normal;
+  color: var(--fg-tertiary);
+}
+.tl__reason::before {
+  content: '「';
+}
+.tl__reason::after {
+  content: '」';
 }
 .inspector__card {
   padding: var(--space-3);
@@ -508,11 +585,16 @@
   background: var(--bg-pressed);
 }
 
-/* 行内 chip */
+/* 行内 chip：任务行 / 笔记树 / 提醒卡共用这一套胶囊语言。
+   字号只在这里定一次，且取 --text-aux —— 原来这里写死 11px，
+   而按钮形态的胶囊（状态、标签）为了拿回按钮字体会写 `font: inherit`，
+   那条简写把 font-size / line-height 一起改回继承值（页面 13.5px，实测算成 14px），
+   于是同一行里按钮胶囊比普通胶囊大一号（实测 14px vs 11px）。
+   现在按钮胶囊不再写 font: inherit，两种形态同取这一个字号。 */
 .chip {
   flex: 0 0 auto;
   padding: 1px 6px;
-  font-size: 11px;
+  font-size: var(--text-aux);
   line-height: 16px;
   color: var(--fg-secondary);
   background: var(--bg-hover);
@@ -531,11 +613,15 @@
    这里只负责形状、按钮手感与最小尺寸 —— 不能再在这里写死 background */
 .chip--tag {
   border-color: currentColor;
-  font-weight: 500;
+  /* 不设 font-weight：实测同一行里 .chip 是 400，而按钮形态的标签/状态胶囊是 500 ——
+     字号（12px）与行高完全一样，但 500 看着就是"大一号、更重"，用户报的"大小不一致"
+     就是这个。按钮的点击感交给 cursor / hover 底色 / focus 环，不靠加粗。 */
 }
 button.chip--tag {
   cursor: pointer;
-  font: inherit;
+  /* 这里原来写 `font: inherit` —— 它会把 .chip 的字号与行高一起改回继承值，
+     标签胶囊因此比同一行的日期 / 笔记数胶囊大一号。字体继承由 global.css 的
+     `button { font: inherit }` 兜底，元素选择器输给 .chip 的类选择器，字号保住。 */
 }
 button.chip--tag:hover {
   filter: brightness(1.12);
@@ -579,12 +665,13 @@ button.chip--tag:focus-visible {
 .chip--status {
   border-color: color-mix(in srgb, currentColor 45%, transparent);
   background: color-mix(in srgb, currentColor 12%, transparent);
-  font-weight: 500;
+  /* 同 .chip--tag：不加粗，与同一行的日期 / 笔记数胶囊保持同样的字重 */
 }
 /* 状态胶囊是个按钮，不是纯展示：给回点击感 */
 button.chip--status {
   cursor: pointer;
-  font: inherit;
+  /* 同 button.chip--tag：不写 font: inherit，字号交给 .chip 的 --text-aux，
+     否则状态胶囊会顶着 14px 与旁边的标签 / 日期胶囊对不齐。 */
 }
 button.chip--status:hover {
   border-color: currentColor;
@@ -1432,21 +1519,33 @@ button.chip--status:focus-visible {
 }
 /* 对勾：基础态就已经画出来（scaleX(0) 是一条零宽线，不可见），勾选时展开。
    两端共用同一条 transition，所以取消勾选能反向收回。 */
+/* 对勾的定位：**绕自身中心**摆放与旋转。
+   旧写法把 left/top 写死成 (4px, 1px) 且 transform-origin: left center ——
+   旋转中心落在勾的左下角，45° 转完整体偏左上，肉眼就是「对号不在正中间」。
+   现在用 left/top: 50% + translate(-50%, -50%) 把绘制中心对齐到圈心，
+   rotate 与 scaleX 都绕中心走（展开动画因此变成从中间向两端画，取消勾选反向收回）。 */
 .check::after {
   content: '';
   position: absolute;
-  left: 4px;
-  top: 1px;
+  left: 50%;
+  top: 50%;
   width: 5px;
   height: 9px;
   border: solid var(--fg-on-accent);
   border-width: 0 2px 2px 0;
-  transform: rotate(45deg) scaleX(0);
-  transform-origin: left center;
+  /* **只做几何居中，不加任何方向补偿**。
+     一度在这里加过"环绕中心旋转后包围盒会偏"的补偿（+1.8px），结果反而偏右 ——
+     放大截图复测：那笔补偿的方向就是错的，去掉它之后勾的包围盒中心与圆心重合。
+     勾是 L 形（border 的右 + 下两条边），统一用 left/top: 50% + 绕自身中心旋转即可；
+     若将来改了 .check 的尺寸或 border 宽度，重新拍一张放大图核对，不要再凭公式加补偿。 */
+  /* 那 0.7 / 1.2px 是放大 8 倍量出来的余量：纯几何居中之后，勾的包围盒中心仍比圆心
+     右 0.67、下 1.25（L 形绕中心转 45° 的残差）。数字很小，但 18px 的圈里看得出来。 */
+  transform: translate(calc(-50% - 0.7px), calc(-50% - 1.2px)) rotate(45deg) scaleX(0);
+  transform-origin: center;
   transition: transform var(--dur-strike) var(--ease-enter);
 }
 .check--done::after {
-  transform: rotate(45deg) scaleX(1);
+  transform: translate(calc(-50% - 0.7px), calc(-50% - 1.2px)) rotate(45deg) scaleX(1);
 }
 /* 优先级色点（今日页 / 任务行 / 四象限 / 看板共用；基础外观在 app.css）：
    色值由内联样式给出，换优先级就是换 background —— 补一条过渡让它读作「变了」，

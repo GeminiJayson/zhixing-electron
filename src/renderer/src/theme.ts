@@ -228,6 +228,9 @@ export function applyAppearance(
   // 玻璃拟态：只在关闭时写 off（开启时清掉属性，与 tokens.css 的默认值一致）
   if (s.glass_enabled) delete root.dataset.glass
   else root.dataset.glass = 'off'
+  // 树的路径跟踪虚线：同样是"关闭才写 off"，选择器统一挂 html[data-tree-guide]
+  if (s.tree_guide) delete root.dataset.treeGuide
+  else root.dataset.treeGuide = 'off'
   applyMotion(s.motion_level, root)
   // 切主题后强制刷新一次合成：Chromium 在没有新合成层时会复用上一帧，表现为侧边残留旧内容。
   // 用 transform 短暂建一个新层、下一帧撤掉 —— 比改窗口尺寸温和。单测跑在 node 环境里没有 rAF，故带守卫。

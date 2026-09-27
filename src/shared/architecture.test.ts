@@ -236,6 +236,9 @@ describe('架构约束 · 直接插入的任务必须建索引', () => {
       const lines = readFileSync(join(dir, f), 'utf8').split('\n')
       lines.forEach((line, i) => {
         if (!line.includes('INSERT INTO task')) return
+        // 表名以 task 开头的**别的表**（task_activity / task_note_link / task_tag …）不是任务本身：
+        // 判据漏了这一层，往 task_activity 写一条活动就会被误报成「漏建索引」。
+        if (/INSERT INTO task_/.test(line)) return
         // 索引重建可能在这个函数靠后的位置（cloneTaskTree 是递归插完再重建），给足窗口
         const window = lines.slice(i, i + 40).join('\n')
         if (!/reindexTask\(/.test(window)) missing.push(f + ':' + (i + 1))
@@ -395,11 +398,18 @@ describe('架构约束 · 提醒卡片与应用弹框共用一套样式', () => 
   const read = (p: string): string => readFileSync(join(process.cwd(), p), 'utf8')
 
   it('两个提醒面都用 .modal 那张卡片', () => {
+    // 卡片本体后来抽成了 components/ReminderCard.tsx（两个宿主共用一份，见该文件注释），
+    // 所以"用 .modal"这件事只需在卡片里成立；两个宿主改成断言"确实用了这张卡"——
+    // 否则把宿主换成自绘卡片时，这条护栏会一声不吭地失效。
+    expect(
+      read('src/renderer/src/components/ReminderCard.tsx'),
+      '提醒卡应复用 .modal 卡片'
+    ).toContain('modal modal--reminder')
     for (const f of [
       'src/renderer/src/components/ReminderPopup.tsx',
       'src/renderer/src/ReminderApp.tsx'
     ]) {
-      expect(read(f), f + ' 应复用 .modal 卡片').toContain('modal modal--reminder')
+      expect(read(f), f + ' 应渲染 ReminderCard').toContain('<ReminderCard')
     }
   })
 

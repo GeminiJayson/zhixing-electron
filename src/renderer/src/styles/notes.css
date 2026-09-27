@@ -170,10 +170,21 @@
 .ntree__folder {
   padding-right: var(--space-1);
 }
-/* 展开箭头：笔记树比任务行宽松，放大到看得清（不共用任务行的 16px 尺寸） */
+/* 展开箭头：笔记树比任务行宽松，盒子放大到看得清（不共用任务行的 16px 尺寸）。 */
 .ntree__folder .trow__caret {
   width: 22px;
   height: 22px;
+}
+/**
+ * 箭头图标本身锁死 16×16 —— 实测它在 22px 盒子里只渲染成 **10×16**（被 flex 压扁），
+ * 而工作流模板树那颗同样 attrW=16 的 chevron 渲染就是 16×16。两边摆在一起时，
+ * 用户看到的是"工作流那颗偏大"，实际是笔记树这颗被压窄了。
+ * width/height 兜底固定尺寸，flex: 0 0 auto 挡住收缩（父级是 inline-flex）。
+ */
+.ntree__folder .trow__caret > svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
 }
 /* 搜索图标放进输入框内部：不再单独占一格，输入框因此能吃满整行 */
 /* 树级动作行（整库整理）：紧贴搜索框下方。
@@ -331,12 +342,33 @@
      原先这条上下各 4px + 4px 外边距，一行就吃掉 32px。 */
   margin-top: 0;
   padding: 0;
-  border-top: none;
+  /* 标题行 ↔ 工具行的分区线画在工具行自己身上：五种笔记形态各只有一条工具行命中
+     （Markdown / Excel / 链接是 .sheet > .tb 里的页面工具行；富文本 / Word 没有页面
+     工具行 —— 那六个入口并进了格式条，线就落在格式条那一行）。
+     线**不额外占高度**：下面两条规则把它从原来那一档留白里切出来。 */
+  border-top: var(--border-w) solid var(--border-strong);
   background: var(--bg-layer-solid);
   /* 左侧操作组固定在左端、不参与折叠；窄窗口放不下时让格式条整组换到第二行，
      而不是把这一行挤破。 */
   flex-wrap: wrap;
   row-gap: var(--space-1);
+}
+/* 标题行 ↔ 工具行：五种笔记形态统一到同一档 --space-1。
+   富文本 / Word 的格式条落在 .sheet__body 的 4px 上内边距之后，本来就有这一档；
+   Markdown / Excel / 链接的工具行在 .tb 里紧贴标题行，同一件事于是有三种间距
+   （实测 0 / 4 / 12px）。这里**只补页面工具行**：上面那条 .editor .tb__sub
+   同样命中 .rt-editor 里的格式条，在那里改会把格式条一并推下去。 */
+.sheet > .tb > .tb__sub {
+  /* 这一档里切出 1px 给上面那条分区线：3px 留白 + 1px 线 = 原来的 --space-1。
+     间距不放大，编辑区可用高度也不退步。 */
+  margin-top: calc(var(--space-1) - var(--border-w));
+}
+/* 富文本 / Word 没有页面工具行（六个入口并进了格式条），标题行与格式条之间那一档
+   由 .sheet__body 的上内边距给出 —— 同样切出 1px 给分区线。用 :has 限定：
+   Markdown / Excel / 链接的 .sheet__body 上内边距是「工具行 ↔ 正文」那一档，
+   与这条线无关，不能一起改小。 */
+.sheet__body:has(.rt-editor) {
+  padding-top: calc(var(--space-1) - var(--border-w));
 }
 /* 工具栏里的按钮不再各自带框：工具栏是一整条，按钮直接嵌进去。
    分区靠留白、悬浮反馈与选中底色，不靠一排描边矩形。 */
@@ -440,6 +472,11 @@
    与页面的其它标题行不协调。 */
 .editor .tb__head {
   align-items: center;
+  /* 标题行与下一段之间的一档（--space-1）改由「下一段的 margin-top」承担，
+     这里不再自带一条 —— 两者都在时，富文本 / Word 会同时吃到
+     .sheet__body 的那一档，同一件事就有 4 / 8 / 16px 三个值。
+     腾出来的 4px 全部还给正文（头部总高不变）。 */
+  padding-bottom: 0;
 }
 /* 标题行现在要装「标题 + 状态 + 标签 + 归属」四组东西：窄窗口放不下时换行，
    而不是把标题压到只剩几十像素。 */
@@ -483,6 +520,14 @@
    也正好是 WCAG 2.2 的最小指针目标（tokens.css 的行内尺度注释同款口径）。 */
 .page--notes .editor .tb .tb__lead .editor__title {
   min-height: max(24px, var(--control-h-sm));
+}
+/* 页头：笔记树的收放按钮与副标题**同行同高**。
+   app.css 的 .page__head 按文字基线对齐（标题与副标题要对齐基线），那颗 32px 的图标
+   按钮只能 align-self: center —— 基线行盒里它居中于整行，垂直中心比 12px 的副标题高 2px，
+   于是读起来是「错位」的。这里把整个页头改成整行居中：标题 / 副标题 / 按钮的垂直中心
+   落在同一条线上。只作用于笔记页 —— 任务页那颗同款按钮住在 .seg 里，结构不同。 */
+.page--notes .page__head {
+  align-items: center;
 }
 /* 保存状态胶囊：图标 + 文案。沿用任务页状态胶囊那套「边框与淡底都由 currentColor 派生」，
    换主题 / 换强调色时跟着走，不必逐条重写。
@@ -983,10 +1028,12 @@
   gap: var(--space-2);
   padding: var(--space-2) 0 var(--space-4);
 }
-/* 「链接 N 条」chip：纯计数、不可点 —— 与「归属」同款外形，但去掉指针与 hover。
-   归属是可点的按钮（.chip--meta），计数只是陈述，两者不该看起来一样。 */
+/* 只读「陈述」胶囊：链接计数（chip--count）与笔记类型（chip--type）。
+   两者都是陈述、都不可点 —— 与「归属」同款外形，但去掉指针与 hover。
+   归属是可点的按钮（.chip--meta），陈述只是陈述，两者不该看起来一样。 */
 /* 双类名压过 tasks.css 的 `.chip` 基础样式（同特异性时靠加载顺序，别赌） */
-.chip.chip--count {
+.chip.chip--count,
+.chip.chip--type {
   display: inline-flex;
   align-items: center;
   gap: 3px;
@@ -997,6 +1044,11 @@
   max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* 类型胶囊里的图标跟着笔记树的色阶走（.ntree__type--*），不另造一套颜色。
+   那颗图标刻意不带 .ntree__type —— 那个类自带 13px 的 flex 基准，是给树的行盒用的。 */
+.chip--type > svg {
+  flex: 0 0 auto;
 }
 .editor__link-row {
   display: flex;
@@ -1042,6 +1094,15 @@
   overflow: auto;
   padding: var(--space-2) 0 var(--space-4);
   line-height: 1.7;
+}
+/* Word 变体：里面那个富文本编辑器自己已经带齐了上下内边距
+   （格式条的下内边距 4px、ProseMirror 的 8px / 16px），容器再补一圈就是重复：
+   上边多出 8px 让「标题行 ↔ 格式条」比富文本多一档（12px vs 4px），
+   下边多出 16px 让正文可用高度比富文本少一截（同时末尾白出双份）。
+   这里整圈归零 —— Word 与富文本的间距与可用高度从此逐像素一致。
+   Excel 的正文是 ag-grid，没有自带内边距，那两档正是它需要的，因此只对 Word 归零。 */
+.editor__office-body--word {
+  padding: 0;
 }
 /* 编辑器嵌在 Office 卡片里：外层已经有一圈边框和底色，
    里面的编辑器不要再套第二层，直接吃掉剩余高度 */
@@ -1123,6 +1184,13 @@
 .rt-editor__body .ProseMirror {
   min-height: 100%;
   padding: var(--space-2) 0 var(--space-4);
+}
+/* 正文首块不带前导外边距。浏览器给 p 的 UA 默认是 margin-block: 1em（约 13.5px），
+   于是「格式条 → 正文首行」在富文本 / Word 里是 26px，而 Markdown 的 .cm-line
+   只有 12px —— 同一条工具栏下面差出一整行。段间距是**段与段之间**的事，
+   首块上面那一段属于容器的内边距，已经由 .ProseMirror 的 --space-2 给出。 */
+.rt-editor__body .ProseMirror > :first-child {
+  margin-top: 0;
 }
 /* 空编辑器用 data-placeholder 当占位符（contenteditable 没有原生 placeholder） */
 .rt-editor__body:empty::before {

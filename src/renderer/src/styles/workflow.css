@@ -76,22 +76,32 @@
   white-space: normal;
   overflow-wrap: anywhere;
   line-height: 1.35;
+  /* 模板项 / 实例名：**不加粗** —— 这一层是内容。
+     浏览器对 <strong> 的默认字重是 700，不显式压平的话「分类 600 + 模板项 700」
+     读起来反而是模板项更重（用户说的「没有区分」正是这个）。 */
+  font-weight: 400;
 }
 .wf-node__label > .u-aux {
   margin-left: auto;
   flex: 0 0 auto;
 }
+/* 分类（第一层）：加粗 + 用主文字色，与不加粗的模板项拉开层级 */
 .wf-node--group > .wf-node__label > strong {
   font-weight: 600;
+  color: var(--fg-primary);
 }
+/* 展开 / 折叠图标：与笔记树、任务行用的是同一套外观与切换方式 ——
+   同一个 16px 盒子、同样的 --fg-secondary，靠 morphicons 在 ChevronRight ↔ ChevronDown
+   之间形变过去。旧版这里是"无固定尺寸 + --fg-tertiary + 自己 rotate 90°"，
+   在同一屏里看着比左边那棵树小一号、淡一档，而且那层 rotate 会和形变叠加成转两次。 */
 .wf-node__caret {
   flex: 0 0 auto;
-  color: var(--fg-tertiary);
-  transform: rotate(90deg);
-  transition: transform var(--dur-fast) var(--ease-standard);
-}
-.wf-node--collapsed .wf-node__caret {
-  transform: rotate(0deg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--fg-secondary);
 }
 /* 行尾的编辑按钮组：未悬浮时**收拢为 0 宽**，不占位置。
    只调 opacity 的话按钮组仍然占着宽度，标题会一直少一截、行与行右侧也对不齐；
@@ -288,7 +298,9 @@
   fill: var(--fg-tertiary);
 }
 .wf-node__title {
-  font-size: 12px;
+  /* 字号不在这里定：节点标题要按内容长度自适应（长标题缩到 10px），
+     由 WorkflowPage 的 fitNodeText 算出后写到 <text fontSize>。CSS 会盖掉属性，
+     所以这里一旦写上 font-size，自适应就失效了。 */
   fill: var(--fg-primary);
   user-select: none;
 }
@@ -540,4 +552,62 @@
 /* 「跳到」两个字只在悬停 / 选中该节点时露出 */
 .wf-port--jump.wf-port--on .wf-port__label--jump {
   opacity: 1;
+}
+
+/* ------------------------------------------------------------------
+   实例的执行详情（时间轴）
+
+   点实例行上的「执行详情」就地展开，不新开面板：侧栏就在旁边，展开/收起比
+   跳走再跳回来少一次上下文切换。缩进 + 左侧一条点线是时间轴的常见读法 ——
+   每一条对应 workflow_run_log 里的一行。
+   ------------------------------------------------------------------ */
+.wf-runlog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: var(--space-1) var(--space-2) var(--space-2) var(--space-4);
+  padding-left: var(--space-3);
+  border-left: var(--border-w) dotted var(--border-strong);
+  font-size: var(--text-aux);
+}
+.wf-runlog__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  color: var(--fg-tertiary);
+}
+.wf-runlog__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* 实例跑得久时日志会很长：给它自己的滚动区，不要把左栏撑破 */
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.wf-runlog__item {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: baseline;
+}
+.wf-runlog__time {
+  color: var(--fg-tertiary);
+  /* 时刻是数字列：等宽才不会随分钟数抖动 */
+  font-variant-numeric: tabular-nums;
+}
+.wf-runlog__kind {
+  color: var(--accent-text);
+}
+.wf-runlog__item--finish .wf-runlog__kind {
+  color: var(--success);
+}
+.wf-runlog__item--done .wf-runlog__kind {
+  color: var(--fg-secondary);
+}
+.wf-runlog__what {
+  color: var(--fg-secondary);
+  overflow-wrap: anywhere;
 }

@@ -14,6 +14,7 @@ import {
   Sparkles,
   Trash2,
 } from '@renderer/lib/icons'
+import { useCollapsedSet } from '@renderer/lib/use-collapsed'
 import type { Note, NoteFolder } from '@shared/types'
 import type { AiLibraryProgress } from '@shared/ai-note'
 import { inkOn } from '@shared/color'
@@ -114,7 +115,11 @@ export function NoteTree({
   onLinkAudit,
   tagsOf = () => [],
 }: Props) {
-  const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
+  /**
+   * 收起状态**记在 localStorage 里**：切页、切笔记、重启应用之后仍然保持原样。
+   * 三棵树共用 lib/use-collapsed.ts 的同一套行为。
+   */
+  const { collapsed, toggle: toggleFolder, setCollapsed } = useCollapsedSet('zhixing.tree.collapsed.notes')
   const [query, setQuery] = useState('')
   /** 树宽（可拖右边缘调整 / 键盘微调），默认与 CSS 里的 240px 一致 */
   const [treeWidth, setTreeWidth] = useState<number>(() => {
@@ -219,7 +224,11 @@ export function NoteTree({
       <div
         key={n.id}
         className={'ntree__note' + (selectedId === n.id ? ' ntree__note--on' : '')}
-        style={{ paddingLeft: 10 + depth * 14 }}
+        data-depth={depth}
+        // 路径跟踪虚线按 --tree-depth × --tree-step 定位（见 global.css 的树形控件一段）
+        style={
+          { paddingLeft: 10 + depth * 14, '--tree-depth': depth, '--tree-step': '14px' } as React.CSSProperties
+        }
         onClick={() => onSelect(n.id)}
         onContextMenu={(e) => {
           e.preventDefault()
@@ -301,7 +310,17 @@ export function NoteTree({
         <div
           className={'ntree__folder' + (folderFocus === f.id ? ' ntree__folder--on' : '')}
           data-folder-id={f.id}
-          style={{ paddingLeft: 6 + depth * 14 }}
+          data-depth={depth}
+          style={
+            { paddingLeft: 6 + depth * 14, '--tree-depth': depth, '--tree-step': '14px' } as React.CSSProperties
+          }
+          /**
+           * 整行都能展开 / 收起 —— 与任务清单树、工作流模板树一样。
+           * 原先只有左侧那个 16px 的箭头可点，用户点文件夹名字没反应，
+           * 会以为这棵树"点不开"。箭头自己也带 onClick，所以那边要 stopPropagation，
+           * 否则一次点击会切换两下（等于没动）。
+           */
+          onClick={() => toggleFolder(f.id)}
           onContextMenu={(e) => {
             e.preventDefault()
             setFolderMenu({ id: f.id, x: e.clientX, y: e.clientY })
@@ -309,14 +328,11 @@ export function NoteTree({
         >
           <button
             className={'trow__caret' + (isOpen ? ' trow__caret--open' : '')}
-            onClick={() =>
-              setCollapsed((prev) => {
-                const next = new Set(prev)
-                if (next.has(f.id)) next.delete(f.id)
-                else next.add(f.id)
-                return next
-              })
-            }
+            onClick={(e) => {
+              // 行的 onClick 也会切换，这里必须停掉冒泡，否则一次点击切两下 = 没反应
+              e.stopPropagation()
+              toggleFolder(f.id)
+            }}
             aria-expanded={isOpen}
             aria-label={isOpen ? '折叠文件夹' : '展开文件夹'}
           >

@@ -63,7 +63,19 @@ const cardStyle = `(sel) => {
   if (got && dialog) {
     check('圆角一致', got.radius === dialog.radius, J({ reminder: got.radius, dialog: dialog.radius }))
     check('描边一致', got.border === dialog.border, J({ reminder: got.border, dialog: dialog.border }))
-    check('底色一致', got.bg === dialog.bg, J({ reminder: got.bg, dialog: dialog.bg }))
+    /**
+     * 底色**不再要求与弹框逐字相同**：玻璃拟态只给"带遮罩的模态"上玻璃
+     * （.modal-mask .modal，见 global.css 的注释）—— 那时背后才有可模糊的页面内容。
+     * 主窗口的提醒卡不在遮罩里（它是浮在页面上的独立卡），所以它与弹框本来就该不同：
+     * 弹框半透明、提醒卡不透明。这里改成断言"两者都**不是**透明底"——
+     * 真正要守的是"卡片读得清"，而不是"两个不相干的层用了同一个色值"。
+     */
+    check(
+      '主窗口提醒卡是不透明底（它不在遮罩里，背后是可滚动的页面）',
+      !got.bg.startsWith('rgba'),
+      got.bg
+    )
+    check('对照弹框走玻璃（半透明 + 遮罩）', dialog.bg.startsWith('rgba'), dialog.bg)
     check('主窗口提醒卡片可保留投影', got.shadow !== 'none', got.shadow)
   }
   await app.evaluate("[...document.querySelectorAll('.modal__foot button')].find((b) => b.textContent.trim() === '取消')?.click()")
@@ -96,7 +108,9 @@ const cardStyle = `(sel) => {
   if (bs && dialog) {
     check('气泡圆角与弹框一致', bs.radius === dialog.radius, J({ bubble: bs.radius, dialog: dialog.radius }))
     check('气泡描边与弹框一致', bs.border === dialog.border, J({ bubble: bs.border, dialog: dialog.border }))
-    check('气泡底色与弹框一致', bs.bg === dialog.bg, J({ bubble: bs.bg, dialog: dialog.bg }))
+    // 气泡窗是**透明窗口**：卡片必须自备不透明底，否则会直接透出桌面；
+    // 它也不能用 backdrop-filter（透明窗口里会在窗口边界留残影），所以刻意不上玻璃。
+    check('气泡卡自带不透明底（不依赖窗口）', !bs.bg.startsWith('rgba'), bs.bg)
     check('气泡里没有投影（透明窗口会被裁成方角残影）', bs.shadow === 'none', bs.shadow)
   }
 } catch (err) {

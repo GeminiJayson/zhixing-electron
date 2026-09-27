@@ -5,7 +5,7 @@ import { parseSettings, type AppSettings } from '@shared/settings'
 import { applyAppearance, applyMotion, resolveThemeMode } from './theme'
 import { CommandPalette } from './components/CommandPalette'
 import { DialogProvider } from './components/Dialogs'
-import { FloatingDock } from './components/FloatingDock'
+// FloatingDock（右下角快捷新建浮条）已按用户要求下线，组件文件仍在 components/ 下未删
 import { ReminderPopup } from './components/ReminderPopup'
 import { Sidebar } from './components/Sidebar'
 import { TitleBar } from './components/TitleBar'
@@ -543,23 +543,16 @@ export default function App() {
               onNotice={showToast}
             />
           ) : null}
-          {/* 右下角快捷新建浮条：只在今日/任务页显示 */}
-          <FloatingDock
-            page={page}
-            onTask={() => void window.zhixing.capture.open('quick')}
-            onNote={() => {
-              setPage('notes')
-              // 页面切换是异步渲染的，等一帧再派发「新建笔记」
-              window.setTimeout(() => window.dispatchEvent(new CustomEvent('zhixing:new-note')), 60)
-            }}
-            onFlash={() => setPage('inbox')}
-          />
+          {/* 右下角快捷新建浮条已按用户要求取消（今日页 / 任务页都不再显示）：
+              这两页各自已有明确的新建入口（今日页顶部输入框、任务页「＋ 新建任务」），
+              浮条是第三个入口，反而是噪声。组件本身留在 components/FloatingDock.tsx 未删，
+              要恢复只需把上面那段渲染放回来。 */}
         </main>
       </div>
       {/* 番茄钟从「右下角浮条」改成了独立小窗（2026-09-27）：
           它与主窗口的生命周期不同 —— 主窗口收进托盘/浮窗时专注还该继续。
           发起入口（任务行 / 命令面板 / 浮窗）统一走 window.zhixing.pomodoro.open()。 */}
-      <ReminderPopup onOpenTask={openTaskInList} onChanged={refreshOverview} />
+      <ReminderPopup onChanged={refreshOverview} />
 
       <CommandPalette
         open={paletteOpen}

@@ -33,6 +33,7 @@ import {
   FolderTree as NFolderTree,
   GitBranch as NGitBranch,
   Hash as NHash,
+  History as NHistory,
   Inbox as NInbox,
   Info as NInfo,
   LayoutGrid as NLayoutGrid,
@@ -46,7 +47,6 @@ import {
   Palette as NPalette,
   PanelLeftClose as NPanelLeftClose,
   PanelLeftOpen as NPanelLeftOpen,
-  Pause as NPause,
   Pencil as NPencil,
   Pin as NPin,
   Play as NPlay,
@@ -146,6 +146,7 @@ export const IconData = {
   FolderTree: unpack(NFolderTree),
   GitBranch: unpack(NGitBranch),
   Hash: unpack(NHash),
+  History: unpack(NHistory),
   Inbox: unpack(NInbox),
   Info: unpack(NInfo),
   LayoutGrid: unpack(NLayoutGrid),
@@ -159,7 +160,6 @@ export const IconData = {
   Palette: unpack(NPalette),
   PanelLeftClose: unpack(NPanelLeftClose),
   PanelLeftOpen: unpack(NPanelLeftOpen),
-  Pause: unpack(NPause),
   Pencil: unpack(NPencil),
   Pin: unpack(NPin),
   Play: unpack(NPlay),
@@ -217,6 +217,7 @@ export const FolderPlus = make(NFolderPlus)
 export const FolderTree = make(NFolderTree)
 export const GitBranch = make(NGitBranch)
 export const Hash = make(NHash)
+export const History = make(NHistory)
 export const Inbox = make(NInbox)
 export const Info = make(NInfo)
 export const LayoutGrid = make(NLayoutGrid)
@@ -230,7 +231,6 @@ export const NotebookPen = make(NNotebookPen)
 export const Palette = make(NPalette)
 export const PanelLeftClose = make(NPanelLeftClose)
 export const PanelLeftOpen = make(NPanelLeftOpen)
-export const Pause = make(NPause)
 export const Pencil = make(NPencil)
 export const Pin = make(NPin)
 export const Play = make(NPlay)

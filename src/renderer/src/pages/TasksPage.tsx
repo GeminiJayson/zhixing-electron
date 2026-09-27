@@ -15,6 +15,7 @@ import { priorityLabel } from '@shared/priority'
 import type {
   ListFolder,
   Task,
+  TaskActivity,
   TaskStatus,
   WorkflowInstancePayload,
   WorkflowTemplateSummary,
@@ -576,6 +577,30 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     if (host) host.scrollTop = Math.max(0, index * rowH - host.clientHeight / 2 + rowH / 2)
     setPendingFocus(null)
   }, [pendingFocus, tasks, collapsed, flatRows, rowH])
+
+  /**
+   * 选中任务的活动记录（速览的「活动记录」时间轴）：提醒 / 稍后 / 不再提醒 / 状态变更。
+   *
+   * 每次换选中任务都重新拉一遍 —— 活动是**追加型**的，缓存的列表在用户处理完一条提醒后
+   * 立刻就是旧的。条数不多（一条任务通常几十条），重拉的代价远小于"看到旧记录"的代价。
+   */
+  const [activity, setActivity] = useState<TaskActivity[]>([])
+  const [activityAll, setActivityAll] = useState(false)
+  const activityTaskId = selectedNode?.id ?? null
+  useEffect(() => {
+    if (activityTaskId == null) {
+      setActivity([])
+      return
+    }
+    let alive = true
+    setActivityAll(false)
+    void window.zhixing.db.taskActivity(activityTaskId, 60).then((rows) => {
+      if (alive) setActivity(rows)
+    })
+    return () => {
+      alive = false
+    }
+  }, [activityTaskId])
 
   // 选中任务的工作流实例（速览卡片），工作流域有写入时跟着刷新
   const wfTaskId = selectedNode?.id ?? null
@@ -1495,6 +1520,33 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
                     <p className="u-aux">无标签</p>
                   )}
                 </section>
+                {/* 活动记录：这条任务被提醒过几次、每次怎么处理的、状态为什么改 —— 一条时间轴 */}
+                <section className="inspector__card">
+                  <header className="inspector__head">活动记录</header>
+                  {activity.length === 0 ? (
+                    <p className="u-aux">还没有记录。提醒、稍后、状态变更都会记在这里。</p>
+                  ) : (
+                    <>
+                      <ol className="tl">
+                        {(activityAll ? activity : activity.slice(0, 5)).map((a) => (
+                          <li key={a.id} className={'tl__item tl__item--' + a.kind}>
+                            <span className="tl__time">{shortStamp(a.created_at)}</span>
+                            <span className="tl__kind">{ACTIVITY_LABELS[a.kind] ?? a.kind}</span>
+                            <span className="tl__what">
+                              {a.detail ?? ''}
+                              {a.reason ? <em className="tl__reason">{a.reason}</em> : null}
+                            </span>
+                          </li>
+                        ))}
+                      </ol>
+                      {activity.length > 5 && (
+                        <button className="text-btn" onClick={() => setActivityAll(!activityAll)}>
+                          {activityAll ? '只看最近 5 条' : `展开全部（${activity.length}）`}
+                        </button>
+                      )}
+                    </>
+                  )}
+                </section>
                 {/* 工作流速览卡片 —— 该任务启动/关联的实例 + 「启动工作流…」入口 */}
                 <section className="inspector__card">
                   <header className="inspector__head">工作流</header>
@@ -1739,5 +1791,38 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
       )}
       </div>
     </div>
+  )
+}
+
+/** 活动记录的分类标签（速览的时间轴用） */
+const ACTIVITY_LABELS: Record<string, string> = {
+  remind: '提醒',
+  snooze: '稍后',
+  dismiss: '知道了',
+  mute: '不再提醒',
+  status: '改状态',
+}
+
+/** 时间轴上的时刻：同一天只显示 时:分（看一次提醒的秒没有意义），跨天带上 月-日 */
+function shortStamp(iso: string): string {
+  if (!iso) return '—'
+  const d = new Date(iso.replace(' ', 'T'))
+  if (Number.isNaN(d.getTime())) return iso.slice(5, 16)
+  const now = new Date()
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  if (sameDay) return hh + ':' + mm
+  return (
+    String(d.getMonth() + 1).padStart(2, '0') +
+    '-' +
+    String(d.getDate()).padStart(2, '0') +
+    ' ' +
+    hh +
+    ':' +
+    mm
   )
 }

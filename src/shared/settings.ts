@@ -59,6 +59,8 @@ export interface AppSettings {
   autostart_enabled: boolean
   /** 剪贴板监听：复制后提示可快速捕获 */
   clipboard_monitor: boolean
+  /** 树形控件的路径跟踪：左侧按层级画虚线，一路跟到当前行 */
+  tree_guide: boolean
   /** 划词速记热键（读取当前选中文字预填快速捕获） */
   select_quick_hotkey: string
   /** 划词直接入闪念热键：读选中文字后**不弹任何窗口**，直接存进闪念 */
@@ -144,6 +146,7 @@ export function parseSettings(raw: Record<string, string> = {}): AppSettings {
     motion_level: oneOf(raw.motion_level, MOTION_LEVELS, 'full'),
     // 默认开：这项是「看了再决定」的视觉实验，默认关掉了就没人会去看
     glass_enabled: bool(raw.glass_enabled, true),
+  tree_guide: bool(raw.tree_guide, true),
     pomodoro_focus_min: num(raw.pomodoro_focus_min, 25, 5, 90),
     pomodoro_break_min: num(raw.pomodoro_break_min, 5, 1, 30),
     pomodoro_auto_break: bool(raw.pomodoro_auto_break, false),
@@ -218,6 +221,7 @@ export const DEFAULT_SETTINGS: Record<string, string> = {
   theme_custom_dark: '',
   motion_level: 'full',
   glass_enabled: '1',
+  tree_guide: '1',
   pomodoro_focus_min: '25',
   pomodoro_break_min: '5',
   reminder_enabled: '1',

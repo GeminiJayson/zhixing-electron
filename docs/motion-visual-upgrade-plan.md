@@ -498,7 +498,7 @@ C2（氛围光）+ C3（数字动效）+ C5（主题过渡）+ D4（图谱）+ D
 **验证**：见 `docs/03` §11.5（性能预算）与 §11.6（令牌完整性护栏）；
 E2E 按「先 build、再串行」跑（`lib/cdp.mjs` 的 `killStale` 让并行必然互相杀掉）。
 
-**E2E 在 Windows 上的两个环境前提**（本轮踩出来的，与产品代码无关，但会伪装成产品 bug）：
+**E2E 在 Windows 上的三个环境前提**（本轮踩出来的，与产品代码无关，但会伪装成产品 bug）：
 
 1. **这台机器的 PATH 里没有 node**，E2E 只能用 Electron 自己的 Node 模式跑
    （`ELECTRON_RUN_AS_NODE=1 electron scripts/xxx.mjs`）。两个坑：
@@ -507,6 +507,14 @@ E2E 按「先 build、再串行」跑（`lib/cdp.mjs` 的 `killStale` 让并行�
      解法是 `scripts/lib/e2e-env.cjs`（预加载钩子里删掉这个变量）；
    - Electron 33 自带的是 Node 20，**没有全局 `WebSocket`**（Node 22 才有），
      所以要用 `--experimental-websocket` 跑脚本。
+   - **不要图省事改用系统里那个真 Node 跑 E2E**：发版脚本需要 Node 22+，后来装了 Node 24，
+     但拿它跑 E2E 会在 `lib/cdp.mjs` 的 `launchApp` 直接炸 ——
+     `spawn(require('electron'), …)` 里的 `require('electron')` 在**真 Node** 下返回的是对象，
+     不是 exe 路径字符串，于是 `ERR_INVALID_ARG_TYPE: The "file" argument must be of type string`。
+     而且这个错会被"只筛中文关键字"的日志管道吃掉，看起来像脚本卡住不动。
+     **结论：跑 E2E 一律用 `ELECTRON_RUN_AS_NODE=1 electron …`，发版才用真 Node。**
+   - 同理，两个脚本（`vlistcheck` / `workflowcheck`）`import { DatabaseSync } from 'node:sqlite'`，
+     那是 Node 22 的内置模块，Node 20 下报 `ERR_UNKNOWN_BUILTIN_MODULE` —— 它们在本机跑不了。
 2. **残留的 Electron 子进程会让下一个实例卡死**。`killStaleDebugInstances` 原来只
    `Stop-Process` 主进程，而 renderer / gpu / utility 的命令行里没有调试端口，于是全都活下来；
    它们占着 GPU 与共享内存，下一个实例起来后 **CDP 能连上、`Runtime.evaluate` 却 45s 超时**，

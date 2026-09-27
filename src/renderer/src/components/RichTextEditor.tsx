@@ -122,6 +122,14 @@ export function RichTextEditor({
     if (commitTimer.current) window.clearTimeout(commitTimer.current)
     commitTimer.current = window.setTimeout(() => onCommit?.(value), 800)
   }
+  /**
+   * 上一次"外部传入"的 html。用来区分两件事（见下面那个同步 effect）：
+   *   - 与它相同 → 是自己 onChange 的回流，忽略
+   *   - 与它不同 → 是外部换了内容，必须写入
+   * 初值就取传入的 html：编辑器初始 content 正是它，首次渲染不必再 setContent 一遍。
+   */
+  const lastHtmlRef = useRef(html)
+
   const noteIdRef = useRef(noteId)
   noteIdRef.current = noteId
 
@@ -138,16 +146,36 @@ export function RichTextEditor({
       Placeholder.configure({ placeholder: placeholder ?? '' }),
     ],
     content: html || '',
-    onUpdate: ({ editor: ed }) => emitRef.current(ed.getHTML()),
+    onUpdate: ({ editor: ed }) => {
+      const h = ed.getHTML()
+      // 自己产生的编辑结果：记下来，下面那个 effect 才分得清"外部换内容"与"自己的回流"
+      lastHtmlRef.current = h
+      emitRef.current(h)
+    },
   })
 
   useEffect(() => {
     editor?.setEditable(!readOnly)
   }, [editor, readOnly])
 
+  /**
+   * 外部内容 → 编辑器。
+   *
+   * 旧写法第一句是 `if (!editor || editor.isFocused) return` —— 那个守卫的**本意**是
+   * "别在用户打字时把内容顶掉"，但它把**外部真的换了内容**（换笔记、Word 的 HTML 异步加载完成）
+   * 也一起挡掉了：Markdown → Word 来回切时编辑器实例被 React 复用、焦点仍在里面，
+   * 于是新内容永远进不来，正文区就停在上一次的空白状态。用户"再点一次笔记"能恢复，
+   * 正是因为那次重建了编辑器实例。
+   *
+   * 现在用 lastHtmlRef 区分两件事：
+   *   - html === lastHtmlRef.current → 是**自己 onChange 的回流**，忽略（这才是原来那个守卫要保护的场景）
+   *   - html !== lastHtmlRef.current → 是**外部换的内容**，必须写入（无视焦点）
+   */
   useEffect(() => {
-    if (!editor || editor.isFocused) return
+    if (!editor) return
     const next = html || ''
+    if (next === lastHtmlRef.current) return
+    lastHtmlRef.current = next
     if (editor.getHTML() === next) return
     editor.commands.setContent(next, { emitUpdate: false })
   }, [editor, html])

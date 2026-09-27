@@ -16,7 +16,7 @@ import { MarkdownView } from '../components/MarkdownView'
 // Excel 网格懒加载：ag-grid 体积可观，只有真的打开 Excel 笔记才下载
 const XlsxGrid = lazy(() => import('../components/XlsxGrid'))
 import { NoteHistory } from '../components/NoteHistory'
-import { NoteTree, type NoteFormat } from '../components/NoteTree'
+import { NOTE_FORMATS, NoteTree, noteIcon, type NoteFormat } from '../components/NoteTree'
 import { NoteTabs, type NoteTab } from '../components/NoteTabs'
 import { Toolbar } from '../components/Toolbar'
 import { PopMenu } from '../components/PopMenu'
@@ -1235,6 +1235,15 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   const linkEditing = current?.format === 'link'
   const linkItems: NoteLinkItem[] = linkEditing ? (linkDraft ?? parseLinkItems(content)) : []
   const usesRichToolbar = !preview && (current?.format === 'richtext' || wordEditing)
+  /**
+   * 标题行的**类型胶囊**（只读）：图标 + 名称都取自笔记树那套映射（noteIcon / NOTE_FORMATS），
+   * 与笔记树、多标签页共用同一份来源，三处不会分叉。
+   *
+   * 类型只在新建时决定（入口在笔记树的「新建笔记」格式菜单），编辑区不再提供事后切换 ——
+   * 所以这里是一个纯陈述的 span，不是 button，也不可聚焦。
+   */
+  const { Comp: FormatIcon, tone: formatTone } = noteIcon(current?.format)
+  const formatName = NOTE_FORMATS.find((f) => f.key === current?.format)?.label ?? 'Markdown 笔记'
 
   /** 编辑区的操作组：回答「怎么编辑这一篇」，所以归工具栏，且一律排在左侧。 */
   const editorActions: ReactNode[] = [
@@ -1366,6 +1375,15 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                         }}
                         aria-label="笔记标题"
                       />
+                      {/* 类型胶囊：排在标题之后、状态之前 —— 先回答「这一篇是什么」，
+                          再回答「存好了没有」。只读，不可点、不可切换。 */}
+                      <span
+                        className="chip chip--type"
+                        title={formatName + '：类型在新建时决定，编辑区不能切换'}
+                      >
+                        <FormatIcon size={12} className={'ntree__type--' + formatTone} aria-hidden />
+                        {formatName}
+                      </span>
                       {/* 保存状态：图标 + 文案。此前只在脏的时候冒出一行「未保存…」，
                           干净时什么都不显示 —— 于是「没在动」和「已经存好」看起来一样。 */}
                       <span
@@ -1556,7 +1574,10 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                       primary，Excel 见上面页面工具栏的 primary）—— 头部那一行原本只装一句
                       状态文案加一个按钮，白占 40px。 */}
                   {current.format === 'word' ? (
-                    <div className="editor__office-body">
+                    /* --word：Word 的格式条自己带 4px 下内边距 + ProseMirror 的 8px 上内边距，
+                       容器再补 8px 上内边距会让「标题行 ↔ 格式条」比富文本多出一档。
+                       Excel 没有格式条，那 8px 正是它正文与工具栏之间的一档，故只对 Word 归零。 */
+                    <div className="editor__office-body editor__office-body--word">
                       <RichTextEditor
                         noteId={current.id}
                         html={officeEdit?.html ?? ''}

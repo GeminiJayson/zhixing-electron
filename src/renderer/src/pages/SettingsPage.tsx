@@ -578,6 +578,17 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                 </span>
               </label>
               <label className="set-row">
+                <span>树形路径跟踪</span>
+                <input
+                  type="checkbox"
+                  checked={settings.tree_guide}
+                  onChange={(e) => void update('tree_guide', e.target.checked ? '1' : '0')}
+                />
+                <span className="u-aux">
+                  清单 / 笔记 / 工作流模板树里按层级画虚线，一眼看出当前行挂在哪一支下
+                </span>
+              </label>
+              <label className="set-row">
                 <span>玻璃拟态</span>
                 <input
                   type="checkbox"

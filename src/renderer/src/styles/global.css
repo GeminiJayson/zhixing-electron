@@ -379,6 +379,32 @@ html[data-surface='pomodoro'] .modal--pomodoro {
   flex-wrap: wrap;
   gap: var(--space-1);
 }
+/* 提醒卡里的状态设置：一排状态胶囊，点中就地展开下方的原因行。
+   选中态用**强调色描边**而不是换底色 —— 五个胶囊的底色已经承担了"状态色"的语义，
+   再换底色就和"这是哪个状态"打架了。 */
+.reminder__status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+.reminder__status .chip[aria-pressed='true'] {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.reminder__reason {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+.reminder__reason .field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.reminder__reason .text-btn {
+  flex: 0 0 auto;
+}
 .dialog__message {
   margin: 0;
   white-space: pre-wrap;
@@ -597,4 +623,51 @@ html[data-surface='capture'] .modal__head button {
   left: 0;
   right: 0;
   top: 0;
+}
+
+/* ------------------------------------------------------------------
+   树形控件的路径跟踪（设置 → 外观 → 树形路径跟踪，默认开）
+
+   三棵树（任务清单 / 笔记 / 工作流模板）的缩进都是渲染时算出来的 padding-left，
+   所以这里靠行上的两个自定义属性反推缩进区：
+     --tree-depth  当前行在第几层（0 = 根，根不画）
+     --tree-step   每层多少 px（各树不同）
+   行上同时带 data-depth，用来把"根行"排除掉（根没有"从父节点过来的路径"）。
+
+   为什么用 ::before/::after 而不是给行加背景图：行 hover 写的是 background 简写，
+   那会把背景图一起清掉 —— 鼠标划过去虚线就断一节。伪元素不参与 background 简写。
+   竖线是"点线"而不是实线：每 --tree-step 画 1px 宽的竖线、纵向每 3px 重复一次
+   （用 --border-strong 18%，9% 的 --border 在 1px 宽的点线上几乎看不见）。
+   ------------------------------------------------------------------ */
+html:not([data-tree-guide='off'])
+  :is(.tasklists__row, .ntree__note, .ntree__folder, .wf-tree .wf-node) {
+  position: relative;
+}
+html:not([data-tree-guide='off'])
+  :is(.tasklists__row, .ntree__note, .ntree__folder, .wf-tree .wf-node)::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: calc(var(--tree-depth, 0) * var(--tree-step, 14px));
+  /* 用 --border-strong（18%）而不是 --border（9%）：后者在 1px 宽的点线上几乎看不见，
+     而这条线的全部意义就是"看得见"。间距 3px 让点更密，缩进区里能数出层次。 */
+  background-image: linear-gradient(to right, var(--border-strong) 1px, transparent 1px);
+  background-size: var(--tree-step, 14px) 3px;
+  pointer-events: none;
+}
+/* 到当前行的横向连接线：只给"有层级"且非根的行画。
+   要求 [data-depth] 存在是必须的 —— 工作流侧栏的**实例行**也是 .wf-node，但它不带层级，
+   少了这个条件它会按 depth=0 算出 left: -7px，在侧栏padding 里凭空多出一小截线。 */
+html:not([data-tree-guide='off'])
+  :is(.tasklists__row, .ntree__note, .ntree__folder, .wf-tree .wf-node)[data-depth]:not([data-depth='0'])::after {
+  content: '';
+  position: absolute;
+  left: calc(var(--tree-depth, 0) * var(--tree-step, 14px) - 7px);
+  top: 50%;
+  width: 7px;
+  height: 1px;
+  background: var(--border-strong);
+  pointer-events: none;
 }

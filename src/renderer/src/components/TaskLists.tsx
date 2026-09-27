@@ -11,6 +11,7 @@ import {
   SlidersHorizontal,
   X,
 } from '@renderer/lib/icons'
+import { useCollapsedSet } from '@renderer/lib/use-collapsed'
 import type { ListFolder } from '@shared/types'
 import { PopMenu, type PopMenuItem } from './PopMenu'
 
@@ -92,7 +93,7 @@ export function TaskLists({
   onDeleteQuery,
 }: Props) {
   /** 折叠的分组（只影响分组自身的展开状态；空分组展开后什么也不显示） */
-  const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
+  // 收起状态由 useCollapsedSet 接管（声明在下面 toggle 处）
   /** 行右键菜单（重命名 / 删除 / 新建子级 / 移动到分组） */
   const [menu, setMenu] = useState<{ id: number; x: number; y: number } | null>(null)
   /** 「移动到分组…」二级菜单 */
@@ -107,13 +108,8 @@ export function TaskLists({
   const childrenOf = (parentId: number | null): ListFolder[] =>
     folders.filter((f) => (f.parent_id ?? null) === parentId)
 
-  const toggle = (id: number): void =>
-    setCollapsed((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+  // 收起状态持久化：切页 / 重启后仍保持（三棵树共用同一个 hook 的行为）
+  const { collapsed, toggle } = useCollapsedSet('zhixing.tree.collapsed.lists')
 
   /** 分组自身的计数 = 其下清单与子分组的计数之和（分组不直接装任务） */
   const groupTotal = (id: number): number => {
@@ -208,7 +204,11 @@ export function TaskLists({
       <div
         key={f.id}
         className={rowCls(on, dragCls(f.id))}
-        style={{ paddingLeft: 8 + depth * 12 }}
+        data-depth={depth}
+        // 路径跟踪虚线按 --tree-depth × --tree-step 定位（见 global.css 的树形控件一段）
+        style={
+          { paddingLeft: 8 + depth * 12, '--tree-depth': depth, '--tree-step': '12px' } as React.CSSProperties
+        }
         role="treeitem"
         aria-selected={on}
         onClick={() => onPick(String(f.id))}
@@ -245,7 +245,10 @@ export function TaskLists({
       <div key={g.id}>
         <div
           className={rowCls(on, ' tasklists__row--group' + dragCls(g.id))}
-          style={{ paddingLeft: 4 + depth * 12 }}
+          data-depth={depth}
+          style={
+            { paddingLeft: 4 + depth * 12, '--tree-depth': depth, '--tree-step': '12px' } as React.CSSProperties
+          }
           role="treeitem"
           aria-selected={on}
           // 点分组 = 选中它（看这个分组下所有清单的任务），折叠交给左侧的 caret。
