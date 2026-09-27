@@ -28,7 +28,8 @@ import { BLOUB_DEFAULT_SHAPE, BLOUB_SHAPES, normalizeBloubShape } from '../share
 import { resolveThemePack } from '../shared/theme-packs'
 import { initFileLog } from './log'
 import { hardenWindow } from './security'
-import { autoBackup, broadcastDataChanged, closeDb, currentSettings, dbPath, dbOpenError, dbReadonlyReason, dueReminders, recordReminderFire, reminderPolicy, ensureDefaultSettings, listTodayTasks, open, registerDbHandlers, saveWidgetGeometry, saveWidgetBall, setDataChangedHook, snoozeReminder } from './db'
+import { logTaskActivity } from './db/task-activity'
+import { autoBackup, broadcastDataChanged, closeDb, currentSettings, dbPath, dbOpenError, dbReadonlyReason, dueReminders, recordReminderFire, reminderPolicy, ensureDefaultSettings, listTodayTasks, open, registerDbHandlers, saveWidgetGeometry, saveWidgetBall, setDataChangedHook, snoozeReminder, dismissReminder } from './db'
 import { decideReminder } from '../shared/reminder'
 import {
   cancelOrganizeLibrary,
@@ -1510,6 +1511,8 @@ function startReminderDispatch(): void {
       for (const t of rows) {
         const d = decideReminder(t, policy, now)
         recordReminderFire(t.id, d.fired, d.base, d.done)
+        // 活动流：这次提醒确实推给用户了才记账（上面的 try 已经保证派发成功）
+        logTaskActivity(t.id, 'remind', '第 ' + d.fired + ' 次提醒')
       }
     } catch (err) {
       console.error('[reminder] 派发失败', err)
@@ -1521,13 +1524,29 @@ function registerReminderHandlers(): void {
   // 渲染层挂载时先拉一次：推送可能早于窗口加载完成
   ipcMain.handle('reminder:current', () => activeReminders)
   ipcMain.handle('reminder:dismiss', (_e, id: number) => {
+    logTaskActivity(Number(id), 'dismiss')
     activeReminders = activeReminders.filter((t) => t.id !== id)
     dispatchReminders()
     return activeReminders
   })
   ipcMain.handle('reminder:snooze', (_e, id: number, minutes: number) => {
-    snoozeReminder(Number(id), Number(minutes))
+    const min = Number(minutes)
+    snoozeReminder(Number(id), min)
+    logTaskActivity(Number(id), 'snooze', min + ' 分钟后')
     activeReminders = activeReminders.filter((t) => t.id !== id)
+    dispatchReminders()
+    return activeReminders
+  })
+  /**
+   * 「不再提醒」：与「知道了」共用同一套消费（清掉 reminder_at、把这一轮的计数推到用完），
+   * 区别只在活动流里记的是 mute —— 用户明确表达了"别再提醒我"，这与"我看过了"不是一回事，
+   * 速览的时间轴上要能分出来。**只对这一次生效**：以后重新设了提醒照样会响。
+   */
+  ipcMain.handle('reminder:mute', (_e, id: number, reason?: string | null) => {
+    const taskId = Number(id)
+    dismissReminder(taskId)
+    logTaskActivity(taskId, 'mute', '不再提醒这条', reason ?? null)
+    activeReminders = activeReminders.filter((t) => t.id !== taskId)
     dispatchReminders()
     return activeReminders
   })

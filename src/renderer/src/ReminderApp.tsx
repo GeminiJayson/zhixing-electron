@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Bell } from '@renderer/lib/icons'
+import { ReminderCard } from '@renderer/components/ReminderCard'
 import { bindHostEvents, subscribeDomain } from '@shared/events'
 import { parseSettings } from '@shared/settings'
 import type { Task } from '@shared/types'
@@ -11,6 +11,9 @@ import { applyAppearance } from './theme'
  * 数据全部来自主进程推送：reminder_at 的消费已经收归主进程一处（见 main/index.ts 的
  * startReminderDispatch），这里只负责显示与「用户处理了」。挂载时先拉一次 current ——
  * 推送可能早于本窗口加载完成，而窗口又是启动时就常驻创建的。
+ *
+ * 卡片本体在 components/ReminderCard.tsx：它与主窗口兜底的 ReminderPopup 共用同一份，
+ * 免得「不再提醒」「改状态」这类改动要在两个宿主里各写一遍。
  */
 export function ReminderApp() {
   const [rows, setRows] = useState<Task[]>([])
@@ -48,7 +51,7 @@ export function ReminderApp() {
     if (h && h > 0) void window.zhixing.reminder.resize(h)
   }, [rows])
 
-  /** 处理一步（知道了 / 稍后 / 查看）后主进程会回传最新列表，直接照单更新 */
+  /** 处理一步（知道了 / 稍后 / 不再提醒 / 改状态）后主进程会回传最新列表，直接照单更新 */
   const act = (p: Promise<Task[]>): void => {
     void p.then(setRows)
   }
@@ -58,54 +61,7 @@ export function ReminderApp() {
   return (
     <div ref={hostRef} className="rbug">
       {rows.map((t) => (
-        <div key={t.id} className="modal modal--reminder" role="alertdialog" aria-label="到点提醒">
-          <header className="modal__head">
-            <Bell size={15} aria-hidden />
-            <h2>到点提醒</h2>
-          </header>
-          <div className="modal__body">
-            <p className="reminder__title">{t.title}</p>
-            <p className="u-aux">
-              {t.reminder_at ? `提醒时刻 ${t.reminder_at.slice(11, 16)}` : '已到提醒时间'}
-              {t.due_date ? ` · 截止 ${t.due_date}` : ''}
-            </p>
-          </div>
-          <div className="modal__foot reminder__actions">
-            <button
-              className="text-btn"
-              onClick={() => act(window.zhixing.reminder.snooze(t.id, 5))}
-            >
-              稍后 5 分
-            </button>
-            <button
-              className="text-btn"
-              onClick={() => act(window.zhixing.reminder.snooze(t.id, 15))}
-            >
-              15 分
-            </button>
-            <button
-              className="text-btn"
-              onClick={() => act(window.zhixing.reminder.snooze(t.id, 30))}
-            >
-              30 分
-            </button>
-            <button
-              className="text-btn"
-              onClick={() => {
-                void window.zhixing.reminder.openTask(t.id)
-                act(window.zhixing.reminder.dismiss(t.id))
-              }}
-            >
-              查看
-            </button>
-            <button
-              className="text-btn text-btn--accent"
-              onClick={() => act(window.zhixing.reminder.dismiss(t.id))}
-            >
-              知道了
-            </button>
-          </div>
-        </div>
+        <ReminderCard key={t.id} task={t} onChange={act} />
       ))}
     </div>
   )

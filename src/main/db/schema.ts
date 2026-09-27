@@ -4,9 +4,9 @@
  *
  * 这里是建库 DDL 的**唯一真源**，随功能直接维护：改 `SCHEMA_SQL` 后要同步升
  * `SCHEMA_VERSION`，并在 migrate.ts 的迁移链里补上同号步骤，旧库才会跟着补齐。
- * 当前 SCHEMA_VERSION = 12，共 24 张表。
+ * 当前 SCHEMA_VERSION = 14，共 26 张表。
  */
-export const SCHEMA_VERSION = 12
+export const SCHEMA_VERSION = 14
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS attachment (
@@ -240,5 +240,24 @@ CREATE TABLE IF NOT EXISTS workflow_template (
 	created_at DATETIME, 
 	updated_at DATETIME, 
 	PRIMARY KEY (id)
+);
+CREATE TABLE IF NOT EXISTS task_activity (
+	id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, 
+	task_id INTEGER NOT NULL, 
+	kind VARCHAR NOT NULL, 
+	detail TEXT, 
+	reason TEXT, 
+	created_at DATETIME, 
+	FOREIGN KEY(task_id) REFERENCES task (id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS workflow_run_log (
+	id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, 
+	instance_id INTEGER NOT NULL, 
+	node_id INTEGER, 
+	kind VARCHAR NOT NULL, 
+	detail TEXT, 
+	created_at DATETIME, 
+	FOREIGN KEY(instance_id) REFERENCES workflow_instance (id) ON DELETE CASCADE, 
+	FOREIGN KEY(node_id) REFERENCES workflow_node (id) ON DELETE SET NULL
 );
 `

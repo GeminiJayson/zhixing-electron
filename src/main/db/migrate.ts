@@ -114,4 +114,31 @@ export const MIGRATIONS: Record<number, (c: Database.Database) => void> = {
     // V12：note_link.dst_title 建索引，加速笔记重命名时的目标同步。
     c.exec("CREATE INDEX IF NOT EXISTS idx_note_link_dst_title ON note_link(dst_title)")
   },
+  13: (c) => {
+    // V13：工作流实例的执行日志。
+    // 原先只有 workflow_instance.last_result 一个字段，存的是**最近一次**节点结果 ——
+    // 实例跑完就只剩最后一步的痕迹，没法回答「这个流程每一步什么时候跑的、结果如何」。
+    // 这张表按时间追加，实例详情页据此画执行时间轴。
+    c.exec(
+      "CREATE TABLE IF NOT EXISTS workflow_run_log (" +
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+        "instance_id INTEGER NOT NULL REFERENCES workflow_instance(id) ON DELETE CASCADE, " +
+        "node_id INTEGER REFERENCES workflow_node(id) ON DELETE SET NULL, " +
+        "kind VARCHAR NOT NULL, detail TEXT, created_at DATETIME)"
+    )
+    c.exec("CREATE INDEX IF NOT EXISTS idx_wf_run_log_instance ON workflow_run_log(instance_id, id)")
+  },
+  14: (c) => {
+    // V14：任务活动流。
+    // 提醒弹窗要能回答「这条任务被提醒过几次、每次都怎么处理的、状态为什么改」，
+    // 而这些是**追加型**记录（一条任务会有几十条），塞进 task 主表会让每次读任务都拖着整段历史。
+    // 任务速览的「活动记录」时间轴读的就是这张表。
+    c.exec(
+      "CREATE TABLE IF NOT EXISTS task_activity (" +
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+        "task_id INTEGER NOT NULL REFERENCES task(id) ON DELETE CASCADE, " +
+        "kind VARCHAR NOT NULL, detail TEXT, reason TEXT, created_at DATETIME)"
+    )
+    c.exec("CREATE INDEX IF NOT EXISTS idx_task_activity_task ON task_activity(task_id, id)")
+  },
 }

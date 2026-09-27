@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Bell } from '@renderer/lib/icons'
+import { ReminderCard } from './ReminderCard'
 import type { Task } from '@shared/types'
 
 interface Props {
-  onOpenTask: (id: number) => void
   onChanged: () => Promise<void>
 }
 
@@ -16,8 +15,10 @@ interface Props {
  * 所以本组件**不再自己轮询数据库** —— reminder_at 的消费已收归主进程一处，
  * 渲染层自己查（旧的 db:dueReminders 是查与清合一）会和气泡窗口互相抢着清，
  * 用户反而少看到一条提醒。这里只显示与「用户处理了」。
+ *
+ * 卡片本体与气泡共用 components/ReminderCard.tsx。
  */
-export function ReminderPopup({ onOpenTask, onChanged }: Props) {
+export function ReminderPopup({ onChanged }: Props) {
   const [due, setDue] = useState<Task[]>([])
 
   useEffect(() => {
@@ -27,14 +28,12 @@ export function ReminderPopup({ onOpenTask, onChanged }: Props) {
     return window.zhixing.reminder.onPush(setDue)
   }, [])
 
-  const dismiss = async (id: number): Promise<void> => {
-    setDue(await window.zhixing.reminder.dismiss(id))
-    await onChanged()
-  }
-
-  const snooze = async (id: number, minutes: number): Promise<void> => {
-    setDue(await window.zhixing.reminder.snooze(id, minutes))
-    await onChanged()
+  /** 处理一步：主进程回传最新列表，同时把任务列表刷新一遍 */
+  const act = (p: Promise<Task[]>): void => {
+    void p.then((next) => {
+      setDue(next)
+      void onChanged()
+    })
   }
 
   if (due.length === 0) return null
@@ -43,47 +42,9 @@ export function ReminderPopup({ onOpenTask, onChanged }: Props) {
     // 一任务一卡；定位交给容器（.reminder-stack），卡片自身用应用弹框那套 .modal
     <div className="reminder-stack">
       {due.map((task) => (
-        <div
-          key={task.id}
-          className="modal modal--reminder"
-          role="alertdialog"
-          aria-label="到点提醒"
-        >
-          <header className="modal__head">
-            <Bell size={15} aria-hidden />
-            <h2>到点提醒</h2>
-          </header>
-          <div className="modal__body">
-            <p className="reminder__title">{task.title}</p>
-            <p className="u-aux">
-              {task.reminder_at ? `提醒时刻 ${task.reminder_at.slice(11, 16)}` : '已到提醒时间'}
-              {task.due_date ? ` · 截止 ${task.due_date}` : ''}
-            </p>
-          </div>
-          <div className="modal__foot reminder__actions">
-            <button className="text-btn" onClick={() => void snooze(task.id, 5)}>
-              稍后 5 分
-            </button>
-            <button className="text-btn" onClick={() => void snooze(task.id, 15)}>
-              15 分
-            </button>
-            <button className="text-btn" onClick={() => void snooze(task.id, 30)}>
-              30 分
-            </button>
-            <button
-              className="text-btn"
-              onClick={() => {
-                onOpenTask(task.id)
-                void dismiss(task.id)
-              }}
-            >
-              查看
-            </button>
-            <button className="text-btn text-btn--accent" onClick={() => void dismiss(task.id)}>
-              知道了
-            </button>
-          </div>
-        </div>
+        // 「查看」由卡片自己走 reminder.openTask → 主进程转发给主窗口，
+        // 所以这里不需要再传一个 onOpenTask（那是另一条链路，见 App.tsx 的监听）
+        <ReminderCard key={task.id} task={task} onChange={act} />
       ))}
     </div>
   )

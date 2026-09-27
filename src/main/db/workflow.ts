@@ -12,6 +12,7 @@ import type {
   NodeRunResult,
   WorkflowInstancePayload,
   WorkflowNodePayload,
+  WorkflowRunLogEntry,
   WorkflowStepPayload,
   WorkflowTemplatePayload,
   WorkflowTemplateSummary,
@@ -470,6 +471,8 @@ export async function instantiateWorkflow(
   // 两种情况下条件节点都不建任务 —— 它是自动求值的关卡，不是待办；
   // 命令 / 脚本也不建任务 —— 它们由泵直接执行，等进程退出后自行推进。
   const toSpawn = usePolicy === 'all' ? ordered : start?.node ? [start.node] : []
+  /** 首节点：policy=all 取第一个，否则取解析出来的那一个 */
+  const head = headId == null ? null : ordered.find((n) => n.id === headId) ?? null
 
   /**
    * 实例 + 根任务 + 各步骤任务 + origin 回写，收进一个事务。
@@ -495,11 +498,14 @@ export async function instantiateWorkflow(
       if (!needsTask(n)) continue
       spawnStepTask(id, n, tpl.name, rootTaskId)
     }
+    // 实例创建本身就是执行日志的第一条：没有它，刚启动的实例在详情里会是一片空白，
+    // 分不清「还没开始跑」和「日志丢了」。
+    logRun(id, headId, 'start', '从「' + tpl.name + '」启动')
+    if (head && needsTask(head)) logRun(id, head.id, 'enter', '已派发待办')
     return id
   })()
   // 首节点若是命令 / 脚本，建完实例就交给泵自动跑。这里**不 await**：
   // 长命令可能要跑一阵，页面应当立刻拿到实例并显示「运行中」，而不是卡在启动按钮上。
-  const head = headId == null ? null : ordered.find((n) => n.id === headId) ?? null
   if (head && isAutoActionKind(head.action_kind)) void pumpInstance(instanceId)
   return getWorkflowInstance(instanceId)
 }
@@ -600,6 +606,34 @@ function writeInstanceResult(instanceId: number, res: NodeRunResult): void {
 }
 
 /**
+ * 记一条执行日志。
+ *
+ * 为什么与 last_result 并存而不是取代它：last_result 是**给下一个节点读的**（条件节点按它判定），
+ * 只保留最近一次是它的语义；日志是**给人看的**，要能回放整条流程。两者职责不同。
+ * 这里吞掉异常 —— 日志是旁路，写失败不该把整条工作流带崩。
+ */
+function logRun(instanceId: number, nodeId: number | null, kind: string, detail: string | null): void {
+  try {
+    conn()
+      .prepare(
+        'INSERT INTO workflow_run_log (instance_id, node_id, kind, detail, created_at) VALUES (?, ?, ?, ?, ?)'
+      )
+      .run(instanceId, nodeId, kind, detail, nowStamp())
+  } catch (err) {
+    console.error('[workflow] 执行日志写入失败', err)
+  }
+}
+
+/** 某次实例的执行日志，按时间正序（详情页直接画时间轴） */
+export function listWorkflowRunLog(instanceId: number): WorkflowRunLogEntry[] {
+  return conn()
+    .prepare(
+      'SELECT id, instance_id, node_id, kind, detail, created_at FROM workflow_run_log WHERE instance_id = ? ORDER BY id ASC'
+    )
+    .all(instanceId) as WorkflowRunLogEntry[]
+}
+
+/**
  * 需要人工待办的节点：普通步骤（含 'none' / 'open_url' / 'open_note' / 'run_command' 这些历史值）。
  * 条件节点是自动求值的关卡、命令与脚本由泵直接跑，两者都不该生成待办。
  */
@@ -639,6 +673,7 @@ async function advanceInstance(
     if (inst.origin_task_id) {
       c.prepare("UPDATE task SET status = 'done', updated_at = ? WHERE id = ?").run(stamp, inst.origin_task_id)
     }
+    logRun(instanceId, null, 'finish', '流程已走完')
     return { next: null }
   }
   if (needsTask(nxt)) {
@@ -646,6 +681,9 @@ async function advanceInstance(
       .prepare('SELECT 1 FROM workflow_step_task WHERE instance_id = ? AND node_id = ?')
       .get(instanceId, nxt.id)
     if (!has) spawnStepTask(instanceId, nxt, tpl.name, inst.origin_task_id)
+    logRun(instanceId, nxt.id, 'enter', has ? '等待这一步完成' : '已派发待办')
+  } else {
+    logRun(instanceId, nxt.id, 'enter', '自动节点，交给泵执行')
   }
   c.prepare('UPDATE workflow_instance SET current_node_id = ? WHERE id = ?').run(nxt.id, instanceId)
   return { next: nxt }
@@ -694,6 +732,15 @@ export async function pumpInstance(instanceId: number): Promise<void> {
         message: r.message,
         at: nowStamp(),
       })
+      // 执行日志：把这一步的结果摘要落库（输出只留前 200 字，完整输出在 last_result 里）
+      logRun(
+        instanceId,
+        node.id,
+        'done',
+        r.state === 'ok'
+          ? r.message || '执行成功'
+          : `${r.message || '执行失败'}（退出码 ${r.code ?? '—'}）`
+      )
       notifyWorkflow()
       // 返回值不对就停在原地：不推进、不吞错误，等人重试或中止
       if (r.state !== 'ok') return

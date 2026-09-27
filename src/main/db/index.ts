@@ -12,6 +12,7 @@ export * from './export'
 export * from './graph'
 export * from './inbox'
 export * from './maintenance'
+export * from './task-activity'
 export * from './notes'
 export * from './preview'
 export * from './review'
@@ -43,16 +44,17 @@ import { autoBackup, listBackups, restoreBackup } from './backup'
 import { globalSearch, searchTouch } from './search'
 import { listFolders, listTasksByList, createListFolder, renameListFolder, deleteListFolder, moveListFolder, reorderListFolder, isListDescendantOf, moveTaskToList, defaultListId } from './lists'
 import { linkTaskWikiNotes } from './task-note-links'
+import { listTaskActivity, logTaskActivity } from './task-activity'
 import { siblingsOf, isDescendantOf, reorderTask, moveTaskRelative, reparentTask, batchComplete, batchMove, batchSetDue, listTags, setTaskTags, ensureListId, quickAdd } from './task-ops'
 import { listTasks, listTodayTasks, recentNotes, noteCountMap, tagMap, listNotes, overview, toggleTask, cloneTaskTree, setPriority, setTitle, setStatus, setDueDate, nextSortKey, createTask, EDITABLE_FIELDS, updateTask, softDelete, batchDeleteTasks, batchUndoLast, attachTaskNote, detachTaskNote, listLinkedNotes, pauseTask, resumeTask, attachBlock, detachBlock, listLinkedContexts, contextsForNote, noteContextMap, writeNoteAfterDone, taskCandidates } from './tasks'
 import { trashItems, restoreTrash, purgeTrash, emptyTrash, emptyAllTrash, purgeTrashOlderThan, tagsWithUsage, createTag, renameTag, deleteTag, setTagColor, batchDeleteTags, mergeTags } from './trash'
 import { attachmentStats, deleteAttachment, importAttachment, listAttachments, pruneAttachments } from './attachments'
 import { deleteSavedQuery, listSavedQueries, saveSavedQuery } from './queries'
-import { NODE_COLUMNS, orderedNodes, nextWorkflowNode, validateWorkflowTemplate, listWorkflowTemplates, getWorkflowTemplate, saveWorkflowTemplate, deleteWorkflowTemplate, duplicateWorkflowTemplate, autoLayoutWorkflowNodes, updateWorkflowNodePos, batchUpdateNodePos, setWorkflowBranch, spawnStepTask, instantiateWorkflow, getWorkflowInstance, listWorkflowInstances, listWorkflowInstancesByTask, completeWorkflowStep, abortWorkflowInstance, retryWorkflowStep, deleteWorkflowInstance, rerunWorkflowInstance, setWorkflowNotifier, splitCommand, describeWorkflowAction, runWorkflowAction, listWorkflowGroups, workflowTemplateGroups, saveWorkflowGroup, deleteWorkflowGroup, moveWorkflowTemplate, renameWorkflowInstance } from './workflow'
+import { NODE_COLUMNS, orderedNodes, nextWorkflowNode, validateWorkflowTemplate, listWorkflowTemplates, getWorkflowTemplate, saveWorkflowTemplate, deleteWorkflowTemplate, duplicateWorkflowTemplate, autoLayoutWorkflowNodes, updateWorkflowNodePos, batchUpdateNodePos, setWorkflowBranch, spawnStepTask, instantiateWorkflow, getWorkflowInstance, listWorkflowInstances, listWorkflowInstancesByTask, completeWorkflowStep, abortWorkflowInstance, retryWorkflowStep, deleteWorkflowInstance, rerunWorkflowInstance, setWorkflowNotifier, splitCommand, describeWorkflowAction, runWorkflowAction, listWorkflowGroups, workflowTemplateGroups, saveWorkflowGroup, deleteWorkflowGroup, moveWorkflowTemplate, renameWorkflowInstance, listWorkflowRunLog } from './workflow'
 import type { EditableField } from './tasks'
 import type { TrashItem } from './trash'
 import type { DataDomain } from '../../shared/events'
-import type { GraphNodePayload, GraphQuery, TaskStatus } from '../../shared/types'
+import type { GraphNodePayload, GraphQuery, TaskActivityKind, TaskStatus } from '../../shared/types'
 
 // ---------------------------------------------------------------- 数据变更广播
 
@@ -586,6 +588,19 @@ export function registerDbHandlers(): void {
     listWorkflowInstances(status ?? null)
   )
   handle('db:workflowInstance', (_e, id: number) => getWorkflowInstance(id))
+  // 实例的执行日志（时间轴）：点开实例详情时拉一次
+  handle('db:workflowRunLog', (_e, instanceId: number) => listWorkflowRunLog(instanceId))
+  // 任务活动流：速览的时间轴读它；渲染层改状态后也往这里补一条（带原因说明）
+  handle('db:taskActivity', (_e, taskId: number, limit?: number | null) =>
+    listTaskActivity(taskId, limit ?? 50)
+  )
+  handle(
+    'db:pushTaskActivity',
+    (_e, taskId: number, kind: TaskActivityKind, detail?: string | null, reason?: string | null) => {
+      logTaskActivity(taskId, kind, detail ?? null, reason ?? null)
+      return true
+    }
+  )
   handle('db:completeWorkflowStep', (_e, taskId: number) => completeWorkflowStep(taskId))
   // 自动步骤失败后原地重跑（失败时实例停在当前节点，没有这个入口就只能中止）
   handle('db:retryWorkflowStep', (_e, instanceId: number) => retryWorkflowStep(instanceId))

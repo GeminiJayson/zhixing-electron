@@ -9,6 +9,7 @@ import {
   FilePlus2,
   FolderPlus,
   GitBranch,
+  History,
   IconData,
   LayoutGrid,
   Maximize2,
@@ -26,9 +27,11 @@ import type {
   Note,
   WorkflowInstancePayload,
   WorkflowNodePayload,
+  WorkflowRunLogEntry,
   WorkflowTemplatePayload,
   WorkflowTemplateSummary,
 } from '@shared/types'
+import { useCollapsedSet } from '@renderer/lib/use-collapsed'
 import { subscribeDomain } from '@shared/events'
 import { CONDITION_KIND, describeCondition, serializeCondition } from '@shared/workflow-condition'
 import {
@@ -76,6 +79,73 @@ interface Props {
 
 const NODE_W = 150
 const NODE_H = 56
+
+/** 执行日志的分类标签（实例详情的时间轴用） */
+const RUN_LOG_LABELS: Record<string, string> = {
+  start: '开始',
+  enter: '进入',
+  done: '完成',
+  finish: '结束',
+}
+
+/** 时间轴上的时刻：只留 时:分（同一天的运行看秒没意义；跨天时带上月-日） */
+function runLogTime(iso: string): string {
+  if (!iso) return '—'
+  const d = new Date(iso.replace(' ', 'T'))
+  if (Number.isNaN(d.getTime())) return iso.slice(5, 16)
+  const today = new Date()
+  const sameDay =
+    d.getFullYear() === today.getFullYear() &&
+    d.getMonth() === today.getMonth() &&
+    d.getDate() === today.getDate()
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  if (sameDay) return hh + ':' + mm
+  return String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + ' ' + hh + ':' + mm
+}
+/** 节点内文字左右各留 10px，再留 2px 余量给抗锯齿 */
+const NODE_TEXT_W = NODE_W - 22
+/**
+ * 条件节点的可用文字宽度要**再收一档**：它画在菱形里，而菱形中间最宽处才有整框宽度，
+ * 上下两侧迅速收窄 —— 按整框宽度排的文字会在四个斜边处顶出去（用户报的就是这个）。
+ * 取 0.6 是让文字只落在菱形的"腰部"。
+ */
+const COND_TEXT_W = Math.round(NODE_W * 0.6)
+
+/**
+ * 节点内文字的排版：SVG 的 <text> **既不会自动换行也不会自动缩小**，超出的部分会直接画到
+ * 节点框外。旧写法按「字符数 > 10」截断，而一个汉字的宽度约等于两个西文字母 ——
+ * 10 个汉字加一个全角标点就能顶出框外（用户看到的就是这个）。
+ *
+ * 现在按**像素宽度**算：先试着用 12px，放不下就逐档降到 10px，还放不下才截断加省略号。
+ * 估算系数保守一点（汉字 1.02、其余 0.56），宁可早一点省略号也不要溢出。
+ */
+const charWidth = (ch: string): number => (/[\u1100-\u9fff\uff00-\uffef\u3000-\u303f]/.test(ch) ? 1.02 : 0.56)
+const textWidth = (text: string, size: number): number =>
+  [...text].reduce((w, ch) => w + charWidth(ch) * size, 0)
+
+/** 返回可直接渲染的文案与字号：长标题先缩字号、再按像素截断 */
+function fitNodeText(
+  raw: string,
+  baseSize: number,
+  minSize: number,
+  maxWidth: number = NODE_TEXT_W
+): { text: string; size: number } {
+  const title = raw ?? ''
+  let size = baseSize
+  while (size > minSize && textWidth(title, size) > maxWidth) size -= 0.5
+  if (textWidth(title, size) <= maxWidth) return { text: title, size }
+  const ellipsis = size * 0.9
+  let out = ''
+  let w = 0
+  for (const ch of title) {
+    const cw = charWidth(ch) * size
+    if (w + cw > maxWidth - ellipsis) break
+    out += ch
+    w += cw
+  }
+  return { text: out + '…', size }
+}
 /** 画布基准坐标系（viewBox 与 panzoom 共用同一套尺寸）。 */
 const CANVAS_W = 900
 const CANVAS_H = 520
@@ -177,6 +247,22 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   const [templates, setTemplates] = useState<WorkflowTemplateSummary[]>([])
   const [current, setCurrent] = useState<WorkflowTemplatePayload | null>(null)
   const [instances, setInstances] = useState<WorkflowInstancePayload[]>([])
+  /** 展开着执行详情的实例 id（同时只开一个：侧栏宽度有限，开多个会互相挤） */
+  const [runLogFor, setRunLogFor] = useState<number | null>(null)
+  const [runLog, setRunLog] = useState<WorkflowRunLogEntry[]>([])
+
+  /**
+   * 展开 / 收起某个实例的执行详情。
+   * 每次展开都重新拉一次 —— 实例可能正在跑，缓存的日志会立刻过时。
+   */
+  const toggleRunLog = async (id: number): Promise<void> => {
+    if (runLogFor === id) {
+      setRunLogFor(null)
+      return
+    }
+    setRunLogFor(id)
+    setRunLog(await window.zhixing.db.workflowRunLog(id))
+  }
   const [pos, setPos] = useState<Map<number, { x: number; y: number }>>(new Map())
   const [selected, setSelected] = useState<number | null>(null)
   /**
@@ -260,7 +346,11 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   type WfGroup = Awaited<ReturnType<typeof window.zhixing.db.workflowGroups>>[number]
   const [groups, setGroups] = useState<WfGroup[]>([])
   const [templateGroups, setTemplateGroups] = useState<{ id: number; group_id: number | null }[]>([])
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<number>>(new Set())
+  /**
+   * 分类的收起状态，持久化在 localStorage：切模板、切页、重启应用后都保持原样。
+   * 与笔记树 / 任务清单树共用 lib/use-collapsed.ts 的同一套行为。
+   */
+  const { collapsed: collapsedGroups, toggle: toggleGroupRaw } = useCollapsedSet('zhixing.tree.collapsed.wf-groups')
 
   const loadGroups = useCallback(async (): Promise<void> => {
     const [gs, links] = await Promise.all([
@@ -696,13 +786,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   /** 分类树渲染辅助 */
   const groupOf = (id: number): number | null =>
     templateGroups.find((x) => x.id === id)?.group_id ?? null
-  const toggleGroup = (id: number): void =>
-    setCollapsedGroups((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+  const toggleGroup = (id: number): void => toggleGroupRaw(id)
 
   /** 浮卡里把分支目标 id 翻译成人话（没配 / 已删除都不留一个裸 id）。 */
   const branchTargetLabel = (id: number | null): string => {
@@ -714,7 +798,9 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     <div
       key={'t' + t.id}
       className={'wf-node wf-node--template' + (current?.id === t.id ? ' wf-node--on' : '')}
-      style={{ paddingLeft: 6 + depth * 12 }}
+      data-depth={depth}
+      // --tree-depth / --tree-step 供路径跟踪虚线定位（见 global.css 的树形控件一段）
+      style={{ paddingLeft: 6 + depth * 12, '--tree-depth': depth, '--tree-step': '12px' } as React.CSSProperties}
     >
       <button className="wf-node__label" onClick={() => void openTemplate(t.id)}>
         <strong>{t.name}</strong>
@@ -758,13 +844,16 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
       <div key={'g' + g.id}>
         <div
           className={'wf-node wf-node--group' + (collapsed ? ' wf-node--collapsed' : '')}
-          style={{ paddingLeft: 6 + depth * 12 }}
+          data-depth={depth}
+          style={{ paddingLeft: 6 + depth * 12, '--tree-depth': depth, '--tree-step': '12px' } as React.CSSProperties}
         >
           <button className="wf-node__label" aria-expanded={!collapsed} onClick={() => toggleGroup(g.id)}>
+            {/* 与笔记树 / 任务行同一套：同一位置换图标，morphicons 自己形变过去（size 也是同一档 16）。
+                不要再叠 CSS rotate —— 那会和形变叠加成转两次。 */}
             {collapsed ? (
-              <ChevronRight size={13} className="wf-node__caret" aria-hidden />
+              <ChevronRight size={16} className="wf-node__caret" aria-hidden />
             ) : (
-              <ChevronDown size={13} className="wf-node__caret" aria-hidden />
+              <ChevronDown size={16} className="wf-node__caret" aria-hidden />
             )}
             <strong>{g.name}</strong>
             <span className="u-aux">{tpls.length} 个</span>
@@ -1312,6 +1401,19 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                 <div className="wf-node__ops">
                   <button
                     className="icon-btn"
+                    title={
+                      runLogFor === i.id
+                        ? '收起执行详情'
+                        : '执行详情：每一步什么时候跑的、结果如何、现在停在哪'
+                    }
+                    aria-label="执行详情"
+                    aria-expanded={runLogFor === i.id}
+                    onClick={() => void toggleRunLog(i.id)}
+                  >
+                    <History size={13} />
+                  </button>
+                  <button
+                    className="icon-btn"
                     title="重命名实例"
                     aria-label="重命名实例"
                     onClick={() => void handleRenameInstance(i)}
@@ -1335,6 +1437,36 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                     <Trash2 size={13} />
                   </button>
                 </div>
+                {runLogFor === i.id && (
+                  <div className="wf-runlog" aria-label="执行详情">
+                    <div className="wf-runlog__meta">
+                      <span>开始 {runLogTime(i.created_at)}</span>
+                      {i.finished_at && <span>结束 {runLogTime(i.finished_at)}</span>}
+                      <span>{i.status === 'running' ? '进行中' : i.status === 'done' ? '已完成' : '已中止'}</span>
+                    </div>
+                    {runLog.length === 0 ? (
+                      <p className="u-aux">这次运行还没有留下记录。</p>
+                    ) : (
+                      <ol className="wf-runlog__list">
+                        {runLog.map((e) => {
+                          // 节点名从当前模板取（实例属于哪个模板就在看哪个模板）；
+                          // 模板被删掉后 node_id 会置空，这时只显示分类与结果
+                          const node = (current?.nodes ?? []).find((n) => n.id === e.node_id)
+                          return (
+                            <li key={e.id} className={'wf-runlog__item wf-runlog__item--' + e.kind}>
+                              <span className="wf-runlog__time">{runLogTime(e.created_at)}</span>
+                              <span className="wf-runlog__kind">{RUN_LOG_LABELS[e.kind] ?? e.kind}</span>
+                              <span className="wf-runlog__what">
+                                {node ? node.title : e.kind === 'finish' ? '流程结束' : '—'}
+                                {e.detail ? ' · ' + e.detail : ''}
+                              </span>
+                            </li>
+                          )
+                        })}
+                      </ol>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
             {instances.length === 0 && <p className="u-aux">还没有运行中的实例。</p>}
@@ -1594,29 +1726,39 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                             : ' · ' + actionKindLabel(n.action_kind)
                         }`}
                     </text>
-                    <text
-                      x={n.action_kind === CONDITION_KIND ? NODE_W / 2 : 10}
-                      y={40}
-                      className={
-                        'wf-node__title' +
-                        (n.action_kind === CONDITION_KIND ? ' wf-node__title--center' : '')
-                      }
-                    >
-                      {n.title.length > 10 ? n.title.slice(0, 10) + '…' : n.title}
-                    </text>
+                    {(() => {
+                      // 标题按像素宽度自适应：长标题先缩到 10px，仍放不下才截断（见 fitNodeText）
+                      const isCond = n.action_kind === CONDITION_KIND
+                      const fit = fitNodeText(n.title, 12, 10, isCond ? COND_TEXT_W : NODE_TEXT_W)
+                      return (
+                        <text
+                          x={n.action_kind === CONDITION_KIND ? NODE_W / 2 : 10}
+                          y={40}
+                          fontSize={fit.size}
+                          className={
+                            'wf-node__title' +
+                            (n.action_kind === CONDITION_KIND ? ' wf-node__title--center' : '')
+                          }
+                        >
+                          {/* 子元素 <title> 给的是原生 tooltip：截断后仍能读全 */}
+                          <title>{n.title}</title>
+                          {fit.text}
+                        </text>
+                      )
+                    })()}
                     {/* 条件内容直接贴在菱形下方：只画一条虚线看不出「什么情况下走它」，
                         把判据写出来才读得懂；完整文案在悬停提示与详情浮卡里 */}
                     {n.action_kind === CONDITION_KIND &&
                       (() => {
                         const desc = describeCondition(n.action_value)
-                        // 13 个字是 9px 字号在 138px 宽度里放得下的上限，再多会溢出到边框外
-                        const brief = desc.length > 13 ? desc.slice(0, 13) + '…' : desc
+                        // 与节点标题同一套：9px 起，放不下先降字号到 8px，仍放不下才按像素截断
+                        const fit = fitNodeText(desc, 9, 8)
                         return (
                           <g className="wf-node__cond" transform={`translate(0, ${NODE_H + 5})`}>
                             <title>{desc}</title>
                             <rect x={6} width={NODE_W - 12} height={18} rx={6} />
-                            <text x={NODE_W / 2} y={12.5}>
-                              {brief}
+                            <text x={NODE_W / 2} y={12.5} fontSize={fit.size}>
+                              {fit.text}
                             </text>
                           </g>
                         )

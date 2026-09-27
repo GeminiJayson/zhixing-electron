@@ -143,6 +143,42 @@ export interface WorkflowInstancePayload {
   steps: WorkflowStepPayload[]
 }
 
+/** 任务活动流的分类：提醒 / 稍后 / 知道了 / 不再提醒 / 状态变更 */
+export type TaskActivityKind = 'remind' | 'snooze' | 'dismiss' | 'mute' | 'status'
+
+/**
+ * 任务活动流的一条（task_activity）。
+ *
+ * 与 `task.reminder_at` / `reminder_fired` 的分工：那两列是**提醒调度**的状态
+ * （下次什么时候响、这一轮第几次），这张表是**给人看的历史**（速览里的「活动记录」时间轴）。
+ */
+export interface TaskActivity {
+  id: number
+  task_id: number
+  kind: TaskActivityKind
+  /** 附加说明：稍后的分钟数、状态的 from→to、提醒的时刻… */
+  detail: string | null
+  /** 用户填写的原因说明（状态变更 / 不再提醒时可选） */
+  reason: string | null
+  created_at: string
+}
+
+/**
+ * 工作流实例的执行日志一条（workflow_run_log）。
+ *
+ * 与 last_result 的分工：last_result 只存**最近一次**节点结果，是给下一个节点（条件判定）读的；
+ * 这张表按时间追加，用来回答「这次运行每一步什么时候跑的、结果如何、现在卡在哪」。
+ */
+export interface WorkflowRunLogEntry {
+  id: number
+  instance_id: number
+  node_id: number | null
+  /** start 开始 / enter 进入节点 / done 节点跑完 / finish 整个实例结束 */
+  kind: 'start' | 'enter' | 'done' | 'finish'
+  detail: string | null
+  created_at: string
+}
+
 export interface WorkflowTemplateSummary {
   id: number
   name: string

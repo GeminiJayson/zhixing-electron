@@ -20,6 +20,9 @@ import type {
   TodayTasks,
   TaskStatus,
   WorkflowInstancePayload,
+  TaskActivity,
+  TaskActivityKind,
+  WorkflowRunLogEntry,
   WorkflowTemplatePayload,
   WorkflowTemplateSummary,
 } from '../shared/types'
@@ -308,6 +311,20 @@ const api = {
       ipcRenderer.invoke('db:workflowInstances', status ?? null),
     workflowInstance: (id: number): Promise<WorkflowInstancePayload | null> =>
       ipcRenderer.invoke('db:workflowInstance', id),
+    /** 实例的执行日志：节点级时间轴（时间、结果、当前状态） */
+    workflowRunLog: (instanceId: number): Promise<WorkflowRunLogEntry[]> =>
+      ipcRenderer.invoke('db:workflowRunLog', instanceId),
+    /** 任务活动流（速览的「活动记录」时间轴）：按时间倒序 */
+    taskActivity: (taskId: number, limit?: number | null): Promise<TaskActivity[]> =>
+      ipcRenderer.invoke('db:taskActivity', taskId, limit ?? null),
+    /** 渲染层补记一条活动（状态变更时带上原因说明） */
+    pushTaskActivity: (
+      taskId: number,
+      kind: TaskActivityKind,
+      detail?: string | null,
+      reason?: string | null
+    ): Promise<boolean> =>
+      ipcRenderer.invoke('db:pushTaskActivity', taskId, kind, detail ?? null, reason ?? null),
     completeWorkflowStep: (taskId: number): Promise<boolean> =>
       ipcRenderer.invoke('db:completeWorkflowStep', taskId),
     /** 自动步骤失败后原地重跑（实例停在当前节点时用） */
@@ -811,6 +828,9 @@ const api = {
     dismiss: (id: number): Promise<Task[]> => ipcRenderer.invoke('reminder:dismiss', id),
     snooze: (id: number, minutes: number): Promise<Task[]> =>
       ipcRenderer.invoke('reminder:snooze', id, minutes),
+    /** 不再提醒这条（只对这一次生效；活动流里记 mute，与"知道了"区分开） */
+    mute: (id: number, reason?: string | null): Promise<Task[]> =>
+      ipcRenderer.invoke('reminder:mute', id, reason ?? null),
     /** 气泡量完内容高度上报，主进程据此贴边定位 */
     resize: (height: number): Promise<void> => ipcRenderer.invoke('reminder:resize', height),
     /** 打开主窗口并定位到该任务 */
