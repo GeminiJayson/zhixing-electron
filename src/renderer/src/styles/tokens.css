@@ -39,6 +39,9 @@
 
   --border: rgb(0 0 0 / 9%);
   --border-strong: rgb(0 0 0 / 18%);
+  /* 内高光：贴在容器顶边的 1px 亮线，让「面」从背景里浮起来。
+     深色模式下同样的 55% 会变成刺眼的白边，必须另给一个极低的值（见深色块）。 */
+  --edge-light: inset 0 1px 0 rgb(255 255 255 / 55%);
   /* 焦点环跟随主题包的强调色，而不是写死的青 */
   --focus-ring: var(--accent);
 
@@ -58,6 +61,9 @@
   --space-3: 12px;
   --space-4: 16px;
   --space-5: 24px;
+  /* 大留白档：图片预览浮层、空态这类「整块留白」的场景。
+     常规布局仍只用 1–5 档 —— 多这一档是为了让裸数字有名字，不是给日常排版用。 */
+  --space-6: 32px;
 
   /* --- 字体 --- */
   --font-ui: "PingFang SC", "Microsoft YaHei UI", "HarmonyOS Sans", "Noto Sans CJK SC",
@@ -103,10 +109,19 @@
   --dur-strike: 200ms;
   --dur-page: 200ms;
   --dur-panel: 280ms;
+  /* 列表交错入场：相邻两行之间的启动间隔（不改变单行自身的时长） */
+  --dur-stagger: 20ms;
+  /* 数据节拍：番茄钟进度条与「每秒刷新一次的数据」同步推进用的时长。
+     它不是 UI 过渡档，因此不参与 data-motion 归零 —— 归零会让进度条每秒瞬跳。 */
+  --dur-tick: 1s;
 
   --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);   /* OutCubic 近似：进入 */
   --ease-exit: cubic-bezier(0.55, 0, 1, 0.45);    /* InCubic 近似：退出 */
   --ease-panel: cubic-bezier(0.19, 1, 0.22, 1);   /* OutExpo：面板展开 */
+  /* Standard：双向通用（进度推进、宽度变化）。
+     tasks.css 与 workflow.css 一直在引用这个名字，但它从未被定义 —— var() 没有 fallback 时
+     整条 transition 会在计算值阶段失效，那两处动画其实一直没有跑。 */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-page: cubic-bezier(0.45, 0, 0.55, 1);    /* InOutQuad：页面标题 */
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 
@@ -119,6 +134,17 @@
 
   /* --- 模态遮罩 --- */
   --overlay: rgb(0 0 0 / 32%);
+
+  /* --- 玻璃拟态（实验档）---
+     只给「固定、数量少」的浮层用：标题栏、弹出菜单、模态、Toast。
+     backdrop-filter 每帧都要采样背后的整块区域，挂到列表项或滚动容器上会直接吃掉帧率。
+     data-glass='off' 时 --glass-filter 变成 none —— 关键是不再建合成层，
+     而不是把模糊半径调小（blur(0) 照样要走一遍背后采样）。 */
+  --glass-filter: blur(20px) saturate(160%);
+  /* 吸顶工具栏面积大得多，模糊必须更轻，否则滚动时整条内容都在抖 */
+  --glass-filter-bar: blur(10px) saturate(140%);
+  --glass-bg: rgb(255 255 255 / 72%);
+  --glass-border: rgb(255 255 255 / 62%);
 
   /* 图谱连线：默认要「隐没在背景里」。深色主题直接沿用 Obsidian 的 #444；
      浅色主题不能用同一个值 —— 纯 #444 在浅底上会变成抢眼的黑线，改用同等的低对比度 */
@@ -144,6 +170,7 @@
 
   --border: rgb(255 255 255 / 10%);
   --border-strong: rgb(255 255 255 / 22%);
+  --edge-light: inset 0 1px 0 rgb(255 255 255 / 5%);
 
   /* 同样的黑色透明度在深色底上几乎不可见，深色模式需要加深 */
   --shadow-sm: 0 1px 3px rgb(0 0 0 / 28%);
@@ -152,6 +179,9 @@
   --shadow-xl: 0 24px 64px rgb(0 0 0 / 56%);
 
   --overlay: rgb(0 0 0 / 55%);
+
+  --glass-bg: rgb(43 43 43 / 76%);
+  --glass-border: rgb(255 255 255 / 12%);
 
   --graph-edge: #444444;
 }
@@ -165,6 +195,7 @@
   --dur-strike: 0ms;
   --dur-page: 0ms;
   --dur-panel: 0ms;
+  --dur-stagger: 0ms;
 }
 
 /* 系统「减少动态效果」时全部降级为直接切换（docs/03 性能预算） */
@@ -177,5 +208,46 @@
     --dur-strike: 0ms;
     --dur-page: 0ms;
     --dur-panel: 0ms;
+    --dur-stagger: 0ms;
+  }
+}
+
+/* 主题切换的颜色过渡窗口：theme.ts 在「主题身份」（明暗 / 主题包 / 强调色 / 自定义色）变化时
+   加上这个 class，几百毫秒后移除。刻意不做成常驻 transition —— 常驻的全局颜色过渡会让滚动、
+   输入与虚拟列表的每一帧都多算一遍过渡，代价与收益完全不成比例。
+   这里列出的是「承载底色」的那几个容器，而不是 * ：* 会连带覆盖组件自己的动效时长。
+   注意 color-scheme 与原生滚动条颜色无法过渡，会在中途瞬变，这是平台限制。 */
+:root.theme-transition,
+:root.theme-transition body,
+:root.theme-transition .app,
+:root.theme-transition .app__body,
+:root.theme-transition .app__content,
+:root.theme-transition .titlebar,
+:root.theme-transition .sidebar,
+:root.theme-transition .page,
+:root.theme-transition .stat-card,
+:root.theme-transition .modal,
+:root.theme-transition .popmenu,
+:root.theme-transition .widget {
+  transition: background-color var(--dur-normal) var(--ease-page), color var(--dur-normal) var(--ease-page),
+    border-color var(--dur-normal) var(--ease-page);
+}
+
+/* 玻璃拟态关闭（设置项 glass_enabled = false）：整体退回不透明底，并停掉 backdrop-filter。 */
+:root[data-glass='off'] {
+  --glass-filter: none;
+  --glass-filter-bar: none;
+  --glass-bg: var(--bg-layer-solid);
+  --glass-border: var(--border);
+}
+
+/* 系统关掉「透明效果」（Windows 11 辅助功能）时同样退到不透明底。
+   不支持这条媒体查询的环境不会匹配，等于没有副作用。 */
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass-filter: none;
+    --glass-filter-bar: none;
+    --glass-bg: var(--bg-layer-solid);
+    --glass-border: var(--border);
   }
 }

@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { usePresence } from '../lib/presence'
 
 /**
  * 应用内对话框（替换 window.prompt / window.confirm）。
@@ -45,6 +46,10 @@ type Pending =
   | { kind: 'prompt'; options: PromptOptions; resolve: (v: string | null) => void }
   | { kind: 'confirm'; options: ConfirmOptions; resolve: (v: boolean) => void }
 
+/** 退场时长：必须与 global.css 里 `.modal-mask.is-leaving` 与 `.modal-mask.is-leaving .modal`
+    两条退场动画用的 --dur-fast 一致。 */
+const EXIT_MS = 150
+
 export function DialogProvider({ children }: { children: ReactNode }) {
   // 队列而不是单个：并存请求（如批量删除里连续确认）不会互相覆盖
   const [queue, setQueue] = useState<Pending[]>([])
@@ -55,6 +60,12 @@ export function DialogProvider({ children }: { children: ReactNode }) {
   const [draft, setDraft] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const current = queue[0] ?? null
+
+  // 遮罩与面板的退场（.is-leaving）：present 由「队列里还有没有对话框」驱动。
+  // current 一变 null，标题 / 正文就再也取不到了 —— 退场窗口里要继续显示最后那张卡片，
+  // 所以留一份快照。动效非 full 档时 usePresence 同步卸载，不让人白等。
+  const { mounted, leaving } = usePresence(current !== null, EXIT_MS)
+  const lastDialog = useRef<{ isPrompt: boolean; options: PromptOptions | ConfirmOptions } | null>(null)
 
   const open = useCallback((item: Pending) => {
     queueRef.current = [...queueRef.current, item]
@@ -92,10 +103,17 @@ export function DialogProvider({ children }: { children: ReactNode }) {
     }
   }, [current])
 
-  if (!current) return <DialogContext.Provider value={api}>{children}</DialogContext.Provider>
+  useEffect(() => {
+    // 记下「刚刚显示过的那张卡片」，退场窗口靠它继续渲染（写 ref 放在 effect 里，不在渲染阶段写）
+    if (current) lastDialog.current = { isPrompt: current.kind === 'prompt', options: current.options }
+  }, [current])
 
-  const isPrompt = current.kind === 'prompt'
-  const opts = current.options
+  const shown = current
+    ? { isPrompt: current.kind === 'prompt', options: current.options }
+    : lastDialog.current
+  if (!mounted || !shown) return <DialogContext.Provider value={api}>{children}</DialogContext.Provider>
+
+  const { isPrompt, options: opts } = shown
   const confirmOpts = isPrompt ? null : (opts as ConfirmOptions)
   const dangerBtn = confirmOpts?.danger === true
   const iconTone = confirmOpts?.tone ?? (confirmOpts?.danger ? 'danger' : 'info')
@@ -103,9 +121,12 @@ export function DialogProvider({ children }: { children: ReactNode }) {
   return (
     <DialogContext.Provider value={api}>
       {children}
-      <div className="modal-mask" onMouseDown={() => settle(isPrompt ? null : false)}>
+      <div
+        className={'modal-mask' + (leaving ? ' is-leaving' : '')}
+        onMouseDown={() => settle(isPrompt ? null : false)}
+      >
         <div
-          className="modal modal--dialog"
+          className={'modal modal--dialog' + (leaving ? ' is-leaving' : '')}
           role="dialog"
           aria-modal="true"
           onMouseDown={(e) => e.stopPropagation()}

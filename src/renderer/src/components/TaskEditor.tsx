@@ -135,7 +135,14 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
         <div className="modal__body">
           <label className="form-row">
             <span>标题</span>
-            <input className="field" value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
+            {/* vt-task-title：共享元素过渡（试点）的落点 —— 打开编辑器时，任务行标题
+                会「长成」这个输入框（见 TasksPage 的 openEditorWithTransition 与 tasks.css） */}
+            <input
+              className="field vt-task-title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              autoFocus
+            />
           </label>
 
           <div className="form-grid form-grid--task">

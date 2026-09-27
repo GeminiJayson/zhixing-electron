@@ -172,11 +172,47 @@ export function applyMotion(
  * 此前 font_size+1.5 / task_row_height+10 的补偿偏移已取消（会与设置页 SpinBox、
  * 与共用 settings 表的显示值不一致）。
  */
+/** 上一次应用过的「主题身份」：只有它变了才播主题切换过渡。 */
+let lastThemeKey: string | null = null
+let themeTimer: number | null = null
+
+/**
+ * 主题切换的颜色过渡窗口。
+ *
+ * 为什么不做成常驻 transition：常驻的全局颜色过渡会让滚动、输入与虚拟列表的每一帧
+ * 都多算一遍过渡，而主题切换是低频操作 —— 只在切换后的这几百毫秒里开启。
+ * 动效档位不是 full 时直接跳过：那种情况下切主题应当是瞬时的。
+ */
+function beginThemeTransition(root: HTMLElement): void {
+  if (typeof window === 'undefined' || !('classList' in root)) return
+  if (root.dataset.motion === 'reduced' || root.dataset.motion === 'none') return
+  // 读**行内**的 --dur-normal（applyMotion 用 setProperty 写在 root.style 上），
+  // 而不是 window.getComputedStyle(root)：后者会强制一次全量样式重算，
+  // 而 applyAppearance 是在首屏（CSS 刚解析完、元素还没完成布局）被调用的 ——
+  // 实测这一步足以把渲染主线程按死：CDP 的 Runtime.evaluate 直接超时、界面白屏，
+  // 而主进程与渲染进程都不报任何错。行内读取不触发重算，语义仍是「跟随令牌」。
+  const raw = root.style.getPropertyValue('--dur-normal').trim()
+  const parsed = Number.parseFloat(raw)
+  // 读不到就按 250ms（--dur-normal 的档位值）兜底：过渡窗口宁可略长，
+  // 短于 CSS 那条过渡会让颜色在切换中途被硬切
+  const ms = Number.isFinite(parsed) ? (raw.endsWith('ms') ? parsed : parsed * 1000) : 250
+  root.classList.add('theme-transition')
+  if (themeTimer !== null) window.clearTimeout(themeTimer)
+  themeTimer = window.setTimeout(() => {
+    root.classList.remove('theme-transition')
+    themeTimer = null
+  }, ms + 20)
+}
+
 export function applyAppearance(
   s: AppSettings,
   root: HTMLElement = document.documentElement
 ): void {
   const mode = resolveThemeMode(s.theme_mode)
+  // 主题身份变了才播过渡：改字号 / 行高 / 控件高度不该触发它
+  const themeKey = [mode, s.theme_pack, s.accent_color, s.theme_custom_light, s.theme_custom_dark].join('|')
+  if (lastThemeKey !== null && lastThemeKey !== themeKey) beginThemeTransition(root)
+  lastThemeKey = themeKey
   applyTheme(
     mode,
     s.theme_pack,
@@ -189,6 +225,9 @@ export function applyAppearance(
   root.style.setProperty('--row-h', `${s.task_row_height}px`)
   // control_height 的消费点：tokens.css 的 --control-h（任务行内控件等按它撑高）
   root.style.setProperty('--control-h', `${s.control_height}px`)
+  // 玻璃拟态：只在关闭时写 off（开启时清掉属性，与 tokens.css 的默认值一致）
+  if (s.glass_enabled) delete root.dataset.glass
+  else root.dataset.glass = 'off'
   applyMotion(s.motion_level, root)
   // 切主题后强制刷新一次合成：Chromium 在没有新合成层时会复用上一帧，表现为侧边残留旧内容。
   // 用 transform 短暂建一个新层、下一帧撤掉 —— 比改窗口尺寸温和。单测跑在 node 环境里没有 rAF，故带守卫。

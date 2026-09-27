@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light" data-motion="full">
+<head>
+<meta charset="utf-8" />
+<title>知行 · 动效与视觉升级对照演示</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg-canvas: #f3f3f3;
+    --bg-layer: #ffffff;
+    --bg-hover: #f5f5f5;
+    --fg-primary: #1a1a1a;
+    --fg-secondary: #6b6b6b;
+    --fg-tertiary: #9a9a9a;
+    --fg-on-accent: #ffffff;
+    --accent: #0d9488;
+    --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+    --accent-solid: color-mix(in srgb, var(--accent) 88%, #000);
+    --accent-text: #0a6f66;
+    --danger: #dc2626;
+    --success: #16a34a;
+    --border: rgb(0 0 0 / 9%);
+    --border-strong: rgb(0 0 0 / 18%);
+    --edge-light: inset 0 1px 0 rgb(255 255 255 / 55%);
+    --radius-sm: 4px; --radius-ctl: 6px; --radius-md: 8px; --radius-lg: 12px; --radius-xl: 16px;
+    --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px;
+    --shadow-sm: 0 1px 3px rgb(0 0 0 / 12%);
+    --shadow-md: 0 8px 24px rgb(0 0 0 / 20%);
+    --shadow-lg: 0 12px 32px rgb(0 0 0 / 24%);
+    --overlay: rgb(0 0 0 / 32%);
+    --dur-instant: 100ms; --dur-fast: 150ms; --dur-strike: 200ms; --dur-page: 200ms;
+    --dur-normal: 250ms; --dur-panel: 280ms; --dur-slow: 400ms;
+    --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-exit: cubic-bezier(0.55, 0, 1, 0.45);
+    --ease-panel: cubic-bezier(0.19, 1, 0.22, 1);
+    --ease-page: cubic-bezier(0.45, 0, 0.55, 1);
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  }
+  html[data-theme='dark'] {
+    color-scheme: dark;
+    --bg-canvas: #1f1f1f; --bg-layer: #2b2b2b; --bg-hover: #383838;
+    --fg-primary: #f2f2f2; --fg-secondary: #a0a0a0; --fg-tertiary: #7a7a7a;
+    --border: rgb(255 255 255 / 10%); --border-strong: rgb(255 255 255 / 22%);
+    --edge-light: inset 0 1px 0 rgb(255 255 255 / 5%);
+    --accent-text: #5eead4;
+    --shadow-sm: 0 1px 3px rgb(0 0 0 / 28%);
+    --shadow-md: 0 8px 24px rgb(0 0 0 / 44%);
+    --shadow-lg: 0 12px 32px rgb(0 0 0 / 50%);
+    --overlay: rgb(0 0 0 / 55%);
+  }
+  html[data-motion='none'] {
+    --dur-instant: 0ms; --dur-fast: 0ms; --dur-strike: 0ms; --dur-page: 0ms;
+    --dur-normal: 0ms; --dur-panel: 0ms; --dur-slow: 0ms;
+  }
+  * , *::before, *::after { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg-canvas);
+    color: var(--fg-primary);
+    font-family: "PingFang SC", "Microsoft YaHei UI", "HarmonyOS Sans", "Noto Sans CJK SC", system-ui, sans-serif;
+    font-size: 13.5px;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; border: none; background: none; cursor: pointer; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 40px 32px 96px; }
+
+  header.top { display: flex; flex-direction: column; gap: 16px; margin-bottom: 48px; }
+  .title-row { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+  h1 { margin: 0; font-size: clamp(1.6rem, 2.6vw, 2.3rem); font-weight: 600; letter-spacing: -0.01em; }
+  .sub { margin: 0; color: var(--fg-secondary); max-width: 62ch; line-height: 1.75; }
+  .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .seg { display: inline-flex; padding: 2px; gap: 2px; background: var(--bg-layer); border: 1px solid var(--border); border-radius: var(--radius-ctl); box-shadow: var(--edge-light); }
+  .seg button { padding: 5px 12px; border-radius: 4px; color: var(--fg-secondary); font-size: 12px; }
+  .seg button[aria-pressed='true'] { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+  .ghost { padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--radius-ctl); background: var(--bg-layer); box-shadow: var(--edge-light); font-size: 12px; }
+  .ghost:hover { background: var(--bg-hover); }
+
+  section.card {
+    background: var(--bg-layer);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--edge-light);
+    padding: 24px;
+    margin-bottom: 28px;
+  }
+  .card > h2 { margin: 0 0 6px; font-size: 15px; font-weight: 600; }
+  .card > p.why { margin: 0 0 20px; color: var(--fg-secondary); line-height: 1.75; max-width: 74ch; }
+  .tag { display: inline-block; min-width: 18px; height: 18px; padding: 0 6px; margin-right: 8px;
+         border-radius: 999px; background: var(--accent-soft); color: var(--accent-text);
+         font-size: 11px; line-height: 18px; text-align: center; font-weight: 600; vertical-align: 1px; }
+  .cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .col { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 16px; min-width: 0; }
+  .col > h3 { margin: 0 0 12px; font-size: 12px; font-weight: 600; color: var(--fg-secondary); letter-spacing: .04em; }
+  .col.now { background: color-mix(in srgb, var(--fg-tertiary) 5%, transparent); }
+  .col.fix { background: color-mix(in srgb, var(--accent) 5%, transparent); border-color: color-mix(in srgb, var(--accent) 28%, transparent); }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .stack { display: flex; flex-direction: column; gap: 6px; }
+  .hint { color: var(--fg-tertiary); font-size: 12px; line-height: 1.7; margin: 12px 0 0; }
+
+  /* ---- 演示 1：失效令牌 ---- */
+  .bar { position: relative; height: 6px; border-radius: 999px; background: var(--bg-hover); overflow: hidden; }
+  .bar > i { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--accent); border-radius: 999px; }
+  .bar.broken > i { transition: width var(--dur-normal) var(--ease-standard-undefined); }
+  .bar.fixed  > i { transition: width var(--dur-normal) var(--ease-standard); }
+  .bar.on > i { width: 72%; }
+
+  /* ---- 演示 2：完成态 ---- */
+  .task { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; border-radius: var(--radius-ctl); }
+  .task:hover { background: var(--bg-hover); }
+  .check { position: relative; flex: 0 0 18px; width: 18px; height: 18px; border: 2px solid var(--border-strong);
+           border-radius: 999px; background: transparent; }
+  .check::after { content: ''; position: absolute; left: 3.5px; top: 4.5px; width: 7px; height: 4px;
+                  border-left: 2px solid var(--fg-on-accent); border-bottom: 2px solid var(--fg-on-accent);
+                  transform: rotate(-45deg) scaleX(0); transform-origin: left center; opacity: 0; }
+  .task .label { position: relative; flex: 1; min-width: 0; }
+  .task.done-fast .check { background: var(--accent); border-color: var(--accent); }
+  .task.done-fast .check::after { transform: rotate(-45deg) scaleX(1); opacity: 1; }
+  .task.done-fast .label { color: var(--fg-tertiary); text-decoration: line-through; }
+  .task.done-anim .check { background: var(--accent); border-color: var(--accent);
+                           animation: check-pop var(--dur-strike) var(--ease-spring); }
+  .task.done-anim .check::after { transform: rotate(-45deg) scaleX(1); opacity: 1;
+                                  transition: transform var(--dur-strike) var(--ease-enter) 40ms, opacity 1ms linear 40ms; }
+  .task.done-anim .label { color: var(--fg-tertiary); transition: color var(--dur-normal) var(--ease-enter); }
+  .task.done-anim .label::after { content: ''; position: absolute; left: 0; right: 0; top: 52%; height: 1px;
+                                  background: currentColor; transform: scaleX(1); transform-origin: left center;
+                                  transition: transform var(--dur-strike) var(--ease-enter); }
+  @keyframes check-pop { from { transform: scale(.82); } }
+  .task .label::after { transform: scaleX(0); }
+
+  /* ---- 演示 3：列表进场 ---- */
+  .list { display: flex; flex-direction: column; gap: 4px; min-height: 132px; }
+  .listitem { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 10px;
+              border: 1px solid var(--border); border-radius: var(--radius-ctl); background: var(--bg-layer); }
+  .enter-anim { animation: row-enter var(--dur-normal) var(--ease-enter) both; animation-delay: calc(var(--i, 0) * 20ms); }
+  @keyframes row-enter { from { opacity: 0; transform: translateY(-4px); } }
+
+  /* ---- 演示 4/5：浮层 ---- */
+  .stage { position: relative; height: 210px; border: 1px dashed var(--border); border-radius: var(--radius-md); overflow: hidden; }
+  .popmenu { position: absolute; min-width: 168px; padding: 4px; background: var(--bg-layer);
+             border: 1px solid var(--border-strong); border-radius: var(--radius-lg);
+             box-shadow: var(--shadow-md); }
+  .popmenu button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 0 12px;
+                    border-radius: var(--radius-ctl); text-align: left; font-size: 12.5px; }
+  .popmenu button:hover { background: var(--bg-hover); }
+  .popmenu.anim { animation: pop-in var(--dur-fast) var(--ease-enter); }
+  @keyframes pop-in { from { opacity: 0; transform: scale(.96) translateY(-4px); } }
+  .mask { position: absolute; inset: 0; display: grid; place-items: center; background: var(--overlay); }
+  .mask.anim { animation: fade-in var(--dur-fast) var(--ease-enter); }
+  .mask.leaving { animation: fade-out var(--dur-fast) var(--ease-exit) forwards; }
+  @keyframes fade-in { from { opacity: 0; } }
+  @keyframes fade-out { to { opacity: 0; } }
+  .dialog { width: min(280px, 80%); padding: 16px; background: var(--bg-layer); border: 1px solid var(--border);
+            border-radius: var(--radius-xl); box-shadow: var(--shadow-lg); }
+  .dialog.anim { animation: dialog-in var(--dur-normal) var(--ease-enter); }
+  .mask.leaving .dialog { animation: dialog-out var(--dur-fast) var(--ease-exit) forwards; }
+  @keyframes dialog-in { from { opacity: 0; transform: scale(.985) translateY(6px); } }
+  @keyframes dialog-out { to { opacity: 0; transform: scale(.99) translateY(4px); } }
+
+  /* ---- 演示 6：Toast ---- */
+  .toastwrap { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
+               display: flex; flex-direction: column; gap: 6px; align-items: center; }
+  .toast { position: relative; min-width: 180px; padding: 8px 16px; overflow: hidden;
+           border-radius: var(--radius-lg); background: var(--accent-solid); color: var(--fg-on-accent);
+           box-shadow: var(--shadow-md); font-size: 12.5px; text-align: center; }
+  .toast.anim { animation: toast-in var(--dur-fast) var(--ease-enter); }
+  .toast.leaving { animation: toast-out var(--dur-normal) var(--ease-exit) forwards; }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
+  @keyframes toast-out { to { opacity: 0; transform: translateY(10px); } }
+  .toast > span.life { position: absolute; left: 0; bottom: 0; height: 2px; width: 100%;
+                       background: color-mix(in srgb, var(--fg-on-accent) 60%, transparent);
+                       transform-origin: left center; }
+  .toast.anim > span.life { animation: life 2600ms linear forwards; }
+  @keyframes life { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+  /* ---- 演示 7：导航指示条 ---- */
+  .navbox { position: relative; width: 200px; padding: 8px 4px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-layer); }
+  .navitem { position: relative; display: flex; align-items: center; height: 36px; padding: 0 12px; border-radius: var(--radius-ctl);
+             color: var(--fg-secondary); width: 100%; text-align: left; z-index: 1; }
+  .navitem[aria-current='true'] { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+  .navitem:hover { background: var(--bg-hover); }
+  .indicator { position: absolute; left: 4px; top: 8px; width: 3px; height: 18px; border-radius: 999px; background: var(--accent); z-index: 2; }
+  .indicator.anim { transition: transform var(--dur-normal) var(--ease-panel); }
+  .navbox.flash .indicator { display: none; }
+
+  /* ---- 演示 8：卡片物理 ---- */
+  .cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .statcard { padding: 16px; background: var(--bg-layer); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+  .statcard .v { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .statcard .l { color: var(--fg-secondary); font-size: 12px; }
+  .statcard.now:hover { border-color: var(--border-strong); transform: translateY(-1px); }
+  .statcard.now { transition: border-color var(--dur-instant), transform var(--dur-instant); }
+  .statcard.fix { box-shadow: var(--edge-light); transition: transform var(--dur-fast) var(--ease-enter), box-shadow var(--dur-fast) var(--ease-enter); }
+  .statcard.fix:hover { transform: translateY(-2px); box-shadow: var(--edge-light), var(--shadow-md); }
+  .glow { background:
+      radial-gradient(420px 160px at 20% 0%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 70%),
+      var(--bg-layer); }
+
+  footer.notes { margin-top: 40px; color: var(--fg-secondary); line-height: 1.9; }
+  footer.notes code { font-family: "JetBrains Mono", Consolas, monospace; font-size: 12px;
+                      padding: 1px 5px; border-radius: var(--radius-sm); background: var(--bg-hover); }
+  @media (max-width: 820px) { .cols, .cards { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="title-row">
+      <h1>知行 · 动效与视觉升级对照</h1>
+      <div class="controls">
+        <div class="seg" role="group" aria-label="动效档位">
+          <button data-motion-set="full" aria-pressed="true">完整</button>
+          <button data-motion-set="essential" aria-pressed="false">仅必要</button>
+          <button data-motion-set="none" aria-pressed="false">关闭</button>
+        </div>
+        <div class="seg" role="group" aria-label="主题">
+          <button data-theme-set="light" aria-pressed="true">浅色</button>
+          <button data-theme-set="dark" aria-pressed="false">深色</button>
+        </div>
+        <button class="ghost" id="replay">重播全部</button>
+      </div>
+    </div>
+    <p class="sub">左列是当前实现（现状），右列是方案（修复 / 新增）。全部使用知行自己的设计令牌：
+      <code>--dur-*</code> 与 <code>--ease-*</code>，切换上方档位可以看到动效关闭时的降级行为。</p>
+  </header>
+
+  <section class="card">
+    <h2><span class="tag">A1</span>失效令牌：一条声明静默死掉</h2>
+    <p class="why">现状 <code>tasks.css:295</code> 与 <code>workflow.css:88</code> 引用的
+      <code>--ease-standard</code> 从未被定义，也没有 fallback —— 整条 <code>transition</code> 在计算值阶段失效，
+      动画根本不跑。左边是"现在"的样子，右边是补上定义之后。</p>
+    <div class="cols">
+      <div class="col now">
+        <h3>现状 · 瞬跳</h3>
+        <div class="stack">
+          <div class="bar broken" id="barNow"><i></i></div>
+          <p class="hint">任务行时间进度条 · <code>transition</code> 被丢弃</p>
+        </div>
+      </div>
+      <div class="col fix">
+        <h3>方案 · 250ms 平滑推进</h3>
+        <div class="stack">
+          <div class="bar fixed" id="barFix"><i></i></div>
+          <p class="hint">定义 <code>--ease-standard: cubic-bezier(0.2,0,0,1)</code></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="tag">B1</span>完成态划线（消费从未使用的 <code>--dur-strike</code>）</h2>
+    <p class="why">现状：勾选后对勾与删除线<b>瞬间</b>出现。方案：勾选圆 0.82→1 弹一下、
+      对勾从左往右画出来、删除线从左划过，色变 250ms 跟进。撤销勾选反向播放。</p>
+    <div class="cols">
+      <div class="col now">
+        <h3>现状 · 瞬时切换</h3>
+        <div class="stack">
+          <div class="task done-fast" id="taskNow">
+            <span class="check"></span><span class="label">把周报发给产品组</span>
+          </div>
+          <p class="hint">对勾与删除线同帧出现，看不出"刚完成"的因果</p>
+        </div>
+      </div>
+      <div class="col fix">
+        <h3>方案 · 200ms 划线 + 弹簧勾选</h3>
+        <div class="stack">
+          <div class="task" id="taskFix">
+            <span class="check"></span><span class="label">把周报发给产品组</span>
+          </div>
+          <p class="hint">勾选 → 划线；再点一次 → 反向撤销</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="tag">B2</span>列表行进场：只给"刚产生的行"播放</h2>
+    <p class="why">现状：新增行直接出现。方案：淡入 + 上移 4px，同批最多 8 行按 20ms 依次入场
+      （总延迟 ≤ 160ms）。<b>虚拟列表滚动进入视口的行一律不播</b>，否则每次滚动都在闪。</p>
+    <div class="cols">
+      <div class="col now">
+        <h3>现状 · 直接出现</h3>
+        <div class="list" id="listNow"></div>
+        <p class="hint"><button class="ghost" data-add="now">添加一行</button></p>
+      </div>
+      <div class="col fix">
+        <h3>方案 · 交错入场</h3>
+        <div class="list" id="listFix"></div>
+        <p class="hint"><button class="ghost" data-add="fix">添加一行</button></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="tag">B3</span>弹出菜单：从触发点长出来</h2>
+    <p class="why">现状：菜单原地出现，而且 <code>PopMenu.tsx</code> 在 <code>useEffect</code> 里才写坐标，
+      首帧会闪一下位置。方案：<code>scale(.96)</code> + 上移 4px 从鼠标处展开（150ms），
+      定位改到提交前完成。</p>
+    <div class="cols">
+      <div class="col now">
+        <h3>现状 · 硬出现</h3>
+        <div class="stage" id="stageNow">
+          <p class="hint" style="position:absolute;left:12px;top:12px">点空白处弹出菜单</p>
+        </div>
+      </div>
+      <div class="col fix">
+        <h3>方案 · 150ms 展开</h3>
+        <div class="stage" id="stageFix">
+          <p class="hint" style="position:absolute;left:12px;top:12px">点空白处弹出菜单</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="tag">B3·B4</span>模态进出场（<code>--ease-exit</code> 的第一次落地）</h2>
+    <p class="why">现状：遮罩与面板同帧出现，关闭时直接消失。方案：遮罩 150ms 淡入、面板
+      <code>scale(.985)</code> + 下移 6px 在 250ms 内就位；关闭走退场动画后再卸载 —— 需要一个约 60 行的
+      <code>presence</code> 机制（这是本方案唯一新增的基建）。</p>
+    <div class="cols">
+      <div class="col now">
+        <h3>现状 · 出现即结束</h3>
+        <div class="stage" id="modalNow">
+          <p class="hint" style="position:absolute;left:12px;top:12px">点空白处打开</p>
+        </div>
+      </div>
+      <div class="col fix">
+        <h3>方案 · 进 + 出都有</h3>
+        <div class="stage" id="modalFix">
+          <p class="hint" style="position:absolute;left:12px;top:12px">点空白处打开</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="tag">B5</span>Toast 生命周期：看得见还剩多久</h2>
+    <p class="why">现状：出现 2.6s 后消失，没有退场。方案：停留期底部进度线随 2600ms 走完，
+      退场 250ms 下沉淡出（<code>--ease-exit</code>），多条从下往上堆叠。</p>
+    <div class="cols">
+      <div class="col now">
+        <h3>现状 · 到点消失</h3>
+        <div class="stage" id="toastNow">
+          <p class="hint" style="position:absolute;left:12px;top:12px">点空白处显示提示</p>
+        </div>
+      </div>
+      <div class="col fix">
+        <h3>方案 · 进度线 + 退场</h3>
+        <div class="stage" id="toastFix">
+          <p class="hint" style="position:absolute;left:12px;top:12px">点空白处显示提示（可连点）</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="tag">B8</span>侧栏选中指示条：跨项滑动</h2>
+    <p class="why">现状：<code>.nav-item--active::before</code> 指示条随选中项瞬间跳位。方案：指示条成为一个独立元素，
+      用 <code>--dur-normal</code> + <code>--ease-panel</code> 平滑滑过去（首次渲染不播）。</p>
+    <div class="cols">
+      <div class="col now">
+        <h3>现状 · 瞬时跳位</h3>
+        <div class="navbox flash" id="navNow"></div>
+      </div>
+      <div class="col fix">
+        <h3>方案 · 250ms 滑行</h3>
+        <div class="navbox" id="navFix"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card glow">
+    <h2><span class="tag">C1·C2</span>卡片物理与氛围光</h2>
+    <p class="why">现状：悬停只变边框 + 位移 1px，没有阴影进阶、没有内高光。
+      方案：悬停抬升 2px 且阴影 <code>--shadow-sm → --shadow-md</code>，容器加一层
+      <code>--edge-light</code> 内高光；重点区块背后加一层 7% 的强调色径向氛围光
+      （用 <code>color-mix(var(--accent))</code>，14 套主题包 × 8 色强调色自动适配）。</p>
+    <div class="cols">
+      <div class="col now">
+        <h3>现状 · 悬停试试</h3>
+        <div class="cards">
+          <div class="statcard now"><div class="v">2</div><div class="l">今日待办</div></div>
+          <div class="statcard now"><div class="v">0</div><div class="l">已逾期</div></div>
+        </div>
+      </div>
+      <div class="col fix">
+        <h3>方案 · 悬停试试</h3>
+        <div class="cards">
+          <div class="statcard fix"><div class="v">2</div><div class="l">今日待办</div></div>
+          <div class="statcard fix"><div class="v">0</div><div class="l">已逾期</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="notes">
+    <p><b>怎么读这份演示</b>：左列是现状，右列是方案。切到「关闭」档，右列的所有动效都会变成直接切换 ——
+      这正是 <code>tokens.css</code> 的令牌归零与 <code>theme.ts</code> 的 <code>resolveMotionState()</code> 保证的降级口径。</p>
+    <p>完整方案（含风险、验证命令、分期与 6 个待拍板问题）见
+      <code>docs/motion-visual-upgrade-plan.md</code>。本页面只是方案的视觉说明，未改动任何源码。</p>
+  </footer>
+</div>
+
+<script>
+  (function () {
+    var root = document.documentElement;
+    var DUR = { full: { instant: 100, fast: 150, strike: 200, page: 200, normal: 250, panel: 280, slow: 400 },
+                essential: { instant: 80, fast: 100, strike: 80, page: 100, normal: 120, panel: 120, slow: 120 },
+                none: { instant: 0, fast: 0, strike: 0, page: 0, normal: 0, panel: 0, slow: 0 } };
+    var motion = 'full';
+
+    function applyMotion(level) {
+      motion = level;
+      var d = DUR[level];
+      Object.keys(d).forEach(function (k) { root.style.setProperty('--dur-' + k, d[k] + 'ms'); });
+      root.dataset.motion = level === 'full' ? '' : level;
+      document.querySelectorAll('[data-motion-set]').forEach(function (b) {
+        b.setAttribute('aria-pressed', String(b.dataset.motionSet === level));
+      });
+    }
+
+    document.querySelectorAll('[data-motion-set]').forEach(function (b) {
+      b.addEventListener('click', function () { applyMotion(b.dataset.motionSet); replayAll(); });
+    });
+    document.querySelectorAll('[data-theme-set]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        root.dataset.theme = b.dataset.themeSet;
+        document.querySelectorAll('[data-theme-set]').forEach(function (x) {
+          x.setAttribute('aria-pressed', String(x.dataset.themeSet === b.dataset.themeSet));
+        });
+      });
+    });
+
+    /* 演示 1：进度条 */
+    function bars() {
+      var n = document.getElementById('barNow'), f = document.getElementById('barFix');
+      n.classList.remove('on'); f.classList.remove('on');
+      void n.offsetWidth; void f.offsetWidth;
+      requestAnimationFrame(function () { n.classList.add('on'); f.classList.add('on'); });
+    }
+
+    /* 演示 2：完成态 */
+    var taskFix = document.getElementById('taskFix');
+    taskFix.addEventListener('click', function () {
+      if (taskFix.classList.contains('done-anim')) {
+        taskFix.classList.remove('done-anim');
+        taskFix.classList.add('undone');
+      } else {
+        taskFix.classList.remove('undone');
+        taskFix.classList.add('done-anim');
+      }
+      if (motion === 'none') taskFix.classList.remove('done-anim', 'undone');
+    });
+    var taskNow = document.getElementById('taskNow');
+    taskNow.addEventListener('click', function () { taskNow.classList.toggle('done-fast'); });
+
+    /* 演示 3：列表进场 */
+    var counters = { now: 0, fix: 0 };
+    function addRow(which) {
+      var host = document.getElementById(which === 'now' ? 'listNow' : 'listFix');
+      if (host.childElementCount >= 4) host.innerHTML = '';
+      counters[which] += 1;
+      var el = document.createElement('div');
+      el.className = 'listitem' + (which === 'fix' ? ' enter-anim' : '');
+      el.style.setProperty('--i', String(host.childElementCount));
+      el.textContent = '新任务 ' + counters[which];
+      host.appendChild(el);
+      if (which === 'fix' && motion !== 'full') el.classList.remove('enter-anim');
+    }
+    document.querySelectorAll('[data-add]').forEach(function (b) {
+      b.addEventListener('click', function () { addRow(b.dataset.add); });
+    });
+
+    /* 演示 4：弹出菜单 */
+    function bindPop(stageId, animated) {
+      var stage = document.getElementById(stageId);
+      stage.addEventListener('click', function (e) {
+        if (e.target.closest('.popmenu')) return;
+        var old = stage.querySelector('.popmenu'); if (old) old.remove();
+        var m = document.createElement('div');
+        m.className = 'popmenu' + (animated && motion !== 'none' ? ' anim' : '');
+        var rect = stage.getBoundingClientRect();
+        var x = Math.min(e.clientX - rect.left, rect.width - 180);
+        var y = Math.min(e.clientY - rect.top, rect.height - 120);
+        m.style.left = Math.max(8, x) + 'px';
+        m.style.top = Math.max(8, y) + 'px';
+        if (animated) m.style.transformOrigin = 'top left';
+        ['今天', '明天', '下周一', '设为紧急'].forEach(function (t) {
+          var b = document.createElement('button'); b.textContent = t; m.appendChild(b);
+        });
+        stage.appendChild(m);
+      });
+    }
+    bindPop('stageNow', false);
+    bindPop('stageFix', true);
+
+    /* 演示 5：模态 */
+    function bindModal(stageId, animated) {
+      var stage = document.getElementById(stageId);
+      function close() {
+        var mask = stage.querySelector('.mask'); if (!mask) return;
+        if (animated && motion !== 'none') {
+          mask.classList.add('leaving');
+          setTimeout(function () { mask.remove(); }, 200);
+        } else { mask.remove(); }
+      }
+      stage.addEventListener('click', function (e) {
+        if (e.target.classList.contains('mask') || e.target.classList.contains('dlg-close')) { close(); return; }
+        if (stage.querySelector('.mask')) return;
+        var mask = document.createElement('div');
+        mask.className = 'mask' + (animated && motion !== 'none' ? ' anim' : '');
+        var dlg = document.createElement('div');
+        dlg.className = 'dialog' + (animated && motion !== 'none' ? ' anim' : '');
+        dlg.innerHTML = '<div style="font-weight:600;margin-bottom:8px">删除这篇笔记？</div>' +
+          '<div style="color:var(--fg-secondary);line-height:1.7;margin-bottom:14px">笔记会进入回收站，可以恢复。</div>' +
+          '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+          '<button class="ghost dlg-close">取消</button>' +
+          '<button class="ghost dlg-close" style="border-color:var(--danger);color:var(--danger)">删除</button></div>';
+        mask.appendChild(dlg); stage.appendChild(mask);
+      });
+    }
+    bindModal('modalNow', false);
+    bindModal('modalFix', true);
+
+    /* 演示 6：Toast */
+    function bindToast(stageId, animated) {
+      var stage = document.getElementById(stageId);
+      var wrap = document.createElement('div');
+      wrap.className = 'toastwrap';
+      stage.appendChild(wrap);
+      stage.addEventListener('click', function () {
+        var t = document.createElement('div');
+        t.className = 'toast' + (animated && motion !== 'none' ? ' anim' : '');
+        t.innerHTML = '<span class="life"></span>已保存到「我的笔记」';
+        wrap.appendChild(t);
+        var hold = animated ? 2600 : 2600;
+        setTimeout(function () {
+          if (animated && motion !== 'none') {
+            t.classList.add('leaving');
+            setTimeout(function () { t.remove(); }, 260);
+          } else { t.remove(); }
+        }, hold);
+      });
+    }
+    bindToast('toastNow', false);
+    bindToast('toastFix', true);
+
+    /* 演示 7：导航指示条 */
+    var NAV = ['今日', '任务', '收件箱', '笔记', '工作流', '图谱', '回顾'];
+    function buildNav(id, animated) {
+      var box = document.getElementById(id);
+      var ind = document.createElement('span'); ind.className = 'indicator' + (animated ? ' anim' : '');
+      box.appendChild(ind);
+      var first = null;
+      NAV.forEach(function (name, i) {
+        var b = document.createElement('button');
+        b.className = 'navitem'; b.textContent = name;
+        b.setAttribute('aria-current', i === 0 ? 'true' : 'false');
+        b.addEventListener('click', function () {
+          box.querySelectorAll('.navitem').forEach(function (o) { o.setAttribute('aria-current', 'false'); });
+          b.setAttribute('aria-current', 'true');
+          moveIndicator();
+        });
+        box.appendChild(b);
+        if (i === 0) first = b;
+      });
+      function moveIndicator() {
+        var cur = box.querySelector('.navitem[aria-current="true"]');
+        if (!cur) return;
+        if (animated && motion !== 'none') ind.classList.add('anim');
+        else ind.classList.remove('anim');
+        ind.style.transform = 'translateY(' + (cur.offsetTop + (cur.offsetHeight - 18) / 2 - 8) + 'px)';
+      }
+      requestAnimationFrame(function () { ind.classList.remove('anim'); moveIndicator(); requestAnimationFrame(moveIndicator); });
+      window.addEventListener('resize', moveIndicator);
+    }
+    buildNav('navNow', false);
+    buildNav('navFix', true);
+
+    function replayAll() {
+      bars();
+      taskFix.classList.remove('done-anim', 'undone');
+      taskNow.classList.remove('done-fast');
+      document.getElementById('listNow').innerHTML = '';
+      document.getElementById('listFix').innerHTML = '';
+      ['stageNow', 'stageFix', 'modalNow', 'modalFix'].forEach(function (id) {
+        var s = document.getElementById(id);
+        s.querySelectorAll('.popmenu, .mask').forEach(function (n) { n.remove(); });
+      });
+    }
+    document.getElementById('replay').addEventListener('click', replayAll);
+
+    applyMotion('full');
+    setTimeout(bars, 260);
+  })();
+</script>
+</body>
+</html>

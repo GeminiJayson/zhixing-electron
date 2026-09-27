@@ -6,12 +6,12 @@ import { applyAppearance, applyMotion, resolveThemeMode } from './theme'
 import { CommandPalette } from './components/CommandPalette'
 import { DialogProvider } from './components/Dialogs'
 import { FloatingDock } from './components/FloatingDock'
-import { PomodoroBar } from './components/PomodoroBar'
 import { ReminderPopup } from './components/ReminderPopup'
 import { Sidebar } from './components/Sidebar'
 import { TitleBar } from './components/TitleBar'
 import { Toast } from './components/Toast'
 import { NAV_ITEMS, type PageKey } from './nav'
+import { usePresence } from './lib/presence'
 import { GraphPage } from './pages/GraphPage'
 import { InboxPage } from './pages/InboxPage'
 import { NotesPage } from './pages/NotesPage'
@@ -32,10 +32,14 @@ import './styles/review.css'
 import './styles/settings.css'
 
 const THEME_KEY = 'zhixing.theme'
+/** 提示停留时长：Toast 的进度线与 App 的自动关闭定时器共用这一个数 */
+const TOAST_STAY_MS = 2600
 type Theme = 'light' | 'dark'
 
 export default function App() {
   const [page, setPage] = useState<PageKey>('today')
+  /** 页面切换方向：决定新页面从右侧（前进）还是左侧（返回）进场 */
+  const [dir, setDir] = useState<'forward' | 'back'>('forward')
   const [collapsed, setCollapsed] = useState(false)
   const [overview, setOverview] = useState<Overview | null>(null)
   const [toast, setToast] = useState<string | null>(null)
@@ -58,7 +62,6 @@ export default function App() {
    */
   const [zen, setZen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
-  const [pomo, setPomo] = useState({ focus: 25, break: 5, autoBreak: true })
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem(THEME_KEY)
     return saved === 'light' || saved === 'dark' ? saved : 'dark'
@@ -94,12 +97,7 @@ export default function App() {
 
   useEffect(() => {
     void (async () => {
-      const s = await loadAppearance()
-      setPomo({
-        focus: s.pomodoro_focus_min,
-        break: s.pomodoro_break_min,
-        autoBreak: s.pomodoro_auto_break,
-      })
+      await loadAppearance()
       // 读一次数据库状态。迁移失败（只读）或完全打不开时给主区顶部横幅取数；
       // 这里不能抛 —— 取不到信息也照样要放主窗出来，否则用户只会看到一个空白界面。
       try {
@@ -165,9 +163,12 @@ export default function App() {
     setThemeMode(theme === 'dark' ? 'light' : 'dark')
   }, [theme, setThemeMode])
 
-  // 记录页面切换历史（Ctrl+Tab 用）
+  // 记录页面切换历史（Ctrl+Tab 用）+ 判定切换方向（新页面从哪一侧进场）
   useEffect(() => {
     if (lastPage.current !== page) {
+      const from = NAV_ITEMS.findIndex((i) => i.key === lastPage.current)
+      const to = NAV_ITEMS.findIndex((i) => i.key === page)
+      if (from >= 0 && to >= 0 && from !== to) setDir(to > from ? 'forward' : 'back')
       prevPage.current = lastPage.current
       lastPage.current = page
     }
@@ -184,16 +185,11 @@ export default function App() {
   // 把主进程的写入通知接进订阅表：只调一次
   useEffect(() => {
     bindHostEvents(window.zhixing.db)
-    // 设置页换主题包/强调色/字号后，主窗口跟着重铺（浮窗各自订阅同一份广播）；
-    // 番茄钟时长与「专注结束自动休息」也随同一份广播刷新，否则改完要重启才生效
+    // 设置页换主题包/强调色/字号后，主窗口跟着重铺（浮窗各自订阅同一份广播）。
+    // 番茄钟时长与「专注结束自动休息」不在这里跟 —— 那个小窗每次被打开都会重读设置
+    // （见 PomodoroWindowApp 的挂载 effect），所以改完下一次发起就是新值。
     return subscribeDomain(['settings'], () => {
-      void loadAppearance().then((s) => {
-        setPomo({
-          focus: s.pomodoro_focus_min,
-          break: s.pomodoro_break_min,
-          autoBreak: s.pomodoro_auto_break,
-        })
-      })
+      void loadAppearance()
     })
   }, [loadAppearance])
 
@@ -475,8 +471,15 @@ export default function App() {
 
   const showToast = useCallback((message: string) => {
     setToast(message)
-    window.setTimeout(() => setToast((t) => (t === message ? null : t)), 2600)
+    window.setTimeout(() => setToast((t) => (t === message ? null : t)), TOAST_STAY_MS)
   }, [])
+
+  // 底部撤销条：条件渲染 → 带退场的渲染。退场窗口里 undoBar 已经是 null，
+  // 所以留一份最后的值，否则文字会先消失、再淡出。
+  const { mounted: undoMounted, leaving: undoLeaving } = usePresence(undoBar !== null, 150)
+  const lastUndoRef = useRef(undoBar)
+  if (undoBar) lastUndoRef.current = undoBar
+  const undoView = undoBar ?? lastUndoRef.current
 
   const current = useMemo(() => NAV_ITEMS.find((i) => i.key === page) ?? NAV_ITEMS[0], [page])
 
@@ -507,7 +510,7 @@ export default function App() {
           onSelect={setPage}
           onToggleCollapse={() => setCollapsed((c) => !c)}
         />
-        <main className="app__content">
+        <main className={`app__content app__content--${dir}`}>
           {page === 'today' ? (
             <TodayPage
               overview={overview}
@@ -553,12 +556,9 @@ export default function App() {
           />
         </main>
       </div>
-      <PomodoroBar
-        focusMinutes={pomo.focus}
-        breakMinutes={pomo.break}
-        autoBreak={pomo.autoBreak}
-        onNotice={showToast}
-      />
+      {/* 番茄钟从「右下角浮条」改成了独立小窗（2026-09-27）：
+          它与主窗口的生命周期不同 —— 主窗口收进托盘/浮窗时专注还该继续。
+          发起入口（任务行 / 命令面板 / 浮窗）统一走 window.zhixing.pomodoro.open()。 */}
       <ReminderPopup onOpenTask={openTaskInList} onChanged={refreshOverview} />
 
       <CommandPalette
@@ -574,9 +574,9 @@ export default function App() {
         onNotice={showToast}
       />
 
-      {undoBar && (
-        <div className="infobar" role="status">
-          <span>{undoBar.label}</span>
+      {undoMounted && undoView && (
+        <div className={'infobar' + (undoLeaving ? ' is-leaving' : '')} role="status">
+          <span>{undoView.label}</span>
           <button className="text-btn" onClick={() => void undoLast()}>
             撤销
           </button>

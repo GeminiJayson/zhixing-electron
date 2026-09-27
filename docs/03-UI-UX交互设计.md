@@ -71,6 +71,9 @@
 - **强调色与主题包正交**（`theme.ts:37-40`）：换包不动用户选的强调色；设置页提供 8 色（`SettingsPage.tsx:19`）。
 - 默认主题包是**青竹**（`src/shared/settings.ts:75`、`:117`）；`theme-packs.ts:91` 的 `DEFAULT_THEME_PACK = '墨黑'` 只在包名**无法解析**时兜底（`resolveThemePack`，`:93-95`），两者不冲突。
 - 主题包 token → CSS 变量的映射集中在 `TOKEN_VARS`（`theme.ts:19-35`），新增主题包只需加数据、不必改代码。
+- **玻璃拟态**（2026-09-27，实验档）是独立于主题包的开关（设置项 `glass_enabled`，默认开）：
+  它只决定"底色怎么画"（半透明 + 背景模糊），不改任何语义色，因此与 14 套包、8 色强调色、明暗全部正交。
+  关掉即 `html[data-glass='off']` → `--glass-filter: none`（见 §2.10 与 §11.2）。
 
 ### 2.3 对比度运行时校正（WCAG 2.1）
 
@@ -104,7 +107,11 @@
 
 ### 2.5 间距：4px 节奏
 
-`--space-1: 4px` / `2: 8px` / `3: 12px` / `4: 16px` / `5: 24px`（`tokens.css:55-60`）。
+`--space-1: 4px` / `2: 8px` / `3: 12px` / `4: 16px` / `5: 24px` / `6: 32px`（`tokens.css`）。
+
+第 6 档是 2026-09-27 补的：代码里早有 `var(--space-6)`（图片预览浮层）与手写的 `64px`（空态）在表达"整块留白"，
+而令牌当时只到 5 档 —— 前者因为 `var()` 没有 fallback，整条 `padding` 一直在静默失效。
+**常规布局仍然只用 1–5 档**；第 6 档只给「整块留白」（图片预览、空态）用。
 
 ### 2.6 字体与字号（5 档）
 
@@ -158,6 +165,8 @@
 | `--dur-normal` | 250ms | 常规过渡 |
 | `--dur-panel` | 280ms | 面板展开 |
 | `--dur-slow` | 400ms | 大范围 |
+| `--dur-stagger` | 20ms | 列表交错入场：相邻两行之间的启动间隔 |
+| `--dur-tick` | 1s | 数据节拍：番茄钟进度条与「每秒刷新的数据」同步推进。**不参与 `data-motion` 归零**（归零会让它每秒瞬跳），所以它不是 UI 过渡档 |
 
 | 缓动 | 值 | 语义 |
 | --- | --- | --- |
@@ -165,7 +174,14 @@
 | `--ease-exit` | `cubic-bezier(0.55, 0, 1, 0.45)` | InCubic 近似：退出 |
 | `--ease-panel` | `cubic-bezier(0.19, 1, 0.22, 1)` | OutExpo：面板 |
 | `--ease-page` | `cubic-bezier(0.45, 0, 0.55, 1)` | InOutQuad |
-| `--ease-spring` | `cubic-bezier(0.34, 1.56, 0.64, 1)` | 弹性 |
+| `--ease-spring` | `cubic-bezier(0.34, 1.56, 0.64, 1)` | 弹性：勾选、落位（回弹幅度 ≤ 6%） |
+| `--ease-standard` | `cubic-bezier(0.2, 0, 0, 1)` | Standard：双向通用（进度推进、宽度、状态色） |
+
+> **2026-09-27 的收口**：这 7 档时长此前有 3 档是**零引用**（`--dur-slow` / `--dur-strike` / `--dur-panel`），
+> 5 条缓动里有 2 条零引用（`--ease-exit` / `--ease-panel`），而 `--ease-standard` **从未被定义过** ——
+> `tasks.css` 与 `workflow.css` 引用它，`var()` 没有 fallback，于是那两条 `transition` 在计算值阶段
+> 整条失效（任务行时间进度条一直是瞬跳）。现在所有令牌都有消费点，并有一条测试守着
+> （见 §11 的「令牌完整性」）。
 
 ### 2.10 阴影四档与遮罩
 
@@ -177,6 +193,18 @@
 | `--shadow-xl` | `0 24px 64px rgb(0 0 0 / 28%)` | `56%` |
 
 深色模式必须加深（同样的黑色透明度在深底上几乎不可见，`tokens.css:140`）。遮罩见 §2.1 的 `--overlay`。
+
+**内高光 `--edge-light`**（2026-09-27 新增）：贴在容器顶边的 1px 亮线，让"面"从画布上浮起来。
+浅色 `inset 0 1px 0 rgb(255 255 255 / 55%)`，深色必须降到 `5%`（同样的 55% 在深底上是一条刺眼的白边）。
+落在标题栏、内容面板、概览卡、模态、命令面板、信息条上。它与 `--shadow-*` 是两层东西，经常要一起写：
+`box-shadow: var(--edge-light), var(--shadow-md)`。
+
+**玻璃拟态 `--glass-*`**（2026-09-27 新增，实验档）：`--glass-filter`（浮层，blur 20px saturate 160%）、
+`--glass-filter-bar`（吸顶工具栏，blur 10px —— 它面积大得多，模糊必须更轻）、`--glass-bg`、`--glass-border`。
+只给"固定且数量少"的浮层用：标题栏、吸顶工具栏、模态、命令面板、菜单、信息条。
+**列表项与滚动容器一律不准用 `backdrop-filter`** —— 它每帧都要采样背后区域，这条由 §11 的测试守着。
+设置项 `glass_enabled=false` → `html[data-glass='off']` → `--glass-filter` 变成 `none`
+（关键是不再建合成层，而不是把模糊半径调小）；系统 `prefers-reduced-transparency: reduce` 同理。
 
 ---
 
@@ -198,6 +226,19 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 
 ## 3. 布局框架
 
+### 3.0 滚动驱动（2026-09-27）
+
+页面正文（`.page__body`）滚过 24px 后，吸顶工具栏进入"抬起"态（`Toolbar.tsx` 加 `.tb--lifted`）：
+
+| 变化 | 实现 | 为什么这样做 |
+| --- | --- | --- |
+| 工具栏加投影、底色变实 | `box-shadow: var(--shadow-sm)` + `background: color-mix(...)` | 与下方内容之间出现一条"分界"，滚动时不再糊在一起 |
+| 副标题淡出 | `opacity: 0`（**仍占位**） | 真正收起会让标题与工具行重排，滚动中重排必然抖 |
+| 标题收紧 | `transform: scale(0.94)`，`transform-origin: left center` | 用 transform 而不是字号：不动布局 |
+| 标题区下内边距 4px → 0 | `padding-bottom` 过渡 | 唯一的布局变化，且发生在页面顶部，不会推动滚动锚点 |
+
+滚动容器不是 window —— 每个页面的 `.page__body` 才是，所以监听的是**最近的可滚动祖先**。
+判定跨过阈值时只 setState 一次（记 ref），滚动事件本身是 passive 的。
 
 
 - 窗口：无边框（`frame: false`）+ `titleBarStyle: 'hiddenInset'`（`src/main/index.ts:322-338`）；初始 1280×820，最小 1040×640。
@@ -337,6 +378,24 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 
 **降级说明**：浮窗内的优先级（`:106`）、标签（`:107`）、更多操作（`:108`）、编辑（`:122`）只提示「请到主窗口」，删除用原生 `confirm` 且无撤销（`:124`）。边缘缩放未实现（`01` R-S-07）。
 
+### 6.1b 番茄钟（第三个独立小窗，`?pomodoro=1`，2026-09-27）
+
+原先是主窗口右下角的一条浮条。改成独立小窗的理由不是"搬个位置"：
+**它与主窗口的生命周期本来就不同** —— 主窗口关掉只是收进托盘/浮窗，而专注该继续跑，
+浮条会跟着主窗口一起消失。
+
+| 项 | 做法 |
+| --- | --- |
+| 窗口 | 无边框 + 透明 + `alwaysOnTop` + `skipTaskbar`，定位在工作区右下角（`screen.workArea`，多显示器按主显示器算）；高度由既有的 `window:fitHeight` 贴合 |
+| 卡片 | 复用 `.modal / .modal__head / .dialog__icon / .modal__foot` —— 与全局热键的捕获窗、工作流条件确认窗**同一套骨架**，这就是"样式一致"的落点 |
+| 协议 | 与捕获窗一致：主进程推 payload → 渲染层应用完主题发 `ready` → 主进程才显示（1.5s 兜底） |
+| 状态宿主 | 计时 / 暂停 / 中断 / 落库**都在那个窗口里**；主窗口与桌面浮窗只是发起方（`window.zhixing.pomodoro.open({ taskId, title })`） |
+| 中断原因 | 不再叠第二层浮层，在卡片里就地切换 |
+
+> 顺带修掉的既有缺陷：桌面浮窗里的「专注」按钮原来派发的是**本窗口**的 `zhixing:pomodoro` 事件，
+> 而监听者（原 PomodoroBar）在主窗口 —— 那条路径一直是哑的。现在五个入口（任务行 / 今日页 /
+> 收件箱 / 命令面板 / 浮窗）统一走 IPC。原 `components/PomodoroBar.tsx` 与 `app.css` 的 `.pomo*` 段已删除。
+
 ### 6.2 系统托盘
 
 - 菜单 5 项：显示主窗口 / 快速添加任务 / 划词捕获 / 显示·隐藏浮窗 /（分隔）退出（`src/main/index.ts:288-302`）。
@@ -352,7 +411,8 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 - 结果结构：先「新建任务」动作 → 页面跳转命令 → 四类命中（任务/笔记/闪念/标签），每组有图标；总计最多 30 项（`:144`）。
 - 键盘：↑/↓ 移动、Enter 执行、Esc 关闭（`:175-189`）；鼠标悬停同步高亮（`:201`）。
 - 语义：`role="dialog"` + `aria-modal` + `role="listbox"` + `role="option"` + `aria-selected`（`:158`、`:161`、`:192`、`:198-199`）。
-- 缺口：命令集仅「导航 + 新建任务」，无 MRU、无「开始番茄钟」等命令（`01` R-S-19）。
+- 命令集：导航 + 新建任务 + **开始专注**（`start-pomodoro`，2026-09-27 接上，走独立小窗）+ 备份等；
+  MRU 已实现（`zhixing.cmd.mru`，最近用过的命令排前面）。
 
 ---
 
@@ -453,6 +513,24 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 
 `PomodoroBar`（`--z-float`，`role="status"`）显示阶段、`mm:ss`、任务名、进度条、暂停/继续、结束；休息阶段换成 `pomo--break` 皮肤（`PomodoroBar.tsx:82-92`）。
 
+### 9.2b 弹出菜单同构：状态 / 优先级 / 标签（2026-09-27 收口）
+
+三种"点胶囊改属性"的弹层现在是**同一套骨架**：容器 `.popmenu`、每行 `.popmenu__item`
+（`min-height: var(--control-h)`、hover 底色、选中态 `.popmenu__item--active`）。
+
+| 弹层 | 每行的构成 |
+| --- | --- |
+| 状态（`StatusMenu`） | 状态色圆点 + 文本 |
+| 优先级（`PriorityMenu`） | 优先级色点 + 文本 |
+| 标签（`TagMenu`） | **标签色点 + 文本 + 选中时的 ✓** |
+
+标签弹层此前是"色块按钮 + 勾选位 + 彩色胶囊"三件东西挤一行（用户原话："标签聚到一起，不好看"）。
+现在胶囊只留在任务行/笔记树上（那是行内展示），弹层里一律"一点一名"。
+"点色点改颜色"保留：调色板就地展开在所属标签行下面；「新建标签」做成列表最后一行，footer 区块已删。
+
+> 选择器钩子：容器同时带 `.popmenu` 与 `.tagmenu`，色点按钮与名字按钮仍是 `.tagmenu__swatch` / `.tagmenu__name`
+> —— `scripts/taglistcheck.mjs` 直接查它们。外观已全部继承 `.popmenu*`，这些类名不再有任何样式含义。
+
 ### 9.3 模态与浮层规范
 
 - 遮罩统一 `.modal-mask` + `--overlay`，弹层用 `--shadow-lg`/`--shadow-xl` + `--radius-lg`/`--radius-xl`。
@@ -481,13 +559,102 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 
 ## 11. 动效规范与降级
 
-1. **统一时长/缓动**：所有过渡引用 `--dur-*` / `--ease-*`，不允许裸毫秒值。
-2. **交互反馈不改变布局**：按压用独立 `translate` 属性下移 1px（而非 `transform`，避免覆盖组件自身 transform，如 `.toast` 的 `translateX(-50%)`），禁用用 `opacity: .45` + `cursor: not-allowed`（`global.css:33-45`）。
-3. **两级降级**：
-   - 用户在设置里选 `motion_level = none` → `root.dataset.motion = 'none'` → `--dur-*` 全归零（`theme.ts:86`、`tokens.css:151-160`）；
-   - 系统「减少动态效果」→ 同一份归零规则（`tokens.css:163-173`）。
-4. **悬停聚焦淡化**：与当前悬停对象无关的图元淡到 `opacity: .05`（Obsidian 取值，保留一丝轮廓当上下文），图谱/工作流共用（`global.css:112-122`）。
-5. **未取证**：无统一的帧率/性能预算实测（`layoutcheck.mjs` 只量化「视口变高时主工作区是否跟随」，不断言 FPS）。
+### 11.1 硬规则
+
+1. **统一时长/缓动**：所有过渡引用 `--dur-*` / `--ease-*`，不允许裸毫秒值 —— 现在由测试守着（§11.6）。
+2. **交互反馈不改变布局**：按压用独立 `translate` 属性下移 1px（而非 `transform`，避免覆盖组件自身 transform，
+   如 `.toast` 的 `translateX(-50%)`），禁用用 `opacity: .45` + `cursor: not-allowed`（`global.css:33-45`）。
+   唯一的例外是 §3.0 的"标题区下内边距"，它发生在页面顶部、幅度 4px，不会推动滚动锚点。
+3. **动画属性只用 `transform` / `opacity`**（颜色、`border-color`、`box-shadow` 这类 paint 属性可以用；
+   不要动 `width` / `height` / `top` / `left` / `margin`）。既有例外：侧栏宽度过渡、番茄钟进度条的宽度推进。
+4. **不允许常驻 `will-change`**。
+5. **列表交错有上限**：`calc(var(--i) * var(--dur-stagger))`，最多 8 行参与，且**只给"本次新增的行"**
+   —— 滚动进入视口的行永远不播（虚拟列表滚动会不断重挂载，那会变成"滚动到哪都在闪"）。
+6. **悬停聚焦淡化**：与当前悬停对象无关的图元淡到 `opacity: .05`（Obsidian 取值，保留一丝轮廓当上下文），
+   图谱/工作流共用（`global.css:325-335`）。**这个值被 E2E 断言盯着，不许改。**
+
+### 11.2 降级：三档 + 两类
+
+| 档位 | 触发 | 效果 |
+| --- | --- | --- |
+| `full` | 默认 | 完整体验。注意 `data-motion` 写的是**空串**，不是 `'full'` |
+| `essential`（仅必要） | 设置里选「仅必要」，或系统开了「减少动态效果」 | 7 档时长缩短到 80–120ms（`theme.ts` 的 `MOTION_DURATIONS` 行内铺） |
+| `none` | 设置里选「关闭」 | 7 档时长全归零（`tokens.css` 的 `[data-motion='none']`） |
+
+除动效档位外还有两类独立降级：
+
+- **玻璃拟态**：`glass_enabled=false` → `html[data-glass='off']` → `--glass-filter: none`；
+  系统 `prefers-reduced-transparency: reduce` 同理（§2.10）。
+- **JS 驱动的动效**（列表交错、数字滚动、退场、滚动抬升）：无法靠 CSS 变量归零，
+  必须读 `lib/presence.ts` 的 `isMotionFull()`。
+  **判定一律用它，不要写 `dataset.motion === 'full'`** —— full 档存的是空串，那个条件永远为假。
+
+### 11.3 浮层动效语言（`global.css`）
+
+四组语义化的"进/退"配对，加上两条配套线。所有浮层都必须从这里取，不许各写一套：
+
+| 语义 | 进入 | 退出 | 用在哪 |
+| --- | --- | --- | --- |
+| 弹出菜单 | `pop-in` `--dur-fast` / `--ease-enter` | `pop-out` `--dur-instant` / `--ease-exit` | 优先级、状态、标签、日期时间选择器 |
+| 遮罩 | `mask-in` `--dur-fast` | `mask-out` `--dur-fast` / `--ease-exit` | `.modal-mask`（只动 opacity —— 它铺满全屏，缩放会露边） |
+| 模态 / 命令面板 | `dialog-in` `--dur-normal` / `--ease-enter` | `dialog-out` `--dur-fast` / `--ease-exit` | 只给**带遮罩**的弹框；独立窗口的卡片不参与（窗口本身就是卡片，再缩放像"窗中窗"） |
+| 抽屉 / 卡片 | `drawer-in` `--dur-panel` / `--ease-panel`；`card-in` `--dur-normal` | `drawer-out` / `card-out` `--dur-fast` | 窄窗抽屉、提醒卡、信息条、危险横幅、番茄钟 |
+
+这条语言之前是不存在的：全应用只有 3 个关键帧，其中 `toast-in`（从下 8px + `translateX(-50%)`）
+被 6 处共用 —— 那半个宽度是为居中 Toast 写的，套在菜单上就是"弹出来瞬间整块往左跳"。
+
+### 11.4 退场机制（`lib/presence.ts`）
+
+CSS 只能对仍然存在的元素播放动画，而 React 的条件渲染在 false 的那一刻就把元素摘出 DOM ——
+所以在此之前**所有浮层都没有退场**（`--ease-exit` 因此零引用）。
+
+`usePresence(present, exitMs)` 把"想不想显示"变成带退场窗口的"要不要渲染"，两条口径必须守住：
+
+1. **动效不是 full 档时同步卸载**，不等待动画（否则关掉动效后弹层还要多留 250ms）；
+2. **必须有兜底定时器**（`exitMs + 100ms`）：`duration: 0ms` 的动画不保证派发 `animationend`，
+   没有兜底的话动效关闭时弹层会永久留在 DOM 里。
+
+配套约定：所有 `.is-leaving` 规则都要带 `forwards` —— 兜底卸载比动画晚 100ms，没有终态保持的话，
+那 100ms 里浮层会"淡出完又亮回来"。
+
+### 11.5 性能预算（2026-09-27 首次量化）
+
+| 项 | 预算 |
+| --- | --- |
+| 动画属性 | 只用 `transform` / `opacity`（例外见 §11.1 第 3 条） |
+| 单次交互动效总时长 | ≤ 400ms（常规 150–280ms） |
+| 同帧动画元素 | ≤ 40 |
+| 列表 stagger | ≤ 8 项 × 20ms（总延迟 ≤ 160ms） |
+| 虚拟列表滚动期间 | 不播放任何进入动画 |
+| 页面帧率 | 切页后的 1.2s 采样窗口内平均 ≥ 50fps |
+| 长任务 | 采样窗口内 > 50ms 的任务数 = 0 |
+| `backdrop-filter` | 只允许出现在白名单选择器上（§11.6） |
+
+采样脚本：`node scripts/motionperfcheck.mjs`（走 CDP，需先 `npm run build`）。
+
+### 11.5b 共享元素过渡（试点，2026-09-27）
+
+列表行的标题 → 编辑弹窗的标题输入框：打开编辑器时标题"长成"那个输入框，而不是整页淡一下。
+
+| 项 | 做法 |
+| --- | --- |
+| 用在哪 | **只接一个入口**：从列表行点开编辑。看板卡 / 四象限 / 右键菜单都没有同名的源元素，强行参与只会退化成整页交叉淡化，白付一次全页快照的代价 |
+| 技术 | `document.startViewTransition` + `flushSync` 分两段提交：先给源行打 `view-transition-name`（旧状态），回调里同步打开弹窗并**摘掉**源行标记（新状态） |
+| 名字唯一 | `view-transition-name: task-title` 同一时刻只能有一个元素带 —— 同名两个会让浏览器直接跳过整条过渡（见 tasks.css 的 `.trow--vt-source` / `.vt-task-title`） |
+| 时长 | `::view-transition-group(task-title)` 用 `--dur-normal` / `--ease-panel`；根快照的交叉淡化压到 `--dur-fast`（默认的整页 250ms 对"打开一个弹窗"太重） |
+| 降级 | `isMotionFull()` 为假、或浏览器不支持时**直接 setState**，一帧动画都不播 |
+
+### 11.6 令牌完整性（一条会红的测试）
+
+`src/renderer/src/styles/tokens.test.ts` 钉住三件事，起因是两处**静默失效**的真实缺陷
+（`--ease-standard` 从未定义、`--space-6` 从未定义，各让一整条声明在计算值阶段失效）：
+
+1. 无 fallback 的 `var(--x)` 必须有定义（CSS 里定义，或由 JS 内联注入并登记在白名单）；
+2. 白名单里的名字必须真的被 JS 注入过（否则白名单会变成掩盖缺失的废纸）；
+3. `transition` / `animation` 里不许出现裸时间值；
+4. `backdrop-filter` 只能出现在白名单选择器上。
+
+变异验证：删掉 `--space-6`，第 1 条必须变红。
 
 ---
 
@@ -534,6 +701,7 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 | 连线走线 | **正交折线**（H-V-H / V-H-V）：流程图更像工程图，「谁连到谁」一眼可辨。知识图谱仍用流体弧（追求网络感） | 曲线 0 条 |
 | 预览框 | 基准尺寸要给右侧浮卡留位置 —— 否则「右边放不下就左翻」会误判、把浮卡压到节点上（看起来像两层边框）；拖动节点期间不渲染浮卡（`foreignObject` 会留拖影） | 浮卡在节点右侧；拖动中浮卡数 0 |
 | 首次打开 | 用户拖过的坐标（`pos_x/pos_y`）优先，没拖过的用分层结果补齐 | `layoutOf` |
+| **布局飞位**（2026-09-27） | 自动布局或切「纵向 / 横向」之后，节点在 `--dur-panel`/`--ease-panel` 内**飞**到新坐标而不是瞬移 —— 用户看得见「谁挪到了哪儿」。定位仍走 SVG 的 `transform` **属性**（`wfbranchcheck.mjs` 直接读它），所以补间用 Web Animations + `fill:'none'`：动画一结束立刻回到属性里的权威坐标，拖拽 / 平移缩放 / 命中检测全程拿到的都是最终值。拖动节点期间不插补间（跟手才是对的）；`reduced` / `none` 档直接跳过 | 端到端跑 `workflowcheck` 与 `motionperfcheck` |
 
 > 布局用 dagre（MIT，见 `THIRD-PARTY.md`）；节点/连线的视觉、hover 高亮、分支拖拽改挂等
 > 交互仍是原有实现，本轮只换了「坐标从哪来」。

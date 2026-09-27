@@ -145,8 +145,13 @@ export function ReviewPage() {
             <p className="u-aux">还没有使用过标签。</p>
           ) : (
             <ul className="tagdist">
-              {stats.tagDistribution.map((t) => (
-                <li key={t.name} className="tagdist__row">
+              {stats.tagDistribution.map((t, i) => (
+                // 交错入场：前 8 行按 --dur-stagger 递进，第 9 行往后都只等第 8 行的延迟
+                <li
+                  key={t.name}
+                  className="tagdist__row"
+                  style={{ animationDelay: `calc(var(--dur-stagger) * ${Math.min(i, 7)})` }}
+                >
                   <span className="tagdist__name">{t.name}</span>
                   <span className="tagdist__bar">
                     <span

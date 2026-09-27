@@ -129,3 +129,40 @@
   font-size: var(--text-body);
   color: var(--fg-primary);
 }
+
+/* ---- 本轮动效：列表行 ---- */
+
+/* 标签分布行：数据到位时播一次入场。行以标签名为 key，滚动不会重挂载，
+   所以这条不会随滚动重播；交错延迟由 ReviewPage 按 --dur-stagger 给前 8 行。 */
+.tagdist__row {
+  border-radius: var(--radius-ctl);
+  transition: background-color var(--dur-instant) var(--ease-standard),
+    box-shadow var(--dur-instant) var(--ease-standard);
+  animation: zx-review-enter var(--dur-normal) var(--ease-enter) backwards;
+}
+.tagdist__row:hover {
+  background: var(--bg-hover);
+  box-shadow: var(--edge-light);
+}
+/* 成就卡：悬停补描边与内高光。未解锁那张整体是 opacity 0.6，所以刻意不做淡入 ——
+   关键帧里的 opacity 会盖住那个 0.6，动画停下时再跳回去（0 → 1 → 0.6 闪一下）。 */
+.achv__item {
+  transition: border-color var(--dur-instant) var(--ease-standard),
+    box-shadow var(--dur-instant) var(--ease-standard);
+}
+.achv__item:hover {
+  box-shadow: var(--edge-light);
+}
+.achv__item:not(.achv__item--on):hover {
+  border-color: var(--border-strong);
+}
+@keyframes zx-review-enter {
+  from {
+    opacity: 0;
+    transform: translateY(calc(-1 * var(--space-1)));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

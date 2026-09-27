@@ -11,6 +11,19 @@ interface Props {
   depth: number
   selected: boolean
   collapsed: boolean
+  /**
+   * 「本次新建」的行：挂 .trow--enter 播一次入场动画。
+   * 滚动进视口的行永远不传这个 —— 那是滚动，不是新增。
+   */
+  entering?: boolean
+  /** 同批新增行在展平顺序里的交错序号，映射到行内 --i（由 CSS 算成 animation-delay） */
+  enterIndex?: number
+  /**
+   * 共享元素过渡（试点）：这一行是本次「行 → 编辑弹窗」的源，
+   * 挂 .trow--vt-source 拿到 view-transition-name（见 tasks.css）。
+   * 同一时刻最多只能有一行带它 —— 重名会让浏览器直接跳过整条过渡。
+   */
+  vtSource?: boolean
   onToggle: (id: number) => void
   onToggleCollapse: (id: number) => void
   onSelect: (id: number, e: React.MouseEvent) => void
@@ -80,9 +93,16 @@ export function TaskRow(props: Props) {
 
   return (
     <div
-      className={`trow${selected ? ' trow--selected' : ''}${node.effectiveDone ? ' trow--done' : ''}${props.dropHint ? ` trow--drop-${props.dropHint}` : ''}`}
+      className={`trow${selected ? ' trow--selected' : ''}${node.effectiveDone ? ' trow--done' : ''}${props.dropHint ? ` trow--drop-${props.dropHint}` : ''}${props.entering ? ' trow--enter' : ''}${props.vtSource ? ' trow--vt-source' : ''}`}
       // --row-indent 供进度条定位用：它要跟内容一起缩进（见 tasks.css 的 .trow__progress）
-      style={{ paddingLeft: 12 + depth * 20, '--row-indent': `${12 + depth * 20}px` } as React.CSSProperties}
+      // --i：交错入场的序号，只给正在入场的行写（见 tasks.css 的 .trow--enter）
+      style={
+        {
+          paddingLeft: 12 + depth * 20,
+          '--row-indent': `${12 + depth * 20}px`,
+          ...(props.entering ? { '--i': props.enterIndex ?? 0 } : {}),
+        } as React.CSSProperties
+      }
       draggable
       onDragStart={(e) => {
         e.dataTransfer.setData('text/plain', String(node.id))
@@ -169,7 +189,9 @@ export function TaskRow(props: Props) {
           onDoubleClick={() => setEditing(true)}
           title={node.notes_md ? node.notes_md.slice(0, 60) : node.title}
         >
-          {node.title}
+          {/* 删除线的载体：伪元素挂在行内元素上时，containing block 是这行文字的
+              包围盒，线宽才等于文字宽度（挂在外层弹性盒上会横跨整行）。 */}
+          <span className="trow__title-text">{node.title}</span>
         </span>
       )}
 

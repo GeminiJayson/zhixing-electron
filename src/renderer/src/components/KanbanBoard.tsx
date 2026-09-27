@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { isMotionFull } from '../lib/presence'
 import { Plus } from '@renderer/lib/icons'
 import { priorityColor, priorityLabel } from '@shared/priority'
 import { STATUS_CHOICES, isTerminal } from '@shared/task'
@@ -22,6 +23,8 @@ interface Props {
 export function KanbanBoard({ tasks, effective, expanded, onOpen, onToggleSubtree, onDropStatus, onAdd }: Props) {
   const [dragId, setDragId] = useState<number | null>(null)
   const [hoverCol, setHoverCol] = useState<TaskStatus | null>(null)
+  /** 刚落位的卡片：播一次回弹，animationend 时摘掉（不排定时器） */
+  const [landedId, setLandedId] = useState<number | null>(null)
 
   const isDone = (t: Task): boolean =>
     effective.get(t.id) ?? isTerminal(t.status)
@@ -36,7 +39,11 @@ export function KanbanBoard({ tasks, effective, expanded, onOpen, onToggleSubtre
     return (
       <div key={t.id}>
         <div
-          className="kcard"
+          className={
+            'kcard' +
+            (dragId === t.id ? ' kcard--dragging' : '') +
+            (landedId === t.id ? ' kcard--landed' : '')
+          }
           style={{ marginLeft: depth * 14 }}
           draggable
           onDragStart={(e) => {
@@ -45,6 +52,10 @@ export function KanbanBoard({ tasks, effective, expanded, onOpen, onToggleSubtre
             e.dataTransfer.effectAllowed = 'move'
           }}
           onDragEnd={() => setDragId(null)}
+          // 回弹播完就摘类：动效关掉时不会走到这里（那时压根不挂类）
+          onAnimationEnd={(e) => {
+            if (e.target === e.currentTarget) setLandedId((v) => (v === t.id ? null : v))
+          }}
           onDoubleClick={() => onOpen(t.id)}
         >
           <div className="kcard__top">
@@ -94,7 +105,11 @@ export function KanbanBoard({ tasks, effective, expanded, onOpen, onToggleSubtre
               const id = Number(e.dataTransfer.getData('text/plain') || dragId)
               setHoverCol(null)
               setDragId(null)
-              if (Number.isFinite(id) && id > 0) onDropStatus(id, col.value)
+              if (Number.isFinite(id) && id > 0) {
+                // 落位回弹：动效档位用 presence.ts 的判据（full 档的 data-motion 是空串）
+                if (isMotionFull()) setLandedId(id)
+                onDropStatus(id, col.value)
+              }
             }}
           >
             <header className="kcol__head">

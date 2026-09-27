@@ -10,6 +10,7 @@ import type { Backlink, Note, NoteFolder, NoteLink } from '@shared/types'
 import type { AiLibraryProgress } from '@shared/ai-note'
 import { parseLinkItems, type NoteLinkItem } from '@shared/note-links'
 import { t } from '../i18n'
+import { isMotionFull, usePresence } from '../lib/presence'
 import { MarkdownEditor, RichTextEditor, blockFingerprint, locateBlockInView } from '../components/MarkdownEditor'
 import { MarkdownView } from '../components/MarkdownView'
 // Excel 网格懒加载：ag-grid 体积可观，只有真的打开 Excel 笔记才下载
@@ -34,6 +35,20 @@ type NoteTag = { id: number; name: string; color: string }
 
 /** 自动保存防抖：输入停顿后落库。 */
 const AUTOSAVE_MS = 800
+
+/**
+ * 覆盖式抽屉的退场窗口，与 notes.css 里 .links--drawer.is-leaving 那条
+ * `drawer-out var(--dur-fast)` 对齐。usePresence 用它决定「先留着播完」还是「直接卸载」——
+ * 动效非 full 档时它同步卸载，不会白等这一下。
+ */
+const LINKS_DRAWER_EXIT_MS = 150
+
+/** 读一个时长令牌的毫秒数（--dur-fast）。读不到按 0 处理 = 直接切换。 */
+function readTokenMs(name: string): number {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name)
+  const n = Number.parseFloat(raw)
+  return Number.isFinite(n) ? n : 0
+}
 
 /** 笔记多标签页：上限。到顶时最久未使用的那个被挤出去（见 docs/note-tabs-plan.md）。 */
 const TAB_MAX = 12
@@ -116,7 +131,20 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   }, [treeHidden])
   /** 编辑区自身宽度是否窄到放不下并排信息卡 —— 窄了改用覆盖式抽屉 */
   const [narrow, setNarrow] = useState(false)
+  /**
+   * 窄窗口的覆盖式抽屉：与「并排展开」是同一个 <aside> 的两种形态，收起就是摘掉
+   * links--drawer 这个类。要让它有退场动画，就得把「要不要渲染」交给 usePresence ——
+   * 关闭时先挂 .is-leaving 把 --dur-fast 那段播完再摘类（动效非 full 档时它同步摘掉，不等动画）。
+   */
+  const linksDrawer = usePresence(narrow && linksExpanded, LINKS_DRAWER_EXIT_MS)
+  /** 退场窗口里 linksExpanded 已经是 false，抽屉还得留在 DOM 里把动画播完 */
+  const linksDrawerShown = narrow && (linksExpanded || linksDrawer.mounted)
   const mainRef = useRef<HTMLDivElement | null>(null)
+  /** 正文区：切 tab / 换笔记时在它身上补一次极轻的淡入（见下面的 effect） */
+  const sheetBodyRef = useRef<HTMLDivElement | null>(null)
+  const bodyFadeRef = useRef<Animation | null>(null)
+  /** 上一次做淡入的笔记 id，null 表示还没进过这篇（首次进入不播，页面本身已有进场动画） */
+  const fadeFromRef = useRef<number | null>(null)
   const [dirty, setDirty] = useState(false)
   /**
    * Word/Excel「还没写回本地文件」的状态，与 dirty 分开记。
@@ -1116,6 +1144,30 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     return () => ro.disconnect()
   }, [])
 
+  /**
+   * 笔记多标签切换：正文区补一次极轻的淡入（opacity 0→1，--dur-fast / --ease-enter）。
+   *
+   * 为什么不用 key 驱动：正文容器里住着 ProseMirror / CodeMirror 实例，给 .sheet 挂 key
+   * 会把它整个重建 —— 撤销栈、选区、滚动位置全丢。WAAPI 只补一段 opacity，
+   * 元素与实例都原地不动，动画结束（fill:'none'）即回到自然态。
+   * 动效非 full 档直接不挂：令牌归零只管得住 CSS，这条得自己判档。
+   */
+  useEffect(() => {
+    const changed = fadeFromRef.current !== null && fadeFromRef.current !== selectedId
+    fadeFromRef.current = selectedId
+    // 首次进入这篇笔记不播：页面本身已经有一段进场动画
+    if (!changed) return
+    const el = sheetBodyRef.current
+    if (!el || !isMotionFull()) return
+    bodyFadeRef.current?.cancel()
+    bodyFadeRef.current = el.animate([{ opacity: 0 }, { opacity: 1 }], {
+      duration: readTokenMs('--dur-fast'),
+      easing:
+        getComputedStyle(document.documentElement).getPropertyValue('--ease-enter').trim() || 'linear',
+      fill: 'none',
+    })
+  }, [selectedId])
+
   // 全屏编辑：Esc 退出（与浮层一致，按一次就能回来）
   useEffect(() => {
     if (!zen) return
@@ -1401,7 +1453,8 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
               {/* 正文：Markdown / 富文本 / Word / Excel / 链接 / 预览。
                   容器一律不再自带边框 —— 纸只有一张，分层靠留白。
                   宽度一律铺满纸面：五种形态同宽，不再按形态分「宽体 / 书写列」。 */}
-              <div className="sheet__body">
+              {/* ref 给「切 tab / 换笔记」那段淡入用（见上面的 effect） */}
+              <div className="sheet__body" ref={sheetBodyRef}>
               {current.format === 'link' ? (
                 // 链接笔记：content_md 存 [{title,target}] JSON。
                 // 这里是**可编辑**的多链接列表 —— 「一条笔记多条链接、每条带标题」正是这个格式的用处，
@@ -1658,15 +1711,21 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
 
         {linksOpen && current && (
           <>
-            {/* 窄窗口：展开态改成覆盖式抽屉，不挤压正文（挤压会把提示文案折成两行） */}
-            {narrow && linksExpanded && (
-              <div className="links__scrim" aria-hidden onClick={() => setLinksExpanded(false)} />
+            {/* 窄窗口：展开态改成覆盖式抽屉，不挤压正文（挤压会把提示文案折成两行）。
+                收起时不立刻摘掉 —— 先挂 .is-leaving 把退场动画播完，见上面的 usePresence */}
+            {linksDrawerShown && (
+              <div
+                className={'links__scrim' + (linksDrawer.leaving ? ' is-leaving' : '')}
+                aria-hidden
+                onClick={() => setLinksExpanded(false)}
+              />
             )}
             <aside
               className={
                 'links' +
                 (linksExpanded ? ' links--open' : ' links--collapsed') +
-                (narrow && linksExpanded ? ' links--drawer' : '')
+                (linksDrawerShown ? ' links--drawer' : '') +
+                (linksDrawer.leaving ? ' is-leaving' : '')
               }
               aria-label="链接面板"
             >
@@ -1697,7 +1756,8 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                 </button>
               )}
             </div>
-            {linksExpanded && (
+            {/* 退场期间正文也要留着：否则抽屉还挂在屏幕上、里面却已经空了 */}
+            {(linksExpanded || linksDrawerShown) && (
             <div className="links__body">
             <section className="links__card">
               <div className="note-props">

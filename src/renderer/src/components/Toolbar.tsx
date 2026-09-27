@@ -18,6 +18,18 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { MoreHorizontal, SlidersHorizontal } from '@renderer/lib/icons'
 
+/** 抬升阈值：正文滚过这个距离就认为「已经开始滚」（工具栏加投影、标题区收紧）。 */
+const LIFT_ON_PX = 24
+/**
+ * 落下阈值必须**明显低于**抬升阈值（迟滞）。
+ *
+ * 抬升态会让标题区的下内边距从 4px 变成 0，也就是内容整体上移 4px ——
+ * 若两个方向共用一个阈值，滚动位置停在它附近时就会来回跨越：抬升 → 高度变 → scrollTop 变 →
+ * 判定落下 → 高度变回来 → 又抬升…… 这是自激循环，表现为滚动到某处后页面持续抖动、
+ * 严重时把渲染主线程按住（layoutcheck 正是在滚动结构那一段把它踩出来的）。
+ */
+const LIFT_OFF_PX = 8
+
 export type ToolbarProps = {
   /** 页面标题（panel 形态不用）。标题本身要放可编辑输入框之类的节点时改用 titleNode */
   title?: string
@@ -57,6 +69,9 @@ export function Toolbar({
   const rightRef = useRef<HTMLDivElement>(null)
   /** 隐藏的测量行：按最终顺序渲染一份完整内容，只为量出每项的自然宽度 */
   const measureRef = useRef<HTMLDivElement>(null)
+  const hostRef = useRef<HTMLDivElement>(null)
+  /** 页面正文已经滚动：工具栏该「抬起来」（加投影、标题区收紧） */
+  const [lifted, setLifted] = useState(false)
   const flatTotal = filters.length + secondary.length
   /** 能平铺几个「非搜索」控件 —— 由可用宽度一次算准 */
   const [cap, setCap] = useState(flatTotal)
@@ -154,8 +169,57 @@ export function Toolbar({
   // 否则会留下一条只有内边距的空行。
   const hasSubRow = Boolean(nav || meta || search || filters.length > 0 || secondary.length > 0 || primary)
 
+  /**
+   * 滚动驱动：正文滚过阈值后，吸顶工具栏加投影、标题区收紧。
+   *
+   * 滚动容器不是 window —— 每个页面的 .page__body 才是（docs/03 §3：标题固定，正文自己滚），
+   * 所以这里往上找最近的可滚动祖先，而不是监听 window。
+   */
+  useEffect(() => {
+    if (!sticky) {
+      setLifted(false)
+      return
+    }
+    const host = hostRef.current
+    if (!host) return
+    let scroller: HTMLElement | null = host.parentElement
+    while (scroller) {
+      if (/(auto|scroll)/.test(window.getComputedStyle(scroller).overflowY)) break
+      scroller = scroller.parentElement
+    }
+    if (!scroller) {
+      // 有些页面把「标题行固定」做成了「正文自己滚」：滚动容器是工具栏的**兄弟**而不是祖先
+      // （设置页就是这样）。这类页面在正文容器上标 data-scroll="1" 告诉我们去找谁。
+      scroller = host.closest('.page')?.querySelector<HTMLElement>('[data-scroll="1"]') ?? null
+    }
+    if (!scroller) return
+    const target = scroller
+    /** 只在跨过阈值时 setState：滚动事件每秒几十次，每次调用 setState（哪怕值没变）
+        都会走一遍 React 的调度；记一个 ref 就把它降成「只在真正抬升/落下时各一次」。 */
+    let liftedNow = false
+    const onScroll = (): void => {
+      const top = target.scrollTop
+      // 迟滞：抬升要滚过 LIFT_ON_PX，落下要退回 LIFT_OFF_PX 以内（见常量的注释）
+      const next = liftedNow ? top > LIFT_OFF_PX : top > LIFT_ON_PX
+      if (next === liftedNow) return
+      liftedNow = next
+      setLifted(next)
+    }
+    onScroll()
+    target.addEventListener('scroll', onScroll, { passive: true })
+    return () => target.removeEventListener('scroll', onScroll)
+  }, [sticky])
+
   return (
-    <div className={'tb ' + (variant === 'page' ? 'tb--page' : 'tb--panel') + (sticky ? ' tb--sticky' : '')}>
+    <div
+      ref={hostRef}
+      className={
+        'tb ' +
+        (variant === 'page' ? 'tb--page' : 'tb--panel') +
+        (sticky ? ' tb--sticky' : '') +
+        (lifted ? ' tb--lifted' : '')
+      }
+    >
       {variant === 'page' ? (
         // 标题分区：只放页面身份（标题 / 副标题），**不放任何操作**
         <div className="tb__head">

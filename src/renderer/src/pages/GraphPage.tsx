@@ -938,15 +938,21 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
                   role="button"
                   aria-label={`${KIND_CN[n.kind] ?? n.kind} ${n.label}`}
                 >
-                  {/* 节点图标：多色分层（主色 + 派生内层 + 深描边），见 GraphNodeIcon */}
-                  <GraphNodeIcon kind={n.kind} r={r} color={color} />
-                  {isSel && <circle r={r + 4} fill="none" stroke="var(--accent)" strokeWidth={2} />}
-                  {/* 焦点环也只包图标：半径与选中圆一致，虚线以便与「已选中」区分 */}
-                  {!isSel && focused === n.id && <circle r={r + 4} className="gnode__focus" />}
-                  {isHit && <circle r={r + 7} fill="none" stroke="var(--accent)" strokeWidth={1} strokeDasharray="2 2" />}
-                  <text y={r + 12} textAnchor="middle" className="gnode__label">
-                    {n.label.length > 12 ? n.label.slice(0, 12) + '…' : n.label}
-                  </text>
+                  {/* 节点内容包一层：聚焦时的 scale(1.06) 挂在这一层上（见 graph.css）。
+                      外层 .gnode 的 transform 是定位属性 translate(x,y)，CSS transform 会盖掉它 ——
+                      缩放必须落在没有定位属性的内层，否则节点会叠到画布原点。
+                      连线手柄留在这一层之外：它的命中区不跟着缩放走，手感与改造前一致 */}
+                  <g className="gnode__body">
+                    {/* 节点图标：多色分层（主色 + 派生内层 + 深描边），见 GraphNodeIcon */}
+                    <GraphNodeIcon kind={n.kind} r={r} color={color} />
+                    {isSel && <circle r={r + 4} fill="none" stroke="var(--accent)" strokeWidth={2} />}
+                    {/* 焦点环也只包图标：半径与选中圆一致，虚线以便与「已选中」区分 */}
+                    {!isSel && focused === n.id && <circle r={r + 4} className="gnode__focus" />}
+                    {isHit && <circle r={r + 7} fill="none" stroke="var(--accent)" strokeWidth={1} strokeDasharray="2 2" />}
+                    <text y={r + 12} textAnchor="middle" className="gnode__label">
+                      {n.label.length > 12 ? n.label.slice(0, 12) + '…' : n.label}
+                    </text>
+                  </g>
                   {/* 连接手柄：hover 或选中时出现在节点右侧，从这里按住往外拖就能拉出连线。
                       它是本 <g> 的子元素，pointerdown 里 stopPropagation 挡在节点拖拽之前 ——
                       于是「拖节点」与「拉连线」两种手势各走各的，不打架。 */}
@@ -1063,7 +1069,9 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
             })()}
         </svg>
 
-        <aside className="graph-side" aria-label="节点信息">
+        {/* key 挂选中节点：换节点就重挂一次侧栏卡片，让它重播一遍进场动画
+            （aside 是常驻的，只换 class 不会重播；这里的内容全是纯展示，重挂无副作用） */}
+        <aside className="graph-side" key={selectedNode ? selectedNode.id : 'none'} aria-label="节点信息">
           {selectedNode ? (
             <>
               <h2 className="graph-side__title">{selectedNode.label}</h2>

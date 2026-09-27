@@ -618,6 +618,31 @@ const api = {
     done: (message: string): void => ipcRenderer.send('capture:done', message),
   },
   /**
+   * 番茄钟（独立小窗，2026-09-27）：主窗口与浮窗都只是「发起方」，
+   * 计时、暂停、中断与落库全部发生在那个窗口里 —— 主窗口关掉它也会继续跑。
+   * 与捕获窗同一套协议：主进程推 payload、渲染层应用完主题发 ready 才显示。
+   */
+  pomodoro: {
+    /** 发起一轮专注（taskId 为 null 表示不绑任务） */
+    open: (payload: { taskId: number | null; title: string }): Promise<boolean> =>
+      ipcRenderer.invoke('pomodoro:open', payload),
+    onOpen: (cb: (payload: { taskId: number | null; title: string }) => void): (() => void) => {
+      const handler = (_e: unknown, payload: { taskId: number | null; title: string }): void =>
+        cb(payload)
+      ipcRenderer.on('pomodoro:open', handler)
+      return () => ipcRenderer.removeListener('pomodoro:open', handler)
+    },
+    ready: (): void => ipcRenderer.send('pomodoro:ready'),
+    close: (): void => ipcRenderer.send('pomodoro:close'),
+    /** 一轮结束/中断：把提示语与「数据变了」带给主窗口（它去刷新统计并弹提示） */
+    done: (message: string): void => ipcRenderer.send('pomodoro:done', message),
+    onDone: (cb: (message: string) => void): (() => void) => {
+      const handler = (_e: unknown, message: string): void => cb(message)
+      ipcRenderer.on('pomodoro:done', handler)
+      return () => ipcRenderer.removeListener('pomodoro:done', handler)
+    },
+  },
+  /**
    * 外部任务源：设置页手动同步 / 读状态 / 改完设置后重排定时器。
    * 类型与主进程 src/main/task-sync.ts 对齐（preload 不便 import 主进程代码）。
    */

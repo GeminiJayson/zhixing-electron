@@ -92,19 +92,24 @@ export function FloatingDock({ page, onTask, onNote, onFlash }: Props) {
           alignItems: 'center',
           gap: 4,
           opacity: open ? 1 : 0,
-          transform: open ? 'none' : 'translateY(6px)',
-          transition: 'opacity var(--dur-fast) var(--ease-enter), transform var(--dur-fast) var(--ease-enter)',
+          // 逐项错峰交给每个按钮自己（见下）；容器只负责整体显隐与命中，不再抢占过渡
           pointerEvents: open ? 'auto' : 'none',
         }}
         aria-hidden={!open}
       >
-        {ITEMS.map(({ key, label, Icon }) => (
+        {ITEMS.map(({ key, label, Icon }, idx) => (
           <button
             key={key}
             className="text-btn"
             tabIndex={open ? 0 : -1}
             onClick={() => fire(key === 'task' ? onTask : key === 'note' ? onNote : onFlash)}
             style={{
+              // 展开时逐项错峰落下；--dur-stagger 在动效关闭时归零，等于同时出现
+              opacity: open ? 1 : 0,
+              transform: open ? 'none' : 'translateY(4px)',
+              transition:
+                'opacity var(--dur-fast) var(--ease-enter), transform var(--dur-fast) var(--ease-enter)',
+              transitionDelay: open ? `calc(${idx} * var(--dur-stagger))` : undefined,
               display: 'flex',
               alignItems: 'center',
               gap: 6,

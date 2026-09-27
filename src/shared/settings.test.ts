@@ -46,6 +46,9 @@ describe('settings 类型层', () => {
     expect(parseSettings({ theme_mode: 'system' }).theme_mode).toBe('system')
     expect(parseSettings({ motion_level: 'none' }).motion_level).toBe('none')
     expect(parseSettings({ motion_level: 'x' }).motion_level).toBe('full')
+    // 玻璃拟态默认开：它是「看了再决定」的实验项，默认关掉就没人会去看
+    expect(parseSettings({}).glass_enabled).toBe(true)
+    expect(parseSettings({ glass_enabled: '0' }).glass_enabled).toBe(false)
   })
 
   it('ui_state 原样透传（嵌套 JSON 由使用方解析）', () => {

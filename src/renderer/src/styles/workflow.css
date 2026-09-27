@@ -13,6 +13,9 @@
   user-select: none;
 }
 .wf-side {
+  /* 进场：与图谱右栏同一族（关键帧 aside-in 定义在 graph.css，两页一起加载）。
+     它是这一页的「侧栏卡片」，跟着页面进场一起从右侧 8px 处落位 */
+  animation: aside-in var(--dur-panel) var(--ease-panel);
   /* 宽度由行内样式给出（可拖拽调节），这里只兜住弹性与边界 */
   flex: 0 0 auto;
   min-width: 170px;
@@ -238,7 +241,37 @@
   stroke: var(--border-strong);
   stroke-width: 1.5;
 }
-.wf-node__box--on {
+/* 悬停 / 选中：描边加粗并抬向强调色 —— 有过渡，不再是「啪」一下跳过去。
+   只过渡 paint（stroke / stroke-width），不碰尺寸与位置 */
+.wf-node__box,
+.wf-node__diamond {
+  transition:
+    stroke var(--dur-fast) var(--ease-enter),
+    stroke-width var(--dur-fast) var(--ease-enter);
+}
+/* 悬停用 60% 的强调色而不是全量：全量会和「已选中」（.wf-node__box--on）撞成一样，
+   看起来像点过了 */
+.wf-node--on .wf-node__box,
+.wf-node--on .wf-node__diamond {
+  stroke: color-mix(in srgb, var(--accent) 60%, var(--border-strong));
+  stroke-width: 1.8;
+}
+/* 抬升：node 内容层的 scale。
+   挂在内层 <g> 上是因为外层 .wf-node 的 transform 是定位属性 translate(x,y)
+   —— wfbranchcheck.mjs 会直接读那个 attribute，CSS transform 会把它整个盖掉。
+   内层没有任何定位属性，这里的缩放是纯视觉叠加，动画期间命中区仍在最终坐标上 */
+.wf-node__body {
+  /* SVG 的 transform-origin 默认是画布原点，不写这两行会绕原点放大、整个节点飞出画面 */
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform var(--dur-fast) var(--ease-enter);
+}
+.wf-node--on .wf-node__body {
+  transform: scale(1.03);
+}
+/* 选中态要比上面的悬停态更硬：写成 .wf-canvas 下的两级选择器，
+   与悬停规则同权重且更靠后 —— 悬停一个已选中的节点时不会把它「降级」成悬停色 */
+.wf-canvas .wf-node__box--on {
   stroke: var(--accent);
   stroke-width: 2;
 }
@@ -261,6 +294,9 @@
 }
 /* 节点详情浮卡：画在 foreignObject 里，跟随被点中的节点展开 */
 .wf-card {
+  /* 进场：与图谱右栏同一族（关键帧 aside-in 定义在 graph.css，两页一起加载）。
+     WorkflowPage 给这张卡挂了 key=节点 id，换一步就重挂一次、重播这条动画 */
+  animation: aside-in var(--dur-panel) var(--ease-panel);
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
@@ -387,7 +423,7 @@
   stroke: color-mix(in srgb, var(--accent-warm) 70%, var(--border-strong));
   stroke-width: 1.5;
 }
-.wf-node__diamond--on {
+.wf-canvas .wf-node__diamond--on {
   stroke: var(--accent);
   stroke-width: 2;
 }

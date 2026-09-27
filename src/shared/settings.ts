@@ -24,6 +24,8 @@ export interface AppSettings {
   task_indent: number
   control_height: number
   motion_level: MotionLevel
+  /** 玻璃拟态（实验）：标题栏 / 工具栏 / 菜单 / 模态用半透明底 + 背景模糊 */
+  glass_enabled: boolean
   pomodoro_focus_min: number
   pomodoro_break_min: number
   pomodoro_auto_break: boolean
@@ -140,6 +142,8 @@ export function parseSettings(raw: Record<string, string> = {}): AppSettings {
     task_indent: num(raw.task_indent, 20, 8, 48),
     control_height: num(raw.control_height, 32, 24, 48),
     motion_level: oneOf(raw.motion_level, MOTION_LEVELS, 'full'),
+    // 默认开：这项是「看了再决定」的视觉实验，默认关掉了就没人会去看
+    glass_enabled: bool(raw.glass_enabled, true),
     pomodoro_focus_min: num(raw.pomodoro_focus_min, 25, 5, 90),
     pomodoro_break_min: num(raw.pomodoro_break_min, 5, 1, 30),
     pomodoro_auto_break: bool(raw.pomodoro_auto_break, false),
@@ -213,6 +217,7 @@ export const DEFAULT_SETTINGS: Record<string, string> = {
   theme_custom_light: '',
   theme_custom_dark: '',
   motion_level: 'full',
+  glass_enabled: '1',
   pomodoro_focus_min: '25',
   pomodoro_break_min: '5',
   reminder_enabled: '1',

@@ -77,6 +77,100 @@ textarea {
   border-radius: var(--radius-sm);
 }
 
+/* =============================================================================
+   浮层动效语言（全项目统一，docs/03 §11）
+   四组语义化的「进 / 退」配对 + 两条配套线。时长与缓动一律取 tokens.css 的令牌：
+   只要这里不出现裸时长，data-motion='none' 与 prefers-reduced-motion 就会自动归零。
+   退场那一半由 lib/presence.ts 的 usePresence 挂 .is-leaving 触发 ——
+   它在「动效非 full 档」时同步卸载，所以没人消费退场也不会把浮层卡在 DOM 里。
+   ============================================================================= */
+
+/* 弹出菜单：贴着触发点长出来（transform-origin 由 PopMenu.tsx 按触发点写） */
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-4px);
+  }
+}
+@keyframes pop-out {
+  to {
+    opacity: 0;
+    transform: scale(0.96) translateY(-4px);
+  }
+}
+
+/* 模态 / 命令面板：遮罩只淡（它铺满全屏，一缩放就会露出边），面板略缩、下沉一点再归位 */
+@keyframes mask-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes mask-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.985) translateY(6px);
+  }
+}
+@keyframes dialog-out {
+  to {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* 抽屉 / 侧向浮层：从右侧略微滑入 */
+@keyframes drawer-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+@keyframes drawer-out {
+  to {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+
+/* 卡片（到点提醒 / 信息条）：从下方浮起并轻微放大 */
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+}
+@keyframes card-out {
+  to {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+}
+
+/* Toast 的退场：app.css 负责声明 .toast.is-leaving。
+   .toast 靠 translateX(-50%) 居中，退场帧必须自己带上 -50%，否则收尾会横向弹一下。 */
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+}
+
+/* Toast 停留期的底部进度线：线性推进，时长由调用方按自动关闭时间内联给出
+   （见 components/Toast.tsx）——写死在这里必然与那个定时器漂移 */
+@keyframes toast-progress {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
 /* ---- 应用内对话框（components/Dialogs.tsx）----
    放在 global 而不是 tasks.css：桌面浮窗只加载 tokens / global / widget 三份样式，
    它同样要用这套弹框；留在 tasks.css 里的话，浮窗弹出来会是没有样式的裸框。 */
@@ -88,7 +182,15 @@ textarea {
   align-items: center;
   justify-content: center;
   background: var(--overlay);
-  animation: toast-in var(--dur-fast) var(--ease-enter);
+  animation: mask-in var(--dur-fast) var(--ease-enter);
+}
+/* 遮罩退场：usePresence 挂的 .is-leaving。退场期间整层不吃点击 ——
+   底下那些按钮下一次渲染就会从 DOM 里消失，不该再能点到 */
+.modal-mask.is-leaving {
+  /* forwards 不能省：usePresence 的兜底卸载比动画本身晚 100ms，
+     没有终态保持的话，那 100ms 里浮层会「淡出完又亮回来」。 */
+  animation: mask-out var(--dur-fast) var(--ease-exit) forwards;
+  pointer-events: none;
 }
 .modal {
   width: min(560px, calc(100vw - 64px));
@@ -98,8 +200,17 @@ textarea {
   background: var(--bg-layer-solid);
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-xl);
+  /* --edge-light 是贴在顶边的 1px 内高光：让卡片从遮罩里「浮」起来，而不是一块扁色。
+     独立窗口里的卡片（.cond-win / .capture-host / 提醒气泡）各自把它压成 none，不受影响 */
+  box-shadow: var(--shadow-xl), var(--edge-light);
   overflow: hidden;
+}
+/* 玻璃拟态（实验档）：只有**带遮罩**的模态背后才有可模糊的对象（页面内容）。
+   独立窗口里的卡片（.cond-win / .capture-host / 提醒气泡）背后是桌面，
+   透明窗口里的 backdrop-filter 还容易在窗口边界留下残影 —— 所以刻意不覆盖它们。 */
+.modal-mask .modal {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-filter);
 }
 .modal__head {
   display: flex;
@@ -127,8 +238,132 @@ textarea {
 .modal__spacer {
   flex: 1;
 }
+/* 弹框按钮组错峰进场：主操作（最后一个按钮）比取消晚 60ms ——
+   delay 由 --dur-instant 折出（100ms × 0.6），动效关闭时随令牌一起归零。
+   backwards 让它在延迟期间停在起点帧，而不是先亮一下再补动画 */
+.modal-mask .modal__foot button {
+  animation: pop-in var(--dur-fast) var(--ease-enter) backwards;
+}
+.modal-mask .modal__foot button:last-child {
+  animation-delay: calc(var(--dur-instant) * 0.6);
+}
 .modal--dialog {
   width: min(420px, calc(100vw - 64px));
+}
+/* 面板进场：只有**带遮罩**的弹框与命令面板走这一组。
+   独立窗口里的捕获 / 条件确认「窗口本身就是那张卡片」（.cond-win .modal / .capture-host .modal），
+   跟着动会像窗口在窗口里又滑了一下 */
+.modal-mask .modal,
+.modal-mask .palette {
+  animation: dialog-in var(--dur-normal) var(--ease-enter);
+}
+.modal-mask.is-leaving .modal,
+.modal-mask.is-leaving .palette {
+  animation: dialog-out var(--dur-fast) var(--ease-exit) forwards;
+}
+
+/* ---- 弹出菜单（components/PopMenu.tsx）----
+   基础外观在 tasks.css，这里补的是统一的进出场。放 global.css 有两个理由：
+   它是全项目共用的动效层（tasks.css 归另一个施工面），而且要靠两个类名压过
+   tasks.css 里那条同权重的旧动画 —— toast-in 后加载，单类名规则会被它盖掉。 */
+.popmenu.popmenu--pop {
+  /* 选择器刻意写两个类：tasks.css 里还有一条同权重的旧动画（toast-in），
+     它后加载会盖掉单类名规则，用它自己那点权重盖不过去 */
+  animation: pop-in var(--dur-fast) var(--ease-enter);
+}
+.popmenu.popmenu--pop.is-leaving {
+  animation: pop-out var(--dur-instant) var(--ease-exit) forwards;
+  pointer-events: none;
+}
+
+/* ---- 全局提示（components/Toast.tsx）----
+   容器常驻：role=status / aria-live=polite 挂在这个不会重建的层上，
+   新的一条提示只换里面的 .toast 节点 —— 容器跟着重建会让读屏把同一条消息再播一遍。
+   整层 fixed + 不吃指针，不参与任何布局（.app 是 flex 列，固定定位的子元素不算 flex item）。 */
+.toast-host {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-toast);
+  pointer-events: none;
+}
+/* 停留期的底部进度线。这里只挂动画名与线性缓动，不写 duration：
+   它必须与「自动关闭」的定时器一致，那个时长只有调用方知道。 */
+.toast__bar {
+  position: absolute;
+  left: var(--space-3);
+  right: var(--space-3);
+  bottom: 0;
+  height: 2px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, currentColor 45%, transparent);
+  transform-origin: left center;
+  animation-name: toast-progress;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+/* ---- 番茄钟（独立小窗 ?pomodoro=1）----
+   与捕获窗 / 条件窗同理：窗口本身就是那张卡片，所以不留内边距、不留投影
+   （投影会被透明窗口的边界裁成一圈方角残影）。 */
+html[data-surface='pomodoro'],
+html[data-surface='pomodoro'] body,
+html[data-surface='pomodoro'] #root {
+  background: transparent;
+}
+.pomo-host {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+html[data-surface='pomodoro'] .modal--pomodoro {
+  width: 100%;
+  max-width: none;
+  max-height: none;
+  height: auto;
+  box-shadow: none;
+}
+.pomo-card__time {
+  margin: 0;
+  /* 字号仍是 5 档的派生（不新增档位）：番茄钟的时间要一眼可读，比 hero 再大一档半 */
+  font-size: calc(var(--text-hero) * 1.45);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+.pomo-card__task {
+  margin: var(--space-1) 0 0;
+  color: var(--fg-secondary);
+  font-size: var(--text-aux);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pomo-card__bar {
+  display: block;
+  margin-top: var(--space-3);
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-hover);
+  overflow: hidden;
+}
+.pomo-card__bar > i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  /* 每秒推进一格：时长取数据节拍令牌（它有意不参与 data-motion 归零） */
+  transition: width var(--dur-tick) linear;
+}
+.pomo-card__hint {
+  margin: 0 0 var(--space-1);
+}
+.pomo-card__reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.modal--pomodoro .modal__foot button {
+  /* 与弹框按钮组一致：靠后的主操作晚 60ms 进场 */
+  animation: pop-in var(--dur-fast) var(--ease-enter) backwards;
 }
 
 /* ---- 到点提醒（主窗口卡片 / 悬浮表情气泡）----

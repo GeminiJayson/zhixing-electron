@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { RotateCcw, Trash2 } from '@renderer/lib/icons'
 import { parseSettings } from '@shared/settings'
+import { isMotionFull } from '../lib/presence'
 import { useDialog } from './Dialogs'
 
 interface Props {
@@ -10,6 +11,13 @@ interface Props {
 }
 
 type Kind = 'task' | 'note' | 'flash'
+
+/** 读一个时长令牌的毫秒数（--dur-fast）。读不到按 0 = 不退场，直接落库刷新。 */
+function readTokenMs(name: string): number {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name)
+  const n = Number.parseFloat(raw)
+  return Number.isFinite(n) ? n : 0
+}
 
 const TABS: { key: Kind; label: string }[] = [
   { key: 'task', label: '任务' },
@@ -23,6 +31,8 @@ export function RecycleBin({ onNotice, onChanged, onClose }: Props) {
   const [tab, setTab] = useState<Kind>('task')
   const [items, setItems] = useState<{ id: number; label: string; deleted_at: string }[]>([])
   const [days, setDays] = useState(30)
+  /** 正在退场的行：挂 .is-leaving 播一段 --dur-fast 的退出动画 */
+  const [leaving, setLeaving] = useState<Set<number>>(new Set())
 
   // 初始天数取设置里的 recycle_retention_days（此前硬编码 30，改设置也不生效）
   useEffect(() => {
@@ -53,6 +63,32 @@ export function RecycleBin({ onNotice, onChanged, onClose }: Props) {
     await onChanged()
   }
 
+  /**
+   * 先退场、再落库。
+   *
+   * 行从列表里消失是 load() 造成的（items 一变，React 立刻把元素摘出 DOM），
+   * CSS 的退出动画于是永远没有落点 —— 所以先挂 .is-leaving 把 --dur-fast 这段时间让出来。
+   * 动效非 full 档、或时长读成 0 时同步执行，一秒都不多等（isMotionFull() 读的是 dataset.motion）。
+   */
+  const withExit = async (id: number, run: () => Promise<void>): Promise<void> => {
+    const ms = readTokenMs('--dur-fast')
+    if (ms <= 0 || !isMotionFull()) {
+      await run()
+      return
+    }
+    setLeaving((prev) => new Set(prev).add(id))
+    try {
+      await new Promise((resolve) => window.setTimeout(resolve, ms))
+      await run()
+    } finally {
+      setLeaving((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+    }
+  }
+
   return (
     <div className="modal-mask" onMouseDown={onClose}>
       <div className="modal" role="dialog" aria-modal="true" aria-label="回收站" onMouseDown={(e) => e.stopPropagation()}>
@@ -73,7 +109,10 @@ export function RecycleBin({ onNotice, onChanged, onClose }: Props) {
           ) : (
             <ul className="trash-list">
               {items.map((it) => (
-                <li key={it.id} className="trash-row">
+                <li
+                  key={it.id}
+                  className={'trash-row' + (leaving.has(it.id) ? ' is-leaving' : '')}
+                >
                   <span className="trash-row__label">{it.label || '（无标题）'}</span>
                   <span className="u-aux">{it.deleted_at.slice(0, 16)}</span>
                   <button
@@ -81,11 +120,11 @@ export function RecycleBin({ onNotice, onChanged, onClose }: Props) {
                     title="恢复"
                     aria-label="恢复"
                     onClick={() =>
-                      void (async () => {
+                      void withExit(it.id, async () => {
                         await window.zhixing.db.restoreTrash(tab, it.id)
                         onNotice('已恢复')
                         await afterChange()
-                      })()
+                      })
                     }
                   >
                     <RotateCcw size={14} />
@@ -104,9 +143,11 @@ export function RecycleBin({ onNotice, onChanged, onClose }: Props) {
                           confirmText: '彻底删除',
                         })
                         if (!confirmed) return
-                        await window.zhixing.db.purgeTrash(tab, it.id)
-                        onNotice('已彻底删除')
-                        await afterChange()
+                        await withExit(it.id, async () => {
+                          await window.zhixing.db.purgeTrash(tab, it.id)
+                          onNotice('已彻底删除')
+                          await afterChange()
+                        })
                       })()
                     }}
                   >

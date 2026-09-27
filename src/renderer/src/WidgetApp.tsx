@@ -362,9 +362,9 @@ export function WidgetApp() {
             await load()
           }}
           onFocus={(id, title) =>
-            window.dispatchEvent(
-              new CustomEvent('zhixing:pomodoro', { detail: { taskId: id, title } })
-            )
+            // 直接开那个独立小窗（不再派发本地事件）：浮窗与主窗口都能用同一条路，
+            // 而在浮窗里派发的 window 事件主窗口根本收不到 —— 那条路径此前是哑的。
+            void window.zhixing.pomodoro.open({ taskId: id, title })
           }
           onEdit={() => {
             // 完整编辑面板在主窗（浮窗行内标题已可直接改）

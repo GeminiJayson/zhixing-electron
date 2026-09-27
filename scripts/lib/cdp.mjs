@@ -63,10 +63,20 @@ const POWERSHELL = join(
 export function killStaleDebugInstances() {
   if (process.platform !== 'win32') return 0
   if (!existsSync(POWERSHELL)) return 0
+  // 两条筛选，缺一不可：
+  //  1) 带调试端口的主进程 —— 用 taskkill /T 连**整棵进程树**一起收。原来只 Stop-Process 主进程，
+  //     renderer / gpu / utility 这些子进程的命令行里没有端口，于是全都活下来；
+  //     残留的渲染进程占着 GPU 与共享内存，下一个实例起来就会卡死
+  //     （表现：CDP 已连上、`Runtime.evaluate` 却 45s 超时，界面白屏，任何日志都没有）。
+  //  2) 命令行里带仓库 .screenshots 的孤儿进程 —— 父进程先退出时子进程会被过继，/T 追不到它们。
+  //     这个特征不会误伤用户自己的知行（它的数据目录在 %APPDATA%）。
+  // 单引号在 PowerShell 里要落成字面量，而这段命令本身是拼出来的字符串，所以统一取 ASCII 39。
+  const Q = String.fromCharCode(39)
   const ps =
-    'Get-CimInstance Win32_Process -Filter "Name = ' + String.fromCharCode(39) + 'electron.exe' + String.fromCharCode(39) + '"' +
-    ' | Where-Object { $_.CommandLine -like ' + String.fromCharCode(39) + '*--remote-debugging-port=*' + String.fromCharCode(39) + ' }' +
-    ' | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue; $_.ProcessId }'
+    'Get-CimInstance Win32_Process -Filter "Name = ' + Q + 'electron.exe' + Q + '"' +
+    ' | Where-Object { $_.CommandLine -like ' + Q + '*--remote-debugging-port=*' + Q +
+    ' -or $_.CommandLine -like ' + Q + '*.screenshots*' + Q + ' }' +
+    ' | ForEach-Object { taskkill /PID $_.ProcessId /T /F 2>&1 | Out-Null; $_.ProcessId }'
   try {
     const out = execFileSync(POWERSHELL, ['-NoProfile', '-NonInteractive', '-Command', ps], {
       encoding: 'utf8',
@@ -129,7 +139,10 @@ export async function launchApp({
   if (killStale) {
     const n = killStaleDebugInstances()
     if (n) console.log('【清理】杀掉 ' + n + ' 个残留的调试实例')
-    await sleep(300)
+    // 杀完之后必须等一会儿再起新实例：taskkill 返回 ≠ GPU/共享内存/文件锁都释放完，
+    // 紧接着启动的那一个会卡在「CDP 连上了、Runtime.evaluate 却死活不返回」——
+    // 实测连续启动三次，紧接清理的那次失败、后面两次都正常，就是这段等待不够。
+    await sleep(n ? 1800 : 400)
   }
   if (clean) {
     // 上一个实例可能还没完全释放 profile 目录（Electron 有好几个子进程），
@@ -148,17 +161,23 @@ export async function launchApp({
   if (copyDb) {
     copyFileSync(join(process.env.APPDATA ?? '', 'ZhiXing', 'zhixing.db'), join(home, 'zhixing.db'))
   }
+  // 本机没有 node 时，脚本是用 Electron 的 Node 模式跑的（ELECTRON_RUN_AS_NODE=1）——
+  // 那个变量**绝不能**传给被启动的应用：它会同样以 Node 模式起来、根本不开窗，
+  // 表现是脚本一直等到超时，而日志里没有任何报错。
+  const childEnv = {
+    ...process.env,
+    PATH: SYS_PATH + ';' + (process.env.PATH ?? ''),
+    ZHIXING_HOME: home,
+    ...env
+  }
+  delete childEnv.ELECTRON_RUN_AS_NODE
+
   const child = spawn(
     require('electron'),
     ['.', '--remote-debugging-port=' + port, '--user-data-dir=' + (profile ?? join(home, 'profile'))],
     {
       cwd: ROOT,
-      env: {
-        ...process.env,
-        PATH: SYS_PATH + ';' + (process.env.PATH ?? ''),
-        ZHIXING_HOME: home,
-        ...env
-      },
+      env: childEnv,
       stdio: ['ignore', 'pipe', 'pipe']
     }
   )

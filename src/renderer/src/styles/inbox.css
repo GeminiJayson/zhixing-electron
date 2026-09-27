@@ -27,11 +27,32 @@
   background: var(--bg-layer-solid);
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius-lg);
+  /* 悬停 / 选中 / 深链高亮之间的状态切换：即时反馈走 --dur-instant */
+  transition: background-color var(--dur-instant) var(--ease-standard),
+    border-color var(--dur-instant) var(--ease-standard),
+    box-shadow var(--dur-instant) var(--ease-standard);
+  /* 新增行的入场。元素在列表里以 id 为 key，滚动不会重挂载，
+     所以这条只在「这一行新出现」时播一次，不会随滚动重播。
+     交错延迟由 InboxPage 按 --dur-stagger 逐行给（最多 8 行）。 */
+  animation: zx-inbox-enter var(--dur-normal) var(--ease-enter) backwards;
 }
-/* 深链定位到的闪念：短暂高亮 */
-.flash-card--focus {
+/* 悬停：抬一层底 + 贴顶内高光 */
+.flash-card:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+  box-shadow: var(--edge-light);
+}
+/* 选中待合并：蘸一点强调色，与未选中的卡片区分开 */
+.flash-card--picked {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  box-shadow: var(--edge-light);
+}
+/* 深链定位到的闪念：短暂高亮。选择器带上基类是为了压过上面 :hover 那条阴影 ——
+   悬停时那圈高亮不该被抹掉（内高光一并写回）。 */
+.flash-card.flash-card--focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+  box-shadow: var(--edge-light), 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 .flash-card__content {
   margin: 0;
@@ -66,4 +87,16 @@
   display: flex;
   align-items: center;
   margin-bottom: calc(-1 * var(--space-1));
+}
+
+/* 列表行入场：淡入 + 自上而下 4px（--space-1）归位 */
+@keyframes zx-inbox-enter {
+  from {
+    opacity: 0;
+    transform: translateY(calc(-1 * var(--space-1)));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

@@ -1,10 +1,21 @@
 /* 设置页 */
+/* 标题行与分区 tab 固定，滚动只发生在下面的内容区。
+   原来的做法是「整页滚、工具栏 sticky 吸顶」—— 结果标题行在滚动中会被 tab 与卡片推着走一段，
+   而且吸顶后要给自己铺底色，与今日页 / 笔记页的标题行看起来是两种东西。
+   现在把滚动收到 .set-body 里：标题与 tab 一次都不动。 */
+.page--settings .page__body {
+  overflow: hidden;
+}
 .set-body {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   margin-top: var(--space-3);
   /* 不设 max-width：设置卡片要横向铺满父布局，窄窗口时自然收窄 */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .set-card {
   display: flex;
@@ -242,4 +253,53 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ---- 本轮动效与质感 ---- */
+
+/* 外观分组的卡片：贴顶 1px 内高光 + 极淡的强调色氛围。
+   只加背景图与阴影，两者都不参与布局，骨架不变。 */
+.set-card--ambient {
+  box-shadow: var(--edge-light);
+  background-image: radial-gradient(
+    120% 80% at 50% 0%,
+    color-mix(in srgb, var(--accent) 6%, transparent),
+    transparent 70%
+  );
+}
+
+/* 密度滑块：值每帧都在变，拖动中挂任何过渡都会被「每帧重启」而发黏。
+   所以过渡只写在松手之后的那一侧（--dur-fast），拖动中由 .set-card--sliding 关掉。 */
+.set-row input[type='range'] + .u-aux {
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+.set-card--sliding .set-row input[type='range'] + .u-aux {
+  color: var(--accent-text);
+  transition: none;
+}
+
+/* 回收站行：悬停给即时反馈；恢复 / 彻底删除后先按 --dur-fast + --ease-exit 退场，
+   再由 RecycleBin 落库刷新列表。 */
+.trash-row {
+  transition: background-color var(--dur-instant) var(--ease-standard);
+}
+.trash-row:hover {
+  box-shadow: var(--edge-light);
+}
+.trash-row.is-leaving {
+  /* forwards 而不是 backwards：退场动画的终态（opacity 0）必须锁住。
+     落库 + 刷新若比这 150ms 慢，元素会在被移除前闪回原状；
+     backwards 只影响「延迟期间」，对已经播完的动画没有任何保持作用。 */
+  animation: zx-trash-out var(--dur-fast) var(--ease-exit) forwards;
+  pointer-events: none;
+}
+@keyframes zx-trash-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(calc(-1 * var(--space-1)));
+  }
 }

@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarClock, CheckCircle2, CircleAlert, NotebookPen, Sparkles, Trash2 } from '@renderer/lib/icons'
+import { isMotionFull } from '../lib/presence'
 import { useDialog } from '../components/Dialogs'
 import { buildTaskTree, effectiveDoneMap, type TaskNode } from '@shared/task'
 import type { Note, Overview, TodayTasks } from '@shared/types'
@@ -18,6 +19,132 @@ interface Props {
 }
 
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+
+/** 读一个时长令牌的毫秒数（如 --dur-slow）。读不到按 0 处理 = 直接切换。
+ *  时长只认 --dur-*：动效关闭 / 系统减动效时它们本身就是 0ms，降级于是自动生效。 */
+function readTokenMs(name: string): number {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name)
+  const n = Number.parseFloat(raw)
+  return Number.isFinite(n) ? n : 0
+}
+
+/** 把 --ease-panel 解成 0→1 的进度函数：与 CSS 那条贝塞尔同源（解不开就退化成线性）。 */
+function readPanelEase(): (p: number) => number {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue('--ease-panel')
+  const m = /\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)/.exec(raw)
+  if (!m) return (p) => p
+  const x1 = Number(m[1])
+  const y1 = Number(m[2])
+  const x2 = Number(m[3])
+  const y2 = Number(m[4])
+  const cx = 3 * x1
+  const bx = 3 * (x2 - x1) - cx
+  const ax = 1 - cx - bx
+  const cy = 3 * y1
+  const by = 3 * (y2 - y1) - cy
+  const ay = 1 - cy - by
+  const rx = (t: number): number => ((ax * t + bx) * t + cx) * t
+  const ry = (t: number): number => ((ay * t + by) * t + cy) * t
+  const dx = (t: number): number => (3 * ax * t + 2 * bx) * t + cx
+  return (p) => {
+    let t = p
+    for (let i = 0; i < 8; i += 1) {
+      const err = rx(t) - p
+      if (Math.abs(err) < 0.0005) break
+      const d = dx(t)
+      if (Math.abs(d) < 0.000001) break
+      t -= err / d
+    }
+    return ry(Math.min(1, Math.max(0, t)))
+  }
+}
+
+/**
+ * 概览数字滚动（C3）。
+ * - 首次进入：0 → 终值，时长 --dur-slow，缓动手感与 --ease-panel 同源；
+ * - 之后数值变化（完成一条 2→1）：从**当前值**过渡到新值，时长 --dur-fast，绝不重头再来一遍；
+ * - 非 full 档（isMotionFull() 为假）或时长读成 0：直接显示终值。
+ * 实现用 requestAnimationFrame 逐帧写 state；数字是 tabular-nums，宽度不会抖。
+ */
+function useRollNumber(target: number): number {
+  const [shown, setShown] = useState(() => (isMotionFull() ? 0 : target))
+  const shownRef = useRef(shown)
+  const rafRef = useRef<number | null>(null)
+  /** 是否还没播过「首次入场滚数」 */
+  const firstRef = useRef(true)
+
+  useEffect(() => {
+    const cancel = (): void => {
+      if (rafRef.current !== null) {
+        window.cancelAnimationFrame(rafRef.current)
+        rafRef.current = null
+      }
+    }
+    const settle = (v: number): void => {
+      shownRef.current = v
+      setShown(v)
+    }
+    cancel()
+    const first = firstRef.current
+    const from = first ? 0 : shownRef.current
+    const to = target
+    // 数值没动（概览还没到位时四张卡都还是 0）：不消费「首次」，等真正的第一个终值再滚
+    if (from === to) {
+      settle(to)
+      return cancel
+    }
+    const ms = readTokenMs(first ? '--dur-slow' : '--dur-fast')
+    if (ms <= 0 || !isMotionFull()) {
+      firstRef.current = false
+      settle(to)
+      return cancel
+    }
+    const ease = readPanelEase()
+    let start = 0
+    const step = (now: number): void => {
+      if (start === 0) start = now
+      const p = Math.min(1, (now - start) / ms)
+      if (p < 1) {
+        const v = Math.round(from + (to - from) * ease(p))
+        shownRef.current = v
+        setShown(v)
+        rafRef.current = window.requestAnimationFrame(step)
+        return
+      }
+      rafRef.current = null
+      // 只有真的滚完才消费「首次」：中途被打断（开发期 StrictMode 重放、
+      // 目标值又变了）不该把下一次也降级成「非首次」
+      firstRef.current = false
+      settle(to)
+    }
+    rafRef.current = window.requestAnimationFrame(step)
+    return cancel
+  }, [target])
+
+  // 外观是 App 的 effect 铺的，本页挂载比它早：启动时若本来就是「关闭 / 仅必要」档，
+  // 光靠挂载那一刻读令牌会漏判。收到档位广播就立刻落到终值。
+  useEffect(() => {
+    const onMotion = (): void => {
+      if (isMotionFull()) return
+      if (rafRef.current !== null) {
+        window.cancelAnimationFrame(rafRef.current)
+        rafRef.current = null
+      }
+      shownRef.current = target
+      setShown(target)
+    }
+    window.addEventListener('zhixing:motion', onMotion)
+    return () => window.removeEventListener('zhixing:motion', onMotion)
+  }, [target])
+
+  return shown
+}
+
+/** 概览卡上的数字。每张卡各持一条 rAF，互不干扰。 */
+function StatValue({ value }: { value: number }): React.ReactElement {
+  const shown = useRollNumber(value)
+  return <span className="stat-card__value">{shown}</span>
+}
 
 /** 今日页：日期问候 + 概览四卡 + 今日待办（含完整子树）+ 最近笔记。 */
 export function TodayPage({ overview, onChanged, onNotice, onOpenNote, onFocusTasks }: Props) {
@@ -150,9 +277,9 @@ export function TodayPage({ overview, onChanged, onNotice, onOpenNote, onFocusTa
             await refresh()
           }}
           onFocus={(id, title) =>
-            window.dispatchEvent(
-              new CustomEvent('zhixing:pomodoro', { detail: { taskId: id, title } })
-            )
+            // 直接开那个独立小窗（不再派发本地事件）：浮窗与主窗口都能用同一条路，
+            // 而在浮窗里派发的 window 事件主窗口根本收不到 —— 那条路径此前是哑的。
+            void window.zhixing.pomodoro.open({ taskId: id, title })
           }
           onAddSubtask={async (id) => {
             await window.zhixing.db.createTask('新子任务', id)
@@ -219,7 +346,7 @@ export function TodayPage({ overview, onChanged, onNotice, onOpenNote, onFocusTa
                 title={c.focus ? `跳到任务页的「${c.label}」` : '跳到收件箱的闪念页'}
               >
                 <Icon size={16} strokeWidth={2} aria-hidden />
-                <span className="stat-card__value">{c.value}</span>
+                <StatValue value={c.value} />
                 <span className="stat-card__label">{c.label}</span>
               </button>
             )

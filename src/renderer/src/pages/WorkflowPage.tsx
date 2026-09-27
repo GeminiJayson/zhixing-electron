@@ -52,6 +52,7 @@ import { WorkflowStepDialog } from '../components/WorkflowStepDialog'
 import { WorkflowConditionDialog } from '../components/WorkflowConditionDialog'
 import { useDialog } from '../components/Dialogs'
 import { usePanZoom } from '../lib/usePanZoom'
+import { isMotionFull } from '../lib/presence'
 import {
   SIDE_NORMAL,
   edgePathMidpoint,
@@ -89,6 +90,15 @@ const SIDE_MIN = 170
 const SIDE_MAX = 460
 /** 键盘调节侧栏宽度时的步长（← → 各一格） */
 const SIDE_KEY_STEP = 16
+/** 布局飞位的位移下限（画布用户单位）：小于它的抖动不值得飞一程 */
+const FLY_MIN_SHIFT = 0.5
+
+/** 读一个时长令牌的毫秒数（--dur-panel）。读不到按 0 处理 = 直接落位。 */
+function readTokenMs(name: string): number {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name)
+  const n = Number.parseFloat(raw)
+  return Number.isFinite(n) ? n : 0
+}
 
 /**
  * 一个节点的出线端口 —— 画布上每个节点都能**主动**拉一条线到别的节点，
@@ -529,6 +539,66 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   useEffect(() => {
     panRef.current?.reset()
   }, [canvasSize])
+
+  /** 上一帧提交进 DOM 的节点坐标（飞位的起点）与还在跑的补间（同一节点先撤后飞）。 */
+  const flownPosRef = useRef<Map<number, { x: number; y: number }>>(new Map())
+  const flownAnimsRef = useRef<Map<number, Animation>>(new Map())
+
+  /**
+   * 布局飞位（消费 --dur-panel / --ease-panel）。
+   *
+   * 自动布局或切「纵向 / 横向」之后，节点的 transform 属性会整体换成新坐标；
+   * React 复用同一个 <g>，于是画面是**瞬移**。这里按上一帧记下的坐标补一段位移，
+   * 让节点「飞」过去 —— 用户看得见「谁挪到了哪儿」，而不是刷新了一下。
+   *
+   * 为什么用 Web Animations 而不是 CSS transition：定位走的是 SVG 的 transform
+   * **属性**（wfbranchcheck.mjs 直接读 getAttribute('transform')，所以也不能改成内联 style），
+   * 属性变化不参与 CSS 过渡。关键帧交给 fill:'none' —— 动画一结束元素立刻回到属性里的
+   * 最终坐标，拖拽、平移缩放与命中检测拿到的始终是权威值，不会停在补间中间。
+   *
+   * 非 full 档（data-motion 为 reduced / none）直接跳过：--dur-panel 归零只管得住 CSS，
+   * 这里得自己判档 —— 判档一律走 lib/presence 的 isMotionFull（full 档的 dataset 是空串）。
+   */
+  useEffect(() => {
+    const before = flownPosRef.current
+    const after = new Map(pos)
+    flownPosRef.current = after
+    if (!isMotionFull()) return
+    // 拖动节点时坐标是逐帧写进来的：跟手才是对的，插一段补间会让它慢半拍
+    if (dragRef.current) return
+    const svg = panRef.current?.svgRef.current
+    if (!svg || before.size === 0) return
+    const style = getComputedStyle(document.documentElement)
+    const duration = readTokenMs('--dur-panel')
+    const easing = style.getPropertyValue('--ease-panel').trim() || 'linear'
+    for (const [id, to] of after) {
+      const from = before.get(id)
+      if (!from) continue
+      if (Math.abs(to.x - from.x) < FLY_MIN_SHIFT && Math.abs(to.y - from.y) < FLY_MIN_SHIFT) continue
+      const el = svg.querySelector(`g.wf-node[data-wf-node="${id}"]`)
+      if (!el) continue
+      flownAnimsRef.current.get(id)?.cancel()
+      flownAnimsRef.current.set(
+        id,
+        el.animate(
+          [
+            { transform: `translate(${from.x}px, ${from.y}px)` },
+            { transform: `translate(${to.x}px, ${to.y}px)` },
+          ],
+          { duration, easing, fill: 'none' }
+        )
+      )
+    }
+  }, [pos])
+
+  // 卸载时把还在跑的补间收掉，别让动画对象挂在已经离开的节点上
+  useEffect(
+    () => () => {
+      for (const a of flownAnimsRef.current.values()) a.cancel()
+      flownAnimsRef.current.clear()
+    },
+    []
+  )
 
   const handleNewTemplate = async (groupId: number | null = null): Promise<void> => {
     const name = await dialog.prompt({ title: '新建工作流', label: '名称' })
@@ -1484,69 +1554,74 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                   }
                   tabIndex={0}
                 >
-                  {n.action_kind === CONDITION_KIND ? (
-                    /* 条件节点用菱形（流程图惯例）：它是个「关卡」而不是待办步骤 */
-                    <polygon
-                      points={`${NODE_W / 2},2 ${NODE_W - 2},${NODE_H / 2} ${NODE_W / 2},${NODE_H - 2} 2,${NODE_H / 2}`}
+                  {/* 节点内容包一层：hover 抬升的 scale(1.03) 挂在这一层上（见 workflow.css）。
+                      外层 .wf-node 的 transform 是定位属性 translate(x,y) —— wfbranchcheck.mjs
+                      直接读那个 attribute，CSS transform 会整个盖掉它，节点会叠到画布原点 */}
+                  <g className="wf-node__body">
+                    {n.action_kind === CONDITION_KIND ? (
+                      /* 条件节点用菱形（流程图惯例）：它是个「关卡」而不是待办步骤 */
+                      <polygon
+                        points={`${NODE_W / 2},2 ${NODE_W - 2},${NODE_H / 2} ${NODE_W / 2},${NODE_H - 2} 2,${NODE_H / 2}`}
+                        className={
+                          'wf-node__diamond' + (selected === n.id ? ' wf-node__diamond--on' : '')
+                        }
+                      />
+                    ) : (
+                      <rect
+                        width={NODE_W}
+                        height={NODE_H}
+                        rx={8}
+                        className={
+                          'wf-node__box' +
+                          (selected === n.id ? ' wf-node__box--on' : '') +
+                          (done ? ' wf-node__box--done' : '') +
+                          (isCurrent ? ' wf-node__box--current' : '')
+                        }
+                      />
+                    )}
+                    <text
+                      x={n.action_kind === CONDITION_KIND ? NODE_W / 2 : 10}
+                      y={20}
                       className={
-                        'wf-node__diamond' + (selected === n.id ? ' wf-node__diamond--on' : '')
+                        'wf-node__idx' + (n.action_kind === CONDITION_KIND ? ' wf-node__idx--center' : '')
                       }
-                    />
-                  ) : (
-                    <rect
-                      width={NODE_W}
-                      height={NODE_H}
-                      rx={8}
+                    >
+                      {n.action_kind === CONDITION_KIND
+                      ? '条件'
+                      : `第 ${i + 1} 步${
+                          actionKindLabel(n.action_kind) === '任务'
+                            ? ''
+                            : ' · ' + actionKindLabel(n.action_kind)
+                        }`}
+                    </text>
+                    <text
+                      x={n.action_kind === CONDITION_KIND ? NODE_W / 2 : 10}
+                      y={40}
                       className={
-                        'wf-node__box' +
-                        (selected === n.id ? ' wf-node__box--on' : '') +
-                        (done ? ' wf-node__box--done' : '') +
-                        (isCurrent ? ' wf-node__box--current' : '')
+                        'wf-node__title' +
+                        (n.action_kind === CONDITION_KIND ? ' wf-node__title--center' : '')
                       }
-                    />
-                  )}
-                  <text
-                    x={n.action_kind === CONDITION_KIND ? NODE_W / 2 : 10}
-                    y={20}
-                    className={
-                      'wf-node__idx' + (n.action_kind === CONDITION_KIND ? ' wf-node__idx--center' : '')
-                    }
-                  >
-                    {n.action_kind === CONDITION_KIND
-                    ? '条件'
-                    : `第 ${i + 1} 步${
-                        actionKindLabel(n.action_kind) === '任务'
-                          ? ''
-                          : ' · ' + actionKindLabel(n.action_kind)
-                      }`}
-                  </text>
-                  <text
-                    x={n.action_kind === CONDITION_KIND ? NODE_W / 2 : 10}
-                    y={40}
-                    className={
-                      'wf-node__title' +
-                      (n.action_kind === CONDITION_KIND ? ' wf-node__title--center' : '')
-                    }
-                  >
-                    {n.title.length > 10 ? n.title.slice(0, 10) + '…' : n.title}
-                  </text>
-                  {/* 条件内容直接贴在菱形下方：只画一条虚线看不出「什么情况下走它」，
-                      把判据写出来才读得懂；完整文案在悬停提示与详情浮卡里 */}
-                  {n.action_kind === CONDITION_KIND &&
-                    (() => {
-                      const desc = describeCondition(n.action_value)
-                      // 13 个字是 9px 字号在 138px 宽度里放得下的上限，再多会溢出到边框外
-                      const brief = desc.length > 13 ? desc.slice(0, 13) + '…' : desc
-                      return (
-                        <g className="wf-node__cond" transform={`translate(0, ${NODE_H + 5})`}>
-                          <title>{desc}</title>
-                          <rect x={6} width={NODE_W - 12} height={18} rx={6} />
-                          <text x={NODE_W / 2} y={12.5}>
-                            {brief}
-                          </text>
-                        </g>
-                      )
-                    })()}
+                    >
+                      {n.title.length > 10 ? n.title.slice(0, 10) + '…' : n.title}
+                    </text>
+                    {/* 条件内容直接贴在菱形下方：只画一条虚线看不出「什么情况下走它」，
+                        把判据写出来才读得懂；完整文案在悬停提示与详情浮卡里 */}
+                    {n.action_kind === CONDITION_KIND &&
+                      (() => {
+                        const desc = describeCondition(n.action_value)
+                        // 13 个字是 9px 字号在 138px 宽度里放得下的上限，再多会溢出到边框外
+                        const brief = desc.length > 13 ? desc.slice(0, 13) + '…' : desc
+                        return (
+                          <g className="wf-node__cond" transform={`translate(0, ${NODE_H + 5})`}>
+                            <title>{desc}</title>
+                            <rect x={6} width={NODE_W - 12} height={18} rx={6} />
+                            <text x={NODE_W / 2} y={12.5}>
+                              {brief}
+                            </text>
+                          </g>
+                        )
+                      })()}
+                  </g>
                 </g>
               )
             })}
@@ -1720,7 +1795,8 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                 const idx = ordered.findIndex((x) => x.id === node.id)
                 return (
                   <foreignObject x={cx} y={cy} width={CARD_W} height={CARD_H}>
-                    <div className="wf-card">
+                    {/* key 挂节点 id：换一步就重挂一次浮卡，让它重播进场动画（内容全是纯展示） */}
+                    <div className="wf-card" key={node.id}>
                       <header className="wf-card__head">
                         <span>第 {idx + 1} 步</span>
                         <button

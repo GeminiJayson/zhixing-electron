@@ -120,6 +120,8 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
   /** 当场预检这个组合能不能注册；busy = 被别的程序占用 */
   const [probe, setProbe] = useState<'idle' | 'checking' | 'ok' | 'busy'>('idle')
   const capturedRef = useRef('')
+  /** 密度滑块是否正在拖动：拖动中一律不给过渡（每帧重启过渡会发黏），松手后才允许收尾 */
+  const [sliding, setSliding] = useState(false)
 
   useEffect(() => {
     if (tab !== 'data') return
@@ -133,6 +135,19 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
     mq.addEventListener('change', onChange)
     return () => mq.removeEventListener('change', onChange)
   }, [])
+
+  // 密度滑块：松手（或指针被取消）就退出拖动态。监听挂在 window 上 ——
+  // 拖动时指针常常会移到卡片外面才抬起。
+  useEffect(() => {
+    if (!sliding) return
+    const end = (): void => setSliding(false)
+    window.addEventListener('pointerup', end)
+    window.addEventListener('pointercancel', end)
+    return () => {
+      window.removeEventListener('pointerup', end)
+      window.removeEventListener('pointercancel', end)
+    }
+  }, [sliding])
 
   // 读一次热键注册状态
   useEffect(() => {
@@ -431,6 +446,9 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
       <Toolbar
         title={t('page.settings')}
         subtitle={t('page.settings.sub')}
+        /* 不吸顶：这一页的标题行与分区 tab 本来就固定不动（滚动收在下面的 .set-body 里），
+           再加吸顶那一套（滚动后铺底色 + 投影 + 收副标题）只会在 tab 下方多出一条色带。 */
+        sticky={false}
         nav={(
           <div className="seg" role="tablist" aria-label="设置分区">
             {TABS.map((tabItem) => (
@@ -450,7 +468,7 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
       <div className="set-body">
         {tab === 'appearance' && (
           <>
-            <section className="set-card">
+            <section className="set-card set-card--ambient">
               <header className="set-card__head"><Palette size={15} /> 主题</header>
               <label className="set-row">
                 <span>外观模式</span>
@@ -559,9 +577,20 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                     : '完整 / 仅必要 / 关闭'}
                 </span>
               </label>
+              <label className="set-row">
+                <span>玻璃拟态</span>
+                <input
+                  type="checkbox"
+                  checked={settings.glass_enabled}
+                  onChange={(e) => void update('glass_enabled', e.target.checked ? '1' : '0')}
+                />
+                <span className="u-aux">
+                  标题栏 / 工具栏 / 菜单 / 模态使用半透明底与背景模糊（实验）
+                </span>
+              </label>
             </section>
 
-            <section className="set-card">
+            <section className="set-card set-card--ambient">
               <header className="set-card__head"><SlidersHorizontal size={15} /> 桌面浮窗</header>
               <label className="set-row">
                 <span>启用桌面浮窗</span>
@@ -607,7 +636,7 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
               </div>
             </section>
 
-            <section className="set-card">
+            <section className={'set-card set-card--ambient' + (sliding ? ' set-card--sliding' : '')}>
               <header className="set-card__head"><SlidersHorizontal size={15} /> 密度</header>
               {/* 滑杆区间与 parseSettings 的钳位区间同源（字号 9–20、
                   控件高度 24–48、行高 24–72），不再自定一套偏移区间 */}
@@ -618,6 +647,7 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                   min={9}
                   max={20}
                   value={settings.font_size}
+                  onPointerDown={() => setSliding(true)}
                   onChange={(e) => void update('font_size', e.target.value)}
                 />
                 <span className="u-aux">{settings.font_size}px</span>
@@ -629,6 +659,7 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                   min={24}
                   max={48}
                   value={settings.control_height}
+                  onPointerDown={() => setSliding(true)}
                   onChange={(e) => void update('control_height', e.target.value)}
                 />
                 <span className="u-aux">{settings.control_height}px</span>
@@ -640,6 +671,7 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                   min={24}
                   max={72}
                   value={settings.task_row_height}
+                  onPointerDown={() => setSliding(true)}
                   onChange={(e) => void update('task_row_height', e.target.value)}
                 />
                 <span className="u-aux">{settings.task_row_height}px</span>

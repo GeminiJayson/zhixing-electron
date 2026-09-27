@@ -135,6 +135,31 @@
 .gnode:active {
   cursor: grabbing;
 }
+/* 节点内容层：聚焦时的 scale 落在这里。
+   为什么不挂在 .gnode 自己身上：它的 transform 是**定位属性**（translate(x,y)，
+   graphcheck.mjs 直接读那个 attribute），CSS transform 会整个盖掉属性值，
+   节点会叠到画布原点；而 .gnode__body 没有任何定位属性，缩放是纯粹的视觉叠加。 */
+.gnode__body {
+  /* SVG 的 transform-origin 默认是画布原点 —— 不写这两行，scale 会绕原点放大、
+     整个节点飞出画面 */
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform var(--dur-fast) var(--ease-enter);
+}
+/* 悬浮 / 键盘聚焦：抬起 6%（克制，回弹不用在这里——它服务于落位而不是悬停）。
+   淡到 .05 那套只管「无关图元」，见 global.css；这里给它第二个信号 */
+.gnode--on .gnode__body,
+.gnode:focus-visible .gnode__body {
+  transform: scale(1.06);
+}
+/* 图标主描边同步加粗：与 scale 是同一条时长曲线，读起来才是「同一个动作」 */
+.gnode__icon .gn-stroke {
+  transition: stroke-width var(--dur-fast) var(--ease-enter);
+}
+.gnode--on .gnode__icon .gn-stroke,
+.gnode:focus-visible .gnode__icon .gn-stroke {
+  stroke-width: 1.6;
+}
 /* 焦点指示只圈住图标本身。
    带 tabindex 的 SVG <g> 被聚焦时，浏览器默认的 outline 画在**包围盒**上 ——
    而下方的标签文字也在包围盒里，于是那个框看起来像「选中了一整块（图标 + 文字）」。
@@ -155,7 +180,21 @@
   pointer-events: none;
   user-select: none;
 }
+/* 侧栏卡片进场：图谱右栏与工作流的节点详情浮卡共用这一条。
+   定义只放这里一处（两个样式文件都在 App.tsx 里一起加载，@keyframes 是文档级的），
+   免得两处各写一份同名关键帧、之后只改了一边。
+   语义与 global.css 的 drawer-in 同族，只是位移小一档：卡片不像抽屉那样要滑过整块内容，
+   一点点「从边上到位」的方向感就够。 */
+@keyframes aside-in {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+}
 .graph-side {
+  /* 卡片是常驻的 aside：换选中节点时靠 GraphPage 挂的 key 重播这条动画，
+     只变 class 不会重播 */
+  animation: aside-in var(--dur-panel) var(--ease-panel);
   width: 240px;
   flex: 0 0 240px;
   max-height: 100%;

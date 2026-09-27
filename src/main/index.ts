@@ -1177,6 +1177,88 @@ function openCaptureWindow(mode: 'quick' | 'capture', seed: { text: string; html
   }
 }
 
+// ---------------------------------------------------------------- 番茄钟（独立小窗）
+
+let pomodoroWindow: BrowserWindow | null = null
+let pomodoroShowOnce: (() => void) | null = null
+
+/** 番茄钟卡片宽度：内容是一行时间 + 一行任务名 + 两个按钮，240 以下会挤。 */
+const POMODORO_W = 300
+
+/**
+ * 番茄钟：**独立小窗**，不占主窗口。
+ *
+ * 为什么从主窗口右下角的浮条改成独立窗：
+ * 1. 它与主窗口的生命周期本来就不同 —— 主窗口关掉（收进托盘/浮窗）时专注还该继续，
+ *    而浮条跟着主窗口一起没了；
+ * 2. 它要有自己的「被看见」的方式：贴在工作区右下角、alwaysOnTop，不抢主窗口的视线。
+ * 卡片与截图里的捕获窗/条件窗共用同一套 .modal 骨架，所以外观天然一致。
+ */
+function openPomodoroWindow(payload: { taskId: number | null; title: string }): void {
+  if (pomodoroWindow && !pomodoroWindow.isDestroyed()) {
+    pomodoroWindow.webContents.send('pomodoro:open', payload)
+    pomodoroWindow.show()
+    pomodoroWindow.focus()
+    return
+  }
+  // 贴工作区右下角（不是屏幕右下角）：多显示器与任务栏位置都按当前显示器算
+  const area = screen.getPrimaryDisplay().workArea
+  const win = new BrowserWindow({
+    width: POMODORO_W,
+    height: 200,
+    useContentSize: true,
+    x: area.x + area.width - POMODORO_W - 24,
+    y: area.y + area.height - 200 - 24,
+    // 与捕获窗 / 条件窗一致：无边框 + 透明，只显示卡片；高度随后由 window:fitHeight 贴合
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: false,
+    thickFrame: false,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    alwaysOnTop: true,
+    show: false,
+    title: '番茄钟',
+    // 不占任务栏：它是个常驻的小工具，任务栏里再出现一个「知行」只会让人困惑
+    skipTaskbar: true,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  })
+  pomodoroWindow = win
+  let shown = false
+  const showOnce = (): void => {
+    if (shown || win.isDestroyed()) return
+    shown = true
+    pomodoroShowOnce = null
+    win.show()
+    win.focus()
+  }
+  pomodoroShowOnce = showOnce
+  win.on('closed', () => {
+    if (pomodoroWindow === win) pomodoroWindow = null
+    if (pomodoroShowOnce === showOnce) pomodoroShowOnce = null
+  })
+  win.webContents.once('did-finish-load', () => {
+    if (win.isDestroyed()) return
+    win.webContents.send('pomodoro:open', payload)
+    // 与捕获窗一样：等渲染层把主题应用完再显示（1.5s 兜底）
+    setTimeout(showOnce, 1500)
+  })
+  if (process.env.ELECTRON_RENDERER_URL) {
+    void win.loadURL(`${process.env.ELECTRON_RENDERER_URL}?pomodoro=1`)
+  } else {
+    void win.loadFile(join(__dirname, '../renderer/index.html'), { query: { pomodoro: '1' } })
+  }
+}
+
 /**
  * 独立弹窗的高度贴合：无边框窗口里多出来的空白很显眼，
  * 让渲染层量完卡片后回报，窗口高度跟着卡片走（宽度保持不变）。
@@ -1543,6 +1625,23 @@ function registerCaptureWindow(): void {
     // 回执只发给主窗口（不把它显示出来 —— 用户此刻在别的应用里）
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('app:action', 'notice', String(message ?? ''))
+    }
+  })
+
+  // 番茄钟：主窗口与浮窗都只是发起方，计时与落库在那个小窗里（见 openPomodoroWindow）
+  ipcMain.handle('pomodoro:open', (_e, payload: { taskId: number | null; title: string }) => {
+    openPomodoroWindow({
+      taskId: typeof payload?.taskId === 'number' ? payload.taskId : null,
+      title: String(payload?.title ?? ''),
+    })
+    return true
+  })
+  ipcMain.on('pomodoro:ready', () => pomodoroShowOnce?.())
+  ipcMain.on('pomodoro:close', () => pomodoroWindow?.close())
+  ipcMain.on('pomodoro:done', (_e, message: string) => {
+    // 一轮结束/中断：提示与「统计变了」都回给主窗口（它不因此被显示出来）
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('pomodoro:done', String(message ?? ''))
     }
   })
 }

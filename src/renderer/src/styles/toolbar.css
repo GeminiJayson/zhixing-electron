@@ -16,9 +16,32 @@
   top: 0;
   z-index: var(--z-float);
   padding-top: var(--space-1);
-  background: var(--bg-layer);
-  backdrop-filter: blur(10px);
+  /* 未滚动时刻意**不铺底色** —— 这样任务 / 收件箱 / 工作流 / 图谱 / 回顾 / 设置页的标题行，
+     与今日页、笔记页的 .page__head 是同一幅样子（那块白色横条与上下分界线就是这么来的）。
+     底色只在滚起来之后才出现：那时内容真的会从标题行底下穿过，必须挡住。 */
 }
+/* 正文已经滚动：工具栏「抬起来」—— 加底色与投影；底色用玻璃档，随 glass_enabled 一起退化。
+   整条链路是纯 CSS + 一个 class（Toolbar.tsx 按滚动位置切换），不改结构、不改可滚动区域，
+   所以 layoutcheck 的「标题固定 + 外层不被滚」两条断言仍然成立。 */
+.tb--sticky.tb--lifted {
+  background: color-mix(in srgb, var(--glass-bg) 86%, var(--bg-layer-solid));
+  backdrop-filter: var(--glass-filter-bar);
+  box-shadow: var(--shadow-sm);
+}
+.tb--lifted .tb__head {
+  padding-bottom: 0;
+}
+.tb--lifted .page__subtitle {
+  opacity: 0;
+}
+.tb--lifted .page__title {
+  transform: scale(0.94);
+  transform-origin: left center;
+}
+.tb__head {
+  transition: padding-bottom var(--dur-normal) var(--ease-panel);
+}
+
 /* 面板级（笔记树 / 编辑器格式条）：嵌在侧栏与卡片内部，不参与分区排版 */
 .tb--panel {
   background: none;

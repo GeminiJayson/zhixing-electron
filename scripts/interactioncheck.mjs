@@ -103,8 +103,10 @@ const missing = []
 for (const key of navKeys) {
   await app.evaluate(`document.querySelector('[data-nav-item="${key}"]')?.click()`)
   await sleep(400)
+  // 标题行有两种容器：手写的 .page__head（今日 / 笔记 / 回顾）与统一工具栏的 .tb__head
+  // （任务 / 收件箱 / 工作流 / 图谱 / 设置）。这条断言原来只认前者，于是那 5 页恒判为「缺副标题」。
   const ok = await app.evaluate(
-    `(() => { const h = document.querySelector('.page__head'); const s = document.querySelector('.page__subtitle'); return Boolean(h && s && s.textContent.trim()) })()`
+    `(() => { const h = document.querySelector('.page__head, .tb__head'); const s = document.querySelector('.page__subtitle'); return Boolean(h && s && s.textContent.trim()) })()`
   )
   if (!ok) missing.push(key)
 }
@@ -286,20 +288,30 @@ check(
 // 任务页：工具栏按钮不能被压成多行
 await app.evaluate(`document.querySelector('[data-nav-item="tasks"]')?.click()`)
 await sleep(1000)
+// 选择器修正：工具栏早已统一成 components/Toolbar（.tb），页面级再没有 .tasks-toolbar 这个类。
+// 旧选择器取不到任何按钮 → tallest 恒为 null → 这条断言一度是「永远失败」的假信号。
 const tallest = await app.evaluate(`(() => {
-  const bs = [...document.querySelectorAll('.tasks-toolbar .text-btn')]
+  const bs = [...document.querySelectorAll('.page--tasks .tb .text-btn, .page--tasks .tb .tb-btn')]
   if (!bs.length) return null
   return Math.max(...bs.map((b) => Math.round(b.getBoundingClientRect().height)))
 })()`)
 check('任务页工具栏按钮不竖排', tallest !== null && tallest <= 40, `最高 ${tallest}px`)
 
 // 8) Obsidian 风连线：贝塞尔曲线 + 悬浮聚焦（图谱与工作流各验一遍）
-const curveInfo = (selector) =>
+/**
+ * 取一条连线的路径头。
+ * @param kind 'curve' 期望曲线（含 C 指令，图谱用）；'ortho' 期望正交折线（含 L 指令，工作流用）
+ *
+ * 工作流在 docs/03 §14 里明确是「正交折线（H-V-H / V-H-V）」，曲线 0 条 ——
+ * 这条断言原来要求工作流也必须是贝塞尔，属于脚本与实现的漂移（一直红着）。
+ */
+const curveInfo = (selector, kind = 'curve') =>
   app.evaluate(`(() => {
     const p = document.querySelector('${selector} .graph__edge, ${selector} .wf-edge')
     if (!p) return null
     const d = p.getAttribute('d') || ''
-    return { tag: p.tagName.toLowerCase(), isCurve: d.includes('C'), head: d.slice(0, 36) }
+    const ok = ${kind === 'ortho' ? "d.includes('L')" : "d.includes('C')"}
+    return { tag: p.tagName.toLowerCase(), isCurve: ok, head: d.slice(0, 36) }
   })()`)
 
 /** 依次悬浮节点直到找到「有相连连线」的那个（前几个可能是孤立点）。 */
@@ -339,8 +351,8 @@ await app.evaluate(`document.querySelector('[data-nav-item="workflow"]')?.click(
 await sleep(1200)
 await app.evaluate(`document.querySelector('.wf-list button')?.click()`)
 await sleep(900)
-const wCurve = await curveInfo('svg.wf-canvas')
-check('工作流连线是贝塞尔曲线（非直线）', wCurve !== null && wCurve.isCurve, wCurve ? wCurve.head : '找不到连线')
+const wCurve = await curveInfo('svg.wf-canvas', 'ortho')
+check('工作流连线是正交折线（非曲线）', wCurve !== null && wCurve.isCurve, wCurve ? wCurve.head : '找不到连线')
 const wFocus = await focusInfo('svg.wf-canvas', 'svg.wf-canvas .wf-node', 'svg.wf-canvas .wf-edge--on')
 check('工作流：悬浮步骤后相连连线高亮', wFocus !== null && wFocus.lit > 0, wFocus ? `lit=${wFocus.lit}` : '没找到有连线的节点')
 

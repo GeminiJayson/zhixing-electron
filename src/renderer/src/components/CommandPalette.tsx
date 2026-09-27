@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { usePresence } from '../lib/presence'
 
 /**
  * 命令面板的「最近使用」（MRU）：记住最近跑过的命令 id，下次打开时它们排在前面。
@@ -141,8 +142,8 @@ export function CommandPalette({ open, onClose, onNavigate, onOpenNote, onQuickA
         const res = await window.zhixing.db.backupDatabase(backupsDirOf(info.path))
         onNotice?.(res ? '已备份到 ' + res.path : '备份失败')
       } else if (id === 'start-pomodoro') {
-        // 无任务启动专注
-        window.dispatchEvent(new CustomEvent('zhixing:pomodoro', { detail: { taskId: null, title: '' } }))
+        // 无任务启动专注：直接开独立小窗（与任务行的「专注」按钮同一条路）
+        void window.zhixing.pomodoro.open({ taskId: null, title: '' })
       }
     } catch (err) {
       onNotice?.('命令执行失败：' + (err as Error).message)
@@ -241,7 +242,9 @@ export function CommandPalette({ open, onClose, onNavigate, onOpenNote, onQuickA
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, hits, onNavigate, onOpenNote, onQuickAdd, onNotice])
 
-  if (!open) return null
+  // 退场：关闭时先播 150ms 淡出再卸载；动效关闭时 usePresence 会同步卸载（不等动画）
+  const { mounted, leaving } = usePresence(open, 150)
+  if (!mounted) return null
 
   const exec = async (item: Item | undefined): Promise<void> => {
     if (!item) return
@@ -258,9 +261,9 @@ export function CommandPalette({ open, onClose, onNavigate, onOpenNote, onQuickA
   }
 
   return (
-    <div className="modal-mask" onMouseDown={onClose}>
+    <div className={'modal-mask' + (leaving ? ' is-leaving' : '')} onMouseDown={onClose}>
       <div
-        className="palette"
+        className={'palette' + (leaving ? ' is-leaving' : '')}
         role="dialog"
         aria-modal="true"
         aria-label="命令面板"

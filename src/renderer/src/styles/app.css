@@ -17,6 +17,10 @@
   padding-left: var(--space-3);
   padding-right: var(--space-3);
   user-select: none;
+  /* 标题栏刻意**不加底色**：它窗口最外层，背后就是 --bg-canvas。
+     给它单独铺一层半透明底（哪怕是玻璃）会在它与主区之间画出一条横向分界线 ——
+     实测就是「一眼看出上下是两块」的那种割裂。让它透明，标题栏才与整个窗口连成一片。
+     分隔感交给主区自己的圆角卡片（.app__content）去表达。 */
 }
 .titlebar__traffic {
   width: 66px; /* 让出 macOS 红绿灯位置 */
@@ -94,6 +98,8 @@
   justify-content: space-between;
   width: var(--nav-w);
   flex: 0 0 var(--nav-w);
+  /* 指示条的定位上下文 */
+  position: relative;
   padding: var(--space-2) var(--space-1);
   transition: width var(--dur-normal) var(--ease-enter), flex-basis var(--dur-normal) var(--ease-enter);
 }
@@ -138,17 +144,27 @@
   color: var(--accent-text);
   font-weight: 600;
 }
-/* 选中态指示条：accent 实心，进入用 fast */
-.nav-item--active::before {
-  content: '';
+/* 选中态指示条：accent 实心。
+   它现在是 .sidebar 下的独立元素（.nav-indicator），不再是活动项自己的 ::before ——
+   独立元素才能在导航项之间「滑过去」，::before 只能跟着活动项瞬间跳位。
+   位置与高度由 Sidebar.tsx 实测后写入（行高 --row-h 是用户可调的，写死会错位）。 */
+.nav-indicator {
   position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
+  left: var(--space-1);
+  top: 0;
   width: 3px;
-  height: 18px;
   border-radius: var(--radius-pill);
   background: var(--accent);
+  pointer-events: none;
+  opacity: 0;
+}
+.nav-indicator--on {
+  opacity: 1;
+}
+/* 首帧量完位置之后才打开过渡：否则首次挂载时指示条会从 0 滑到当前位置 */
+.nav-indicator--anim {
+  transition: transform var(--dur-normal) var(--ease-panel), height var(--dur-normal) var(--ease-panel),
+    opacity var(--dur-fast) var(--ease-enter);
 }
 .nav-item__icon {
   display: inline-flex;
@@ -173,6 +189,14 @@
   font-size: 11px;
   line-height: 18px;
   text-align: center;
+  /* 数字变化时弹一下（Sidebar 用 key={count} 让它重建，从而重播这条动画）。
+     徽标是「有新东西」的信号，一次轻微的放大足够，不要更响。 */
+  animation: badge-pop var(--dur-fast) var(--ease-spring);
+}
+@keyframes badge-pop {
+  from {
+    transform: scale(0.7);
+  }
 }
 
 /* --- 内容面板 --- */
@@ -197,9 +221,15 @@
   min-width: 0;
   /* 滚动交给页面内的 .page__body：标题必须固定，不能跟着一起滚 */
   overflow: hidden;
-  background: var(--bg-layer);
+  /* 氛围光：左上角一层 5% 的强调色径向渐变，用 color-mix(var(--accent)) 派生 ——
+     换主题包或换强调色都会自动跟着变。它只是背景，不参与任何文字对比度判定。 */
+  background:
+    radial-gradient(58% 42% at 10% 0%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 72%),
+    var(--bg-layer);
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius-lg);
+  /* 内高光：让内容面板从画布上「浮起来」，而不是贴着一张纸 */
+  box-shadow: var(--edge-light);
 }
 
 
@@ -239,6 +269,8 @@
   font-weight: 600;
   text-wrap: balance;
   animation: title-enter var(--dur-page) var(--ease-page);
+  /* 正文滚动时标题收紧（transform，不改布局）；见 toolbar.css 的 .tb--lifted */
+  transition: transform var(--dur-normal) var(--ease-panel);
 }
 .page__subtitle {
   margin: 0;
@@ -248,16 +280,38 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* 正文滚动时副标题淡出（仍占位，所以不会引起标题与工具行的重排） */
+  transition: opacity var(--dur-fast) var(--ease-enter);
 }
 /* 页头里的收放按钮（笔记页的笔记树）。.page__head 是 baseline 对齐 ——
    标题与副标题要对齐文字基线，图标按钮按 baseline 排会偏，单独居中。 */
 .page__head-toggle {
   align-self: center;
 }
+/* 页面切换的方向感：按导航顺序往后走从右侧进、往回走从左侧进。
+   方向由 App.tsx 写在 .app__content 上 —— 页面组件自己不知道导航顺序。 */
+.app__content--forward .page {
+  animation-name: page-enter-forward;
+}
+.app__content--back .page {
+  animation-name: page-enter-back;
+}
 @keyframes page-enter {
   from {
     opacity: 0;
     transform: translateY(8px);
+  }
+}
+@keyframes page-enter-forward {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+}
+@keyframes page-enter-back {
+  from {
+    opacity: 0;
+    transform: translateX(-14px);
   }
 }
 @keyframes title-enter {
@@ -284,6 +338,7 @@
   background: var(--bg-layer-solid);
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius-lg);
+  box-shadow: var(--edge-light);
   color: var(--fg-secondary);
 }
 .stat-card__value {
@@ -399,7 +454,10 @@
   flex-direction: column;
   align-items: center;
   gap: var(--space-2);
-  padding: 64px var(--space-5);
+  /* 64px 是裸值，正好是 --space-6 的两倍（token 缺失时代码里留下的手写数字） */
+  padding: calc(var(--space-6) * 2) var(--space-5);
+  background: radial-gradient(60% 68% at 50% 24%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 72%);
+  border-radius: var(--radius-lg);
   color: var(--fg-secondary);
   text-align: center;
 }
@@ -435,19 +493,27 @@
 }
 
 /* --- Toast：底部滑入，自动退场 --- */
+/* .toast-host（常驻 aria-live 容器）与 .toast__bar（进度线）定义在 global.css ——
+   模态 / 命令面板 / 提示共用同一套浮层语言，这里只保留提示本身的视觉。 */
 .toast {
   position: fixed;
   z-index: var(--z-toast);
   left: 50%;
   bottom: var(--space-5);
   transform: translateX(-50%);
+  /* 进度线的定位上下文 */
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-lg);
   background: var(--accent-solid);
   color: var(--fg-on-accent);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--edge-light), var(--shadow-md);
   font-size: var(--text-body);
   animation: toast-in var(--dur-fast) var(--ease-enter);
+}
+/* 退场：由 lib/presence.ts 挂 .is-leaving。toast-out 自带 -50%（见 global.css 的注释），
+   forwards 不能省 —— 动画结束到卸载之间会闪回原状。 */
+.toast.is-leaving {
+  animation: toast-out var(--dur-normal) var(--ease-exit) forwards;
 }
 @keyframes toast-in {
   from {
@@ -500,6 +566,8 @@
   border: var(--border-w) solid color-mix(in srgb, var(--danger) 45%, transparent);
   border-radius: var(--radius-lg);
   color: var(--fg-primary);
+  /* 危险横幅是「刚刚发生」的事，从上方压进来比凭空出现更容易被注意到 */
+  animation: card-in var(--dur-normal) var(--ease-enter);
 }
 .dbwarn > span {
   flex: 1;
@@ -515,12 +583,18 @@
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
-  background: var(--bg-layer-solid);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-filter);
   border: var(--border-w) solid var(--border-strong);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--edge-light), var(--shadow-lg);
   z-index: var(--z-float);
-  animation: toast-in var(--dur-fast) var(--ease-enter);
+  /* 与提醒卡同一类东西：从下方浮起（global.css 的浮层动效语言） */
+  animation: card-in var(--dur-normal) var(--ease-enter);
+}
+.infobar.is-leaving {
+  animation: card-out var(--dur-fast) var(--ease-exit) forwards;
+  pointer-events: none;
 }
 .infobar__close {
   color: var(--fg-secondary);
@@ -535,11 +609,14 @@
 .stat-card--clickable {
   cursor: pointer;
   text-align: left;
-  transition: border-color var(--dur-instant), transform var(--dur-instant);
+  transition: border-color var(--dur-fast) var(--ease-enter), transform var(--dur-fast) var(--ease-enter),
+    box-shadow var(--dur-fast) var(--ease-enter);
 }
 .stat-card--clickable:hover {
   border-color: var(--border-strong);
-  transform: translateY(-1px);
+  /* 悬停抬升：位移 + 阴影进阶。内高光要一起写回，否则会被这条 box-shadow 盖掉 */
+  transform: translateY(-2px);
+  box-shadow: var(--edge-light), var(--shadow-md);
 }
 /* 命令面板 */
 .palette {
@@ -547,11 +624,14 @@
   max-height: 60vh;
   display: flex;
   flex-direction: column;
-  background: var(--bg-layer-solid);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-filter);
   border: var(--border-w) solid var(--border-strong);
   border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-xl);
+  box-shadow: var(--edge-light), var(--shadow-xl);
   overflow: hidden;
+  /* 进出场统一由 global.css 的 .modal-mask .palette 提供（命令面板与模态同类），
+     这里不再写第二条 animation —— 否则会变成两处真相，其中一处是死代码。 */
 }
 .palette__input {
   display: flex;
@@ -587,6 +667,7 @@
   border-radius: var(--radius-ctl);
   color: var(--fg-primary);
   text-align: left;
+  transition: background var(--dur-instant), color var(--dur-instant);
 }
 .palette__item--on {
   background: var(--accent-soft);
@@ -602,61 +683,7 @@
 .palette__empty {
   padding: var(--space-3);
 }
-/* 番茄钟浮条 */
-.pomo {
-  position: fixed;
-  right: var(--space-5);
-  bottom: var(--space-5);
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--border-strong);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  z-index: var(--z-float);
-}
-.pomo--break {
-  border-color: var(--success);
-}
-.pomo__phase {
-  font-size: var(--text-aux);
-  color: var(--accent-text);
-  font-weight: 600;
-}
-.pomo--break .pomo__phase {
-  color: var(--success);
-}
-.pomo__time {
-  font-variant-numeric: tabular-nums;
-  font-size: var(--text-lead);
-  font-weight: 600;
-}
-.pomo__task {
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--fg-secondary);
-  font-size: var(--text-aux);
-}
-.pomo__bar {
-  width: 80px;
-  height: 4px;
-  background: var(--bg-hover);
-  border-radius: var(--radius-pill);
-  overflow: hidden;
-}
-.pomo__fill {
-  display: block;
-  height: 100%;
-  background: var(--accent);
-  transition: width 1s linear;
-}
-.pomo--break .pomo__fill {
-  background: var(--success);
-}
+/* 番茄钟的样式已随它搬进独立小窗：卡片骨架见 global.css 的 .modal--pomodoro。 */
 
 /* 到点提醒：主窗口里的一叠卡片。
    卡片本体直接用应用弹框那套 .modal —— 提醒与独立弹窗（捕获 / 条件确认）本来就是同一种东西，
@@ -674,7 +701,16 @@
 }
 .modal--reminder {
   width: 100%;
-  animation: toast-in var(--dur-fast) var(--ease-enter);
+  /* 提醒卡从右上浮出来（.reminder-stack 就贴在右上角），方向与它的位置一致。
+     浮窗气泡那份卡片由 reminder.css 覆盖 box-shadow: none，不受这条影响。 */
+  animation: reminder-in var(--dur-normal) var(--ease-enter);
+  box-shadow: var(--edge-light), var(--shadow-lg);
+}
+@keyframes reminder-in {
+  from {
+    opacity: 0;
+    transform: translateX(10px) scale(0.98);
+  }
 }
 /* 捕获面板的样式已移到 global.css（它现在跑在独立窗口里，见 .modal--capture） */
 

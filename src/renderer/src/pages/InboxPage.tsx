@@ -281,9 +281,9 @@ export function InboxPage({ onNotice, onChanged }: Props) {
             await refresh()
           }}
           onFocus={(id, title) =>
-            window.dispatchEvent(
-              new CustomEvent('zhixing:pomodoro', { detail: { taskId: id, title } })
-            )
+            // 直接开那个独立小窗（不再派发本地事件）：浮窗与主窗口都能用同一条路，
+            // 而在浮窗里派发的 window 事件主窗口根本收不到 —— 那条路径此前是哑的。
+            void window.zhixing.pomodoro.open({ taskId: id, title })
           }
           onAddSubtask={async (id) => {
             await window.zhixing.db.createTask('新子任务', id)
@@ -397,11 +397,17 @@ export function InboxPage({ onNotice, onChanged }: Props) {
             </p>
           ) : (
             <ul className="flash-list">
-              {flashes.map((f) => (
+              {flashes.map((f, i) => (
+                // 交错入场：前 8 行按 --dur-stagger 递进，第 9 行往后都只等第 8 行的延迟
                 <li
                   key={f.id}
-                  className={'flash-card' + (flashFocus === f.id ? ' flash-card--focus' : '')}
+                  className={
+                    'flash-card' +
+                    (picked.has(f.id) ? ' flash-card--picked' : '') +
+                    (flashFocus === f.id ? ' flash-card--focus' : '')
+                  }
                   data-flash-id={f.id}
+                  style={{ animationDelay: `calc(var(--dur-stagger) * ${Math.min(i, 7)})` }}
                 >
                   <label className="flash-card__pick" title="选中以合并">
                     <input

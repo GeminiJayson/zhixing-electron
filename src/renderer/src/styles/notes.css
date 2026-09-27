@@ -718,6 +718,10 @@
 }
 /* 窄窗口：展开态是覆盖式抽屉，盖在正文之上而不是把正文挤窄 */
 .links--drawer {
+  /* 进场：从它自己贴着的那条右边沿滑进来（关键帧 drawer-in / drawer-out 在 global.css，
+     与菜单 / 模态共用同一套浮层动效语言）。抽屉右侧贴身，所以位移方向是 +x；
+     时长与缓动取 --dur-panel / --ease-panel，动效关闭时随令牌一起归零 */
+  animation: drawer-in var(--dur-panel) var(--ease-panel);
   position: fixed;
   top: var(--titlebar-h);
   right: 0;
@@ -728,6 +732,16 @@
   border-radius: 0;
   box-shadow: var(--shadow-lg);
   overflow: auto;
+}
+/* 退场：关闭时先挂 .is-leaving 再卸载（usePresence），元素因此还留在 DOM 里把这段播完。
+   权重比上面那条高，入场动画会被顶掉。
+   forwards 不能省：usePresence 的卸载定时器比这段动画多留 100ms 兜底，
+   不锁住终态的话抽屉会在最后一刻闪回原状（与 app.css 的 .toast.is-leaving 同一个坑） */
+.links--drawer.is-leaving {
+  animation: drawer-out var(--dur-fast) var(--ease-exit) forwards;
+  /* 淡完之后到真正卸载之间还留着 100ms 兜底：这段时间它已经看不见了，
+     但仍是盖在正文上的一整块 fixed 区域，不吃掉点击才对 */
+  pointer-events: none;
 }
 .links--drawer .links__body {
   flex-direction: column;
@@ -740,10 +754,18 @@
   border-top: var(--border-w) solid var(--border);
 }
 .links__scrim {
+  /* 遮罩只淡入淡出（铺满整块区域，一缩放就会露出边）—— 与模态遮罩共用 mask-in / mask-out */
+  animation: mask-in var(--dur-fast) var(--ease-enter);
   position: fixed;
   inset: var(--titlebar-h) 0 0 0;
   z-index: calc(var(--z-menu) - 1);
   background: var(--overlay);
+}
+.links__scrim.is-leaving {
+  /* forwards 同上：锁住「已经淡到 0」的终态，别在卸载前闪回来 */
+  animation: mask-out var(--dur-fast) var(--ease-exit) forwards;
+  /* 退场期间不再吃点击：下面那份抽屉下一次渲染就会消失，不该还能点到 */
+  pointer-events: none;
 }
 .links__head {
   font-size: var(--text-aux);
@@ -1262,8 +1284,18 @@
   padding: var(--space-3) var(--space-2);
 }
 
+/* 原图进场：从 .96 推到 1 再淡入 —— 与遮罩的那条 --dur-fast 错开，
+   读起来是「遮罩先落、原图跟着定下来」而不是整块一起闪 */
+@keyframes rt-preview-img-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
 /* 图片预览浮层：正文里是缩略图，双击看原图（需求：缩略图展示 + 原图保留） */
 .rt-preview {
+  /* 遮罩淡入：与模态遮罩同一组关键帧 */
+  animation: mask-in var(--dur-fast) var(--ease-enter);
   position: fixed;
   inset: 0;
   z-index: 900;
@@ -1274,6 +1306,7 @@
   cursor: zoom-out;
 }
 .rt-preview__img {
+  animation: rt-preview-img-in var(--dur-normal) var(--ease-enter);
   max-width: 100%;
   max-height: 100%;
   border-radius: var(--radius-md);

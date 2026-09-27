@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { Morph, IconData, Plus, Trash2 } from '@renderer/lib/icons'
 import {
   STATUS_LABELS,
@@ -42,6 +43,7 @@ import { TaskRow } from '../components/TaskRow'
 import { Toolbar } from '../components/Toolbar'
 import { dueLabel } from '../lib/date'
 import { quietFailure } from '@shared/quiet-failure'
+import { isMotionFull } from '../lib/presence'
 
 interface Props {
   onChanged: () => Promise<void>
@@ -49,6 +51,20 @@ interface Props {
   /** 今日页概览卡带过来的聚焦清单 */
   focus?: 'today' | 'done' | 'overdue' | null
   onClearFocus?: () => void
+}
+
+/** 交错入场的最大参与行数（超过的行不再累加延迟，见 tasks.css 的 .trow--enter） */
+const ENTER_STAGGER_MAX = 8
+
+/**
+ * 入场动画的时间窗，直接从 --dur-* 令牌算出来（单行时长 + 最后一行的交错延迟）。
+ * 动效归零档（data-motion='none' / prefers-reduced-motion）下它就是 0 ——
+ * 于是既不挂类也不排定时器，降级不需要另写分支。
+ */
+function enterWindowMs(): number {
+  const cs = getComputedStyle(document.documentElement)
+  const ms = (name: string): number => parseFloat(cs.getPropertyValue(name)) || 0
+  return ms('--dur-normal') + ENTER_STAGGER_MAX * ms('--dur-stagger')
 }
 
 type ViewKey = 'list' | 'quadrant' | 'calendar' | 'kanban'
@@ -115,6 +131,9 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
 
   const [dragId, setDragId] = useState<number | null>(null)
   const [dropHint, setDropHint] = useState<{ id: number; pos: 'before' | 'after' | 'child' } | null>(null)
+  /** 本次新建、正在播入场动画的行（滚动进视口的行不进这个集合） */
+  const [justAdded, setJustAdded] = useState<Set<number>>(new Set())
+  const enterTimer = useRef<number | null>(null)
   const [inspector, setInspector] = useState(false)
   const [menu, setMenu] = useState<{ id: number; anchor: HTMLElement } | null>(null)
   /** 状态胶囊的快捷菜单（与优先级菜单互不影响，可以各自开着） */
@@ -132,6 +151,8 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
   const [showDone, setShowDone] = useState(false)
   const [adding, setAdding] = useState<{ parentId: number | null } | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
+  /** 共享元素过渡的源行（见 openEditorFromRow）：只在一次过渡的生命周期内非空 */
+  const [vtSourceId, setVtSourceId] = useState<number | null>(null)
   const [draftTitle, setDraftTitle] = useState('')
   /** 深链目标：等父链展开、目标行进入展平结果后再滚动，然后清空 */
   const [pendingFocus, setPendingFocus] = useState<number | null>(null)
@@ -472,6 +493,23 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     walk(visible, 0)
     return rows
   }, [visible, collapsed, adding])
+
+  /**
+   * 同批新增行的交错序号（按展平顺序），最多 8 行参与交错。
+   * 序号只喂给 animation-delay，不参与任何布局与行数计算。
+   */
+  const enterIndexById = useMemo(() => {
+    const m = new Map<number, number>()
+    if (justAdded.size === 0) return m
+    let i = 0
+    for (const row of flatRows) {
+      const id = row.node?.id
+      if (id == null || !justAdded.has(id)) continue
+      m.set(id, Math.min(i, ENTER_STAGGER_MAX - 1))
+      i += 1
+    }
+    return m
+  }, [flatRows, justAdded])
 
   const selectedNode = useMemo(() => {
     if (selected == null) return null
@@ -969,6 +1007,31 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     await refresh()
   }
 
+  /**
+   * 登记「本次新建的行」，让它播一次入场。
+   *
+   * 动效档位只能用 presence.ts 的 isMotionFull() 判 —— full 档的 data-motion 是空串，
+   * 写成 dataset.motion === 'full' 条件永远为假。时间窗同样来自 --dur-* 令牌。
+   */
+  const markJustAdded = useCallback((id: number): void => {
+    if (!isMotionFull()) return
+    const win = enterWindowMs()
+    if (win <= 0) return
+    setJustAdded((prev) => new Set(prev).add(id))
+    if (enterTimer.current !== null) window.clearTimeout(enterTimer.current)
+    enterTimer.current = window.setTimeout(() => {
+      enterTimer.current = null
+      setJustAdded(new Set())
+    }, win)
+  }, [])
+
+  useEffect(
+    () => () => {
+      if (enterTimer.current !== null) window.clearTimeout(enterTimer.current)
+    },
+    []
+  )
+
   const commitAdd = async (): Promise<void> => {
     const title = draftTitle.trim()
     const parentId = adding?.parentId ?? null
@@ -994,11 +1057,42 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
       parentId !== null
         ? await window.zhixing.db.createTask(title, parentId, null)
         : await window.zhixing.db.quickAdd(title, currentList)
-    if (created) setSelected(created.id)
+    if (created) {
+      setSelected(created.id)
+      // 只有这一行是「本次新增」，才播入场
+      markJustAdded(created.id)
+    }
     await refresh()
   }
 
   /** 单行渲染：虚拟列表逐行调用，递归渲染也复用它。 */
+  /**
+   * 共享元素过渡（试点）：列表行 → 编辑弹窗。
+   *
+   * 只有「从列表行打开」这一个入口参与 —— 四象限、日历、看板与右键菜单都没有对应名字的
+   * 源元素，强行参与只会退化成整页交叉淡化，白付一次全页快照的代价。
+   *
+   * 时序上必须用 flushSync 分两段提交：第一段先把 view-transition-name 打到源行上（旧状态），
+   * 回调里再同步打开弹窗并**摘掉**源行标记（新状态）—— 同名元素同时存在两个会让浏览器跳过过渡。
+   */
+  const openEditorFromRow = useCallback((id: number) => {
+    const doc = document as Document & {
+      startViewTransition?: (cb: () => void) => { finished?: Promise<void> }
+    }
+    if (!doc.startViewTransition || !isMotionFull()) {
+      setEditingId(id)
+      return
+    }
+    flushSync(() => setVtSourceId(id))
+    const vt = doc.startViewTransition(() => {
+      flushSync(() => {
+        setEditingId(id)
+        setVtSourceId(null)
+      })
+    })
+    void vt.finished?.finally(() => setVtSourceId(null))
+  }, [])
+
   const renderRow = (node: TaskNode, depth: number): React.ReactNode => (
     <>
       <TaskRow
@@ -1017,6 +1111,10 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
           doneView={listKey === DONE_KEY || focus === 'done'}
           selected={selectedIds.has(node.id)}
           collapsed={collapsed.has(node.id)}
+          // 本次新建的行才播入场动画（含同批交错序号）；滚动进视口的行不播
+          entering={justAdded.has(node.id)}
+          enterIndex={enterIndexById.get(node.id) ?? 0}
+          vtSource={vtSourceId === node.id}
           onToggle={handleToggle}
           onToggleCollapse={(id) =>
             setCollapsed((prev) => {
@@ -1046,12 +1144,12 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
           onContextMenu={(id, x, y) => setCtxMenu({ id, x, y })}
           onTitleCommit={handleTitle}
           onFocus={(id, title) =>
-            window.dispatchEvent(
-              new CustomEvent('zhixing:pomodoro', { detail: { taskId: id, title } })
-            )
+            // 直接开那个独立小窗（不再派发本地事件）：浮窗与主窗口都能用同一条路，
+            // 而在浮窗里派发的 window 事件主窗口根本收不到 —— 那条路径此前是哑的。
+            void window.zhixing.pomodoro.open({ taskId: id, title })
           }
           onAddSubtask={(id) => setAdding({ parentId: id })}
-          onEdit={setEditingId}
+          onEdit={openEditorFromRow}
           onDelete={handleDelete}
         />
     </>
@@ -1297,63 +1395,67 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
           />
         ) : null}
         <div className="tasks-main">
-          {view === 'quadrant' ? (
-            <QuadrantBoard
-              tasks={listScopedTasks}
-              effective={effective}
-              expanded={expanded}
-              onToggle={handleToggle}
-              onOpen={setEditingId}
-              onToggleSubtree={(id) =>
-                setExpanded((prev) => {
-                  const next = new Set(prev)
-                  if (next.has(id)) next.delete(id)
-                  else next.add(id)
-                  return next
-                })
-              }
-              onChangeQuadrant={(id, key: QuadrantKey) => void handleQuadrant(id, key)}
-            />
-          ) : view === 'calendar' ? (
-            <CalendarBoard
-              tasks={listScopedTasks}
-              effective={effective}
-              onOpen={setEditingId}
-              onToggle={handleToggle}
-              onReschedule={(id, day) => void handleReschedule(id, day)}
-              showDone={showDone}
-            />
-          ) : view === 'kanban' ? (
-            <KanbanBoard
-              tasks={listScopedTasks}
-              effective={effective}
-              expanded={expanded}
-              onOpen={setEditingId}
-              onToggleSubtree={(id) =>
-                setExpanded((prev) => {
-                  const next = new Set(prev)
-                  if (next.has(id)) next.delete(id)
-                  else next.add(id)
-                  return next
-                })
-              }
-              onDropStatus={(id, status) => void handleStatus(id, status)}
-              onAdd={(status) => void handleKanbanAdd(status)}
-            />
-          ) : visible.length === 0 && !adding ? (
-            <p className="empty-hint">还没有任务，点右上角「+ 新建任务」快速添加。</p>
-          ) : (
-            <VirtualList
-              className="task-vlist"
-              count={flatRows.length}
-              rowHeight={rowH}
-              renderRow={(i) => {
-                const row = flatRows[i]
-                if (!row) return null
-                return row.node === null ? renderAddRow(row.depth) : renderRow(row.node, row.depth)
-              }}
-            />
-          )}
+          {/* key={view}：切视图时容器重建，进入动画因此每次都从头发。
+              .tasks-view 只做等高的 flex 传递：不加内边距、不改分区顺序 */}
+          <div className="tasks-view" key={view}>
+            {view === 'quadrant' ? (
+              <QuadrantBoard
+                tasks={listScopedTasks}
+                effective={effective}
+                expanded={expanded}
+                onToggle={handleToggle}
+                onOpen={setEditingId}
+                onToggleSubtree={(id) =>
+                  setExpanded((prev) => {
+                    const next = new Set(prev)
+                    if (next.has(id)) next.delete(id)
+                    else next.add(id)
+                    return next
+                  })
+                }
+                onChangeQuadrant={(id, key: QuadrantKey) => void handleQuadrant(id, key)}
+              />
+            ) : view === 'calendar' ? (
+              <CalendarBoard
+                tasks={listScopedTasks}
+                effective={effective}
+                onOpen={setEditingId}
+                onToggle={handleToggle}
+                onReschedule={(id, day) => void handleReschedule(id, day)}
+                showDone={showDone}
+              />
+            ) : view === 'kanban' ? (
+              <KanbanBoard
+                tasks={listScopedTasks}
+                effective={effective}
+                expanded={expanded}
+                onOpen={setEditingId}
+                onToggleSubtree={(id) =>
+                  setExpanded((prev) => {
+                    const next = new Set(prev)
+                    if (next.has(id)) next.delete(id)
+                    else next.add(id)
+                    return next
+                  })
+                }
+                onDropStatus={(id, status) => void handleStatus(id, status)}
+                onAdd={(status) => void handleKanbanAdd(status)}
+              />
+            ) : visible.length === 0 && !adding ? (
+              <p className="empty-hint">还没有任务，点右上角「+ 新建任务」快速添加。</p>
+            ) : (
+              <VirtualList
+                className="task-vlist"
+                count={flatRows.length}
+                rowHeight={rowH}
+                renderRow={(i) => {
+                  const row = flatRows[i]
+                  if (!row) return null
+                  return row.node === null ? renderAddRow(row.depth) : renderRow(row.node, row.depth)
+                }}
+              />
+            )}
+          </div>
         </div>
 
         {inspector && (

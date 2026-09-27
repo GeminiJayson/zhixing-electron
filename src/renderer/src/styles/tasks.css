@@ -228,6 +228,30 @@
   flex: 1;
   min-width: 0;
 }
+/* 视图容器（四个视图各自渲染在里面）：只负责「等高」与切换时的进入动画。
+   必须是列 flex —— .tasks-main 是列容器，.vlist / .kboard / .quad-grid / .cal-wrap
+   都靠 flex: 1 撑高；少了这层传递，虚拟列表会塌成 0 高。
+   key={view} 让容器在切视图时重建，动画因此每次都从头播。 */
+.tasks-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  /* 与 .tasks-main 一样收住横向最小宽度：看板 / 日历的网格靠 1fr 分列，
+     少了这条，窄窗口下内容会把外层撑出横向滚动 */
+  min-width: 0;
+  animation: view-enter var(--dur-normal) var(--ease-enter);
+}
+@keyframes view-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
 .inspector {
   width: 260px;
   flex: 0 0 260px;
@@ -323,9 +347,10 @@
 .trow--selected {
   background: var(--accent-soft);
 }
+/* 完成态的标题：颜色过渡到次要色（--dur-normal），删除线交给下面的伪元素 ——
+   text-decoration 在计算值里是瞬间出现的，没有可动画的中间量。 */
 .trow--done .trow__title {
   color: var(--fg-tertiary);
-  text-decoration: line-through;
 }
 .trow__caret {
   display: inline-flex;
@@ -348,6 +373,32 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  position: relative;
+  /* 标题色（完成 → --fg-tertiary）也是过渡的一部分；取消勾选反向播 */
+  transition: color var(--dur-normal) var(--ease-enter);
+}
+/* 标题文字（内层行内元素）：删除线的定位基准。
+   绝对定位的伪元素若挂在外层 .trow__title 上，线的宽度就是那个弹性盒的宽度 ——
+   短标题也会横跨整行；挂在行内元素上时，containing block 是这行文字的包围盒，
+   线宽才等于文字宽度，与原来的 text-decoration 观感一致。 */
+.trow__title-text {
+  position: relative;
+}
+/* 删除线：1px 细线从左向右展开 / 收回（--dur-strike），不用 text-decoration */
+.trow__title-text::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: currentColor;
+  transform: translateY(-50%) scaleX(0);
+  transform-origin: left center;
+  transition: transform var(--dur-strike) var(--ease-enter);
+}
+.trow--done .trow__title-text::after {
+  transform: translateY(-50%) scaleX(1);
 }
 .trow__input {
   flex: 1;
@@ -402,6 +453,44 @@
 }
 .trow--adding {
   background: var(--bg-hover);
+}
+
+/* 新增行的入场：只给「本次新建」的行挂 .trow--enter（TasksPage 的 justAddedIds），
+   滚动进视口的行永远不挂 —— 虚拟列表里那些是滚动，不是新增。
+   同批多行按行内 --i 交错，最多 8 行参与（--i 由 JS 钳到 7）；
+   backwards 让等延迟的行先停在起始态，而不是先亮一下再动。 */
+/* 共享元素过渡（试点）：列表行标题 → 编辑弹窗的标题输入框。
+   view-transition-name 在同一时刻必须唯一：源行只在过渡期间带标记（TasksPage.vtSourceId），
+   目标输入框只在弹窗打开时存在，两者不会同时出现在同一份快照里。 */
+.trow--vt-source .trow__title-text {
+  view-transition-name: task-title;
+}
+.vt-task-title {
+  view-transition-name: task-title;
+}
+/* 根快照的默认交叉淡化是整页 250ms —— 只为打开一个弹窗，太重了 */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--dur-fast);
+}
+::view-transition-group(task-title) {
+  animation-duration: var(--dur-normal);
+  animation-timing-function: var(--ease-panel);
+}
+
+.trow--enter {
+  animation: trow-enter var(--dur-normal) var(--ease-enter)
+    calc(var(--i, 0) * var(--dur-stagger)) backwards;
+}
+@keyframes trow-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* 优先级旗子按钮 */
@@ -531,7 +620,8 @@ button.chip--status:focus-visible {
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
-  animation: toast-in var(--dur-fast) var(--ease-enter);
+  /* 进出场统一由 global.css 的 .popmenu.popmenu--pop 提供（pop-in / pop-out）：
+     这里不再写第二条 animation，否则两处真相、且必然有一条是死代码。 */
 }
 .popmenu__item {
   display: flex;
@@ -558,101 +648,117 @@ button.chip--status:focus-visible {
   border-radius: var(--radius-pill);
 }
 
-/* 标签弹层：勾选已有标签 + 就地改色 + 新建（任务页与笔记页共用同一个组件） */
+/* 标签弹层：勾选已有标签 + 就地改色 + 新建（任务页与笔记页共用同一个组件）
+   版式与「状态」弹层（StatusMenu）同构：容器 .popmenu、每行 .popmenu__item、色点 .popmenu__dot
+   全部沿用，宽度 / 内边距 / 圆角 / 阴影 / 背景 / 边框一句都不重复。
+   这里只补 .popmenu 没有的三样：① 色点的可点热区；② 说明行；③ 调色板那一行的换行限宽。 */
 .tagmenu {
-  position: fixed;
-  z-index: var(--z-menu);
-  width: 240px;
+  /* 唯一一条 .popmenu 之外的容器声明：标签多时不许撑出屏幕（进来的是同一个滚动盒）。
+     原来的 width / padding / gap / background / backdrop-filter / border / border-radius /
+     box-shadow / animation 全部删掉 —— 它们正是「标签弹层长得不像其它弹层」的来源；
+     进出场也交回浮层语言：状态菜单没有动画，这里跟着一起没有。 */
   max-height: 72vh;
-  display: flex;
-  flex-direction: column;
-  padding: var(--space-2);
-  gap: var(--space-2);
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
-  animation: toast-in var(--dur-fast) var(--ease-enter);
+  overflow: auto;
 }
+
+/* 说明行：「任务标签 · N」/「改颜色 · 名字」+「返回」。借 .popmenu__item 的行节奏
+   （同高、同内边距、同圆角），但它是说明不是条目 —— 关掉 hover 底色，免得看起来能点。 */
 .tagmenu__head {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
-  gap: var(--space-2);
   font-size: var(--text-aux);
   color: var(--fg-secondary);
 }
-.tagmenu__back {
-  padding: 0 4px;
+.tagmenu__head:hover {
+  background: transparent;
 }
-.tagmenu__list {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.tagmenu__row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.tagmenu__swatch {
-  flex: 0 0 auto;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border: var(--border-w) solid var(--border);
-  border-radius: var(--radius-pill);
-  cursor: pointer;
-}
-.tagmenu__swatch:hover {
-  transform: scale(1.12);
-}
-.tagmenu__name {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: var(--control-h-sm);
-  padding: 0 4px;
-  border-radius: var(--radius-sm);
-  color: var(--fg-primary);
-  text-align: left;
-  cursor: pointer;
-}
-.tagmenu__name:hover {
-  background: var(--bg-hover);
-}
-.tagmenu__tick {
-  flex: 0 0 auto;
-  width: 16px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--accent-text);
-}
-.tagmenu__chip {
+.tagmenu__head-text {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding: 1px 7px;
-  font-size: 11px;
-  line-height: 16px;
+}
+.tagmenu__back {
+  flex: 0 0 auto;
+  padding: 0 var(--space-2);
+}
+
+/* 行列表：ul 只负责去掉列表样式，行本身仍是 .popmenu__item */
+.tagmenu__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 色点即改色入口：8px 的点仍由 .popmenu__dot 画（颜色来自数据，走内联 style），
+   外面套一个按钮把它做成可点热区（紧凑控件档），点它 = 展开这个标签的调色板。 */
+.tagmenu__swatch {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  padding: 0;
   border-radius: var(--radius-pill);
+  transition: background var(--dur-fast) var(--ease-standard);
 }
+.tagmenu__swatch:hover,
+.tagmenu__swatch[aria-expanded='true'] {
+  background: var(--bg-pressed);
+}
+
+/* 标签名：占满行内剩余宽度并纵向撑满整行 —— 这一行唯一的「点一下勾选 / 取消」目标。
+   文字是纯文本，不再是一个彩色胶囊（胶囊正是「聚到一起」的元凶）。 */
+.tagmenu__name {
+  flex: 1;
+  align-self: stretch;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0;
+  color: inherit;
+  text-align: left;
+}
+.tagmenu__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 选中：右侧一个 14px 的 Check（颜色继承选中行的 --accent-text） */
+.tagmenu__tick {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 「新建标签」行左侧的 24px 槽位：与上面的色点热区同宽，所以文字与标签名同列 */
+.tagmenu__lead {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+}
+
 .tagmenu__empty {
-  padding: 4px;
+  padding: var(--space-1) var(--space-2);
 }
+
+/* 调色板：一行普通色块 —— 没有底色、没有边框、没有圆角，不是第二张卡片。
+   max-width 是必需的：.popmenu 的宽度由内容决定，13 个色块排成一行会把菜单撑到 300px 以上；
+   限宽之后色块自己换行，菜单宽度仍然只由标签名决定（192px = --space-5 × 8，两行放得下全部预设）。 */
 .tagmenu__colors {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  padding-top: var(--space-1);
-  border-top: var(--border-w) solid var(--border);
+  gap: var(--space-1);
+  max-width: calc(var(--space-5) * 8);
+  padding: var(--space-1) var(--space-2);
 }
 .tagmenu__color {
   width: 20px;
@@ -687,11 +793,6 @@ button.chip--status:focus-visible {
   opacity: 0;
   cursor: pointer;
 }
-.tagmenu__foot {
-  padding-top: var(--space-1);
-  border-top: var(--border-w) solid var(--border);
-}
-
 /* 时刻选择器：一个长得像输入框的按钮（.field 负责边框 / 背景 / 高度） */
 .timepick {
   display: inline-flex;
@@ -1097,11 +1198,16 @@ button.chip--status:focus-visible {
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius-lg);
   min-height: 260px;
-  transition: border-color var(--dur-fast), background var(--dur-fast);
+  transition: border-color var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
 }
+/* 落点高亮：淡底 + 强调色边框，再补一条 2px 强调色指示条
+   （与 .trow--drop-before / .trow--drop-after 同一套落点语言，--dur-fast） */
 .kcol--drop {
   border-color: var(--accent);
   background: var(--accent-soft);
+  box-shadow: inset 0 2px 0 0 var(--accent);
 }
 .kcol__head {
   display: flex;
@@ -1145,13 +1251,32 @@ button.chip--status:focus-visible {
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius-md);
   cursor: grab;
-  transition: border-color var(--dur-instant);
+  transition: border-color var(--dur-instant) var(--ease-standard),
+    opacity var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-standard);
 }
 .kcard:hover {
   border-color: var(--border-strong);
 }
 .kcard:active {
   cursor: grabbing;
+}
+/* 拖动中的源卡：压淡 + 轻微收小，读作「它正在被搬走」（--dur-fast） */
+.kcard--dragging {
+  opacity: 0.4;
+  transform: scale(0.98);
+}
+/* 落位回弹：1.02 → 1（--dur-strike + --ease-spring，幅度克制在 2%）。
+   .kcard--landed 由 KanbanBoard 在 animationend 时摘掉，不排定时器。 */
+.kcard--landed {
+  animation: kcard-land var(--dur-strike) var(--ease-spring);
+}
+@keyframes kcard-land {
+  from {
+    transform: scale(1.02);
+  }
+  to {
+    transform: none;
+  }
 }
 .kcard__top {
   display: flex;
@@ -1280,13 +1405,34 @@ button.chip--status:focus-visible {
   overflow-x: auto;
 }
 
-/* 勾选圆圈的已完成态（今日页与任务页共用） */
+/* 勾选圆圈（今日页与任务页共用；基础外观在 app.css，这里补动效）。
+   1) 定位上下文建在基础态上 —— 对勾伪元素现在挂在基础态，不再是「勾上才存在」；
+   2) 未勾选时略小，勾选时用弹性缓动放到 1，取消勾选反向播；
+   3) 悬浮时轻微放大（--dur-instant）。
+   transform-origin 取 left center：勾选框的**左缘**不随缩放移动，行内进度条正是
+   贴着它定位的（scripts/taskprogresscheck.mjs 断言两者左缘相差 ≤1px）。 */
+.check {
+  position: relative;
+  transform: scale(0.82);
+  transform-origin: left center;
+  transition: border-color var(--dur-instant) var(--ease-standard),
+    background var(--dur-instant) var(--ease-standard),
+    transform var(--dur-strike) var(--ease-spring);
+}
+.check:hover {
+  transform: scale(1.06);
+  transition: border-color var(--dur-instant) var(--ease-standard),
+    background var(--dur-instant) var(--ease-standard),
+    transform var(--dur-instant) var(--ease-standard);
+}
 .check--done {
   background: var(--accent);
   border-color: var(--accent);
-  position: relative;
+  transform: scale(1);
 }
-.check--done::after {
+/* 对勾：基础态就已经画出来（scaleX(0) 是一条零宽线，不可见），勾选时展开。
+   两端共用同一条 transition，所以取消勾选能反向收回。 */
+.check::after {
   content: '';
   position: absolute;
   left: 4px;
@@ -1295,7 +1441,18 @@ button.chip--status:focus-visible {
   height: 9px;
   border: solid var(--fg-on-accent);
   border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
+  transform: rotate(45deg) scaleX(0);
+  transform-origin: left center;
+  transition: transform var(--dur-strike) var(--ease-enter);
+}
+.check--done::after {
+  transform: rotate(45deg) scaleX(1);
+}
+/* 优先级色点（今日页 / 任务行 / 四象限 / 看板共用；基础外观在 app.css）：
+   色值由内联样式给出，换优先级就是换 background —— 补一条过渡让它读作「变了」，
+   而不是硬切（--dur-fast）。 */
+.prio {
+  transition: background var(--dur-fast) var(--ease-standard);
 }
 .popmenu__tick {
   /* 只占位、不画框：用不到勾选态的菜单（新建笔记类型、文件夹操作）不该每项前面
