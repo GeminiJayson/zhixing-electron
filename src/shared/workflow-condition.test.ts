@@ -3,6 +3,7 @@ import {
   CONDITION_KIND,
   CONDITION_SOURCES,
   describeCondition,
+  judgePrevLog,
   judgePrevResult,
   parseCondition,
   serializeCondition,
@@ -80,7 +81,101 @@ describe('条件节点配置 —— 解析必须对坏数据免疫', () => {
   })
 
   it('来源清单与 kind 联合类型一一对应', () => {
-    expect(CONDITION_SOURCES.map((s) => s.value).sort()).toEqual(['confirm', 'prev', 'script', 'task'])
+    expect(CONDITION_SOURCES.map((s) => s.value).sort()).toEqual([
+      'confirm',
+      'prev',
+      'prevLog',
+      'script',
+      'task',
+    ])
     for (const s of CONDITION_SOURCES) expect(s.label.length).toBeGreaterThan(0)
+  })
+})
+
+/**
+ * 上一步日志（prevLog）：拿日志当关卡。
+ *
+ * 日志本身不另存 —— 它就在上一步的 NodeRunResult.output 里（截尾保存的那份），
+ * 再存一份只会带来"两份日志不一致"的新问题。
+ */
+describe('条件 · 上一步日志', () => {
+  const last = (over: Partial<NodeRunResult> = {}): NodeRunResult => ({
+    nodeId: 1,
+    kind: 'command',
+    state: 'ok',
+    code: 0,
+    output: '',
+    message: '',
+    at: '2026-01-01 00:00:00',
+    ...over,
+  })
+
+  it('包含关键字即成立（不区分大小写）', () => {
+    const r = judgePrevLog({ kind: 'prevLog', pattern: 'build success' }, last({ output: 'BUILD SUCCESS!' }))
+    expect(r.ok).toBe(true)
+    expect(r.message).toContain('命中')
+  })
+
+  it('不包含时不成立，并说明期望', () => {
+    const r = judgePrevLog({ kind: 'prevLog', pattern: 'ERROR' }, last({ output: 'all good' }))
+    expect(r.ok).toBe(false)
+    expect(r.message).toContain('未命中')
+    expect(r.message).toContain('期望命中')
+  })
+
+  it('expectHit=false 时反过来：不出现才算成立', () => {
+    expect(
+      judgePrevLog({ kind: 'prevLog', pattern: 'ERROR', expectHit: false }, last({ output: 'ok' })).ok
+    ).toBe(true)
+    expect(
+      judgePrevLog({ kind: 'prevLog', pattern: 'ERROR', expectHit: false }, last({ output: 'ERROR!' })).ok
+    ).toBe(false)
+  })
+
+  it('regex 模式按正则匹配', () => {
+    const cfg = { kind: 'prevLog' as const, pattern: 'code=\\d+', matchMode: 'regex' as const }
+    expect(judgePrevLog(cfg, last({ output: 'exit code=42!' })).ok).toBe(true)
+    expect(judgePrevLog(cfg, last({ output: 'exit code=none' })).ok).toBe(false)
+  })
+
+  it('正则写坏时说清楚，而不是含糊判否', () => {
+    const r = judgePrevLog({ kind: 'prevLog', pattern: '([', matchMode: 'regex' }, last({ output: 'x' }))
+    expect(r.ok).toBe(false)
+    expect(r.message).toContain('不是合法的正则')
+  })
+
+  it('上一步没有日志（人工任务）时明确提示', () => {
+    const r = judgePrevLog({ kind: 'prevLog', pattern: 'x' }, last({ output: '', kind: 'task' }))
+    expect(r.ok).toBe(false)
+    expect(r.message).toContain('没有留下日志')
+  })
+
+  it('还没跑完 / 没有结果时都不成立', () => {
+    expect(judgePrevLog({ kind: 'prevLog', pattern: 'x' }, last({ state: 'running' })).message).toContain(
+      '还在运行中'
+    )
+    expect(judgePrevLog({ kind: 'prevLog', pattern: 'x' }, null).message).toContain('还没有可用')
+  })
+
+  it('没写关键字时提示配置缺失', () => {
+    expect(judgePrevLog({ kind: 'prevLog', pattern: '  ' }, last({ output: 'x' })).message).toContain(
+      '没有配置'
+    )
+  })
+
+  it('往返一致（parse 认得这个来源）', () => {
+    const cfg = { kind: 'prevLog' as const, pattern: 'DONE', matchMode: 'contains' as const, expectHit: true }
+    expect(parseCondition(serializeCondition(cfg))).toEqual(cfg)
+  })
+
+  it('描述里带关键字与口径', () => {
+    const d = describeCondition(serializeCondition({ kind: 'prevLog', pattern: 'DONE', matchMode: 'regex' }))
+    expect(d).toContain('DONE')
+    expect(d).toContain('正则')
+    expect(d).toContain('包含')
+  })
+
+  it('未知来源仍然解析失败（不会把脏数据当条件用）', () => {
+    expect(parseCondition(JSON.stringify({ kind: 'nope' }))).toBeNull()
   })
 })

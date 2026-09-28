@@ -69,9 +69,16 @@ describe('步骤动作 —— 三类 + 历史值归一', () => {
     expect(actionKindLabel('open_url')).toBe(LEGACY_ACTION_LABELS.open_url)
   })
 
-  it('三类动作的清单与联合类型一一对应，且都有说明', () => {
-    expect(STEP_ACTION_KINDS.map((a) => a.value)).toEqual(['task', 'command', 'script'])
+  it('四类动作的清单与联合类型一一对应，且都有说明', () => {
+    expect(STEP_ACTION_KINDS.map((a) => a.value)).toEqual(['task', 'command', 'script', 'subflow'])
     for (const a of STEP_ACTION_KINDS) expect(a.hint.length).toBeGreaterThan(0)
+  })
+
+  it('子流程也算自动型：不派待办，由泵启动后停在原地等它跑完', () => {
+    expect(isAutoActionKind('subflow')).toBe(true)
+    // 子流程不该被当成历史值另作提示
+    expect(isLegacyActionKind('subflow')).toBe(false)
+    expect(normalizeActionKind('subflow')).toBe('subflow')
   })
 })
 

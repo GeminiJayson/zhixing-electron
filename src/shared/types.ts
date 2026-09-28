@@ -90,6 +90,12 @@ export interface WorkflowNodePayload {
   action_expect: string
   /** 脚本步骤的运行环境：powershell / cmd / python / node（空 = powershell） */
   action_runtime: string
+  /**
+   * 日志规则（JSON 字符串，空 = 不看日志、只认退出码）：
+   * 关键字匹配决定这一步的成败，命中「等待输入」类规则时还会把预设回答写进 stdin。
+   * 结构见 shared/workflow-log-rules.ts。
+   */
+  log_rules: string
   /** 遗留字段：步骤自带的「进入条件」文本（编辑器已不再提供） */
   condition: string
   /** 条件成立（满足）时跳到的节点；空 = 按顺序走下一步 */
@@ -119,6 +125,10 @@ export interface WorkflowTemplatePayload {
   name: string
   description: string
   start_policy: string
+  /** 定时计划（JSON 字符串，空 = 手动；见 shared/workflow-trigger.ts） */
+  schedule: string
+  /** 触发条件（JSON 字符串数组，空 = 无外部触发） */
+  triggers: string
   nodes: WorkflowNodePayload[]
 }
 
@@ -140,6 +150,13 @@ export interface WorkflowInstancePayload {
   finished_at: string | null
   /** 最近一次节点执行的结果：条件节点「上一步结果」的来源，也是失败后的可见凭据 */
   last_result: NodeRunResult | null
+  /**
+   * 这个实例是被什么拉起来的：manual / schedule / task_status / http / subflow。
+   * 对用户是"这条是定时跑出来的"，对调度器是账本（"今天跑过没有"查最近一次 schedule 实例）。
+   */
+  trigger_kind: string
+  /** 子流程时：父实例 id；普通实例为 null */
+  parent_instance_id: number | null
   steps: WorkflowStepPayload[]
 }
 
@@ -173,8 +190,11 @@ export interface WorkflowRunLogEntry {
   id: number
   instance_id: number
   node_id: number | null
-  /** start 开始 / enter 进入节点 / done 节点跑完 / finish 整个实例结束 */
-  kind: 'start' | 'enter' | 'done' | 'finish'
+  /**
+   * start 开始 / enter 进入节点 / done 节点跑完 / finish 整个实例结束
+   * / log 执行过程中的日志片段（节流写入，不是每个 chunk 一条）
+   */
+  kind: 'start' | 'enter' | 'done' | 'finish' | 'log'
   detail: string | null
   created_at: string
 }
@@ -184,6 +204,9 @@ export interface WorkflowTemplateSummary {
   name: string
   description: string
   start_policy: string
+  /** 定时计划与触发条件（原样透出 JSON 字符串，由渲染层解析） */
+  schedule: string
+  triggers: string
   node_count: number
   updated_at: string
 }

@@ -29,7 +29,10 @@ import { resolveThemePack } from '../shared/theme-packs'
 import { initFileLog } from './log'
 import { hardenWindow } from './security'
 import { logTaskActivity } from './db/task-activity'
-import { autoBackup, broadcastDataChanged, closeDb, currentSettings, dbPath, dbOpenError, dbReadonlyReason, dueReminders, recordReminderFire, reminderPolicy, ensureDefaultSettings, listTodayTasks, open, registerDbHandlers, saveWidgetGeometry, saveWidgetBall, setDataChangedHook, snoozeReminder, dismissReminder } from './db'
+import { dueTargets } from './db/workflow-scheduler'
+import { startTriggerServer, stopTriggerServer } from './http-trigger'
+import { setSetting } from './db/settings'
+import { autoBackup, broadcastDataChanged, closeDb, currentSettings, dbPath, dbOpenError, dbReadonlyReason, dueReminders, recordReminderFire, reminderPolicy, ensureDefaultSettings, listTodayTasks, open, registerDbHandlers, saveWidgetGeometry, saveWidgetBall, setDataChangedHook, snoozeReminder, dismissReminder, instantiateWorkflow, listScheduleTargets } from './db'
 import { decideReminder } from '../shared/reminder'
 import {
   cancelOrganizeLibrary,
@@ -1462,6 +1465,36 @@ function notifyReminders(rows: ReminderRow[]): void {
   }
 }
 
+/**
+ * 工作流的定时调度：每分钟醒一次，问纯函数「哪些模板到点了」。
+ *
+ * 一分钟一次而不是"算好下一次的时刻再 setTimeout"：后者的定时器要跟着
+ * 每次改计划重建，漏一次重建就再也不触发；分钟级扫描最多晚 60 秒，够用且不会坏。
+ *
+ * 应用没开就不跑 —— 这是桌面应用，不装常驻服务。错过的时间不补：
+ * "每天九点"要的是九点那次，不是"开机补一次"。
+ */
+function startWorkflowScheduler(): void {
+  const tick = (): void => {
+    try {
+      const hits = dueTargets(listScheduleTargets(), new Date())
+      for (const hit of hits) {
+        // 不 await：长流程会跑很久，调度器不能被它卡住（下一分钟还要扫）
+        void instantiateWorkflow(hit.id, null, null, undefined, 'schedule').then((inst) => {
+          if (inst) console.log(`[wf] 按计划启动「${hit.name}」（${hit.label}）→ 实例 #${inst.id}`)
+        })
+      }
+    } catch (err) {
+      // 调度器不能因为一次异常就停摆
+      console.error('[wf] 定时调度出错', err)
+    }
+  }
+  const timer = setInterval(tick, 60_000)
+  // 启动时先扫一次：应用常开时上一次关掉到这次打开之间可能正好跨过一个间隔
+  tick()
+  app.on('before-quit', () => clearInterval(timer))
+}
+
 function startReminderDispatch(): void {
   // E2E 脚本要验证提醒的**读取规则**（已到期 / 未到 / 等待中 / 已完成），而派发循环会
   // 抢先把 reminder_at 清掉，让那些断言随机失败。给脚本留一个开关，见 scripts/rollcheck.mjs。
@@ -1899,6 +1932,20 @@ app.whenReady().then(() => {
   startReminderDispatch()
   registerReminderHandlers()
   scheduleTaskSync()
+  startWorkflowScheduler()
+  /**
+   * 外部触发端点：端口交给系统分配（listen(0)），实际端口写进 settings
+   * —— 用户在设置页能看到"要调用哪个地址"。启动失败只记日志，不拦应用。
+   */
+  void startTriggerServer().then((port) => {
+    if (port == null) return
+    try {
+      setSetting('workflow_trigger_port', String(port))
+      console.log(`[wf] 外部触发端点：http://127.0.0.1:${port}/hook/<token>`)
+    } catch (err) {
+      console.error('[wf] 记录触发端口失败', err)
+    }
+  })
   // 欢迎页要先于主窗出现
   try {
     createSplash()

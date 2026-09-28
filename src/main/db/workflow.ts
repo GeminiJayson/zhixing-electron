@@ -3,6 +3,8 @@ import { setTaskTags } from './task-ops'
 import { getNote } from './notes'
 import { reindexTask } from './fts'
 import { openExternalSafely } from '../security'
+import { decodeReply, matchLogRules, parseLogRules, type LogMatch } from '../../shared/workflow-log-rules'
+import { parseTriggers } from '../../shared/workflow-trigger'
 import { spawn } from 'node:child_process'
 import { writeFileSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -21,6 +23,7 @@ import { conn, nowStamp } from './connection'
 import {
   CONDITION_KIND,
   describeCondition,
+  judgePrevLog,
   judgePrevResult,
   parseCondition,
   type ConditionConfig,
@@ -28,6 +31,7 @@ import {
 import {
   COMMAND_KIND,
   SCRIPT_KIND,
+  SUBFLOW_KIND,
   TASK_KIND,
   isAutoActionKind,
   normalizeActionKind,
@@ -40,14 +44,29 @@ import { BRANCH_FIELD, findBranchCycle, nextNodeOf, type BranchSlot } from '../.
 
 // ---------------------------------------------------------------- 工作流
 
+/** 实例的触发来源（存 workflow_instance.trigger_kind） */
+export type TriggerKind = 'manual' | 'schedule' | 'task_status' | 'http' | 'subflow'
+
+/** 触发来源的中文名（启动日志与实例列表共用） */
+export const TRIGGER_LABELS: Record<TriggerKind, string> = {
+  manual: '手动启动',
+  schedule: '按计划',
+  task_status: '任务状态触发',
+  http: '外部调用',
+  subflow: '父流程调用',
+}
+
 export const NODE_COLUMNS =
-  'id, template_id, title, detail, order_index, note_id, note_ids, action_kind, action_value, action_expect, action_runtime, condition, branch_node_id, branch_false_node_id, pos_x, pos_y'
+  'id, template_id, title, detail, order_index, note_id, note_ids, action_kind, action_value, action_expect, action_runtime, log_rules, condition, branch_node_id, branch_false_node_id, pos_x, pos_y'
 
 /** workflow_node 的原始行（note_ids 是 JSON 文本，不是数组）。 */
-interface WorkflowNodeRow extends Omit<WorkflowNodePayload, 'note_ids' | 'branch_false_node_id'> {
+interface WorkflowNodeRow
+  extends Omit<WorkflowNodePayload, 'note_ids' | 'branch_false_node_id' | 'log_rules'> {
   note_ids: string | null
   /** 更早的库还没有这一列（ensureAppExtensions 打开时会补），补之前读到的行是 undefined */
   branch_false_node_id?: number | null
+  /** 同上：log_rules 也是后加的列，老库补列之前读到的是 undefined */
+  log_rules?: string | null
 }
 
 /**
@@ -81,6 +100,8 @@ export function rowToNode(r: WorkflowNodeRow): WorkflowNodePayload {
     branch_false_node_id: r.branch_false_node_id ?? null,
     action_expect: r.action_expect ?? '',
     action_runtime: r.action_runtime ?? '',
+    // 后加的列：老库补列之前读到的是 undefined，一律归一成空串
+    log_rules: r.log_rules ?? '',
   }
 }
 
@@ -133,7 +154,7 @@ export function validateWorkflowTemplate(nodes: WorkflowNodePayload[]): string[]
 export function listWorkflowTemplates(): WorkflowTemplateSummary[] {
   return conn()
     .prepare(
-      `SELECT t.id, t.name, t.description, t.start_policy, t.updated_at,
+      `SELECT t.id, t.name, t.description, t.start_policy, t.schedule, t.triggers, t.updated_at,
               (SELECT COUNT(*) FROM workflow_node n WHERE n.template_id = t.id) AS node_count
          FROM workflow_template t ORDER BY t.updated_at DESC, t.id DESC`
     )
@@ -143,7 +164,7 @@ export function listWorkflowTemplates(): WorkflowTemplateSummary[] {
 export function getWorkflowTemplate(id: number): WorkflowTemplatePayload | null {
   const c = conn()
   const t = c
-    .prepare('SELECT id, name, description, start_policy FROM workflow_template WHERE id = ?')
+    .prepare('SELECT id, name, description, start_policy, schedule, triggers FROM workflow_template WHERE id = ?')
     .get(id) as Omit<WorkflowTemplatePayload, 'nodes'> | undefined
   if (!t) return null
   const rows = c
@@ -161,7 +182,10 @@ export function saveWorkflowTemplate(tpl: {
   name: string
   description?: string
   start_policy?: string
-  nodes: { id?: number | null; title: string; detail?: string; order_index?: number; note_id?: number | null; note_ids?: number[]; action_kind?: string; action_value?: string; action_expect?: string; action_runtime?: string; condition?: string; branch_node_id?: number | null; branch_false_node_id?: number | null; pos_x?: number | null; pos_y?: number | null }[]
+  /** 定时计划 / 触发条件（JSON 字符串，空 = 无） */
+  schedule?: string
+  triggers?: string
+  nodes: { id?: number | null; title: string; detail?: string; order_index?: number; note_id?: number | null; note_ids?: number[]; action_kind?: string; action_value?: string; action_expect?: string; action_runtime?: string; log_rules?: string; condition?: string; branch_node_id?: number | null; branch_false_node_id?: number | null; pos_x?: number | null; pos_y?: number | null }[]
 }): { ok: boolean; problems: string[]; templateId?: number } {
   const draft: WorkflowNodePayload[] = tpl.nodes.map((n, i) => {
     // SOP 多绑定的唯一真相是 note_ids；note_id 只作为兼容列同步写出
@@ -181,6 +205,7 @@ export function saveWorkflowTemplate(tpl: {
       action_value: n.action_value ?? '',
       action_expect: n.action_expect ?? '',
       action_runtime: n.action_runtime ?? '',
+      log_rules: n.log_rules ?? '',
       condition: n.condition ?? '',
       branch_node_id: n.branch_node_id ?? null,
       branch_false_node_id: n.branch_false_node_id ?? null,
@@ -202,15 +227,31 @@ export function saveWorkflowTemplate(tpl: {
   const run = c.transaction(() => {
     let tid = tpl.id ?? 0
     if (tid) {
-      c.prepare('UPDATE workflow_template SET name = ?, description = ?, start_policy = ?, updated_at = ? WHERE id = ?').run(
-        tpl.name, tpl.description ?? '', tpl.start_policy ?? 'first', stamp, tid
+      c.prepare(
+        'UPDATE workflow_template SET name = ?, description = ?, start_policy = ?, schedule = ?, triggers = ?, updated_at = ? WHERE id = ?'
+      ).run(
+        tpl.name,
+        tpl.description ?? '',
+        tpl.start_policy ?? 'first',
+        tpl.schedule ?? '',
+        tpl.triggers ?? '',
+        stamp,
+        tid
       )
     } else {
       const info = c
         .prepare(
-          'INSERT INTO workflow_template (name, description, start_policy, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
+          'INSERT INTO workflow_template (name, description, start_policy, schedule, triggers, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
         )
-        .run(tpl.name, tpl.description ?? '', tpl.start_policy ?? 'first', stamp, stamp)
+        .run(
+          tpl.name,
+          tpl.description ?? '',
+          tpl.start_policy ?? 'first',
+          tpl.schedule ?? '',
+          tpl.triggers ?? '',
+          stamp,
+          stamp
+        )
       tid = Number(info.lastInsertRowid)
     }
     // 节点整体替换：模板规模小，删旧插新比增量 diff 更可靠
@@ -221,8 +262,8 @@ export function saveWorkflowTemplate(tpl: {
       const info = c
         .prepare(
           `INSERT INTO workflow_node (template_id, title, detail, order_index, note_id, note_ids, action_kind,
-                                     action_value, action_expect, action_runtime, condition, pos_x, pos_y, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                                     action_value, action_expect, action_runtime, log_rules, condition, pos_x, pos_y, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           tid,
@@ -235,6 +276,7 @@ export function saveWorkflowTemplate(tpl: {
           n.action_value,
           n.action_expect,
           n.action_runtime,
+          n.log_rules,
           n.condition,
           n.pos_x,
           n.pos_y,
@@ -291,6 +333,11 @@ export function duplicateWorkflowTemplate(id: number): WorkflowTemplatePayload |
     name: `${src.name} 副本`,
     description: src.description,
     start_policy: src.start_policy,
+    // 计划与触发器不跟着复制：副本多半是拿来改的，复制过来会直接产生第二个
+    // 定时任务、两个令牌盯着同一件事 —— 用户得先去关掉一个，不如一开始就不带
+    schedule: '',
+    triggers: '',
+
     nodes: orderedNodes(src.nodes).map((n) => ({
       // 借用原 id 只是让 save 的分支引用重映射能把 branch 指到新行
       id: n.id,
@@ -454,7 +501,14 @@ export async function instantiateWorkflow(
   templateId: number,
   title: string | null,
   originTaskId: number | null,
-  policy?: string
+  policy?: string,
+  /**
+   * 是谁把它拉起来的。默认 manual —— 用户手动点「启动实例」时不必显式传。
+   * 调度器靠它记账（"今天这次定时跑过了没有"），界面靠它显示来源。
+   */
+  triggerKind: TriggerKind = 'manual',
+  /** 子流程时：父实例与挂在父的哪个节点上 */
+  parent?: { instanceId: number; nodeId: number }
 ): Promise<WorkflowInstancePayload | null> {
   const tpl = getWorkflowTemplate(templateId)
   if (!tpl || tpl.nodes.length === 0) return null
@@ -487,6 +541,11 @@ export async function instantiateWorkflow(
       )
       .run(templateId, instanceTitle, headId, originTaskId, stamp)
     const id = Number(info.lastInsertRowid)
+    // 触发来源与父子关系：调度器靠 trigger_kind 记账（"今天跑过没有"），
+    // 子流程靠 parent_* 找到父实例与挂在父的哪个节点上，跑完才能把结果回传。
+    c.prepare(
+      'UPDATE workflow_instance SET trigger_kind = ?, parent_instance_id = ?, parent_node_id = ? WHERE id = ?'
+    ).run(triggerKind, parent?.instanceId ?? null, parent?.nodeId ?? null, id)
     // 没有「启动它的那个任务」时（从工作流页直接点启动）就现造一个根任务：
     // 各步骤挂在它下面形成一棵子树，而不是散落在任务列表顶层。
     // 同时把它写回 origin_task_id —— spawnStepTask 取父级、以及「按任务查实例」都靠这一列。
@@ -500,7 +559,7 @@ export async function instantiateWorkflow(
     }
     // 实例创建本身就是执行日志的第一条：没有它，刚启动的实例在详情里会是一片空白，
     // 分不清「还没开始跑」和「日志丢了」。
-    logRun(id, headId, 'start', '从「' + tpl.name + '」启动')
+    logRun(id, headId, 'start', '从「' + tpl.name + '」启动（' + TRIGGER_LABELS[triggerKind] + '）')
     if (head && needsTask(head)) logRun(id, head.id, 'enter', '已派发待办')
     return id
   })()
@@ -508,6 +567,56 @@ export async function instantiateWorkflow(
   // 长命令可能要跑一阵，页面应当立刻拿到实例并显示「运行中」，而不是卡在启动按钮上。
   if (head && isAutoActionKind(head.action_kind)) void pumpInstance(instanceId)
   return getWorkflowInstance(instanceId)
+}
+
+/**
+ * 调度器要的数据：所有配了计划的模板 + 各自"上次由计划触发"的时刻。
+ *
+ * lastFiredAt 现查实例表而不是存在内存里 —— 内存状态一重启就丢，
+ * 那会让 daily 计划在同一天里补跑一次（09:00 跑过、10:00 重启又跑）。
+ * 只认 trigger_kind='schedule' 的记录：手动启动的那次不该算进计划的账。
+ */
+/**
+ * 任务状态触发：找出"盯着这个任务、且正好等到这个状态"的模板。
+ *
+ * 只返回模板 id，**不在这里启动实例** —— 调用方在 IPC 层，那里能 await，
+ * 也不至于让一次任务状态变更把工作流的启动开销拖进事务里。
+ */
+export function findTaskStatusTriggers(taskId: number, status: string): { id: number; name: string }[] {
+  const rows = conn()
+    .prepare("SELECT id, name, triggers FROM workflow_template WHERE triggers IS NOT NULL AND triggers != ''")
+    .all() as { id: number; name: string; triggers: string }[]
+  const hits: { id: number; name: string }[] = []
+  for (const r of rows) {
+    const matched = parseTriggers(r.triggers).some(
+      (t) => t.kind === 'task_status' && t.taskId === taskId && (t.status ?? 'done') === status
+    )
+    if (matched) hits.push({ id: r.id, name: r.name })
+  }
+  return hits
+}
+
+export function listScheduleTargets(): {
+  id: number
+  name: string
+  schedule: string
+  lastFiredAt: number | null
+}[] {
+  const c = conn()
+  const rows = c
+    .prepare("SELECT id, name, schedule FROM workflow_template WHERE schedule IS NOT NULL AND schedule != ''")
+    .all() as { id: number; name: string; schedule: string }[]
+  return rows.map((r) => {
+    const last = c
+      .prepare(
+        "SELECT created_at FROM workflow_instance WHERE template_id = ? AND trigger_kind = 'schedule' ORDER BY id DESC LIMIT 1"
+      )
+      .get(r.id) as { created_at: string } | undefined
+    // nowStamp() 写的是「YYYY-MM-DD HH:MM:SS」本地时间；换成 ISO 再 parse，
+    // 否则 V8 会把它当 UTC 解析，daily 的"同一天"判断就会错几个小时
+    const at = last ? new Date(last.created_at.replace(' ', 'T')).getTime() : NaN
+    return { id: r.id, name: r.name, schedule: r.schedule, lastFiredAt: Number.isFinite(at) ? at : null }
+  })
 }
 
 export function getWorkflowInstance(id: number): WorkflowInstancePayload | null {
@@ -637,6 +746,38 @@ export function listWorkflowRunLog(instanceId: number): WorkflowRunLogEntry[] {
  * 需要人工待办的节点：普通步骤（含 'none' / 'open_url' / 'open_note' / 'run_command' 这些历史值）。
  * 条件节点是自动求值的关卡、命令与脚本由泵直接跑，两者都不该生成待办。
  */
+/** 某个实例跑的是哪个模板（子流程防环要用） */
+function getInstanceTemplateId(instanceId: number): number | null {
+  const row = conn().prepare('SELECT template_id FROM workflow_instance WHERE id = ?').get(instanceId) as
+    | { template_id: number }
+    | undefined
+  return row?.template_id ?? null
+}
+
+/**
+ * 从 fromTplId 出发、顺着子流程节点往下走，能不能走到 targetTplId。
+ *
+ * 防的是"A 接 B、B 又接 A"这种无限套娃 —— 一旦成环，启动时会一路建实例把库撑爆。
+ * seen 记录已展开过的模板：模板之间除了环也可能有菱形（A→B→D、A→C→D），
+ * 不记录的话 D 会被重复展开。
+ */
+function subflowReaches(fromTplId: number, targetTplId: number | null, seen = new Set<number>()): boolean {
+  if (targetTplId == null) return false
+  if (fromTplId === targetTplId) return true
+  if (seen.has(fromTplId)) return false
+  seen.add(fromTplId)
+  const tpl = getWorkflowTemplate(fromTplId)
+  if (!tpl) return false
+  for (const n of tpl.nodes) {
+    if (normalizeActionKind(n.action_kind) !== SUBFLOW_KIND) continue
+    const childId = Number((n.action_value || '').trim())
+    if (!Number.isFinite(childId) || childId <= 0) continue
+    if (childId === targetTplId) return true
+    if (subflowReaches(childId, targetTplId, seen)) return true
+  }
+  return false
+}
+
 function needsTask(node: WorkflowNodePayload): boolean {
   return node.action_kind !== CONDITION_KIND && !isAutoActionKind(node.action_kind)
 }
@@ -674,6 +815,8 @@ async function advanceInstance(
       c.prepare("UPDATE task SET status = 'done', updated_at = ? WHERE id = ?").run(stamp, inst.origin_task_id)
     }
     logRun(instanceId, null, 'finish', '流程已走完')
+    // 自己是子流程的话，把结果交回父流程的对应节点 —— 父流程停在那一步等着
+    await settleParent(instanceId, 'done')
     return { next: null }
   }
   if (needsTask(nxt)) {
@@ -687,6 +830,66 @@ async function advanceInstance(
   }
   c.prepare('UPDATE workflow_instance SET current_node_id = ? WHERE id = ?').run(nxt.id, instanceId)
   return { next: nxt }
+}
+
+/**
+ * 子流程跑完之后，把结果写回父流程的那一步，并推进父流程。
+ *
+ * **失败/中止时只写结果、不推进**：父流程停在原地等人处理（重试或中止）。
+ * 这是保守但可预期的选择 —— 让"子流程失败"自动等于"父流程某条分支成立"，
+ * 会把一个需要人看一眼的问题变成一个悄悄走掉的分支。
+ *
+ * 交回去的东西有两样：子流程的状态（成功/失败）与**它的日志尾巴**
+ * —— 后者让父流程的条件节点可以用「上一步日志」按关键字接着判。
+ */
+async function settleParent(childInstanceId: number, outcome: 'done' | 'aborted'): Promise<void> {
+  const c = conn()
+  const child = c
+    .prepare('SELECT id, title, status, parent_instance_id, parent_node_id FROM workflow_instance WHERE id = ?')
+    .get(childInstanceId) as
+    | {
+        id: number
+        title: string
+        status: string
+        parent_instance_id: number | null
+        parent_node_id: number | null
+      }
+    | undefined
+  if (!child || child.parent_instance_id == null || child.parent_node_id == null) return
+  const parentId = child.parent_instance_id
+  const nodeId = child.parent_node_id
+  const parent = c.prepare('SELECT status FROM workflow_instance WHERE id = ?').get(parentId) as
+    | { status: string }
+    | undefined
+  // 父流程可能已经被用户中止或删掉了，那就没有"回传"这回事
+  if (!parent || parent.status !== 'running') return
+
+  const logs = c
+    .prepare('SELECT detail FROM workflow_run_log WHERE instance_id = ? ORDER BY id DESC LIMIT 30')
+    .all(childInstanceId) as { detail: string }[]
+  const tail = logs
+    .reverse()
+    .map((l) => l.detail)
+    .join('\n')
+    .slice(-4000)
+
+  const ok = outcome === 'done' && child.status === 'done'
+  const why = outcome === 'aborted' ? '被中止' : child.status === 'aborted' ? '被中止' : '失败'
+  writeInstanceResult(parentId, {
+    nodeId,
+    kind: SUBFLOW_KIND,
+    state: ok ? 'ok' : 'failed',
+    code: null,
+    output: tail,
+    message: ok ? `子流程「${child.title}」已完成` : `子流程「${child.title}」${why}`,
+    at: nowStamp(),
+  })
+  logRun(parentId, nodeId, 'done', ok ? `子流程「${child.title}」完成` : `子流程「${child.title}」${why}`)
+  notifyWorkflow()
+  if (!ok) return
+
+  const { next } = await advanceInstance(parentId, nodeId)
+  if (next && isAutoActionKind(next.action_kind)) void pumpInstance(parentId)
 }
 
 /** 正在跑的实例：同一个实例只允许一个泵，避免重试与任务完成钩子并发跑同一个节点。 */
@@ -722,7 +925,35 @@ export async function pumpInstance(instanceId: number): Promise<void> {
       })
       notifyWorkflow()
 
-      const r = await executeNodeAction(node)
+      /**
+       * 流式日志：执行过程中每来一段就攒进缓冲，**节流**写库（见 flushLog）。
+       * 不节流的话，一条 `echo` 就会产生几十条 run_log —— 实例详情会被灌爆。
+       */
+      let logBuf = ''
+      let lastFlush = 0
+      const flushLog = (force: boolean): void => {
+        if (!logBuf) return
+        const now = Date.now()
+        // 攒够 2KB 或过了 800ms 才写一条；force 用于收尾时把尾巴吐出来
+        if (!force && logBuf.length < 2048 && now - lastFlush < 800) return
+        logRun(instanceId, node.id, 'log', logBuf.slice(-4000))
+        logBuf = ''
+        lastFlush = now
+        notifyWorkflow()
+      }
+      const r = await executeNodeAction(
+        node,
+        (chunk) => {
+          logBuf += chunk
+          flushLog(false)
+        },
+        (m) => {
+          // 关键字命中是个"事件"，单独记一条，免得被淹没在日志流里
+          logRun(instanceId, node.id, 'done', `关键字命中「${m.rule.pattern}」`)
+        },
+        { instanceId, nodeId: node.id }
+      )
+      flushLog(true)
       writeInstanceResult(instanceId, {
         nodeId: node.id,
         kind,
@@ -732,6 +963,16 @@ export async function pumpInstance(instanceId: number): Promise<void> {
         message: r.message,
         at: nowStamp(),
       })
+      /**
+       * 子流程：启动已经完成，本步要**停在这里等它跑完** ——
+       * 之后由子实例结束时回头调用 settleParent 把结果写回这里并推进。
+       * 所以这里不能走下面的「非 ok 就是失败」分支：running 不是失败。
+       */
+      if (r.state === 'running') {
+        logRun(instanceId, node.id, 'done', r.message || '已交给子流程，等待它跑完')
+        notifyWorkflow()
+        return
+      }
       // 执行日志：把这一步的结果摘要落库（输出只留前 200 字，完整输出在 last_result 里）
       logRun(
         instanceId,
@@ -839,12 +1080,42 @@ interface ChildOutcome {
  * 或跨平台的 pwsh，写死一个名字只会让「没装那一个」变成一句看不懂的失败。
  * 超时从**第一次尝试**起算，换候选不重置计时。
  */
-function runChild(files: string[], args: string[], stdin?: string): Promise<ChildOutcome> {
+function runChild(
+  files: string[],
+  args: string[],
+  stdin?: string,
+  /**
+   * 流式回调：每吐一段就走一次，长命令因此能"边跑边看"，而不是等结束才拿到全部输出。
+   * 它跑在 stdout 的 data 事件里（同步），别在里面做重活。
+   */
+  onChunk?: (chunk: string) => void,
+  /**
+   * 「边跑边答」：每来一段日志问一次"要回什么"，返回非 null 就写进子进程的 stdin。
+   * 这是为了应付 `(y/n)` 这类提问 —— 它们不等回答就不会结束，靠"跑完再判"永远等不到。
+   */
+  respond?: (chunk: string) => string | null
+): Promise<ChildOutcome> {
   return new Promise((resolve) => {
     let out = ''
     const push = (buf: Buffer): void => {
-      out += buf.toString('utf8')
+      const chunk = buf.toString('utf8')
+      out += chunk
       if (out.length > OUTPUT_TAIL) out = out.slice(-OUTPUT_TAIL)
+      if (onChunk) {
+        try {
+          onChunk(chunk)
+        } catch {
+          // 回调是旁路（写日志 / 推送 UI），不该因为它把执行搞砸
+        }
+      }
+      if (respond && child?.stdin?.writable) {
+        try {
+          const reply = respond(chunk)
+          if (reply !== null) child.stdin.write(reply)
+        } catch {
+          // 进程可能刚退出，写不进去就算了
+        }
+      }
     }
     let settled = false
     let index = 0
@@ -882,7 +1153,8 @@ function runChild(files: string[], args: string[], stdin?: string): Promise<Chil
           cwd: app.getPath('home'),
           windowsHide: true,
           shell: false,
-          stdio: [stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+          // respond 要在运行中写 stdin，所以哪怕没有初始 stdin 也得开 pipe
+          stdio: [stdin === undefined && !respond ? 'ignore' : 'pipe', 'pipe', 'pipe'],
         })
       } catch (err) {
         done({
@@ -905,10 +1177,15 @@ function runChild(files: string[], args: string[], stdin?: string): Promise<Chil
         done({ code: null, output: out, timedOut: false, error: err.message })
       })
       child.once('close', (code) => done({ code, output: out, timedOut: false, error: '' }))
-      if (stdin !== undefined) {
+      if (stdin !== undefined || respond) {
         // 进程提前退出时写 stdin 会 EPIPE，忽略即可（真正的结论看退出码）
         child.stdin?.on('error', () => undefined)
-        child.stdin?.end(stdin)
+        if (respond) {
+          // 交互模式：初始输入照喂，但**不关管道** —— 关了就没法回答后面的提问
+          if (stdin) child.stdin?.write(stdin)
+        } else {
+          child.stdin?.end(stdin)
+        }
       }
     }
     attempt()
@@ -942,15 +1219,59 @@ function runtimeLaunch(runtime: ScriptRuntime): { files: string[]; args: string[
     : { files: ['pwsh', 'powershell'], args: psArgs }
 }
 
-/** 跑一个脚本步骤：按运行环境选解释器；命令行 / Python / Node / PowerShell 走 stdin，cmd 走临时文件。 */
-async function runScript(runtime: ScriptRuntime, script: string): Promise<ChildOutcome> {
+/**
+ * 跑一个脚本步骤。
+ *
+ * **不交互时**：Python / Node / PowerShell 都把脚本从 **stdin** 喂进去 —— 不落地临时文件、
+ * 不拼引号，PowerShell 这样还绕开了执行策略（`-File *.ps1` 会被 Restricted 拦住）；
+ * 只有 cmd 没有"从 stdin 读脚本"的正规做法，写临时 .cmd。
+ *
+ * **要交互时**（节点配了 `wait_input` 规则）：stdin 得让给"回答提问"，于是换成不占 stdin 的喂法 ——
+ * PowerShell 走 `-EncodedCommand`（base64 的 UTF-16LE，一样不受执行策略限制），
+ * Python / Node 落地成临时脚本文件，cmd 本来就是文件。
+ * 这个切换是**按需**的：没配交互规则的步骤，行为一个字都没变。
+ */
+async function runScript(
+  runtime: ScriptRuntime,
+  script: string,
+  onChunk?: (chunk: string) => void,
+  respond?: (chunk: string) => string | null
+): Promise<ChildOutcome> {
   const launch = runtimeLaunch(runtime)
-  if (!launch.ext) return runChild(launch.files, launch.args, script)
+  const interactive = !!respond
+
+  if (interactive && runtime === 'powershell') {
+    return runChild(
+      launch.files,
+      ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')],
+      undefined,
+      onChunk,
+      respond
+    )
+  }
+  if (!launch.ext) {
+    if (!interactive) return runChild(launch.files, launch.args, script, onChunk, respond)
+    // python / node：交互时得落地成文件，否则脚本本身就把 stdin 占满了
+    const f = join(
+      tmpdir(),
+      `zhixing-wf-${process.pid}-${Date.now().toString(36)}.${runtime === 'node' ? 'mjs' : 'py'}`
+    )
+    try {
+      writeFileSync(f, script, 'utf8')
+      return await runChild(launch.files, [f], undefined, onChunk, respond)
+    } finally {
+      try {
+        unlinkSync(f)
+      } catch {
+        // 删不掉就算了：它在系统临时目录里，重启会被清理
+      }
+    }
+  }
   // cmd 的临时脚本用 CRLF 写：这是它原生的换行，也免得某些构造被当成单行
   const file = join(tmpdir(), `zhixing-wf-${process.pid}-${Date.now().toString(36)}.${launch.ext}`)
   try {
     writeFileSync(file, script.replace(/\r?\n/g, '\r\n'), 'utf8')
-    return await runChild(launch.files, [...launch.args, file])
+    return await runChild(launch.files, [...launch.args, file], undefined, onChunk, respond)
   } finally {
     try {
       unlinkSync(file)
@@ -969,27 +1290,89 @@ async function runScript(runtime: ScriptRuntime, script: string): Promise<ChildO
  * 两者都以「退出码是否等于 action_expect（默认 0）」为成败判据。
  */
 async function executeNodeAction(
-  node: Pick<WorkflowNodePayload, 'action_kind' | 'action_value' | 'action_expect' | 'action_runtime'>
+  node: Pick<
+    WorkflowNodePayload,
+    'action_kind' | 'action_value' | 'action_expect' | 'action_runtime'
+  > & { log_rules?: string },
+  /** 流式日志：每来一段回调一次（实例详情"边跑边看"靠它） */
+  onLog?: (chunk: string) => void,
+  /** 关键字规则命中了（调用方据此记账/提示） */
+  onLogMatch?: (m: LogMatch) => void,
+  /** 当前实例与节点：只有子流程要用它记下父子关系 */
+  ctx?: { instanceId: number; nodeId: number }
 ): Promise<{
   state: NodeRunResult['state']
   code: number | null
   output: string
   message: string
+  /** 命中的关键字规则；没配或没命中时为 null */
+  logMatch: LogMatch | null
 }> {
   const kind = normalizeActionKind(node.action_kind)
   const expect = parseExpectCode(node.action_expect)
   const raw = (node.action_value || '').trim()
   const runtime = normalizeScriptRuntime(node.action_runtime)
-  const label = kind === SCRIPT_KIND ? `脚本（${scriptRuntimeLabel(runtime)}）` : '命令'
+  const label =
+    kind === SCRIPT_KIND
+      ? `脚本（${scriptRuntimeLabel(runtime)}）`
+      : kind === SUBFLOW_KIND
+        ? '子流程'
+        : '命令'
+
+  // ---------------------------------------------------------------- 子流程
+  // 把另一个流程整体当成这一步。启动之后**不在这里等** —— 一个子流程可能跑几小时，
+  // 泵不能挂在那儿。这一步立刻返回 running，父流程停住；子流程结束时会回头
+  // 调 settleParent 把结果写回本节点并继续推进。
+  if (kind === SUBFLOW_KIND) {
+    const childId = Number(raw)
+    if (!Number.isFinite(childId) || childId <= 0) {
+      return { state: 'failed', code: null, output: '', logMatch: null, message: '没有选择要接续的子流程' }
+    }
+    const child = getWorkflowTemplate(childId)
+    if (!child) {
+      return { state: 'failed', code: null, output: '', logMatch: null, message: '要接续的子流程不存在' }
+    }
+    if (!ctx) {
+      return { state: 'failed', code: null, output: '', logMatch: null, message: '缺少实例上下文，无法启动子流程' }
+    }
+    // 防环：子流程（或它的子孙）不能再指回本模板，否则会无限套娃
+    if (subflowReaches(childId, getInstanceTemplateId(ctx.instanceId))) {
+      return {
+        state: 'failed',
+        code: null,
+        output: '',
+        logMatch: null,
+        message: `「${child.name}」里又接回了本流程，会形成环`,
+      }
+    }
+    const inst = await instantiateWorkflow(childId, null, null, undefined, 'subflow', {
+      instanceId: ctx.instanceId,
+      nodeId: ctx.nodeId,
+    })
+    if (!inst) {
+      return { state: 'failed', code: null, output: '', logMatch: null, message: '子流程启动失败（它可能没有步骤）' }
+    }
+    return {
+      state: 'running',
+      code: null,
+      output: '',
+      logMatch: null,
+      message: `子流程「${child.name}」已启动（实例 #${inst.id}），等它跑完`,
+    }
+  }
 
   // 命令只有「一个可执行文件」这一种候选；脚本按运行环境选解释器（见 runScript）
   let candidates: string[] = []
   let args: string[] = []
   if (kind === COMMAND_KIND) {
-    if (!raw) return { state: 'failed', code: null, output: '', message: '没有填写要执行的命令' }
+    if (!raw) {
+      return { state: 'failed', code: null, output: '', logMatch: null, message: '没有填写要执行的命令' }
+    }
     try {
       const argv = splitCommand(raw)
-      if (!argv.length) return { state: 'failed', code: null, output: '', message: '命令为空' }
+      if (!argv.length) {
+        return { state: 'failed', code: null, output: '', logMatch: null, message: '命令为空' }
+      }
       candidates = [argv[0]]
       args = argv.slice(1)
     } catch (err) {
@@ -997,19 +1380,62 @@ async function executeNodeAction(
         state: 'failed',
         code: null,
         output: '',
+        logMatch: null,
         message: `命令解析失败：${err instanceof Error ? err.message : String(err)}`,
       }
     }
   } else if (!raw) {
-    return { state: 'failed', code: null, output: '', message: `没有填写${label}的内容` }
+    return {
+      state: 'failed',
+      code: null,
+      output: '',
+      logMatch: null,
+      message: `没有填写${label}的内容`,
+    }
   }
 
-  const r = kind === SCRIPT_KIND ? await runScript(runtime, raw) : await runChild(candidates, args)
+  /**
+   * 关键字规则。三种判定口径：
+   *   exit  —— 只认退出码（默认，与加这个功能之前完全一致）
+   *   both  —— 命中关键字就用规则判，没命中退回退出码
+   *   log   —— 只看关键字；没命中就算失败（"日志里没有我期待的那句话"本身就是结论）
+   * `wait_input` 类规则与口径无关：它只负责**回答提问**（写 stdin），不改变成败。
+   */
+  const rules = parseLogRules(node.log_rules)
+  /**
+   * 用对象属性而不是裸的 `let`：命中发生在 stdout 回调（闭包）里，而 TS 的控制流分析
+   * 看不到闭包赋值 —— 写成 `let matched` 的话，下面那句 `if (... || matched) return`
+   * 会把它收窄成 null，后续所有 `matched.rule` 都被判成 never。
+   */
+  const seen: { match: LogMatch | null } = { match: null }
+  const feed = (chunk: string): void => {
+    onLog?.(chunk)
+    if (rules.judge === 'exit' || seen.match) return
+    const m = matchLogRules(rules, chunk)
+    if (m) {
+      seen.match = m
+      onLogMatch?.(m)
+    }
+  }
+  const waiters = rules.rules.filter((x: { result: string }) => x.result === 'wait_input')
+  const respond =
+    waiters.length > 0
+      ? (chunk: string): string | null => {
+          const m = matchLogRules({ rules: waiters, judge: 'both' }, chunk)
+          return m ? decodeReply(m.rule.reply) : null
+        }
+      : undefined
+
+  const r =
+    kind === SCRIPT_KIND
+      ? await runScript(runtime, raw, feed, respond)
+      : await runChild(candidates, args, undefined, feed, respond)
   if (r.timedOut) {
     return {
       state: 'timeout',
       code: null,
       output: r.output,
+      logMatch: seen.match,
       message: `${label}执行超时（超过 ${ACTION_TIMEOUT_MS / 1000} 秒已终止）`,
     }
   }
@@ -1020,7 +1446,30 @@ async function executeNodeAction(
       state: 'failed',
       code: null,
       output: r.output,
+      logMatch: seen.match,
       message: `无法启动${label}${tried}：${r.error || r.file}`,
+    }
+  }
+  // 关键字优先（both / log 两种口径）。wait_input 只回答问题、不改变成败，跳过它。
+  if (seen.match && rules.judge !== 'exit' && seen.match.rule.result !== 'wait_input') {
+    const m = seen.match.rule
+    const verdict = m.result === 'ok' ? '成功' : '失败'
+    return {
+      state: m.result === 'ok' ? 'ok' : 'failed',
+      code: r.code,
+      output: r.output,
+      logMatch: seen.match,
+      message: m.message || `日志命中「${m.pattern}」，按${verdict}算（退出码 ${r.code}）`,
+    }
+  }
+  // 「只看日志」口径下，"没有命中"本身就是结论
+  if (rules.judge === 'log') {
+    return {
+      state: 'failed',
+      code: r.code,
+      output: r.output,
+      logMatch: null,
+      message: `日志里没有命中任何关键字（当前口径：只看日志；退出码 ${r.code}）`,
     }
   }
   const ok = r.code === expect
@@ -1028,6 +1477,7 @@ async function executeNodeAction(
     state: ok ? 'ok' : 'failed',
     code: r.code,
     output: r.output,
+    logMatch: seen.match,
     message: ok
       ? `${label}执行完成（退出码 ${r.code}）`
       : `${label}返回退出码 ${r.code}，期望 ${expect}`,
@@ -1035,11 +1485,13 @@ async function executeNodeAction(
 }
 
 export function abortWorkflowInstance(id: number): boolean {
-  return (
+  const changed =
     conn()
       .prepare("UPDATE workflow_instance SET status = 'aborted', finished_at = ? WHERE id = ?")
       .run(nowStamp(), id).changes > 0
-  )
+  // 它是别人的子流程的话，父流程还停在那一步等着 —— 得让它知道别再等了
+  if (changed) void settleParent(id, 'aborted')
+  return changed
 }
 
 /**
@@ -1289,6 +1741,9 @@ export async function evaluateCondition(
 
   // 上一步结果：命令 / 脚本看退出码，人工任务看「做完了没有」
   if (cfg.kind === 'prev') return judgePrevResult(cfg, ctx?.lastResult)
+
+  // 上一步日志：在上一节点的输出里找关键字 —— 拿日志当关卡，而不是只看退出码
+  if (cfg.kind === 'prevLog') return judgePrevLog(cfg, ctx?.lastResult)
 
   const cmd = (cfg.command || '').trim()
   if (!cmd) return { ok: false, message: '未填写要运行的脚本' }

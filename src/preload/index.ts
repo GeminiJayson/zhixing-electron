@@ -254,6 +254,10 @@ const api = {
       name: string
       description?: string
       start_policy?: string
+      /** 定时计划（JSON 字符串，空 = 手动；见 shared/workflow-trigger.ts） */
+      schedule?: string
+      /** 触发条件（JSON 字符串数组，空 = 无外部触发） */
+      triggers?: string
       nodes: {
         id?: number | null
         title: string
@@ -268,6 +272,8 @@ const api = {
         action_expect?: string
         /** 脚本的运行环境：powershell / cmd / python / node（空 = powershell） */
         action_runtime?: string
+        /** 日志规则（JSON 字符串，空 = 只看退出码；见 shared/workflow-log-rules.ts） */
+        log_rules?: string
         condition?: string
         /** 条件成立（满足）时跳到的节点 */
         branch_node_id?: number | null

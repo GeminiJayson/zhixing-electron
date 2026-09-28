@@ -12,7 +12,7 @@ import type { NodeRunResult } from './types'
 export const CONDITION_KIND = 'condition'
 
 /** 注入条件的来源。 */
-export type ConditionSource = 'confirm' | 'task' | 'script' | 'prev'
+export type ConditionSource = 'confirm' | 'task' | 'script' | 'prev' | 'prevLog'
 
 /** 条件节点的配置。 */
 export interface ConditionConfig {
@@ -29,6 +29,12 @@ export interface ConditionConfig {
   expectCode?: number
   /** prev：期望上一步「成功」还是「失败」（默认成功） */
   expectOk?: boolean
+  /** prevLog：要匹配的关键字 */
+  pattern?: string
+  /** prevLog：contains（默认，不区分大小写）/ regex */
+  matchMode?: 'contains' | 'regex'
+  /** prevLog：期望「命中」还是「不命中」（默认命中则成立） */
+  expectHit?: boolean
 }
 
 /** 各来源的中文名（下拉与描述共用）。 */
@@ -40,6 +46,11 @@ export const CONDITION_SOURCES: { value: ConditionSource; label: string; hint: s
     value: 'prev',
     label: '上一步结果',
     hint: '取紧邻的上一个执行节点的返回值来判定（命令/脚本看退出码，任务看是否完成）',
+  },
+  {
+    value: 'prevLog',
+    label: '上一步日志',
+    hint: '在上一步的输出里找关键字 —— 拿日志当关卡，而不是只看退出码',
   },
 ]
 
@@ -72,14 +83,56 @@ export function judgePrevResult(
   }
 }
 
+/**
+ * 「上一步日志」的判定：在上一节点的输出里找关键字。
+ *
+ * 为什么不新开一张表存日志：命令/脚本的输出**本来就在** `NodeRunResult.output` 里
+ * （那是给下一个节点读的，截尾保存），条件只需要读它 —— 再加一份存储只会带来
+ * "两份日志不一致"的新问题。
+ *
+ * 上一步是人工任务时没有 output，这里会明确说"没有留下日志"，
+ * 而不是含糊地判成不成立 —— 配置错了要看得出来。
+ */
+export function judgePrevLog(
+  cfg: ConditionConfig,
+  last: NodeRunResult | null | undefined
+): { ok: boolean; message: string } {
+  if (!last) return { ok: false, message: '上一步还没有可用的执行结果' }
+  if (last.state === 'running') return { ok: false, message: '上一步还在运行中' }
+  const text = last.output ?? ''
+  const pattern = (cfg.pattern ?? '').trim()
+  if (!pattern) return { ok: false, message: '没有配置要匹配的关键字' }
+  if (!text) {
+    return {
+      ok: false,
+      message: `上一步没有留下日志（它可能是人工任务），无法匹配「${pattern}」`,
+    }
+  }
+  let hit = false
+  if (cfg.matchMode === 'regex') {
+    try {
+      hit = new RegExp(pattern, 'i').test(text)
+    } catch {
+      return { ok: false, message: `关键字不是合法的正则：${pattern}` }
+    }
+  } else {
+    hit = text.toLowerCase().includes(pattern.toLowerCase())
+  }
+  const expectHit = cfg.expectHit !== false
+  return {
+    ok: hit === expectHit,
+    message: `日志${hit ? '命中' : '未命中'}「${pattern}」（期望${expectHit ? '命中' : '不命中'}）`,
+  }
+}
+
 /** 解析 action_value 里的条件 JSON；坏数据一律返回 null，不抛。 */
 export function parseCondition(raw: string | null | undefined): ConditionConfig | null {
   if (!raw) return null
   try {
     const v = JSON.parse(raw) as ConditionConfig
     if (!v || typeof v !== 'object') return null
-    if (v.kind !== 'confirm' && v.kind !== 'task' && v.kind !== 'script' && v.kind !== 'prev')
-      return null
+    const allowed: ConditionSource[] = ['confirm', 'task', 'script', 'prev', 'prevLog']
+    if (!allowed.includes(v.kind)) return null
     return v
   } catch {
     return null
@@ -102,6 +155,11 @@ export function describeCondition(raw: string | null | undefined): string {
     const code = Number.isFinite(cfg.expectCode) ? `退出码 = ${Number(cfg.expectCode)}` : ''
     const ok = cfg.expectOk === false ? '失败' : '成功'
     return `上一步结果：${ok}${code ? '、' + code : ''}`
+  }
+  if (cfg.kind === 'prevLog') {
+    const mode = cfg.matchMode === 'regex' ? '正则' : '包含'
+    const want = cfg.expectHit === false ? '不含' : '包含'
+    return `上一步日志 ${want}「${cfg.pattern?.trim() || '（未写关键字）'}」（${mode}）`
   }
   return `脚本返回：${cfg.command?.trim() || '（未写命令）'}，退出码 = ${cfg.expectCode ?? 0}`
 }

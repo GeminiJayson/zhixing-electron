@@ -23,6 +23,8 @@ export * from './tasks'
 import { restoreCompleted } from './tasks'
 export * from './trash'
 export * from './workflow'
+// re-export 不会带进本地绑定，这里要显式 import 才能在 handler 里直接用
+import { findTaskStatusTriggers } from './workflow'
 
 // 显式导入供下方 IPC 注册使用（export * 不引入本地作用域）
 import { APP_DIR_NAME, dataDir, dbPath, TASK_COLUMNS, open, conn, nowStamp, today, getTask, db, openedPath, dbReadonlyReason, dbOpenError } from './connection'
@@ -720,6 +722,14 @@ export function registerDbHandlers(): void {
     const t = updateTask(id, fields)
     // 编辑面板把状态改成「已完成」同样要推进流程
     if (t?.status === 'done' && 'status' in fields) void advanceWorkflowForTask(id)
+    // 任务状态触发：有模板盯着"这个任务变成这个状态"就把它拉起来
+    if ('status' in fields && t?.status) {
+      for (const hit of findTaskStatusTriggers(id, t.status)) {
+        void instantiateWorkflow(hit.id, null, null, undefined, 'task_status').then((inst) => {
+          if (inst) console.log(`[wf] 任务 #${id} 变成「${t.status}」→ 启动「${hit.name}」实例 #${inst.id}`)
+        })
+      }
+    }
     return t
   })
   handle('db:deleteTask', (_e, id: number) => softDelete(id))

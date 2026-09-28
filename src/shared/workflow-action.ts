@@ -16,15 +16,21 @@
 export const TASK_KIND = 'task'
 export const COMMAND_KIND = 'command'
 export const SCRIPT_KIND = 'script'
+export const SUBFLOW_KIND = 'subflow'
 
 /** 归一后的动作类型（库里的历史值不在此列，见 normalizeActionKind）。 */
-export type StepActionKind = 'task' | 'command' | 'script'
+export type StepActionKind = 'task' | 'command' | 'script' | 'subflow'
 
-/** 三类动作的界面文案与说明（编辑弹窗的下拉与提示共用）。 */
+/** 四类动作的界面文案与说明（编辑弹窗的下拉与提示共用）。 */
 export const STEP_ACTION_KINDS: { value: StepActionKind; label: string; hint: string }[] = [
   { value: TASK_KIND, label: '任务', hint: '实例化时生成一条待办任务，人工完成后自动推进' },
   { value: COMMAND_KIND, label: '命令', hint: '直接执行一条命令并等待退出，退出码正确才算完成' },
   { value: SCRIPT_KIND, label: '脚本', hint: '执行一段脚本并等待退出码；运行环境在下面选（PowerShell / cmd / Python / Node）' },
+  {
+    value: SUBFLOW_KIND,
+    label: '子流程',
+    hint: '把另一个流程整体当成这一步：它跑完（或失败）之后，结果回到本步，条件节点可以用「上一步日志」接着判',
+  },
 ]
 
 /**
@@ -45,7 +51,7 @@ export const LEGACY_ACTION_LABELS: Record<string, string> = {
 export function isLegacyActionKind(raw: string | null | undefined): boolean {
   const k = (raw ?? '').trim()
   if (!k || k === 'none') return false
-  return k !== TASK_KIND && k !== COMMAND_KIND && k !== SCRIPT_KIND
+  return k !== TASK_KIND && k !== COMMAND_KIND && k !== SCRIPT_KIND && k !== SUBFLOW_KIND
 }
 
 /**
@@ -57,13 +63,19 @@ export function normalizeActionKind(raw: string | null | undefined): StepActionK
   const k = (raw ?? '').trim()
   if (k === COMMAND_KIND) return COMMAND_KIND
   if (k === SCRIPT_KIND) return SCRIPT_KIND
+  if (k === SUBFLOW_KIND) return SUBFLOW_KIND
   return TASK_KIND
 }
 
-/** 自动执行型（命令 / 脚本）：不派待办，执行完自行推进。 */
+/**
+ * 自动执行型（命令 / 脚本 / 子流程）：不派待办，执行完自行推进。
+ *
+ * 子流程也算自动型 —— 它由泵启动，之后**停在这一步**等子流程跑完，
+ * 而不是先派一条"去跑子流程"的待办让人点。
+ */
 export function isAutoActionKind(raw: string | null | undefined): boolean {
   const k = normalizeActionKind(raw)
-  return k === COMMAND_KIND || k === SCRIPT_KIND
+  return k === COMMAND_KIND || k === SCRIPT_KIND || k === SUBFLOW_KIND
 }
 
 // ---------------------------------------------------------------- 脚本的运行环境

@@ -142,6 +142,21 @@ function ensureAppExtensions(d: Database.Database): void {
   // 条件节点的「不成立」出边：与 branch_node_id（成立）配成一对，
   // 条件节点因此能在画布上拉出「满足 / 不满足」两条分支。
   add('workflow_node', 'branch_false_node_id', 'branch_false_node_id INTEGER')
+  // 步骤的日志规则：关键字匹配（决定这一步算成功还是失败、命中「等待输入」时回什么）。
+  // 存 JSON 字符串，结构与语义见 shared/workflow-log-rules.ts
+  add('workflow_node', 'log_rules', 'log_rules TEXT')
+  // 模板级的「什么时候自己跑起来」：定时计划与触发条件（见 shared/workflow-trigger.ts）
+  add('workflow_template', 'schedule', 'schedule TEXT')
+  add('workflow_template', 'triggers', 'triggers TEXT')
+  // 子工作流：节点接续另一个模板时，记下"这个实例是谁的子流程、挂在哪个节点上"，
+  // 子流程跑完才能把结果回传给父流程的对应节点。
+  add('workflow_instance', 'parent_instance_id', 'parent_instance_id INTEGER')
+  add('workflow_instance', 'parent_node_id', 'parent_node_id INTEGER')
+  // 这个实例是被什么拉起来的：manual / schedule / task_status / http / subflow。
+  // 它既是给用户看的（"这条是定时跑出来的"），也是调度器的账本 ——
+  // "今天这次定时跑过了没有"直接查最近一次 schedule 触发的实例，不必另存一份内存状态
+  // （内存状态一重启就丢，daily 计划会在同一天里补跑一次）。
+  add('workflow_instance', 'trigger_kind', 'trigger_kind TEXT')
   add('workflow_instance', 'last_result', 'last_result TEXT')
   // 外部任务来源：靠 (source, id) 幂等认领，重复同步不会造出重复任务
   // 开始 / 截止的**时刻**（HH:MM，空 = 全天）。
