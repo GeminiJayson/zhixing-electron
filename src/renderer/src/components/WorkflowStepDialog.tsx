@@ -13,6 +13,13 @@ import {
   type StepActionKind,
 } from '@shared/workflow-action'
 import { BRANCH_SLOTS, type BranchSlot } from '@shared/workflow-branch'
+import {
+  parseLogRules,
+  serializeLogRules,
+  type LogRule,
+  type LogRules,
+} from '@shared/workflow-log-rules'
+import { Plus, Trash2, X } from '@renderer/lib/icons'
 
 /** 「命令」类动作的填写提示（脚本类的示例随运行环境变化，见 scriptRuntimeSpec）。 */
 const COMMAND_HINT = '例如：notepad.exe some-file.txt'
@@ -26,6 +33,11 @@ interface Props {
   /** 选中节点是不是条件节点：只有条件节点才承接分支，所以只有它才给这个勾选框 */
   selectedIsCondition: boolean
   noteChoices: Note[]
+  /**
+   * 可选的子流程（key=模板 id，label=名字）。
+   * 由调用方过滤掉「自己」—— 一个流程接续自己就是死循环，不该出现在选项里。
+   */
+  subflowChoices: { id: number; name: string }[]
   /** 新增时如果挂到选中的条件节点上，这里说明挂的是「满足」还是「不满足」分支 */
   onSave: (node: WorkflowNodePayload, asBranch: BranchSlot | null) => void
   onCancel: () => void
@@ -49,6 +61,7 @@ export function WorkflowStepDialog({
   selectedTitle,
   selectedIsCondition,
   noteChoices,
+  subflowChoices,
   onSave,
   onCancel,
 }: Props) {
@@ -58,6 +71,19 @@ export function WorkflowStepDialog({
     action_runtime: node.action_runtime || DEFAULT_SCRIPT_RUNTIME,
   })
   const [asBranch, setAsBranch] = useState<BranchSlot | null>(null)
+  /**
+   * 日志规则：界面里以结构化对象编辑，落到 draft 时序列化成 JSON 字符串。
+   * 解析与序列化都走 shared/workflow-log-rules —— 与主进程读的是同一份实现，
+   * 不会出现"界面存进去、引擎读不懂"。
+   */
+  const [logRules, setLogRules] = useState<LogRules>(() => parseLogRules(node.log_rules))
+  const applyLogRules = (next: LogRules): void => {
+    setLogRules(next)
+    setDraft((d) => ({ ...d, log_rules: serializeLogRules(next) }))
+  }
+  const patchRule = (i: number, patch: Partial<LogRule>): void => {
+    applyLogRules({ ...logRules, rules: logRules.rules.map((r, j) => (j === i ? { ...r, ...patch } : r)) })
+  }
 
   /** 在条件节点上新增：必须挂到满足 / 不满足其中一条分支，没有「不挂分支」这个选项 */
   const needsBranch = isNew && selectedIsCondition && selectedTitle != null
@@ -94,6 +120,9 @@ export function WorkflowStepDialog({
       <div className="modal" role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()}>
         <header className="modal__head">
           <h2>{isNew ? '新增步骤' : `编辑步骤 #${node.id}`}</h2>
+          <button className="icon-btn" onClick={onCancel} title="关闭" aria-label="关闭">
+            <X size={14} />
+          </button>
         </header>
         <div className="modal__body">
           <label className="form-row">
@@ -216,11 +245,113 @@ export function WorkflowStepDialog({
             )}
           </div>
 
+          {/* 日志规则：退出码说不清楚的事（失败也返回 0、结论写在日志里、跑一半停下来问 y/n）交给它 */}
+          {kind !== 'task' && (
+            <div className="form-block">
+              <div className="form-row">
+                <span>日志判定</span>
+                <select
+                  className="field"
+                  value={logRules.judge}
+                  onChange={(e) => applyLogRules({ ...logRules, judge: e.target.value as LogRules['judge'] })}
+                >
+                  <option value="exit">只看退出码（默认）</option>
+                  <option value="both">日志优先，没命中再看退出码</option>
+                  <option value="log">只看日志，没命中算失败</option>
+                </select>
+              </div>
+              {logRules.rules.map((rule, i) => (
+                <div key={i} className="form-row wf-rule">
+                  <input
+                    className="field"
+                    value={rule.pattern}
+                    placeholder={rule.mode === 'regex' ? '正则，如 ERROR|失败' : '关键字，如 BUILD SUCCESS'}
+                    aria-label={'第 ' + (i + 1) + ' 条关键字'}
+                    onChange={(e) => patchRule(i, { pattern: e.target.value })}
+                  />
+                  <select
+                    className="field"
+                    value={rule.mode}
+                    aria-label={'第 ' + (i + 1) + ' 条匹配方式'}
+                    onChange={(e) => patchRule(i, { mode: e.target.value as LogRule['mode'] })}
+                  >
+                    <option value="contains">包含</option>
+                    <option value="regex">正则</option>
+                  </select>
+                  <select
+                    className="field"
+                    value={rule.result}
+                    aria-label={'第 ' + (i + 1) + ' 条判定'}
+                    onChange={(e) => patchRule(i, { result: e.target.value as LogRule['result'] })}
+                  >
+                    <option value="ok">算成功</option>
+                    <option value="fail">算失败</option>
+                    <option value="wait_input">等待输入</option>
+                  </select>
+                  {rule.result === 'wait_input' && (
+                    <input
+                      className="field"
+                      value={rule.reply ?? ''}
+                      placeholder="命中后自动输入的内容，如 y\n"
+                      aria-label={'第 ' + (i + 1) + ' 条自动输入'}
+                      onChange={(e) => patchRule(i, { reply: e.target.value })}
+                    />
+                  )}
+                  <button
+                    className="icon-btn icon-btn--danger"
+                    title="删掉这条关键字"
+                    aria-label="删掉这条关键字"
+                    onClick={() => applyLogRules({ ...logRules, rules: logRules.rules.filter((_, j) => j !== i) })}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ))}
+              <div className="form-row">
+                <span />
+                <button
+                  className="text-btn"
+                  onClick={() =>
+                    applyLogRules({
+                      ...logRules,
+                      rules: [...logRules.rules, { pattern: '', mode: 'contains', result: 'fail' }],
+                    })
+                  }
+                >
+                  <Plus size={13} /> 加一条关键字
+                </button>
+              </div>
+              <p className="u-aux">
+                按从上到下的顺序匹配，先命中的说了算；命中「等待输入」时会自动把回答写进 stdin
+                （脚本步骤会因此改用不占 stdin 的喂法）。留空则只看退出码。
+              </p>
+            </div>
+          )}
+
           <p className="u-aux">
             {STEP_ACTION_KINDS.find((a) => a.value === kind)?.hint}
             {legacy &&
               `　当前保存着历史动作「${LEGACY_ACTION_LABELS[draft.action_kind] ?? draft.action_kind}」，按「任务」处理；选一个新类型即可替换。`}
           </p>
+
+          {/* 子流程：选一个模板整体接进来。选项由调用方排除掉自己 */}
+          {kind === 'subflow' && (
+            <label className="form-row">
+              <span>接续哪个流程</span>
+              <select
+                className="field"
+                value={draft.action_value}
+                onChange={(e) => setDraft({ ...draft, action_value: e.target.value })}
+              >
+                <option value="">（请选择）</option>
+                {subflowChoices.map((t) => (
+                  <option key={t.id} value={String(t.id)}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
 
           {kind === 'command' && (
             <label className="form-row">

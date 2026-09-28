@@ -611,3 +611,133 @@
   color: var(--fg-secondary);
   overflow-wrap: anywhere;
 }
+/* ------------------------------------------------------------------
+   执行记录弹窗（WorkflowRunDialog）
+
+   从侧栏内联展开搬过来的：时间轴天生是长内容，内联展开会把实例列表挤得
+   只剩两行，用户还得在侧栏的窄宽度里横向滚。
+   ------------------------------------------------------------------ */
+.modal--run {
+  width: min(780px, 92vw);
+  max-height: 82vh;
+}
+.run-step {
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-2);
+  overflow: hidden;
+}
+.run-step__sum {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  min-height: var(--row-h);
+  cursor: pointer;
+  /* 折叠态就是时间轴的一行：步骤名 / 起止时刻 / 结论 */
+}
+.run-step__sum:hover {
+  background: var(--bg-hover);
+}
+.run-step__name {
+  font-weight: 600;
+}
+.run-step__time {
+  color: var(--fg-tertiary);
+  font-size: var(--text-aux);
+  font-variant-numeric: tabular-nums;
+}
+.run-step__verdict {
+  margin-left: auto;
+  color: var(--fg-secondary);
+  font-size: var(--text-aux);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 46%;
+}
+.run-step__events {
+  margin: 0;
+  padding: 0 var(--space-2) var(--space-1);
+  list-style: none;
+  font-size: var(--text-aux);
+  color: var(--fg-secondary);
+}
+.run-step__events > li {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  min-height: 20px;
+}
+.run-step__t {
+  color: var(--fg-tertiary);
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+.run-step__k {
+  flex: 0 0 auto;
+  min-width: 32px;
+}
+.run-step__d {
+  overflow-wrap: anywhere;
+}
+/* 执行日志：等宽 + 保留换行。这是"它到底吐了什么"的答案，不能被排版吃掉 */
+.run-step__log {
+  margin: 0;
+  padding: var(--space-2);
+  border-top: var(--border-w) solid var(--border);
+  background: var(--bg-canvas);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-aux);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--fg-secondary);
+  max-height: 320px;
+  overflow: auto;
+}
+
+/* 执行日志（kind='log'）是多行输出：等宽 + 保留换行，否则整段挤成一行读不了 */
+.wf-runlog__item--log .wf-runlog__what {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--fg-tertiary);
+}
+
+/* ------------------------------------------------------------------
+   步骤编辑弹窗里的「日志规则」编辑区
+
+   .form-row 本身是竖向的（标签在上、控件在下），而一条规则要横向排：
+   关键字 / 匹配方式 / 判定 /（等待输入时的自动回答）/ 删除。
+   这里就地把那几行覆盖成横向，不动通用的 .form-row。
+   ------------------------------------------------------------------ */
+.form-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.form-row.wf-rule {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-1);
+}
+.form-row.wf-rule > .field:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.form-row.wf-rule > .field {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 84px;
+}
+.form-row.wf-rule > .icon-btn {
+  flex: 0 0 auto;
+}
+/* 触发条件那两个按钮：并排放在标签右侧，不占满整行 */
+.wf-trigger-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}

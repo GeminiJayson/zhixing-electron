@@ -20,6 +20,7 @@ import {
   RotateCcw,
   Square,
   TerminalSquare,
+  Timer,
   Trash2,
   X,
 } from '@renderer/lib/icons'
@@ -52,6 +53,8 @@ import {
 import { t } from '../i18n'
 import { Toolbar } from '../components/Toolbar'
 import { WorkflowStepDialog } from '../components/WorkflowStepDialog'
+import { WorkflowScheduleDialog } from '../components/WorkflowScheduleDialog'
+import { WorkflowRunDialog } from '../components/WorkflowRunDialog'
 import { WorkflowConditionDialog } from '../components/WorkflowConditionDialog'
 import { useDialog } from '../components/Dialogs'
 import { usePanZoom } from '../lib/usePanZoom'
@@ -80,29 +83,22 @@ interface Props {
 const NODE_W = 150
 const NODE_H = 56
 
-/** 执行日志的分类标签（实例详情的时间轴用） */
-const RUN_LOG_LABELS: Record<string, string> = {
-  start: '开始',
-  enter: '进入',
-  done: '完成',
-  finish: '结束',
-}
+/**
+ * 节点详情浮卡是否启用。
+ *
+ * 2026-09-29 用户要求移除：「选中节点的悬浮显示也不需要」。
+ * 这里用常量关掉而不是直接删代码，是因为浮卡里攒了不少**只有它显示过**的信息
+ * （条件节点的满足/不满足目标、命令与期望退出码、SOP 绑定、执行动作按钮），
+ * 真要恢复时不必去 git 里翻。想彻底删掉的话，把整块 SHOW_NODE_CARD 条件渲染干掉即可。
+ *
+ * 注意别写成 false && … 的字面量条件：那会让 TypeScript 的控制流分析错乱，
+ * 块内 if (!node || !p) return null 之后的收窄失效，报一串「可能为 undefined」。
+ */
+const SHOW_NODE_CARD = false
 
-/** 时间轴上的时刻：只留 时:分（同一天的运行看秒没意义；跨天时带上月-日） */
-function runLogTime(iso: string): string {
-  if (!iso) return '—'
-  const d = new Date(iso.replace(' ', 'T'))
-  if (Number.isNaN(d.getTime())) return iso.slice(5, 16)
-  const today = new Date()
-  const sameDay =
-    d.getFullYear() === today.getFullYear() &&
-    d.getMonth() === today.getMonth() &&
-    d.getDate() === today.getDate()
-  const hh = String(d.getHours()).padStart(2, '0')
-  const mm = String(d.getMinutes()).padStart(2, '0')
-  if (sameDay) return hh + ':' + mm
-  return String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + ' ' + hh + ':' + mm
-}
+/** 执行日志的分类标签随执行记录一起搬到了 components/WorkflowRunDialog.tsx */
+
+/** 时间轴与它的时刻格式化都随执行记录搬到了 components/WorkflowRunDialog.tsx */
 /** 节点内文字左右各留 10px，再留 2px 余量给抗锯齿 */
 const NODE_TEXT_W = NODE_W - 22
 /**
@@ -249,17 +245,39 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   const [instances, setInstances] = useState<WorkflowInstancePayload[]>([])
   /** 展开着执行详情的实例 id（同时只开一个：侧栏宽度有限，开多个会互相挤） */
   const [runLogFor, setRunLogFor] = useState<number | null>(null)
+  /** 「计划与触发」弹窗 */
+  const [scheduleOpen, setScheduleOpen] = useState(false)
+  /**
+   * 外部触发端点监听的端口。主进程 listen(0) 之后写进 settings，
+   * 这里读出来才能把完整调用地址显示给用户 —— 否则弹窗里只有一个 <端口> 占位符。
+   */
+  const [triggerPort, setTriggerPort] = useState('')
+  useEffect(() => {
+    void (async () => {
+      try {
+        const s = await window.zhixing.db.settings()
+        setTriggerPort(s.workflow_trigger_port ?? '')
+      } catch (err) {
+        // 读不到就退化成占位符，不影响其它功能
+        console.error('[workflow] 读取触发端口失败', err)
+      }
+    })()
+  }, [])
+  /**
+   * 任务状态触发的候选：**还没结束**的任务才列出来。
+   * 已经完成/已放弃的任务不会再变状态，把它们放进下拉只会让人选到一个永远不会触发的项。
+   */
+  const [taskChoices, setTaskChoices] = useState<{ id: number; title: string; status: string }[]>([])
   const [runLog, setRunLog] = useState<WorkflowRunLogEntry[]>([])
 
   /**
-   * 展开 / 收起某个实例的执行详情。
-   * 每次展开都重新拉一次 —— 实例可能正在跑，缓存的日志会立刻过时。
+   * 打开某个实例的执行记录弹窗。
+   * 每次打开都重新拉一次 —— 实例可能正在跑，缓存的日志会立刻过时。
+   *
+   * 查询本身是 **id 正序**（后端 ORDER BY id ASC），弹窗按时间顺序读，
+   * 这里**不要再反转** —— 上一版我多写了一次 reverse，结果第一步显示在最后一步后面。
    */
-  const toggleRunLog = async (id: number): Promise<void> => {
-    if (runLogFor === id) {
-      setRunLogFor(null)
-      return
-    }
+  const openRunLog = async (id: number): Promise<void> => {
     setRunLogFor(id)
     setRunLog(await window.zhixing.db.workflowRunLog(id))
   }
@@ -327,7 +345,12 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   /** 悬停的分支连线（源步骤 id + 槽位），以及正在改挂的那一条 */
   const [branchHover, setBranchHover] = useState<{ id: number; slot: BranchSlot } | null>(null)
   /** 鼠标悬浮的步骤：与它相连的连线高亮、其余淡到几乎隐形（与知识图谱同一套交互） */
-  const [hoverStep, setHoverStep] = useState<number | null>(null)
+  /**
+   * 节点悬浮预览已按用户要求移除（2026-09-29）。
+   * 原先悬停一个步骤会淡化"非直接邻居"的节点与连线、并给相关连线换成高亮箭头 ——
+   * 用户觉得那是多余的干扰。现在画布状态只由**选中**（selected）与**拖拽**（branchDrag /
+   * branchHover）驱动：这两个都是用户主动发起的，悬停不是。
+   */
   const [branchDrag, setBranchDrag] = useState<{
     fromId: number
     slot: BranchSlot
@@ -338,7 +361,6 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
    * 正在拖动节点。拖动期间不渲染详情浮卡 —— 浮卡画在 foreignObject 里，
    * 节点移动时它的坐标更新了但不会重绘，会在原地留下一张「拖影」。
    */
-  const [dragging, setDragging] = useState(false)
   // 画布视图（平移 / 缩放）。startDrag 定义在 hook 之前，用这个 ref 桥接。
   const panRef = useRef<ReturnType<typeof usePanZoom> | null>(null)
 
@@ -422,6 +444,18 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     await loadTemplates()
     if (current) await openTemplate(current.id)
     await loadInstances()
+    // 任务候选跟着刷新：勾完一条任务再回来，它不该还留在"可触发"的列表里
+    try {
+      const list = await window.zhixing.db.tasks(200)
+      setTaskChoices(
+        list
+          .filter((t) => t.status !== 'done' && t.status !== 'abandoned')
+          .map((t) => ({ id: t.id, title: t.title, status: t.status }))
+      )
+    } catch (err) {
+      // 拿不到任务列表不该影响整页刷新，弹窗里会显示"还没有可选的未完成任务"
+      console.error('[workflow] 读取任务候选失败', err)
+    }
     await onChanged()
   }, [loadTemplates, openTemplate, loadInstances, current, onChanged])
 
@@ -431,29 +465,6 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
       (a, b) => (a.order_index || 0) - (b.order_index || 0) || a.id - b.id
     )
   }, [current])
-
-  /**
-   * 悬浮步骤的直接邻居（含自己）。返回 null 表示不做任何淡化。
-   * 正在改挂分支端点时强制不淡化：那时用户在挑目标步骤，淡化候选会让人点不准。
-   */
-  const stepFocusSet = useMemo(() => {
-    if (branchDrag != null || hoverStep == null) return null
-    const set = new Set<number>([hoverStep])
-    ordered.forEach((n, i) => {
-      if (n.id === hoverStep) {
-        const prev = ordered[i - 1]
-        const next = ordered[i + 1]
-        if (prev) set.add(prev.id)
-        if (next) set.add(next.id)
-        // 满足 / 不满足两条出边都算直接相连
-        if (n.branch_node_id) set.add(n.branch_node_id)
-        if (n.branch_false_node_id) set.add(n.branch_false_node_id)
-      }
-      // 别人的分支指向我，同样算直接相连
-      if (n.branch_node_id === hoverStep || n.branch_false_node_id === hoverStep) set.add(n.id)
-    })
-    return set
-  }, [hoverStep, ordered, branchDrag])
 
   const instance = useMemo(
     () => instances.find((i) => i.template_id === current?.id && i.status === 'running') ?? null,
@@ -487,7 +498,6 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     }
     // 偏移量在世界坐标系里算：画布缩放后，同样的像素位移对应的世界位移不同
     dragRef.current = { id: n.id, dx: world.x - p.x, dy: world.y - p.y, from: { x: p.x, y: p.y } }
-    setDragging(true)
     setSelected(n.id)
   }
 
@@ -545,7 +555,6 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     }
     const drag = dragRef.current
     dragRef.current = null
-    setDragging(false)
     if (!drag) return
     const p = pos.get(drag.id)
     if (!p) return
@@ -908,6 +917,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
       action_value: n.action_value,
       action_expect: n.action_expect,
       action_runtime: n.action_runtime,
+      log_rules: n.log_rules,
       condition: n.condition,
       branch_node_id: n.branch_node_id,
       branch_false_node_id: n.branch_false_node_id,
@@ -921,7 +931,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   /** 统一的模板保存入口：校验失败给出 problems，成功则刷新并返回 true。 */
   const persistTemplate = async (
     nodes: WorkflowNodePayload[],
-    patch?: { name?: string; description?: string; start_policy?: string }
+    patch?: { name?: string; description?: string; start_policy?: string; schedule?: string; triggers?: string }
   ): Promise<boolean> => {
     if (!current) return false
     const res = await window.zhixing.db.saveWorkflowTemplate({
@@ -929,6 +939,8 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
       name: patch?.name ?? current.name,
       description: patch?.description ?? current.description,
       start_policy: patch?.start_policy ?? current.start_policy,
+      schedule: patch?.schedule ?? current.schedule,
+      triggers: patch?.triggers ?? current.triggers,
       nodes: nodePayload(nodes),
     })
     if (!res.ok) {
@@ -1074,6 +1086,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
       action_value: isCondition ? serializeCondition({ kind: 'confirm' }) : '',
       action_expect: '',
       action_runtime: '',
+      log_rules: '',
       condition: '',
       branch_node_id: null,
       branch_false_node_id: null,
@@ -1298,6 +1311,15 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
         <ArrowDown size={13} /> 下移
       </button>,
       <button
+        key="plan"
+        className="text-btn"
+        onClick={() => setScheduleOpen(true)}
+        disabled={!current}
+        title="定时计划与外部触发（什么时候自己跑起来）"
+      >
+        <Timer size={13} /> 计划
+      </button>,
+      <button
         key="align"
         className="text-btn"
         onClick={() => void handleAutoLayout()}
@@ -1401,14 +1423,10 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                 <div className="wf-node__ops">
                   <button
                     className="icon-btn"
-                    title={
-                      runLogFor === i.id
-                        ? '收起执行详情'
-                        : '执行详情：每一步什么时候跑的、结果如何、现在停在哪'
-                    }
-                    aria-label="执行详情"
-                    aria-expanded={runLogFor === i.id}
-                    onClick={() => void toggleRunLog(i.id)}
+                    title="执行记录：每一步什么时候跑的、结果如何、逐步的执行日志"
+                    aria-label="执行记录"
+                    aria-haspopup="dialog"
+                    onClick={() => void openRunLog(i.id)}
                   >
                     <History size={13} />
                   </button>
@@ -1437,36 +1455,6 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                     <Trash2 size={13} />
                   </button>
                 </div>
-                {runLogFor === i.id && (
-                  <div className="wf-runlog" aria-label="执行详情">
-                    <div className="wf-runlog__meta">
-                      <span>开始 {runLogTime(i.created_at)}</span>
-                      {i.finished_at && <span>结束 {runLogTime(i.finished_at)}</span>}
-                      <span>{i.status === 'running' ? '进行中' : i.status === 'done' ? '已完成' : '已中止'}</span>
-                    </div>
-                    {runLog.length === 0 ? (
-                      <p className="u-aux">这次运行还没有留下记录。</p>
-                    ) : (
-                      <ol className="wf-runlog__list">
-                        {runLog.map((e) => {
-                          // 节点名从当前模板取（实例属于哪个模板就在看哪个模板）；
-                          // 模板被删掉后 node_id 会置空，这时只显示分类与结果
-                          const node = (current?.nodes ?? []).find((n) => n.id === e.node_id)
-                          return (
-                            <li key={e.id} className={'wf-runlog__item wf-runlog__item--' + e.kind}>
-                              <span className="wf-runlog__time">{runLogTime(e.created_at)}</span>
-                              <span className="wf-runlog__kind">{RUN_LOG_LABELS[e.kind] ?? e.kind}</span>
-                              <span className="wf-runlog__what">
-                                {node ? node.title : e.kind === 'finish' ? '流程结束' : '—'}
-                                {e.detail ? ' · ' + e.detail : ''}
-                              </span>
-                            </li>
-                          )
-                        })}
-                      </ol>
-                    )}
-                  </div>
-                )}
               </div>
             ))}
             {instances.length === 0 && <p className="u-aux">还没有运行中的实例。</p>}
@@ -1571,14 +1559,12 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
               const b = nxt ? pos.get(nxt.id) : undefined
               if (!a || !b) return null
               const ends = directedAnchors(a, b, NODE_W, NODE_H)
-              const related = hoverStep != null && (n.id === hoverStep || nxt.id === hoverStep)
-              const dim = stepFocusSet != null && !related
               return (
-                <g key={`seq-${n.id}`} className={'wf-edge-group' + (dim ? ' is-dimmed' : '')}>
+                <g key={`seq-${n.id}`} className="wf-edge-group">
                   <path
                     d={orthogonalPath(ends.from, ends.to)}
-                    markerEnd={related ? 'url(#wf-arrow-on)' : 'url(#wf-arrow)'}
-                    className={'wf-edge' + (related ? ' wf-edge--on' : '')}
+                    markerEnd="url(#wf-arrow)"
+                    className="wf-edge"
                   />
                 </g>
               )
@@ -1599,19 +1585,14 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
               const missing: BranchSlot[] = []
               if (!n.branch_node_id) missing.push('true')
               if (!n.branch_false_node_id) missing.push('false')
-              const related = hoverStep != null && (n.id === hoverStep || target.id === hoverStep)
-              const dim = stepFocusSet != null && !related
               return missing.map((slot) => {
                 const ends = branchAnchors(n, a, slot, b)
                 return (
-                  <g
-                    key={`fallback-${n.id}-${slot}`}
-                    className={'wf-edge-group' + (dim ? ' is-dimmed' : '')}
-                  >
+                  <g key={`fallback-${n.id}-${slot}`} className="wf-edge-group">
                     <path
                       d={orthogonalPath(ends.from, ends.to)}
-                      markerEnd={related ? 'url(#wf-arrow-on)' : 'url(#wf-arrow)'}
-                      className={'wf-edge wf-edge--fallback' + (related ? ' wf-edge--on' : '')}
+                      markerEnd="url(#wf-arrow)"
+                      className="wf-edge wf-edge--fallback"
                     />
                   </g>
                 )
@@ -1624,21 +1605,20 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
               if (!a || !b) return null
               const ends = branchAnchors(from, a, slot, b)
               const d = orthogonalPath(ends.from, ends.to)
-              const related = hoverStep != null && (from.id === hoverStep || toId === hoverStep)
+              // 「热」只由指针停在分支线上决定（拖端点找落点时的反馈），与已移除的节点悬浮无关
               const hot = branchHover?.id === from.id && branchHover.slot === slot
-              const dim = stepFocusSet != null && !related
               return (
-                <g key={`branch-${from.id}-${slot}`} className={dim ? 'is-dimmed' : undefined}>
+                <g key={`branch-${from.id}-${slot}`}>
                   <path
                     d={d}
-                    markerEnd={related || hot ? 'url(#wf-arrow-on)' : 'url(#wf-arrow)'}
+                    markerEnd={hot ? 'url(#wf-arrow-on)' : 'url(#wf-arrow)'}
                     className={
                       'wf-edge wf-edge--branch ' +
                       // 条件节点用满足 / 不满足两色；普通步骤的「跳到」用中性色
                       (from.action_kind === CONDITION_KIND
                         ? 'wf-edge--branch-' + slot
                         : 'wf-edge--branch-jump') +
-                      (related || hot ? ' wf-edge--on' : '')
+                      (hot ? ' wf-edge--on' : '')
                     }
                   />
                   {/* 分支文案不在这里画：它得在所有节点之上，见下面的「分支标签层」 */}
@@ -1666,16 +1646,8 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                   key={n.id}
                   data-wf-node={n.id}
                   transform={`translate(${p.x},${p.y})`}
-                  className={
-                    'wf-node' +
-                    (n.id === hoverStep ? ' wf-node--on' : '') +
-                    (stepFocusSet && !stepFocusSet.has(n.id) ? ' is-dimmed' : '')
-                  }
-                  onPointerEnter={() => {
-                    // 拖动中不更新悬浮态：指针会划过别的节点，画面会乱闪
-                    if (!dragRef.current) setHoverStep(n.id)
-                  }}
-                  onPointerLeave={() => setHoverStep((h) => (h === n.id ? null : h))}
+                  // 选中态由 selected 决定（见下），悬停不再改变画布 —— 悬浮预览已移除
+                  className={'wf-node' + (n.id === selected ? ' wf-node--on' : '')}
                   onPointerDown={startDrag(n)}
                   onDoubleClick={() => openEditNode(n)}
                   role="button"
@@ -1798,11 +1770,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                         key={slot}
                         data-wf-port={n.id}
                         data-wf-slot={slot}
-                        className={
-                          'wf-port wf-port--' +
-                          (isCondition ? slot : 'jump') +
-                          (hoverStep === n.id ? ' wf-port--on' : '')
-                        }
+                        className={'wf-port wf-port--' + (isCondition ? slot : 'jump')}
                         onPointerDown={(e) => {
                           e.stopPropagation()
                           setBranchDrag({ fromId: n.id, slot, x: p.x, y: p.y })
@@ -1836,7 +1804,6 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
               if (!a || !b) return null
               const text = from.condition
               if (!text) return null
-              const related = hoverStep != null && (from.id === hoverStep || toId === hoverStep)
               // 贴分支起点 30px，而不是边中点：中段可能正好穿过另一个节点
               const ends = branchAnchors(from, a, slot, b)
               const mid = edgePointFrom(
@@ -1849,7 +1816,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                   x={mid.x}
                   y={mid.y}
                   className={
-                    'wf-edge__label wf-edge__label--' + slot + (related ? ' wf-edge__label--on' : '')
+                    'wf-edge__label wf-edge__label--' + slot
                   }
                 >
                   {text}
@@ -1919,11 +1886,10 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                   />
                 )
               })()}
-            {/* 节点详情浮卡：跟随被点中的节点展开。
-                展开方向由它在视图里的位置决定 —— 右边放不下就往左翻，下边放不下就上移，
-                保证卡片始终留在画布内。 */}
-            {selected != null &&
-              !dragging &&
+            {/* 节点详情浮卡已按用户要求移除（2026-09-29）。
+                选中仍然保留：工具栏的编辑 / 删除 / 上移 / 下移都按它判断目标，
+                节点本身也有 .wf-node--on 的高亮，所以"选中了哪一个"依然看得见。 */}
+            {SHOW_NODE_CARD &&
               (() => {
                 const node = ordered.find((x) => x.id === selected)
                 const p = node ? pos.get(node.id) : undefined
@@ -2003,7 +1969,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
               })()}
           </svg>
           <p className="u-aux">
-            点节点看详情（卡片跟随节点展开）、双击编辑；拖动节点改布局（自动保存）。
+            点节点选中（工具栏的编辑 / 删除 / 上移 / 下移按它定位）、双击编辑；拖动节点改布局（自动保存）。
             画布空白处拖动可平移、滚轮缩放。条件节点下方写着判定内容，两个端口分别连出
             「满足 / 不满足」分支：从端口拖到目标节点即连线；鼠标移到分支线上可删除或拖动端点改挂。
           </p>
@@ -2028,10 +1994,42 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
             selectedTitle={selectedNode?.title ?? null}
             selectedIsCondition={selectedNode?.action_kind === CONDITION_KIND}
             noteChoices={noteChoices}
+            // 排除自己：一个流程接续自己就是死循环。间接成环（A→B→A）在启动时另有拦截
+            subflowChoices={templates.filter((t) => t.id !== current?.id).map((t) => ({ id: t.id, name: t.name }))}
             onSave={(node, asBranch) => void handleSaveNode(node, asBranch)}
             onCancel={closeNodeDialog}
           />
         ))}
+
+        {/* 执行记录：从侧栏内联展开搬到了弹窗 —— 时间轴天生是长内容，
+            内联会把实例列表挤得只剩两行 */}
+        {runLogFor != null &&
+          (() => {
+            const inst = instances.find((x) => x.id === runLogFor)
+            if (!inst) return null
+            return (
+              <WorkflowRunDialog instance={inst} runLog={runLog} onClose={() => setRunLogFor(null)} />
+            )
+          })()}
+
+        {scheduleOpen && current && (
+          <WorkflowScheduleDialog
+            template={
+              templates.find((t) => t.id === current.id) ?? {
+                ...current,
+                node_count: current.nodes.length,
+                updated_at: '',
+              }
+            }
+            taskChoices={taskChoices}
+            triggerPort={triggerPort}
+            onSave={(patch) => {
+              setScheduleOpen(false)
+              void persistTemplate(current.nodes, patch)
+            }}
+            onCancel={() => setScheduleOpen(false)}
+          />
+        )}
       </div>
     </div>
   )

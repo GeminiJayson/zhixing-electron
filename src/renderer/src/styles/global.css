@@ -222,6 +222,18 @@ textarea {
   margin: 0;
   font-size: var(--text-lead);
 }
+/**
+ * 关闭按钮统一钉在右上角。
+ *
+ * 不用 justify-content: space-between —— 那样会把头部的每一段都摊开
+ * （标题和副标题之间出现一个大空档）。这里只把**最后一枚图标按钮**推到底：
+ * 它前面无论是标题、图标还是说明文字，都自然留在左边。
+ * 头部没有图标按钮的弹窗完全不受影响。
+ */
+.modal__head > .icon-btn:last-child {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
 .modal__body {
   padding: 0 var(--space-4);
   overflow: auto;

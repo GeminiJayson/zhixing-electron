@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { WorkflowNodePayload } from '@shared/types'
 import { WorkflowConditionEditor } from './WorkflowConditionEditor'
+import { X } from '@renderer/lib/icons'
 
 interface Props {
   node: WorkflowNodePayload
@@ -26,6 +27,9 @@ export function WorkflowConditionDialog({ node, isNew, siblings, onSave, onCance
       <div className="modal" role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()}>
         <header className="modal__head">
           <h2>{isNew ? '新增条件' : `编辑条件 #${node.id}`}</h2>
+          <button className="icon-btn" onClick={onCancel} title="关闭" aria-label="关闭">
+            <X size={14} />
+          </button>
         </header>
         <div className="modal__body">
           <label className="form-row">
