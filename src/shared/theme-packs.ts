@@ -27,6 +27,41 @@ export interface ThemePack {
   dark: ThemeColors
 }
 
+/**
+ * 每个主题包**推荐的强调色** —— 主题包与强调色的联动就落在这里。
+ *
+ * 为什么需要：主题包给的是中性色（画布、层次、文字、边框），它的"性格"体现在冷暖与明暗；
+ * 而强调色是唯一的彩色。两者若各选各的，很容易出现"粉色的包 + 绿色的按钮"这种打架。
+ * 有了这张表，设置页里换包就能顺手带出配套的强调色。
+ *
+ * 值都取自同一个色系（包的色相），且都满足 --accent-text 的 4.5:1 下限 ——
+ * 不满足的会被 applyTheme 的 ensureTextContrast 现场校正，但那会偏离色相，
+ * 所以这里就选够深的。
+ *
+ * 用户改了强调色之后，换包**不再覆盖**（设置页里记"是否自定义过"）。
+ */
+export const PACK_ACCENT: Record<string, string> = {
+  '冰川蓝': '#0891B2',
+  '墨黑': '#525252',
+  '奶咖棕': '#A16207',
+  '暖沙': '#B45309',
+  '暮色': '#C2410C',
+  '柠檬黄': '#CA8A04',
+  '樱花粉': '#DB2777',
+  '海盐蓝': '#2563EB',
+  '莓果粉': '#BE185D',
+  '薄荷绿': '#059669',
+  '薰衣草紫': '#7C3AED',
+  '蜜桃橘': '#EA580C',
+  '青竹': '#0D9488',
+  '香芋紫': '#9333EA',
+}
+
+/** 取某个包的推荐强调色；包不认识时回退到默认青。 */
+export function accentForPack(packName: string): string {
+  return PACK_ACCENT[packName] ?? '#0D9488'
+}
+
 export const THEME_PACKS: Record<string, ThemePack> = {
   '冰川蓝': {
     light: { canvas: '#EEF8FA', layer: '#FFFFFF', hover: '#D9F0F4', hover2: '#C4E6EC', fg: '#1E3B46', fg2: '#6B9BA9', fg3: '#A5C4CD', border: '#D2EBEF', border2: '#B3D8DF', input: 'rgba(255,255,255,0.9)', scroll: '#B2D6DD', accent_soft: '#D9F1F5', warm: '#E8A87C', danger: '#E57373', success: '#7FC8A9' },

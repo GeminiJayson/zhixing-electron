@@ -8,7 +8,7 @@ import {
   parseThemeOverrides,
   type ThemeColors,
 } from '@shared/theme-packs'
-import { ensureTextContrast } from '@shared/color'
+import { ensureTextContrast, parseHex, toHex } from '@shared/color'
 import type { AppSettings, ThemeMode } from '@shared/settings'
 
 /** theme_mode 为 system 时按系统明暗解析成实际模式。 */
@@ -17,6 +17,24 @@ export function resolveThemeMode(mode: ThemeMode): 'light' | 'dark' {
   // 非浏览器环境（node 下的单测）没有 matchMedia，按浅色处理
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return 'light'
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
+
+/**
+ * 把 accent 以 alpha 压在底色上，得到它的实际呈现色 ——
+ * 与 CSS 的 color-mix(in srgb, var(--accent) 14%, transparent) 叠在 bg 上等价。
+ *
+ * 需要它是因为对比度要在 JS 里算，而 color-mix 的结果 JS 拿不到。
+ * 底色取 canvas / layer（--accent-soft 实际压在最浅的 layer 上，取它最保守）。
+ */
+function mixOn(accent: string, alpha: number, bg: string): string {
+  const a = parseHex(accent)
+  const b = parseHex(bg)
+  if (!a || !b) return bg
+  return toHex({
+    r: a.r * alpha + b.r * (1 - alpha),
+    g: a.g * alpha + b.g * (1 - alpha),
+    b: a.b * alpha + b.b * (1 - alpha),
+  })
 }
 
 /** 主题包 token → 设计令牌变量（一个 token 可能喂多个变量）。 */
@@ -32,7 +50,21 @@ const TOKEN_VARS: Record<keyof ThemeColors, string[]> = {
   border2: ['--border-strong'],
   input: ['--bg-input'],
   scroll: ['--scroll-thumb'],
-  accent_soft: ['--accent-soft'],
+  /**
+   * accent_soft **刻意不在这里** —— 这是「主题包与强调色不联动」的根因。
+   *
+   * tokens.css 里 --accent-soft 本来是派生的（color-mix(in srgb, var(--accent) 14%, transparent)），
+   * 但主题包也各自定义了一份 accent_soft，而 applyTheme 用**行内样式**写变量 ——
+   * 行内优先级高于样式表，于是主题包的固定色每次都把派生值盖掉。
+   * 结果：选「青竹」包（青绿淡底）再把强调色改成红，就得到红色按钮压在青绿淡底上；
+   * 更隐蔽的是 --accent-text 的对比度是拿这份不同源的 soft 算的，那个保证也一起失效。
+   *
+   * 现在不再写它，让 CSS 的派生生效 —— 永远与强调色同色相，且跟着亮暗主题走。
+   * ThemeColors 里的 accent_soft 字段保留但不再读取（删字段要动 28 处定义，不划算）；
+   * 这里留一个空数组占位，既满足 Record<keyof ThemeColors, …> 的类型，
+   * 又不会往任何变量写值。
+   */
+  accent_soft: [],
   warm: ['--accent-warm'],
   danger: ['--danger'],
   success: ['--success'],
@@ -71,7 +103,10 @@ export function applyTheme(
   // 只供 color 使用；填充、边框、accent-color 继续用品牌原值。
   root.style.setProperty(
     '--accent-text',
-    ensureTextContrast(accentColor, [...surfaces, colors.accent_soft], 4.5)
+    // --accent-text 要考虑它自己会落在 accent-soft 的淡底上。那个底现在是派生的
+    // （accent 以 14% 压在 layer 上），这里按同一算式还原出实际色值再算对比度 ——
+    // 不能再用主题包里那份（早已不同源）。
+    ensureTextContrast(accentColor, [...surfaces, ...surfaces.map((bg) => mixOn(accentColor, 0.14, bg))], 4.5)
   )
   // 强调底上的文字不再恒为白 —— 浅强调色（如 #FDE047）上白字只有约 1.3:1。
   // 与上面同一套 ensureTextContrast：从白起步，浅底压暗到 4.5:1，深底保持白。
