@@ -788,6 +788,12 @@ const api = {
     /** 独立弹窗（无边框）把窗口高度贴合卡片内容 */
     fitHeight: (height: number): void => ipcRenderer.send('window:fitHeight', height),
     /**
+     * 通知主进程重新确认窗口透明。
+     * 主题切换会重建 Chromium 的合成器，Windows 上的透明窗口在那之后会丢逐像素透明 ——
+     * 表现为页面里的玻璃层次整体失效。每次 applyAppearance 之后调一次。
+     */
+    reassertTransparency: (): Promise<boolean> => ipcRenderer.invoke('window:reassertTransparency'),
+    /**
      * 快速笔记浮窗的"钉住"：钉住后窗口常驻、失焦不自动关闭。
      * 主进程记着这个标志，并据此决定 blur 时要不要收窗。
      */

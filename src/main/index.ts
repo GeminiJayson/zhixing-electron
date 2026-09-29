@@ -1037,7 +1037,41 @@ function createWindow(): BrowserWindow {
     frame: false,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 18 },
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#1F1F1F' : '#F3F3F3',
+    /**
+     * **窗口透明**，这样页面里的半透明才能透到桌面。
+     *
+     * 原先这里是实色底（#1F1F1F / #F3F3F3），理由是"CDP 与系统截图都不含原生材质，
+     * 实色才能保证看到的即真实"。那条在"不需要透视"时是对的，但它同时锁死了一件事：
+     * 页面里所有半透明最终都叠在这个实色上 —— 玻璃拟态只能透出同窗口内的画布色，
+     * 永远到不了桌面。
+     *
+     * **窗口真透明**（不用 backgroundMaterial）。
+     *
+     * 截图对比之后确认的事实：backgroundMaterial 由 DWM 绘制，会**铺满整个窗口矩形**，
+     * 而 frame:false 的无边框窗口在 Windows 上拿不到 DWM 圆角 —— 于是四个角露出材质本身
+     * （亮色下浅灰、暗色下黑），看着就是用户说的"矩形边框"。页面里 .app 的圆角盖不住它，
+     * 因为材质在页面**下面**。
+     *
+     * 两者不可兼得：
+     *   · backgroundMaterial → 桌面被模糊，但窗口是直角；
+     *   · transparent        → 窗口能圆角、能透桌面，但桌面不被模糊。
+     * 选了后者（圆角与"没有边框"是更硬的诉求），并用 thickFrame:false 去掉
+     * WS_THICKFRAME 那圈描边 —— 项目里其余六个浮窗都是这个组合。
+     */
+    transparent: true,
+    backgroundColor: '#00000000',
+    /**
+     * 去掉 WS_THICKFRAME —— 透明窗口在 Windows 上会因此多出一圈矩形描边
+     * （亮色下是浅灰、暗色下是黑），圆角外那圈方角就是它。
+     * 捕获窗 / 条件窗 / 快速笔记窗都设了这条，主窗口原先漏了。
+     */
+    thickFrame: false,
+    /**
+     * 去掉 DWM 的系统投影。透明窗口上它会沿窗口矩形边缘留下一圈描边
+     * （亮色主题下浅灰、暗色下偏黑）—— 页面里的圆角盖不住它，因为它画在页面**外面**。
+     * 截图对比确认：初始亮色与"亮→暗→亮"之后都有这圈边，说明它不是切换造成的。
+     */
+    hasShadow: false,
     // 窗口图标 = 任务栏图标：跟随当前强调色（换色时由 refreshTrayIcon 调 setIcon）
     icon: themeIconPath('app'),
     webPreferences: {
@@ -1062,6 +1096,50 @@ function createWindow(): BrowserWindow {
     widgetManualOpen = false
     syncWidgetVisibility()
   }
+  /**
+   * **最大化后把窗口收进工作区**。
+   *
+   * 无边框 + 透明的窗口在 Windows 上最大化时会盖住任务栏：Chromium 按"整个屏幕"
+   * 算最大化区域，而普通窗口由 DWM 帮忙让出工作区，透明窗口没有这一步。
+   * 所以最大化后手动 setBounds 到显示器的工作区。
+   */
+  /**
+   * **重新确认窗口透明**。
+   *
+   * Windows 上的透明窗口有一个反复出现的毛病：只要合成器被重建，逐像素透明就丢了 ——
+   * 触发时机包括 resize、最大化 / 还原，**以及页面自己切换主题**（Chromium 会重建
+   * 合成层）。丢了之后：
+   *   · 窗口变成不透明矩形 → 圆角外露出底色，看着就是"多了个矩形边框"；
+   *   · 页面里那些半透明叠在一个不透明底上 → 层次全没了，看着就是"玻璃失效"。
+   *
+   * 实测证据：反复切换亮暗主题四次之后，页面里所有 CSS 值都还是对的
+   *（--glass-alpha 80%、主区 alpha 0.736 与初始完全一致），但画面已经不对 ——
+   * 所以问题一定在窗口层，不在样式层。
+   *
+   * 修法是重新设一次背景色，并抖一下 opacity 逼合成器重建。
+   */
+  const reassertTransparency = (): void => {
+    if (process.platform !== 'win32' || win.isDestroyed()) return
+    win.setBackgroundColor('#00000000')
+    win.setOpacity(0.99)
+    setTimeout(() => {
+      if (!win.isDestroyed()) win.setOpacity(1)
+    }, 30)
+  }
+  /** 渲染层切完主题会通知一次（合成器在那时被重建） */
+  ipcMain.handle('window:reassertTransparency', () => {
+    reassertTransparency()
+    return true
+  })
+  win.on('resize', reassertTransparency)
+  win.on('maximize', () => {
+    if (win.isDestroyed()) return
+    const { workArea } = screen.getDisplayMatching(win.getBounds())
+    win.setBounds(workArea)
+    // setBounds 之后表面会重建，等它处理完再补一次
+    setTimeout(reassertTransparency, 60)
+  })
+  win.on('unmaximize', () => setTimeout(reassertTransparency, 60))
   win.on('show', onMainVisibility)
   win.on('hide', onMainVisibility)
   win.on('minimize', onMainVisibility)
