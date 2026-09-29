@@ -729,6 +729,11 @@ async function dispatchHotkeyAction(action: string): Promise<void> {
     broadcastDataChanged('flash')
     return
   }
+  if (action === 'quick-note') {
+    // 快速笔记浮窗：独立窗口、不显示主窗口 —— 用户是按热键唤出来随手记的
+    openQuickNoteWindow()
+    return
+  }
   if (SELECTION_ACTIONS.has(action)) {
     const selected = await readSelectedText()
     // 独立窗口，且**不显示主窗口**：用户正按着热键在别的应用里选词
@@ -750,6 +755,7 @@ const HOTKEY_BINDINGS: { setting: string; action: string }[] = [
   { setting: 'select_quick_hotkey', action: 'select-quick' },
   { setting: 'quick_capture_hotkey', action: 'quick-capture' },
   { setting: 'flash_quick_hotkey', action: 'flash-quick' },
+  { setting: 'quick_note_hotkey', action: 'quick-note' },
   { setting: 'widget_hotkey', action: 'toggle-widget' },
 ]
 
@@ -920,6 +926,7 @@ function createTray(): void {
       { label: '快速添加任务', click: () => void dispatchHotkeyAction('quick-capture') },
       { label: '新建笔记', click: () => sendAction('new-note') },
       { label: '记闪念', click: () => sendAction('flash-inbox') },
+      { label: '快速笔记', click: () => void dispatchHotkeyAction('quick-note') },
       { label: '划词捕获', click: () => void dispatchHotkeyAction('capture') },
       // 与热键同一条静默路径：不进捕获窗，直接入闪念
       { label: '选中入闪念', click: () => void dispatchHotkeyAction('flash-quick') },
@@ -1190,6 +1197,87 @@ function openCaptureWindow(mode: 'quick' | 'capture', seed: { text: string; html
   }
 }
 
+
+// ---------------------------------------------------------------- 快速笔记浮窗
+
+let quickNoteWindow: BrowserWindow | null = null
+let quickNoteShowOnce: (() => void) | null = null
+/** 拖拽改尺寸的起始矩形（主进程持有，见 quicknote:resizeStart 的注释） */
+let quickNoteResizeFrom: Electron.Rectangle | null = null
+
+
+/**
+ * 快速笔记浮窗（形态 C）。
+ *
+ * 与捕获窗同一套窗口配置：无边框 + 透明 + 置顶 + 不可缩放，高度由 window:fitHeight 贴合。
+ * 差别在**失焦行为**：捕获窗是"写完就走"，这里可以钉住 —— 钉住后 blur 不收，
+ * 方便边做事边记；没钉住时 blur 只是 hide（不是 close），已存的内容都在库里，
+ * 再按热键唤出来列表还在。
+ */
+export function openQuickNoteWindow(): void {
+  if (quickNoteWindow && !quickNoteWindow.isDestroyed()) {
+    quickNoteWindow.show()
+    quickNoteWindow.focus()
+    return
+  }
+  const win = new BrowserWindow({
+    width: 560,
+    height: 420,
+    useContentSize: true,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: false,
+    thickFrame: false,
+    minWidth: 380,
+    minHeight: 200,
+    // 保持 resizable:false —— 透明窗口在 Windows 上对原生缩放支持很差（会闪烁/不显示）。
+    // 尺寸改由渲染层的拖拽手柄调 setContentSize，程序化改尺寸不受这个限制影响。
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    alwaysOnTop: true,
+    center: true,
+    show: false,
+    title: '快速笔记',
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  })
+  quickNoteWindow = win
+  let shown = false
+  const showOnce = (): void => {
+    if (shown || win.isDestroyed()) return
+    shown = true
+    quickNoteShowOnce = null
+    win.show()
+    win.focus()
+  }
+  quickNoteShowOnce = showOnce
+  win.on('blur', () => {
+    // 钉住时常驻；没钉住只隐藏，数据仍在库里
+    if (!quickNotePinned && !win.isDestroyed()) win.hide()
+  })
+  win.on('closed', () => {
+    if (quickNoteWindow === win) quickNoteWindow = null
+    if (quickNoteShowOnce === showOnce) quickNoteShowOnce = null
+  })
+  win.webContents.once('did-finish-load', () => {
+    if (win.isDestroyed()) return
+    setTimeout(showOnce, 1500)
+  })
+  if (process.env.ELECTRON_RENDERER_URL) {
+    void win.loadURL(`${process.env.ELECTRON_RENDERER_URL}?quicknote=1`)
+  } else {
+    void win.loadFile(join(__dirname, '../renderer/index.html'), { query: { quicknote: '1' } })
+  }
+}
+
 // ---------------------------------------------------------------- 番茄钟（独立小窗）
 
 let pomodoroWindow: BrowserWindow | null = null
@@ -1276,10 +1364,94 @@ function openPomodoroWindow(payload: { taskId: number | null; title: string }): 
  * 独立弹窗的高度贴合：无边框窗口里多出来的空白很显眼，
  * 让渲染层量完卡片后回报，窗口高度跟着卡片走（宽度保持不变）。
  */
+/**
+ * 快速笔记浮窗的"钉住"标志。
+ *
+ * 窗口本身就是 alwaysOnTop，钉住改变的是**失焦后收不收窗** ——
+ * 那是窗口侧的决策，所以标志放这里由它读（见 openQuickNoteWindow）。
+ */
+let quickNotePinned = false
+
+export function isQuickNotePinned(): boolean {
+  return quickNotePinned
+}
+
+function registerQuickNote(): void {
+  ipcMain.handle('quicknote:setPinned', (_e, pinned: boolean) => {
+    quickNotePinned = !!pinned
+    return quickNotePinned
+  })
+  ipcMain.handle('quicknote:open', () => {
+    openQuickNoteWindow()
+    return true
+  })
+  /**
+   * 尺寸可调（渲染层拖窗口边缘/角落）。
+   *
+   * 为什么不用窗口的 resizable：透明无边框窗口在 Windows 上的原生缩放会闪烁，
+   * 项目里其余浮窗也都关着它（见 openCaptureWindow 的注释）。这里自绘八向热区，
+   * 程序化 setBounds —— 观感与原生一致，又不受那个限制影响。
+   *
+   * 起始矩形记在**主进程**：渲染层每次只报位移增量，若由渲染层自己累加，
+   * 快速拖动时窗口尺寸跟不上指针会产生累积误差（越拖越偏）。
+   */
+  ipcMain.handle('quicknote:resizeStart', () => {
+    const win = quickNoteWindow
+    if (!win || win.isDestroyed()) return false
+    quickNoteResizeFrom = win.getBounds()
+    return true
+  })
+  ipcMain.handle('quicknote:resize', (_e, dir: string, dx: number, dy: number) => {
+    const win = quickNoteWindow
+    const from = quickNoteResizeFrom
+    if (!win || win.isDestroyed() || !from) return false
+    const MIN_W = 380
+    const MIN_H = 200
+    let { x, y, width, height } = from
+    const mx = Math.round(dx)
+    const my = Math.round(dy)
+    if (dir.includes('e')) width = Math.max(MIN_W, from.width + mx)
+    if (dir.includes('s')) height = Math.max(MIN_H, from.height + my)
+    if (dir.includes('w')) {
+      width = Math.max(MIN_W, from.width - mx)
+      // 左边拖：右边缘不动，所以 x 要跟着宽度变化走
+      x = from.x + (from.width - width)
+    }
+    if (dir.includes('n')) {
+      height = Math.max(MIN_H, from.height - my)
+      y = from.y + (from.height - height)
+    }
+    win.setBounds({ x, y, width, height })
+    return true
+  })
+  ipcMain.handle('quicknote:resizeEnd', () => {
+    const win = quickNoteWindow
+    quickNoteResizeFrom = null
+    if (!win || win.isDestroyed()) return false
+    const b = win.getBounds()
+    return b.width + 'x' + b.height
+  })
+  ipcMain.on('quicknote:ready', () => quickNoteShowOnce?.())
+  ipcMain.on('quicknote:close', () => quickNoteWindow?.close())
+  ipcMain.on('quicknote:notice', (_e, message: string) => {
+    // 回执只发给主窗口 —— 用户此刻多半在别的应用里，不要把主窗口拽到前台
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('app:action', 'notice', String(message ?? ''))
+    }
+  })
+}
+
 function registerWindowFit(): void {
   ipcMain.on('window:fitHeight', (e, height: number) => {
     const win = BrowserWindow.fromWebContents(e.sender)
     if (!win || win.isDestroyed()) return
+    /**
+     * 快速笔记窗**不参与** fitHeight：它的尺寸由用户拖拽决定（quicknote:setSize），
+     * 卡片在 CSS 里撑满窗口、列表吃剩余空间。
+     * 之前让它参与的结果是"拖大了也会被下一次 fitHeight 缩回卡片高度" ——
+     * 表现为高度调不动。
+     */
+    if (win === quickNoteWindow) return
     const next = Math.max(120, Math.round(Number(height) || 0))
     const [w, cur] = win.getContentSize()
     if (Math.abs(cur - next) < 2) return
@@ -1929,6 +2101,7 @@ app.whenReady().then(() => {
   registerShellHandlers()
   registerAttachmentHandlers()
   registerWindowFit()
+  registerQuickNote()
   startReminderDispatch()
   registerReminderHandlers()
   scheduleTaskSync()

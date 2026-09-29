@@ -100,6 +100,11 @@ const HOTKEY_ROWS: { key: keyof AppSettings; label: string; hint: string }[] = [
   },
   { key: 'quick_capture_hotkey', label: '快速任务', hint: '弹出快速捕获窗口' },
   { key: 'widget_hotkey', label: '浮窗显隐', hint: '显示 / 隐藏桌面浮窗' },
+  {
+    key: 'quick_note_hotkey',
+    label: '快速笔记',
+    hint: '唤出快速笔记浮窗（默认未设置，录一个组合键即可）',
+  },
 ]
 
 const TABS: { key: Tab; label: string }[] = [

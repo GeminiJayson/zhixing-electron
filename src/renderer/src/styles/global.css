@@ -382,6 +382,26 @@ html[data-surface='pomodoro'] body,
 html[data-surface='pomodoro'] #root {
   background: transparent;
 }
+/* 快速笔记浮窗：同捕获窗，窗口本身就是那张卡片 —— 透明底、不留内边距与投影 */
+html[data-surface='quicknote'],
+html[data-surface='quicknote'] body,
+html[data-surface='quicknote'] #root {
+  background: transparent;
+}
+html[data-surface='quicknote'] #root {
+  padding: 0;
+}
+/*
+  **卡片要撑满窗口**。捕获窗是"卡片决定窗口高度"（fitHeight 跟着缩），
+  所以卡片自然高度即可；快速笔记是"窗口尺寸由用户拖"，卡片若不撑满，
+  拖大之后下面的区域是空的 —— 看着就是"高度不可调"（实测踩到过）。
+*/
+html[data-surface='quicknote'],
+html[data-surface='quicknote'] body,
+html[data-surface='quicknote'] #root,
+html[data-surface='quicknote'] .qn {
+  height: 100%;
+}
 .pomo-host {
   display: flex;
   flex-direction: column;
@@ -643,6 +663,291 @@ html[data-surface='capture'] .modal__head button {
  */
 :root {
   accent-color: var(--accent);
+}
+
+/* ------------------------------------------------------------------
+   快速笔记浮窗（形态 C：热键唤出 + 可钉住常驻）
+
+   跑在独立窗口里，与捕获窗 / 条件窗同类：透明无边框卡片，
+   窗口高度由 window:fitHeight 跟着这张卡走。
+   ------------------------------------------------------------------ */
+.qn {
+  position: relative; /* 右下角拖拽手柄绝对定位在里面 */
+  display: flex;
+  flex-direction: column;
+  /*
+    窗口透明度：卡片底色按 --qn-alpha 调。**没有用 win.setOpacity** ——
+    在 Windows 上它设的是整窗全局 alpha（layered window），会破坏透明窗口的
+    逐像素透明，圆角外面立刻出现方角（见 main/index.ts 里 createWidgetWindow 的注释）。
+    调底色则只影响卡片，文字仍然清晰。
+  */
+  background: color-mix(in srgb, var(--bg-layer-solid) calc(var(--qn-alpha, 1) * 100%), transparent);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-lg);
+  /* 刻意不设 box-shadow：无边框透明窗口会把投影裁成窗口矩形，
+     圆角外面露出一圈方角阴影（.cond-win / 捕获窗同理都不设）。 */
+  overflow: hidden;
+}
+.qn__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-bottom: var(--border-w) solid var(--border);
+  /* 拖窗：无边框窗口只能靠 -webkit-app-region 拖 */
+  -webkit-app-region: drag;
+}
+.qn__title {
+  flex: 1 1 auto;
+  font-weight: 500;
+}
+.qn__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-secondary);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.qn__icon:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+.qn__icon--on {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+/* 透明度滑块：窄一点，别把标题栏撑开。accent-color 由 global.css 在 :root 统一给 */
+.qn__alpha {
+  flex: 0 0 auto;
+  width: 62px;
+  margin: 0 var(--space-1);
+  /* 标题栏是 drag 区，控件要显式排除，否则拖不动滑块 */
+  -webkit-app-region: no-drag;
+}
+/*
+  八向拖拽热区：四边 + 四角，观感与原生 resize 一致。
+  窗口本身是 resizable:false（透明无边框窗口在 Windows 上的原生缩放会闪烁），
+  改尺寸走程序化 setBounds —— 所以热区只是"接手势"，真正改尺寸在主进程。
+  角上给得比边上大一些（12px vs 5px）：角是双向的，更好点中。
+*/
+.qn__edge {
+  position: absolute;
+  /* 压在内容之上：边缘几像素内不该点到按钮 */
+  z-index: 2;
+  -webkit-app-region: no-drag;
+}
+.qn__edge--n,
+.qn__edge--s {
+  left: 10px;
+  right: 10px;
+  height: 5px;
+  cursor: ns-resize;
+}
+.qn__edge--n {
+  top: 0;
+}
+.qn__edge--s {
+  bottom: 0;
+}
+.qn__edge--w,
+.qn__edge--e {
+  top: 10px;
+  bottom: 10px;
+  width: 5px;
+  cursor: ew-resize;
+}
+.qn__edge--w {
+  left: 0;
+}
+.qn__edge--e {
+  right: 0;
+}
+.qn__edge--nw,
+.qn__edge--ne,
+.qn__edge--sw,
+.qn__edge--se {
+  width: 12px;
+  height: 12px;
+}
+.qn__edge--nw {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+.qn__edge--ne {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+.qn__edge--sw {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+.qn__edge--se {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}
+/* 右下角的视觉暗示：可拖（不接事件，事件归 .qn__edge--se） */
+.qn__edge--se::after {
+  content: '';
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 6px;
+  height: 6px;
+  border-right: 2px solid var(--fg-tertiary);
+  border-bottom: 2px solid var(--fg-tertiary);
+  border-radius: 0 0 2px 0;
+  opacity: 0.55;
+  pointer-events: none;
+}
+/* 编辑区是这块浮窗的主体：吃掉所有剩余高度，下面两段按内容排 */
+.qn__editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+/* EditorContent 的外层：不设它的话，flex:1 只给到 contenteditable，
+   而那个 div 本身是 auto 高度，输入区就永远停在 min-height */
+.qn__host {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.qn__body {
+  flex: 1 1 auto;
+  min-height: 88px;
+  overflow: auto;
+  padding: var(--space-3) var(--space-3) var(--space-2);
+  outline: none;
+}
+.qn__body p {
+  margin: 0 0 0.5em;
+}
+.qn__body p:last-child {
+  margin-bottom: 0;
+}
+.qn__list {
+  /*
+    已记列表**不跟编辑区抢高度**：只在有内容时按条数占位，最多窗口的三成。
+    （一开始让列表吃剩余空间，结果编辑区被压成一条 —— 而这块浮窗的主体是写，
+    不是回看。）
+  */
+  flex: 0 1 auto;
+  max-height: 30vh;
+  min-height: 0;
+  overflow: auto;
+  margin: 0;
+  padding: var(--space-1) 0;
+  list-style: none;
+  border-top: var(--border-w) solid var(--border);
+}
+.qn__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2) 0 0;
+}
+.qn__item-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-height: var(--row-h);
+  padding: 0 var(--space-3);
+  border: 0;
+  background: transparent;
+  color: var(--fg-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.qn__item-main:hover {
+  background: var(--bg-hover);
+}
+.qn__item-time {
+  flex: 0 0 auto;
+  font-size: var(--text-aux);
+  color: var(--fg-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.qn__item-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qn__item-btn {
+  flex: 0 0 auto;
+  /* 24 → 28：一行里"转"和"✕"挨着，太小容易点错 */
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-tertiary);
+  font: inherit;
+  cursor: pointer;
+}
+.qn__item-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+/* 底部条：固定在窗口最下方（不参与上面的高度分配），归档入口就落在这里 */
+/* 反馈文字（"已转成笔记「…」"）：用强调色，与常规那行"Ctrl+Enter 存下"分开。
+   双类名压过 .u-aux 的 color —— 同特异性时靠加载顺序，而 .u-aux 在本文件更靠后。 */
+.u-aux.qn__msg {
+  color: var(--accent-text);
+}
+.qn__foot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-top: var(--border-w) solid var(--border);
+}
+/* 归档弹层：盖在卡片上，不另开窗口 */
+.qn__sheet {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: var(--overlay);
+  border-radius: var(--radius-lg);
+}
+.qn__sheet-card {
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+}
+.qn__sheet-head {
+  font-weight: 500;
+}
+.qn__sheet-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
 }
 
 /* 语义化工具类，避免组件里散落色值 */

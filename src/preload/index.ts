@@ -641,6 +641,26 @@ const api = {
     done: (message: string): void => ipcRenderer.send('capture:done', message),
   },
   /**
+   * 快速笔记浮窗（独立小窗）。
+   * 与 capture 同一套协议：ready 让主进程显示窗口（等主题应用完，避免先闪一下默认配色），
+   * close 收窗，notice 把回执转给主窗口 —— 用户此刻在别的应用里，不该把主窗口拽出来。
+   */
+  quickNote: {
+    /** 应用内入口（托盘 / 快捷键）主动开一个快速笔记窗 */
+    open: (): Promise<boolean> => ipcRenderer.invoke('quicknote:open'),
+    ready: (): void => ipcRenderer.send('quicknote:ready'),
+    /** 直接设定内容尺寸（启动时恢复上次的尺寸用） */
+    setSize: (width: number, height: number): Promise<boolean> =>
+      ipcRenderer.invoke('quicknote:setSize', width, height),
+    /** 拖窗口边缘/角落：开始 → 报位移 → 结束。方向是 n/s/e/w 的组合（如 ne） */
+    resizeStart: (): Promise<boolean> => ipcRenderer.invoke('quicknote:resizeStart'),
+    resize: (dir: string, dx: number, dy: number): Promise<boolean> =>
+      ipcRenderer.invoke('quicknote:resize', dir, dx, dy),
+    resizeEnd: (): Promise<string> => ipcRenderer.invoke('quicknote:resizeEnd'),
+    close: (): void => ipcRenderer.send('quicknote:close'),
+    notice: (message: string): void => ipcRenderer.send('quicknote:notice', message),
+  },
+  /**
    * 番茄钟（独立小窗，2026-09-27）：主窗口与浮窗都只是「发起方」，
    * 计时、暂停、中断与落库全部发生在那个窗口里 —— 主窗口关掉它也会继续跑。
    * 与捕获窗同一套协议：主进程推 payload、渲染层应用完主题发 ready 才显示。
@@ -767,6 +787,12 @@ const api = {
     },
     /** 独立弹窗（无边框）把窗口高度贴合卡片内容 */
     fitHeight: (height: number): void => ipcRenderer.send('window:fitHeight', height),
+    /**
+     * 快速笔记浮窗的"钉住"：钉住后窗口常驻、失焦不自动关闭。
+     * 主进程记着这个标志，并据此决定 blur 时要不要收窗。
+     */
+    setQuickNotePinned: (pinned: boolean): Promise<boolean> =>
+      ipcRenderer.invoke('quicknote:setPinned', pinned),
   },
   widget: {
     toggle: (): Promise<boolean> => ipcRenderer.invoke('widget:toggle'),

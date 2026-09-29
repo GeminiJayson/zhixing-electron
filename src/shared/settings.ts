@@ -69,6 +69,15 @@ export interface AppSettings {
   signature: string
   quick_capture_hotkey: string
   capture_hotkey: string
+  /**
+   * 快速笔记浮窗热键。**默认留空**（不注册）—— 它是新功能，
+   * 给一个默认组合会与用户已有的习惯键冲突；想用的人自己去设置页录一个。
+   */
+  quick_note_hotkey: string
+  /** 快速笔记浮窗的卡片不透明度（0.6–1）。1 = 完全不透明 */
+  quick_note_alpha: number
+  /** 快速笔记浮窗的内容尺寸，形如 "560x420" */
+  quick_note_size: string
   /** ui_state 是嵌套 JSON，这里保持原始字符串，由需要的一方自行解析 */
   ui_state: string
   /** 笔记「大模型整理」的配置，详见 shared/ai-note.ts */
@@ -176,6 +185,10 @@ export function parseSettings(raw: Record<string, string> = {}): AppSettings {
     widget_hotkey: str(raw.widget_hotkey, 'ctrl+shift+d'),
     quick_capture_hotkey: str(raw.quick_capture_hotkey, 'ctrl+alt+n'),
     capture_hotkey: str(raw.capture_hotkey, 'ctrl+shift+s'),
+    // 默认空：不注册热键，避免与用户既有习惯冲突
+    quick_note_hotkey: str(raw.quick_note_hotkey, ''),
+    quick_note_alpha: num(raw.quick_note_alpha, 1, 0.6, 1),
+    quick_note_size: str(raw.quick_note_size, '560x420'),
     ui_state: str(raw.ui_state, '{}'),
     // AI 整理：默认「没配」——地址/Key/模型都留空，界面据此提示先去设置里填。
     // 这几项不进 DEFAULT_SETTINGS：它们是本应用私有的键，没必要写进共用的默认集合。

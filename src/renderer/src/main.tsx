@@ -7,6 +7,7 @@ import { ConditionApp } from './ConditionApp'
 import { CaptureWindowApp } from './CaptureWindowApp'
 import { ReminderApp } from './ReminderApp'
 import { PomodoroWindowApp } from './PomodoroWindowApp'
+import { QuickNoteWindowApp } from './QuickNoteWindowApp'
 import './styles/tokens.css'
 import './styles/global.css'
 import './styles/widget.css'
@@ -19,22 +20,28 @@ const isCondition = params.get('condition') === '1'
 const isCapture = params.get('capture') === '1'
 const isReminder = params.get('reminder') === '1'
 const isPomodoro = params.get('pomodoro') === '1'
+const isQuickNote = params.get('quicknote') === '1'
 document.documentElement.dataset.surface = isCondition
   ? 'condition'
-  : isCapture
-    ? 'capture'
-    : isPomodoro
-      ? 'pomodoro'
-      : isReminder
-        ? 'reminder'
-        : isWidget
-          ? 'widget'
-          : 'main'
+  : isQuickNote
+    ? 'quicknote'
+    : isCapture
+      ? 'capture'
+      : isPomodoro
+        ? 'pomodoro'
+        : isReminder
+          ? 'reminder'
+          : isWidget
+            ? 'widget'
+            : 'main'
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     {isCondition ? (
       <ConditionApp />
+    ) : isQuickNote ? (
+      // 快速笔记浮窗：独立小窗，透明无边框卡片，高度由 window:fitHeight 贴合
+      <QuickNoteWindowApp />
     ) : isPomodoro ? (
       // 番茄钟：独立小窗，卡片与捕获窗/条件窗共用同一套 .modal 骨架
       <PomodoroWindowApp />
