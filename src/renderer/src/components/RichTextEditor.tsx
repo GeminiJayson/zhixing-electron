@@ -1,14 +1,38 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { EditorContent, useEditor, type Editor } from '@tiptap/react'
+import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import TextAlign from '@tiptap/extension-text-align'
 import Placeholder from '@tiptap/extension-placeholder'
+import { TextStyle } from '@tiptap/extension-text-style'
 import FontSize from '@tiptap/extension-text-style/font-size'
 import Color from '@tiptap/extension-color'
 import { attachmentUrl } from '@shared/attachment-url'
 import { Toolbar } from './Toolbar'
+import { CODE_LANGUAGES, CodeBlockLanguage } from './CodeBlockLanguage'
 import { useDialog } from './Dialogs'
+
+/**
+ * 文字颜色的预设。
+ *
+ * 不用 <input type="color">：在 Electron 里它弹的是系统取色器，"选颜色"变成
+ * 开对话框 + 调色 + 确认三步，而且那个控件同时充当显示位，只在打开时同步一次 ——
+ * 用户选完看不出当前是什么颜色。预设色一排点一下就好，清除是最后一个 ×。
+ *
+ * 取的是深色系：这些颜色是用来给正文文字上色的，浅色在纸色背景上读不了。
+ */
+const TEXT_COLORS = [
+  { value: '#1f2329', label: '正文黑' },
+  { value: '#6b7280', label: '灰' },
+  { value: '#dc2626', label: '红' },
+  { value: '#ea580c', label: '橙' },
+  { value: '#ca8a04', label: '黄' },
+  { value: '#16a34a', label: '绿' },
+  { value: '#0891b2', label: '青' },
+  { value: '#2563eb', label: '蓝' },
+  { value: '#7c3aed', label: '紫' },
+  { value: '#db2777', label: '粉' },
+] as const
 
 interface RichProps {
   html: string
@@ -141,8 +165,21 @@ export function RichTextEditor({
       StarterKit.configure({ heading: { levels: [1, 2, 3] }, link: { openOnClick: false, autolink: true } }),
       ImageWithAttach.configure({ inline: false, allowBase64: true }),
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
+      /**
+       * **这三行曾经是"字号和颜色点了没反应"的根因。**
+       *
+       * FontSize 与 Color 都不是独立的 mark —— 它们往 `textStyle` 这个 mark 上写属性
+       * （看 @tiptap/extension-color 的类型定义，它就是从 extension-text-style 转出来的）。
+       * 原先只注册了后两个、**TextStyle 本身从没注册过**：mark 不在 schema 里，
+       * `setFontSize()` 与 `setColor()` 就静默 no-op —— 不抛错、不进历史、什么都不发生，
+       * 用户看到的就是"点了没反应"。
+       *
+       * 顺序要求：TextStyle 必须在 FontSize / Color 之前。
+       */
+      TextStyle,
       FontSize,
       Color,
+      CodeBlockLanguage,
       Placeholder.configure({ placeholder: placeholder ?? '' }),
     ],
     content: html || '',
@@ -303,6 +340,38 @@ export function RichTextEditor({
   if (!editor) return <div className="rt-editor" />
 
   const chain = (): ReturnType<Editor['chain']> => editor.chain().focus()
+
+  /**
+   * 工具栏的"当前状态"。
+   *
+   * 必须经 useEditorState 订阅：useEditor 本身**不会**在光标移动或选区变化时重渲染组件，
+   * 直接调 editor.isActive('bold') 只会拿到首次渲染那一刻的值 —— 按钮的激活态会一直是灭的，
+   * 字号与颜色也永远显示"未设置"。这是"工具栏看着有、状态不动"的经典原因。
+   */
+  const fmt = useEditorState({
+    editor,
+    selector: ({ editor: ed }) => ({
+      bold: ed?.isActive('bold') ?? false,
+      italic: ed?.isActive('italic') ?? false,
+      underline: ed?.isActive('underline') ?? false,
+      strike: ed?.isActive('strike') ?? false,
+      h1: ed?.isActive('heading', { level: 1 }) ?? false,
+      h2: ed?.isActive('heading', { level: 2 }) ?? false,
+      h3: ed?.isActive('heading', { level: 3 }) ?? false,
+      bullet: ed?.isActive('bulletList') ?? false,
+      ordered: ed?.isActive('orderedList') ?? false,
+      quote: ed?.isActive('blockquote') ?? false,
+      code: ed?.isActive('codeBlock') ?? false,
+      left: ed?.isActive({ textAlign: 'left' }) ?? false,
+      center: ed?.isActive({ textAlign: 'center' }) ?? false,
+      right: ed?.isActive({ textAlign: 'right' }) ?? false,
+      /** 光标处生效的字号（"16px"），空串 = 没设过 */
+      fontSize: String(ed?.getAttributes('textStyle').fontSize ?? ''),
+      /** 光标处生效的文字颜色（"#rrggbb" / "rgb(...)"），空串 = 没设过 */
+      color: String(ed?.getAttributes('textStyle').color ?? ''),
+      codeLang: String(ed?.getAttributes('codeBlock').language ?? ''),
+    }),
+  })
   const insertLink = async (): Promise<void> => {
     const url = await dialog.prompt({ title: '插入链接', label: '网址或本地文件路径' })
     if (!url?.trim()) return
@@ -375,44 +444,77 @@ export function RichTextEditor({
           nav={leading}
           primary={primary}
           filters={[
+            /**
+             * 字号：受控显示光标处的实际值。
+             * 旧版是 defaultValue="" + onChange 里把自己清空 —— 那是个"一次性开关"，
+             * 用户看不出当前是多少号，也看不出有没有设上。空选项现在表示"清除字号"。
+             */
             <select
               key="size"
               className="field field--compact"
-              title="字号"
+              title="字号（当前光标处生效的值）"
               aria-label="字号"
-              defaultValue=""
+              value={fmt.fontSize.replace('px', '')}
               onChange={(e) => {
                 const v = e.target.value
                 if (v) chain().setFontSize(v + 'px').run()
-                e.target.value = ''
+                else chain().unsetFontSize().run()
               }}
             >
-              <option value="">字号</option>
-              {[12, 14, 16, 18, 20, 24, 28].map((sz) => (
+              <option value="">默认</option>
+              {[12, 13, 14, 15, 16, 18, 20, 24, 28, 32].map((sz) => (
                 <option key={sz} value={String(sz)}>
                   {sz}
                 </option>
               ))}
             </select>,
-            <input
-              key="color"
-              type="color"
-              title="文字颜色"
-              aria-label="文字颜色"
-              onChange={(e) => chain().setColor(e.target.value).run()}
-            />,
+            /**
+             * 文字颜色：一排预设色直接点。
+             *
+             * 旧版是一个 <input type="color"> —— 在 Electron 里点开是系统取色器，
+             * 选完也不知道当前是什么颜色（它同时充当显示与输入，却只在打开时同步一次）。
+             * 预设色板让"选颜色"变成一次点击，最后那个 × 是清除。
+             */
+            <span key="color" className="rt-colors" role="group" aria-label="文字颜色">
+              {TEXT_COLORS.map((c) => (
+                <button
+                  key={c.value}
+                  type="button"
+                  className={'rt-color' + (fmt.color === c.value ? ' rt-color--on' : '')}
+                  style={{ background: c.value }}
+                  title={c.label}
+                  aria-label={c.label}
+                  aria-pressed={fmt.color === c.value}
+                  onClick={() => chain().setColor(c.value).run()}
+                />
+              ))}
+              <button
+                type="button"
+                className="rt-color rt-color--reset"
+                title="清除颜色"
+                aria-label="清除颜色"
+                onClick={() => chain().unsetColor().run()}
+              >
+                ×
+              </button>
+            </span>,
           ]}
+          /**
+           * 每个按钮都带 aria-pressed —— 样式表里 `.text-btn[aria-pressed='true']` 有现成的
+           * 高亮规则（accent 淡底 + 主题色文字）。以前一个都没传，所以按钮永远是灭的：
+           * 光标落在加粗文字里也看不出"现在是加粗状态"。
+           */
           secondary={[
-            <button key="b" className="text-btn" title="加粗" onClick={() => chain().toggleBold().run()}>
+            <button key="b" className="text-btn" title="加粗" aria-pressed={fmt.bold} onClick={() => chain().toggleBold().run()}>
               B
             </button>,
-            <button key="i" className="text-btn" title="斜体" onClick={() => chain().toggleItalic().run()}>
+            <button key="i" className="text-btn" title="斜体" aria-pressed={fmt.italic} onClick={() => chain().toggleItalic().run()}>
               I
             </button>,
-            <button key="u" className="text-btn" title="下划线" onClick={() => chain().toggleUnderline().run()}>
+            <button key="u" className="text-btn" title="下划线" aria-pressed={fmt.underline} onClick={() => chain().toggleUnderline().run()}>
               U
             </button>,
-            <button key="s" className="text-btn" title="删除线" onClick={() => chain().toggleStrike().run()}>
+            <button key="s" className="text-btn" title="删除线" aria-pressed={fmt.strike} onClick={() => chain().toggleStrike().run()}>
               S
             </button>,
             ...[1, 2, 3].map((lv) => (
@@ -420,30 +522,53 @@ export function RichTextEditor({
                 key={'h' + lv}
                 className="text-btn"
                 title={lv + ' 级标题'}
+                aria-pressed={lv === 1 ? fmt.h1 : lv === 2 ? fmt.h2 : fmt.h3}
                 onClick={() => chain().toggleHeading({ level: lv as 1 | 2 | 3 }).run()}
               >
                 H{lv}
               </button>
             )),
-            <button key="ul" className="text-btn" title="无序列表" onClick={() => chain().toggleBulletList().run()}>
+            <button key="ul" className="text-btn" title="无序列表" aria-pressed={fmt.bullet} onClick={() => chain().toggleBulletList().run()}>
               • 列表
             </button>,
-            <button key="ol" className="text-btn" title="有序列表" onClick={() => chain().toggleOrderedList().run()}>
+            <button key="ol" className="text-btn" title="有序列表" aria-pressed={fmt.ordered} onClick={() => chain().toggleOrderedList().run()}>
               1. 列表
             </button>,
-            <button key="q" className="text-btn" title="引用" onClick={() => chain().toggleBlockquote().run()}>
+            <button key="q" className="text-btn" title="引用" aria-pressed={fmt.quote} onClick={() => chain().toggleBlockquote().run()}>
               引用
             </button>,
-            <button key="code" className="text-btn" title="代码块" onClick={() => chain().toggleCodeBlock().run()}>
+            <button key="code" className="text-btn" title="代码块" aria-pressed={fmt.code} onClick={() => chain().toggleCodeBlock().run()}>
               代码
             </button>,
-            <button key="jl" className="text-btn" title="左对齐" onClick={() => chain().setTextAlign('left').run()}>
+            /**
+             * 代码块的语言：只在光标位于代码块内时出现 —— 它没有"对全文生效"的含义，
+             * 常驻在工具栏里只会让人以为可以给普通段落选语言。
+             */
+            ...(fmt.code
+              ? [
+                  <select
+                    key="codelang"
+                    className="field field--compact"
+                    title="代码块语言"
+                    aria-label="代码块语言"
+                    value={fmt.codeLang}
+                    onChange={(e) => chain().setCodeBlockLanguage(e.target.value).run()}
+                  >
+                    {CODE_LANGUAGES.map((l) => (
+                      <option key={l.value || 'plain'} value={l.value}>
+                        {l.label}
+                      </option>
+                    ))}
+                  </select>,
+                ]
+              : []),
+            <button key="jl" className="text-btn" title="左对齐" aria-pressed={fmt.left} onClick={() => chain().setTextAlign('left').run()}>
               左
             </button>,
-            <button key="jc" className="text-btn" title="居中" onClick={() => chain().setTextAlign('center').run()}>
+            <button key="jc" className="text-btn" title="居中" aria-pressed={fmt.center} onClick={() => chain().setTextAlign('center').run()}>
               中
             </button>,
-            <button key="jr" className="text-btn" title="右对齐" onClick={() => chain().setTextAlign('right').run()}>
+            <button key="jr" className="text-btn" title="右对齐" aria-pressed={fmt.right} onClick={() => chain().setTextAlign('right').run()}>
               右
             </button>,
             <button key="link" className="text-btn" title="插入链接" onClick={() => void insertLink()}>

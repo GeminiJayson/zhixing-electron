@@ -394,6 +394,58 @@
 /* 按钮自带 8px 内边距（悬浮底色需要这块面积）。谁站在最左端，谁就向左挪回这 8px，
    图标因此与标题、正文落在同一条左边缘上。
    （只有 .tb__subright 需要 :first-child —— 有左组时它在中间，再挪就会吃掉组间距。） */
+/* 文字颜色色板：一排可直接点的色块（替代原来的系统取色器） */
+.rt-editor .tb .rt-colors {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+/* 色块是行内尺度的小控件（同 .chip），高度由自身尺寸给出而不是 --control-h */
+.rt-editor .tb .rt-color {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.rt-editor .tb .rt-color:hover {
+  border-color: var(--fg-secondary);
+}
+.rt-editor .tb .rt-color--on {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 1px;
+}
+.rt-editor .tb .rt-color--reset {
+  background: transparent;
+  color: var(--fg-tertiary);
+  font-size: var(--text-aux);
+  line-height: 1;
+}
+/* 代码块：块级代码的底色、边框与等宽字体；语言标记显示在右上角 */
+.rt-editor__body pre {
+  position: relative;
+  background: var(--bg-canvas);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  overflow: auto;
+}
+.rt-editor__body pre code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-aux);
+  line-height: 1.6;
+}
+.rt-editor__body pre[data-language]::after {
+  content: attr(data-language);
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-2);
+  color: var(--fg-tertiary);
+  font-size: var(--text-aux);
+  pointer-events: none;
+}
+
 .editor .tb .tb__subleft,
 .rt-editor .tb .tb__subleft,
 .editor .tb .tb__subright:first-child,
