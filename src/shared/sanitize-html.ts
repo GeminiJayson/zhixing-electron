@@ -44,6 +44,9 @@ const VOID_TAGS = new Set(['br', 'hr', 'img', 'col', 'area', 'input'])
 /** 每个标签额外允许的属性；所有标签都另有 GLOBAL_ATTRS。 */
 const TAG_ATTRS: Record<string, string[]> = {
   a: ['href', 'name'],
+  // 代码块的语言标记。data-* 不发起请求、不参与脚本执行，
+  // 放行它是安全的；不放行的话 docx 往返时语言会被这一步静默剥掉。
+  pre: ['data-language'],
   img: ['src', 'alt', 'width', 'height'],
   table: ['border', 'cellpadding', 'cellspacing', 'width', 'align'],
   td: ['colspan', 'rowspan', 'align', 'valign', 'width', 'height'],

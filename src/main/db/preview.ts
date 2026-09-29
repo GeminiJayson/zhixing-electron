@@ -45,7 +45,8 @@ export async function previewOfficeNote(noteId: number): Promise<OfficePreview> 
       const warns = res.messages.length
       return {
         kind: 'docx',
-        html: sanitizeHtml(res.value),
+        // 先还原代码块再清洗：清洗会把不在白名单里的属性剥掉（pre 的 data-language 已放行）
+        html: sanitizeHtml(restoreCodeBlocks(res.value)),
         message: warns ? `已解析（${warns} 处格式未能完整转换）` : '已解析全文',
       }
     }
@@ -388,9 +389,15 @@ function parseRuns(html: string): { text: string; fmt: RunFmt }[] {
 }
 
 /** HTML → word/document.xml（标题按加粗+放大呈现，无需 styles.xml 也能看出层级）。 */
-function htmlToDocumentXml(html: string): string {
+export function htmlToDocumentXml(html: string): string {
   const body: string[] = []
-  const blockRe = /<(h[1-6]|p|div|li)[^>]*>([\s\S]*?)<\/\1>|<br\s*\/?>/gi
+  /**
+   * **pre 必须排在 p 前面**：交替分支是"先匹配先赢"，而 `<` 后面紧跟的 `p`
+   * 既属于 `p` 也属于 `pre`。写成 ...|p|...|pre 的话，`<pre data-language="sql">`
+   * 会被当成 `<p>`（`[^>]*` 正好吞掉 `re data-language="sql"`），
+   * 之后去找 `</p>` 自然找不到，整个 <pre> 块被跳过 —— 表现为"代码块凭空消失"。
+   */
+  const blockRe = /<(h[1-6]|pre|p|div|li)[^>]*>([\s\S]*?)<\/\1>|<br\s*\/?>/gi
   let m: RegExpExecArray | null
   let matched = false
   while ((m = blockRe.exec(html))) {
@@ -400,6 +407,26 @@ function htmlToDocumentXml(html: string): string {
     }
     matched = true
     const tag = m[1].toLowerCase()
+    /**
+     * 代码块：**必须单独处理**，不能走下面的普通段落。
+     *
+     * 原先 blockRe 里没有 pre，`<pre data-language="sql">…</pre>` 整块落到末尾
+     * "按换行拆段"的兜底分支：缩进被吃掉、行与行变成独立段落、等宽与底纹全丢 ——
+     * 一轮 docx 往返之后代码块就散架了。
+     *
+     * 语言存成**第一行的可见标记** [sql]，而不是段落样式名：样式名要 mammoth
+     * 配合 styleMap 才能读回来（默认丢弃），而首行文本怎么转都不会丢。
+     * 代价是 Word 里能看见这行标记 —— 相对于"语言悄悄消失"，这个代价可以接受。
+     * 读回方向由 restoreCodeBlocks 把它还原成 data-language。
+     */
+    if (tag === 'pre') {
+      const lang = /data-language=["']([^"']*)["']/i.exec(m[0])?.[1]?.trim() ?? ''
+      // 去掉内层 <code> 之类的标签，只留文本
+      const raw = (m[2] ?? '').replace(/<[^>]*>/g, '')
+      const text = (lang ? '[' + lang + ']\n' : '') + decodeEntities(raw)
+      body.push(codeParagraph(text))
+      continue
+    }
     const level = tag.startsWith('h') ? Number(tag[1]) : 0
     const runs = parseRuns(m[2] ?? '')
     if (!runs.length) {
@@ -424,6 +451,61 @@ function htmlToDocumentXml(html: string): string {
     XML_HEAD +
     '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
     `<w:body>${content}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/></w:sectPr></w:body></w:document>`
+  )
+}
+
+/**
+ * 代码块段落：等宽字体 + 浅灰底纹 + 小一号字号。
+ *
+ * 用底纹（w:shd）而不是边框：最小 OOXML 里加边框要动 pBdr，
+ * 而 shd 一个属性就能给出"这是一块代码"的观感，mammoth 也会把它读成背景色。
+ */
+function codeParagraph(text: string): string {
+  const pPr =
+    '<w:pPr><w:shd w:val="clear" w:color="auto" w:fill="F5F6F7"/>' +
+    '<w:spacing w:before="120" w:after="120"/></w:pPr>'
+  const rPr =
+    '<w:rPr><w:rFonts w:ascii="Consolas" w:hAnsi="Consolas" w:cs="Consolas"/>' +
+    '<w:sz w:val="20"/></w:rPr>'
+  const segs = text
+    .split('\n')
+    .map((s, i) => (i ? '<w:br/>' : '') + '<w:t xml:space="preserve">' + xmlEscape(s) + '</w:t>')
+    .join('')
+  return '<w:p>' + pPr + '<w:r>' + rPr + segs + '</w:r></w:p>'
+}
+
+/** 把常见 HTML 实体还原成字符（为代码块文本服务）。 */
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+}
+
+/**
+ * 把 mammoth 读出来的「等宽段落」还原成代码块。
+ *
+ * mammoth 不认识代码块，它只看到一段等宽字体的普通文字，输出形如：
+ *   <p><span style="font-family:Consolas">[sql]<br/>SELECT 1</span></p>
+ * 我们写回 docx 时把语言放在了首行（[sql]），这里把它收回 data-language，
+ * 往返因此闭环：编辑器里是 <pre data-language="sql">，存成 docx 再读回来还是它。
+ *
+ * 只认 font-family 里出现 consolas / monospace 的段落 —— 这正是 codeParagraph
+ * 写进去的那一种，不会误伤普通正文。
+ */
+export function restoreCodeBlocks(html: string): string {
+  return html.replace(
+    /<p>\s*<span[^>]*font-family:\s*[^;"']*(?:consolas|monospace)[^>]*>([\s\S]*?)<\/span>\s*<\/p>/gi,
+    (_m, inner: string) => {
+      const text = decodeEntities(inner.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>/g, ''))
+      const mm = /^\[([a-z0-9+#_-]+)\]\n?/i.exec(text)
+      const lang = mm ? mm[1] : ''
+      const body = mm ? text.slice(mm[0].length) : text
+      return '<pre' + (lang ? ' data-language="' + lang + '"' : '') + '>' + escapeHtml(body) + '</pre>'
+    }
   )
 }
 
