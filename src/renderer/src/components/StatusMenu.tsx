@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { STATUS_CHOICES, STATUS_LABELS, STATUS_TONES } from '@shared/task'
 import type { TaskStatus } from '@shared/types'
+import { placeAnchored } from '@renderer/lib/anchored-position'
 
 interface Props {
   anchor: HTMLElement
@@ -19,12 +20,10 @@ export function StatusMenu({ anchor, current, onPick, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const rect = anchor.getBoundingClientRect()
     const el = ref.current
-    if (el) {
-      el.style.left = `${Math.round(rect.left)}px`
-      el.style.top = `${Math.round(rect.bottom + 4)}px`
-    }
+    // 贴锚点下方，并在下方放不下时翻到上方 —— 任务项在窗口底部时，
+    // 旧写法会让菜单从下沿探出去，最后几项（已完成 / 已放弃）根本点不到
+    if (el) placeAnchored(el, anchor.getBoundingClientRect())
     const onDocDown = (e: MouseEvent): void => {
       if (!ref.current?.contains(e.target as Node)) onClose()
     }

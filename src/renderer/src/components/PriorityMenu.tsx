@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { PRIORITY_CHOICES, priorityColor } from '@shared/priority'
+import { placeAnchored } from '@renderer/lib/anchored-position'
 
 interface Props {
   anchor: HTMLElement
@@ -13,12 +14,9 @@ export function PriorityMenu({ anchor, current, onPick, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const rect = anchor.getBoundingClientRect()
     const el = ref.current
-    if (el) {
-      el.style.left = `${Math.round(rect.left)}px`
-      el.style.top = `${Math.round(rect.bottom + 4)}px`
-    }
+    // 同 StatusMenu：下方放不下时翻到上方，任务项在窗口底部也点得到
+    if (el) placeAnchored(el, anchor.getBoundingClientRect())
     const onDocDown = (e: MouseEvent): void => {
       if (!ref.current?.contains(e.target as Node)) onClose()
     }

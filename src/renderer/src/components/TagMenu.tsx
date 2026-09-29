@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, Plus } from '@renderer/lib/icons'
 import { TAG_COLOR_PRESETS } from '@shared/color'
+import { placeAnchored } from '@renderer/lib/anchored-position'
 
 // 色板的定义在 shared/color.ts：那里有单测守着「每个预设色配它的文字色都够读」
 export { TAG_COLOR_PRESETS }
@@ -51,12 +52,10 @@ export function TagMenu({ x, y, title = '标签', tags, selectedIds, onToggle, o
   useEffect(() => {
     const el = ref.current
     if (el) {
-      // 宽度不再写死（交给 .popmenu 按内容决定），所以按实测尺寸把菜单夹进视口。
-      // 依赖里带 editing：展开 / 收起调色板会改变菜单尺寸，夹取要跟着重算一次。
-      const w = el.offsetWidth
-      const h = el.offsetHeight
-      el.style.left = `${Math.max(8, Math.min(x, window.innerWidth - w - 8))}px`
-      el.style.top = `${Math.max(8, Math.min(y, window.innerHeight - h - 8))}px`
+      // 这里传的是**点击位置**而不是锚点矩形：标签弹层可以被右键菜单唤起，
+      // 那时没有明确的"按钮"可贴，跟着指针走更自然。
+      // 依赖里带 editing：展开 / 收起调色板会改变菜单尺寸，定位要跟着重算一次。
+      placeAnchored(el, { left: x, top: y, bottom: y })
     }
     const onDocDown = (e: MouseEvent): void => {
       if (!ref.current?.contains(e.target as Node)) onClose()

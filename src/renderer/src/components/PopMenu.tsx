@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { isMotionFull, usePresence } from '../lib/presence'
+import { placeAnchored } from '../lib/anchored-position'
 
 export interface PopMenuItem {
   key: string
@@ -51,10 +52,9 @@ export function PopMenu({ x, y, items, onClose }: Props) {
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
-    const left = Math.max(8, Math.min(x, window.innerWidth - 200))
-    const top = Math.max(8, Math.min(y, window.innerHeight - 48 - items.length * 30))
-    el.style.left = `${left}px`
-    el.style.top = `${top}px`
+    // 原来是"按项数估算高度"（48 + n*30）再夹进视口 —— 菜单里有说明行、
+    // 分组标题或长标签时估算必然偏小，下沿照样会探出去。改成实测 + 翻转。
+    placeAnchored(el, { left: x, top: y, bottom: y })
     const originX = x > window.innerWidth / 2 ? 'right' : 'left'
     const originY = y > window.innerHeight / 2 ? 'bottom' : 'top'
     el.style.transformOrigin = `${originX} ${originY}`

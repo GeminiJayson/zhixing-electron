@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarClock, ChevronDown, ChevronLeft, ChevronRight } from '@renderer/lib/icons'
 import { monthGrid, pad2, todayStr } from '../lib/date'
+import { placeAnchored } from '../lib/anchored-position'
 
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日']
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1)
@@ -89,10 +90,8 @@ export function DatePicker({ value, onChange, label }: Props) {
     if (!open) return
     const rect = btnRef.current?.getBoundingClientRect()
     const el = menuRef.current
-    if (el && rect) {
-      el.style.left = `${Math.round(rect.left)}px`
-      el.style.top = `${Math.round(rect.bottom + 4)}px`
-    }
+    // 日历比普通菜单高得多（七行日期 + 年月列表），在窗口底部必须翻上去
+    if (el && rect) placeAnchored(el, rect)
     // 年月跳转里把当前年月滚进视野，否则 1950 起的长列表要翻很久
     el?.querySelector('.dpick__ylist .popmenu__item--active, .dpick__mlist .popmenu__item--active')?.scrollIntoView({
       block: 'center',
