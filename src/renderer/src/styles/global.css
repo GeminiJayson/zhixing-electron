@@ -211,6 +211,9 @@ textarea {
 .modal-mask .modal {
   background: var(--glass-bg);
   backdrop-filter: var(--glass-filter);
+  /* 玻璃面用 --glass-border（白 72%）而不是 --border（黑 9%）：
+     后者在模糊过的底上是一条灰线，看着像塑料片的接缝。 */
+  border-color: var(--glass-border);
 }
 .modal__head {
   display: flex;
@@ -222,6 +225,63 @@ textarea {
   margin: 0;
   font-size: var(--text-lead);
 }
+/* ------------------------------------------------------------------
+   主按钮 .btn
+
+   此前 .btn 被用过一次（WorkflowScheduleDialog 的「保存」）却**从未定义** ——
+   那个按钮因此完全没有样式，看起来像一行普通文字。这里补齐它，并把
+   --accent / --danger / 幽灵三个变体一次给全（.text-btn 是次级按钮，
+   尺寸更小、没有底色，两者分工不同，不要互相替代）。
+
+   高度走 --control-h：控件高度门要求所有按钮类控件都从这一族取。
+   ------------------------------------------------------------------ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  height: var(--control-h);
+  padding: 0 var(--space-4);
+  border: var(--border-w) solid transparent;
+  border-radius: var(--radius-ctl);
+  background: var(--accent-solid);
+  color: var(--fg-on-accent);
+  font: inherit;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.btn:hover {
+  background: var(--accent-solid-hover);
+}
+.btn:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 2px;
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+/* 默认就是强调色；显式写上是为了让 .btn--accent 这种写法有落点 */
+.btn--accent {
+  background: var(--accent-solid);
+  color: var(--fg-on-accent);
+}
+.btn--danger {
+  background: var(--danger);
+  color: var(--fg-on-accent);
+}
+/* 幽灵按钮：只有一圈边，用在"次要但要显眼"的位置 */
+.btn--ghost {
+  background: transparent;
+  border-color: var(--border-strong);
+  color: var(--fg-secondary);
+}
+.btn--ghost:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
 /**
  * 关闭按钮统一钉在右上角。
  *
@@ -586,6 +646,46 @@ html[data-surface='capture'] .modal__head button {
   background: var(--bg-layer);
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius-lg);
+}
+
+/* ------------------------------------------------------------------
+   布局原语
+
+   为什么要有：项目里"纵向排 + 间距""横向排 + 间距"这两种写法被手抄了几十遍，
+   每次的 gap 取值靠记忆（--space-1 / 2 / 3 混着来）；栅格更是各写一份 ——
+   .set-grid-2 / .form-grid / .stat-grid 三个选择器干的是同一件事，
+   只是列数与最小宽度不同。
+
+   间距统一由 --u-gap 控制，不传就用各自的默认档；需要时在调用点写
+   style={{ '--u-gap': 'var(--space-3)' }}，不必为每种间距再造一个类。
+   ------------------------------------------------------------------ */
+.u-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--u-gap, var(--space-2));
+}
+/* 横向排：默认居中并允许换行 —— 一行放不下时挤成一条是排版事故，不是本事 */
+.u-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--u-gap, var(--space-2));
+}
+/* 自适应栅格：列数由容器宽度与 --u-min 决定，不必为每个断点写媒体查询 */
+.u-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(var(--u-min, 220px), 1fr));
+  gap: var(--u-gap, var(--space-3));
+}
+/* 固定列数：minmax(0, 1fr) 而不是 1fr —— 后者在内容超宽时不肯收缩，会把网格撑破 */
+.u-grid--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.u-grid--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.u-grid--4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 /* 连线箭头：默认跟随连线的暗色，高亮时用主题色 */
 .edge-arrow {

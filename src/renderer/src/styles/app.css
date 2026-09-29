@@ -585,7 +585,8 @@
   padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
   background: var(--glass-bg);
   backdrop-filter: var(--glass-filter);
-  border: var(--border-w) solid var(--border-strong);
+  /* 同 .modal-mask .modal：玻璃面用亮边而不是 --border-strong 的灰线 */
+  border: var(--border-w) solid var(--glass-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--edge-light), var(--shadow-lg);
   z-index: var(--z-float);
@@ -626,7 +627,8 @@
   flex-direction: column;
   background: var(--glass-bg);
   backdrop-filter: var(--glass-filter);
-  border: var(--border-w) solid var(--border-strong);
+  /* 同 .modal：玻璃面用亮边 */
+  border: var(--border-w) solid var(--glass-border);
   border-radius: var(--radius-xl);
   box-shadow: var(--edge-light), var(--shadow-xl);
   overflow: hidden;
