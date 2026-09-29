@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
+import { cellKey, isCellRef, isSheetName, listNoteBlocks, type NoteBlock } from '@renderer/lib/block-fingerprint'
+import { NotePicker } from './NotePicker'
+import { RepeatRuleEditor } from './RepeatRuleEditor'
 import { PRIORITY_CHOICES } from '@shared/priority'
 import { STATUS_CHOICES } from '@shared/task'
-import type { Note, RepeatPeriod, Task, TaskNoteContext, TaskStatus } from '@shared/types'
+import type { Note, NoteFolder, RepeatPeriod, Task, TaskNoteContext, TaskStatus } from '@shared/types'
 import { joinStamp, splitStamp } from '../lib/date'
 import { DatePicker } from './DatePicker'
 import { TimePicker } from './TimePicker'
@@ -49,8 +52,29 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
   const [contexts, setContexts] = useState<TaskNoteContext[]>([])
   const [noteList, setNoteList] = useState<Note[]>([])
   const [pickNote, setPickNote] = useState('')
-  const [blockKey, setBlockKey] = useState('')
-  const [snippet, setSnippet] = useState('')
+  /**
+   * 选中笔记后列出的**可关联段落**。
+   *
+   * 旧版这里是一个让用户手填「段落块键」的输入框 —— 键是内容指纹（fp: + sha1 前 12 位），
+   * 纯内部标识符，用户根本无从得知该填什么，这就是"不知道怎么关联笔记段落"的根源。
+   * 现在改成：选定笔记 → 解析它的段落 → 从列表里点一段。
+   */
+  const [blocks, setBlocks] = useState<NoteBlock[]>([])
+  const [pickBlock, setPickBlock] = useState('')
+  const [pickedNoteTitle, setPickedNoteTitle] = useState('')
+  /**
+   * 选中笔记的格式。Excel 是特例：它**在应用里拿不到内容**（正文在本地 .xlsx，
+   * 应用只登记路径），所以没法像段落那样解析出来给用户挑，只能让用户照着
+   * 系统应用里看到的填"工作表 + 单元格"。链接笔记则相反 —— 一条链接就是一项，
+   * 直接进段落下拉。
+   */
+  const [pickedFormat, setPickedFormat] = useState('')
+  const [cellSheet, setCellSheet] = useState('')
+  const [cellRef, setCellRef] = useState('')
+  /** 笔记选择器：原生 select 放不下图标与缩进，改成自绘弹层 */
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickerAnchor, setPickerAnchor] = useState<DOMRect | null>(null)
+  const [folders, setFolders] = useState<NoteFolder[]>([])
   const [saving, setSaving] = useState(false)
 
   const loadContexts = useCallback(async (): Promise<void> => {
@@ -60,17 +84,55 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
   useEffect(() => {
     void loadContexts()
     void (async () => setNoteList(await window.zhixing.db.notes()))()
+    void (async () => setFolders(await window.zhixing.db.noteFolders()))()
   }, [loadContexts])
 
   const noteTitle = (id: number): string =>
     noteList.find((n) => n.id === id)?.title ?? `#${id}`
 
+  /** 选定笔记 → 取出它的段落清单（markdown 按行、富文本/Word 按块级元素） */
+  const loadBlocks = useCallback(async (noteId: number): Promise<void> => {
+    if (!noteId) {
+      setBlocks([])
+      setPickedNoteTitle('')
+      return
+    }
+    const note = await window.zhixing.db.note(noteId)
+    if (!note) {
+      setBlocks([])
+      return
+    }
+    setPickedNoteTitle(note.title)
+    setPickedFormat(note.format)
+    setBlocks(listNoteBlocks(note.format, note.content_md ?? ''))
+  }, [])
+
+  useEffect(() => {
+    void loadBlocks(Number(pickNote))
+    setPickBlock('')
+  }, [pickNote, loadBlocks])
+
   const attachContext = async (): Promise<void> => {
     const noteId = Number(pickNote)
-    if (!noteId || !blockKey.trim()) return
-    await window.zhixing.db.attachBlock(task.id, noteId, blockKey.trim(), snippet.trim())
-    setBlockKey('')
-    setSnippet('')
+    const block = blocks.find((b) => b.key === pickBlock)
+    if (!noteId || !block) return
+    // 引文快照自动取段落原文（前 200 字）：用户不必再手抄一遍，而且它本来就是"当时的原文"
+    await window.zhixing.db.attachBlock(task.id, noteId, block.key, block.text.slice(0, 200))
+    setPickBlock('')
+    await loadContexts()
+  }
+
+  /** Excel 单元格：键由"工作表 + 坐标"拼，不需要内容指纹 */
+  const attachCellContext = async (): Promise<void> => {
+    const noteId = Number(pickNote)
+    const ref = cellRef.trim().toUpperCase()
+    if (!noteId || !isCellRef(ref)) return
+    if (cellSheet.trim() && !isSheetName(cellSheet)) return
+    const key = cellKey(cellSheet, ref)
+    if (!key) return
+    const label = cellSheet.trim() ? `${cellSheet.trim()}!${ref}` : ref
+    await window.zhixing.db.attachBlock(task.id, noteId, key, label)
+    setCellRef('')
     await loadContexts()
   }
 
@@ -244,9 +306,10 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
                     >
                       {noteTitle(c.note_id)}
                     </button>
-                    <span className="u-aux" title={c.snippet}>
-                      {c.block_key}
-                      {c.snippet ? ` · ${c.snippet.slice(0, 24)}` : ''}
+                    {/* 显示人看得懂的引文快照；键只在 tooltip 里留着备查 */}
+                    <span className="u-aux" title={`${c.snippet || '（无引文）'}\n${c.block_key}`}>
+                      {c.snippet ? c.snippet.slice(0, 40) : c.block_key}
+                      {c.snippet && c.snippet.length > 40 ? '…' : ''}
                     </span>
                     <span className="modal__spacer" />
                     <button className="text-btn" onClick={() => void detachContext(c)}>
@@ -257,52 +320,124 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
               </ul>
             )}
             <div className="ctx-add">
-              <select
-                className="field"
-                value={pickNote}
-                onChange={(e) => setPickNote(e.target.value)}
-                aria-label="选择笔记"
-              >
-                <option value="">选择笔记…</option>
-                {noteList.map((n) => (
-                  <option key={n.id} value={String(n.id)}>
-                    {n.title}
-                  </option>
-                ))}
-              </select>
-              <input
-                className="field"
-                placeholder="段落块键"
-                value={blockKey}
-                onChange={(e) => setBlockKey(e.target.value)}
-              />
-              <input
-                className="field"
-                placeholder="引文快照（可选）"
-                value={snippet}
-                onChange={(e) => setSnippet(e.target.value)}
-              />
+              {/*
+                笔记选择器：**带类型图标 + 文件夹分组**。
+                原生 select 的 option 放不下图标也做不出缩进，而用户反馈的正是
+                "不知道选的是哪个类型" —— 平铺一列标题解决不了这个。
+              */}
               <button
-                className="text-btn"
-                onClick={() => void attachContext()}
-                disabled={!pickNote || !blockKey.trim()}
+                type="button"
+                className="field note-pick-btn"
+                aria-haspopup="listbox"
+                aria-expanded={pickerOpen}
+                aria-label="选择笔记"
+                onClick={(e) => {
+                  setPickerAnchor(e.currentTarget.getBoundingClientRect())
+                  setPickerOpen((v) => !v)
+                }}
               >
-                添加
+                {pickNote ? noteTitle(Number(pickNote)) : '1. 选择笔记…'}
+                <span className="note-pick-btn__caret" aria-hidden>
+                  ▾
+                </span>
               </button>
+              {pickerOpen && (
+                <NotePicker
+                  notes={noteList}
+                  folders={folders}
+                  value={pickNote}
+                  anchor={pickerAnchor}
+                  onPick={(id) => {
+                    setPickNote(id)
+                    setPickerOpen(false)
+                  }}
+                  onClose={() => setPickerOpen(false)}
+                />
+              )}
+              {/*
+                可关联项随笔记格式而异：
+                  · markdown / 富文本 / Word —— 解析出段落，从列表里挑；
+                  · 链接笔记 —— content_md 就是 [{title,target}]，**每条链接一项**，
+                    同样进这个下拉（listNoteBlocks 的 link 分支）；
+                  · Excel —— 应用里看不到内容（正文在本地 .xlsx），只能照着填工作表与坐标。
+
+                旧版这里是一个让用户手填「段落块键」的输入框 —— 键是内容指纹，
+                纯内部标识符，用户无从得知该填什么，所以"关联笔记段落"实际上没法用。
+              */}
+              {pickedFormat === 'excel' ? (
+                <>
+                  <input
+                    className="field"
+                    placeholder="工作表（可留空＝第一张）"
+                    value={cellSheet}
+                    onChange={(e) => setCellSheet(e.target.value)}
+                    aria-label="工作表"
+                  />
+                  <input
+                    className="field"
+                    placeholder="单元格，如 B3"
+                    value={cellRef}
+                    onChange={(e) => setCellRef(e.target.value)}
+                    aria-label="单元格"
+                  />
+                  <button
+                    className="text-btn"
+                    onClick={() => void attachCellContext()}
+                    disabled={!pickNote || !isCellRef(cellRef)}
+                  >
+                    关联
+                  </button>
+                </>
+              ) : (
+                <>
+                  <select
+                    className="field"
+                    value={pickBlock}
+                    onChange={(e) => setPickBlock(e.target.value)}
+                    disabled={!pickNote || blocks.length === 0}
+                    aria-label="选择段落"
+                  >
+                    <option value="">
+                      {!pickNote
+                        ? '2. 先选笔记'
+                        : blocks.length === 0
+                          ? '这篇笔记没有可关联项'
+                          : `2. 选择关联项（共 ${blocks.length} 项）…`}
+                    </option>
+                    {blocks.map((b) => (
+                      <option key={b.key} value={b.key} title={b.text}>
+                        第 {b.index} 项 · {b.text.slice(0, 40)}
+                        {b.text.length > 40 ? '…' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    className="text-btn"
+                    onClick={() => void attachContext()}
+                    disabled={!pickNote || !pickBlock}
+                  >
+                    关联
+                  </button>
+                </>
+              )}
             </div>
+            {pickNote && pickedFormat === 'excel' && (
+              <p className="u-aux">
+                「{pickedNoteTitle}」的正文在本地表格文件里，应用内读不到内容 ——
+                用「{pickedNoteTitle}」旁边的打开按钮看一眼，再照着填工作表与单元格（如 B3、A1:C9 的起点）。
+              </p>
+            )}
+            {pickNote && pickedFormat !== 'excel' && blocks.length === 0 && (
+              <p className="u-aux">
+                「{pickedNoteTitle}」里没有可关联项
+                {pickedFormat === 'link' ? '（这条链接笔记还没有条目）' : '（内容为空，或只含空白行）'}。
+              </p>
+            )}
           </section>
 
-          {repeat === 'custom' && (
-            <label className="form-row">
-              <span>自定义规则（RRULE 子集，如 FREQ=WEEKLY;INTERVAL=2;COUNT=5）</span>
-              <input
-                className="field"
-                value={repeatRule}
-                onChange={(e) => setRepeatRule(e.target.value)}
-                placeholder="FREQ=DAILY;INTERVAL=1"
-              />
-            </label>
-          )}
+          {/* 自定义循环：可视化选择。旧版要求手写 RRULE 串（FREQ=…;INTERVAL=…），
+              字段名记不住、写错了还不报错（认不出的部分被静默忽略）。 */}
+          {repeat === 'custom' && <RepeatRuleEditor value={repeatRule} onChange={setRepeatRule} />}
 
           <label className="form-row">
             <span>备注</span>

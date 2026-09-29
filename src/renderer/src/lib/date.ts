@@ -50,6 +50,29 @@ export function todayStr(): string {
 }
 
 /**
+ * 完成时间的短标记：`今天 14:30` / `昨天 09:05` / `09-28 14:30` / `2025-12-31 14:30`。
+ *
+ * 循环任务勾选完成后会收归到「已完成」，那里最需要回答的是"这是什么时候完成的" ——
+ * 只给日期不够（每天循环的任务一天一条，全挤在同一天里分不出先后），所以时刻必须留着。
+ * 但同一天的记录里再写一遍年月日又是噪声，于是按远近分层显示。
+ */
+export function doneAtLabel(v: string | null | undefined): string {
+  if (!v) return ''
+  const [day, time] = splitStamp(v)
+  if (!day) return ''
+  const hm = time ? ` ${time}` : ''
+  const today = todayStr()
+  if (day === today) return `今天${hm}`
+  // 昨天用 UTC 运算避开夏令时边界（与 recurrence.ts 同一个口径）
+  const y = new Date(`${day}T00:00:00Z`)
+  y.setUTCDate(y.getUTCDate() + 1)
+  if (y.toISOString().slice(0, 10) === today) return `昨天${hm}`
+  const now = new Date()
+  const sameYear = day.slice(0, 4) === String(now.getFullYear())
+  return `${sameYear ? day.slice(5) : day}${hm}`
+}
+
+/**
  * DATETIME 串（`YYYY-MM-DD HH:MM:SS.000000`，reminder_at / resume_at 那一类）与界面上
  * 「日期 + 时刻」两个控件之间的往返。
  *

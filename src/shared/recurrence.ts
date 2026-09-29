@@ -53,6 +53,29 @@ export function parseRRule(rule: string | null): RRule | null {
   return info
 }
 
+/**
+ * 把结构化规则拼回 RRULE 串 —— parseRRule 的逆运算。
+ *
+ * 有了它，界面才能"只让人做选择、不让人写字符串"：控件改的是这几个字段，
+ * 串由这里统一生成。两边成对存在，改一边必须改另一边，所以放在同一个文件里。
+ */
+export function formatRRule(info: RRule): string {
+  const parts = [`FREQ=${info.freq.toUpperCase()}`, `INTERVAL=${Math.max(1, info.interval)}`]
+  if (info.count != null) parts.push(`COUNT=${Math.max(0, info.count)}`)
+  if (info.until) parts.push(`UNTIL=${info.until.replace(/-/g, '')}`)
+  return parts.join(';')
+}
+
+/** 规则的人话描述（界面上跟 RRULE 串并排显示，让用户对得上自己选了什么） */
+export function describeRRule(info: RRule): string {
+  const n = Math.max(1, info.interval)
+  const unit = info.freq === 'daily' ? '天' : info.freq === 'weekly' ? '周' : '个月'
+  const head = n === 1 ? `每${unit}` : `每 ${n} ${unit}`
+  if (info.count != null) return `${head}，共 ${info.count} 次`
+  if (info.until) return `${head}，直到 ${info.until}`
+  return `${head}，一直重复`
+}
+
 function parseUntil(value: string): string | null {
   let v = value.toUpperCase().trim()
   if (v.includes('T')) v = v.split('T')[0]

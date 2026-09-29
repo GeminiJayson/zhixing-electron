@@ -115,75 +115,14 @@ const findField = StateField.define<FindState>({
 
 // ---------------------------------------------------------------- 段落定位锚
 
-/** 纯 JS SHA-1。 */
-function sha1Hex(input: string): string {
-  const utf8 = Array.from(new TextEncoder().encode(input))
-  const ml = utf8.length
-  const withOne = utf8.concat(0x80)
-  while (withOne.length % 64 !== 56) withOne.push(0)
-  const hi = Math.floor((ml * 8) / 0x100000000)
-  const lo = (ml * 8) >>> 0
-  withOne.push((hi >>> 24) & 0xff, (hi >>> 16) & 0xff, (hi >>> 8) & 0xff, hi & 0xff)
-  withOne.push((lo >>> 24) & 0xff, (lo >>> 16) & 0xff, (lo >>> 8) & 0xff, lo & 0xff)
-  let h0 = 0x67452301
-  let h1 = 0xefcdab89
-  let h2 = 0x98badcfe
-  let h3 = 0x10325476
-  let h4 = 0xc3d2e1f0
-  const rol = (n: number, s: number): number => ((n << s) | (n >>> (32 - s))) >>> 0
-  for (let i = 0; i < withOne.length; i += 64) {
-    const w = new Array<number>(80)
-    for (let j = 0; j < 16; j++) {
-      w[j] =
-        (withOne[i + j * 4] << 24) |
-        (withOne[i + j * 4 + 1] << 16) |
-        (withOne[i + j * 4 + 2] << 8) |
-        withOne[i + j * 4 + 3]
-    }
-    for (let j = 16; j < 80; j++) w[j] = rol(w[j - 3] ^ w[j - 8] ^ w[j - 14] ^ w[j - 16], 1)
-    let [a, b, c, d, e] = [h0, h1, h2, h3, h4]
-    for (let j = 0; j < 80; j++) {
-      let f: number
-      let k: number
-      if (j < 20) {
-        f = (b & c) | (~b & d)
-        k = 0x5a827999
-      } else if (j < 40) {
-        f = b ^ c ^ d
-        k = 0x6ed9eba1
-      } else if (j < 60) {
-        f = (b & c) | (b & d) | (c & d)
-        k = 0x8f1bbcdc
-      } else {
-        f = b ^ c ^ d
-        k = 0xca62c1d6
-      }
-      const tmp = (rol(a, 5) + (f >>> 0) + e + k + (w[j] >>> 0)) >>> 0
-      e = d
-      d = c
-      c = rol(b, 30)
-      b = a
-      a = tmp
-    }
-    h0 = (h0 + a) >>> 0
-    h1 = (h1 + b) >>> 0
-    h2 = (h2 + c) >>> 0
-    h3 = (h3 + d) >>> 0
-    h4 = (h4 + e) >>> 0
-  }
-  return [h0, h1, h2, h3, h4].map((n) => n.toString(16).padStart(8, '0')).join('')
-}
-
 /**
- * 段落定位键：
- * 空白折叠 + 去首尾 + 小写后取 sha1 前 12 位，前缀 `fp:`。
- * 用 task_note_context 表定位，键必须逐字一致才能互相定位。
+ * 指纹实现已搬到 lib/block-fingerprint.ts —— 任务编辑器也要用它把段落列出来，
+ * 两边必须逐字一致，否则"列表里算出来的键"和"这里扫描时算出来的键"对不上，
+ * 表现就是"关联上了却跳不过去"。
  */
-export function blockFingerprint(text: string, length = 12): string {
-  const norm = text.replace(/\s+/g, ' ').trim().toLowerCase()
-  if (!norm) return ''
-  return 'fp:' + sha1Hex(norm).slice(0, length)
-}
+import { blockFingerprint, sha1Hex } from '@renderer/lib/block-fingerprint'
+// 旧引用点（NotesPage 从本文件取 blockFingerprint）继续可用
+export { blockFingerprint }
 
 /** 按 block_key 在编辑器里定位并滚动到该段。 */
 export function locateBlockInView(view: EditorView, blockKey: string): boolean {

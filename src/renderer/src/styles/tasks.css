@@ -1388,6 +1388,173 @@ button.chip--status:focus-visible {
   gap: 4px;
 }
 
+/* ------------------------------------------------------------------
+   自定义循环的可视化编辑（RepeatRuleEditor）
+
+   三个选择覆盖 parseRRule 支持的全部字段：FREQ / INTERVAL / COUNT / UNTIL。
+   .seg--plain 是这里的分段控件变体：容器不吃 .seg 的底与内边距
+   （它嵌在表单行里，不是工具栏上的那一条）。
+   ------------------------------------------------------------------ */
+.repeat-rule {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.repeat-rule__line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.repeat-rule__label {
+  flex: 0 0 36px;
+  font-size: var(--text-aux);
+  color: var(--fg-secondary);
+}
+.seg--plain {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+.seg__btn {
+  min-height: var(--row-h);
+  padding: 0 var(--space-3);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-ctl);
+  background: var(--bg-layer-solid);
+  color: var(--fg-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+.seg__btn:hover {
+  border-color: var(--border-strong);
+}
+.seg__btn--on {
+  background: var(--accent-soft);
+  border-color: var(--accent-text);
+  color: var(--accent-text);
+}
+.repeat-rule__preview {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin: 0;
+}
+.repeat-rule__code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--fg-tertiary);
+}
+
+/* 完成时间胶囊：终态行上的"什么时候完成的"。用次要色，不跟状态胶囊抢注意力 */
+.chip--done-at {
+  color: var(--fg-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------
+   笔记选择器（NotePicker）
+
+   任务编辑器里挑关联笔记用。带类型图标 + 文件夹分组，
+   所以不能用原生 <select>（<option> 放不下图标、做不出缩进）。
+   容器复用 .popmenu 的底、边、影与 z-index，只补它没有的这几样。
+   ------------------------------------------------------------------ */
+/* 触发按钮：长得像 .field，但内容要左对齐 + 右侧一个 caret */
+.note-pick-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.note-pick-btn__caret {
+  flex: 0 0 auto;
+  color: var(--fg-tertiary);
+}
+.note-picker {
+  width: 288px;
+  max-height: 360px;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+.note-picker__search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-bottom: var(--border-w) solid var(--border);
+  color: var(--fg-tertiary);
+  flex: 0 0 auto;
+}
+.note-picker__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg-primary);
+  font: inherit;
+  outline: none;
+}
+.note-picker__list {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: var(--space-1) 0;
+}
+/* 未分类 / 各文件夹的分组标题：小一号的次要文字，起分隔作用而不是抢眼 */
+.note-picker__group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-aux);
+  color: var(--fg-tertiary);
+}
+.note-picker__count {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+/* 条目缩进一格，与分组标题拉开层次。行高走 --row-h 的 min-height，
+   而不是 height —— 控件高度门只约束 height，且这是行不是控件。 */
+.note-picker__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--row-h);
+  padding: 0 var(--space-2) 0 var(--space-4);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.note-picker__item:hover {
+  background: var(--bg-hover);
+}
+.note-picker__item--on {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.note-picker__item > svg {
+  flex: 0 0 auto;
+}
+.note-picker__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.note-picker__empty {
+  padding: var(--space-2) var(--space-3);
+}
+
 /* 编辑弹窗的骨架样式已移到 global.css（浮窗也要用这套弹框） */
 .form-row {
   display: flex;

@@ -4,7 +4,7 @@ import { priorityColor, priorityLabel } from '@shared/priority'
 import type { TaskNode } from '@shared/task'
 import { STATUS_LABELS, STATUS_TONES } from '@shared/task'
 import { inkOn } from '@shared/color'
-import { dueLabel, rangeLabel, taskProgress } from '../lib/date'
+import { doneAtLabel, dueLabel, rangeLabel, taskProgress } from '../lib/date'
 
 interface Props {
   node: TaskNode
@@ -215,6 +215,16 @@ export function TaskRow(props: Props) {
           </span>
         )}
         {node.streak > 0 && <span className="chip chip--streak">🔥{node.streak}</span>}
+        {/*
+          完成时间：只在终态行上出现。
+          循环任务每天勾选一次、一天攒好几条，光看「已完成」分不出先后 ——
+          时刻是这里最有用的线索，所以标题里给完整的日期时间，胶囊上给短标记。
+        */}
+        {node.effectiveDone && node.completed_at && (
+          <span className="chip chip--done-at" title={`完成于 ${node.completed_at}`}>
+            {doneAtLabel(node.completed_at)}
+          </span>
+        )}
         {range && <span className={`chip${due.tone === 'overdue' ? ' chip--danger' : ''}`}>{range}</span>}
         {props.listName && (
           <span className="chip chip--list" title={`所属清单：${props.listName}`}>
