@@ -208,7 +208,9 @@ export function WorkflowStepDialog({
             </label>
           )}
 
-          <div className="form-grid">
+          {/* 原来是 .form-grid（1fr 1fr）。.u-grid--2 用 minmax(0,1fr)：
+              固定 1fr 在内容超宽时不肯收缩，会把网格撑破 */}
+          <div className="u-grid u-grid--2">
             <label className="form-row">
               <span>动作</span>
               <select

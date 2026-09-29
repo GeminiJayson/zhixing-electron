@@ -81,7 +81,7 @@ export function WorkflowConditionEditor({ value, onChange }: Props) {
       )}
 
       {kind === 'task' && (
-        <div className="form-grid">
+        <div className="u-grid u-grid--2">
           <label className="form-row">
             <span>判定任务</span>
             <select
@@ -112,7 +112,7 @@ export function WorkflowConditionEditor({ value, onChange }: Props) {
       )}
 
       {kind === 'prev' && (
-        <div className="form-grid">
+        <div className="u-grid u-grid--2">
           <label className="form-row">
             <span>期望结果</span>
             <select
@@ -140,7 +140,7 @@ export function WorkflowConditionEditor({ value, onChange }: Props) {
       )}
 
       {kind === 'script' && (
-        <div className="form-grid">
+        <div className="u-grid u-grid--2">
           <label className="form-row">
             <span>命令</span>
             <input

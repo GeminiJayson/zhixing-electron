@@ -322,12 +322,8 @@
 }
 
 /* --- 概览四卡 --- */
-.stat-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-3);
-  margin-bottom: var(--space-5);
-}
+/* .stat-grid 已并入 .u-grid--4（global.css）。 */
+
 .stat-card {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -335,10 +331,7 @@
   align-items: center;
   gap: 2px var(--space-2);
   padding: var(--space-4);
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--edge-light);
+  /* 外观见 global.css 的「页面级卡片」统一块（它现在是唯一一处加 --edge-light 的地方） */
   color: var(--fg-secondary);
 }
 .stat-card__value {

@@ -48,7 +48,7 @@
   /* --- 形状：与 theme.COMPONENT_TOKENS 对齐 --- */
   --radius-sm: 4px;      /* 小控件 / 菜单 */
   --radius-ctl: 6px;     /* 按钮与全局统一控件 */
-  --radius-md: 8px;      /* 内容内嵌 / 输入 */
+  --radius-md: 8px;      /* 卡片 / 内容内嵌 / 输入（页面级卡片统一用它） */
   --radius-lg: 12px;     /* 卡片 / 浮层 */
   --radius-xl: 16px;     /* 大弹窗 / 捕获卡 */
   --radius-pill: 999px;

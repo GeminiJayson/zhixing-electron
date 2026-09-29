@@ -1510,8 +1510,9 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
                   <header className="inspector__head">标签</header>
                   {selectedNode.tags.length ? (
                     <div className="chip-row">
+                      {/* 同任务行 / 笔记树：只把标签色交给 CSS，配色规则集中在 .chip--tag 里 */}
                       {selectedNode.tags.map((t) => (
-                        <span key={t.id} className="chip chip--tag" style={{ color: t.color, borderColor: t.color }}>
+                        <span key={t.id} className="chip chip--tag" style={{ '--tag-color': t.color } as React.CSSProperties}>
                           {t.name}
                         </span>
                       ))}

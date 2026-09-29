@@ -634,6 +634,17 @@ html[data-surface='capture'] .modal__head button {
   -webkit-app-region: no-drag;
 }
 
+/**
+ * 原生控件的强调色统一跟随 --accent。
+ *
+ * 复选框、单选框、滑块、进度条都读这个属性；挂在 :root 上继承下去，
+ * 不必为每个 type 各写一条。此前 settings.css 只给 input[type='range'] 设过，
+ * 复选框因此一直是浏览器默认的蓝 —— 换了强调色也不变。
+ */
+:root {
+  accent-color: var(--accent);
+}
+
 /* 语义化工具类，避免组件里散落色值 */
 .u-muted {
   color: var(--fg-secondary);
@@ -642,10 +653,31 @@ html[data-surface='capture'] .modal__head button {
   font-size: var(--text-aux);
   color: var(--fg-secondary);
 }
-.u-card {
-  background: var(--bg-layer);
+/**
+ * 页面级卡片的统一外观（方案 C：按层级分）。
+ *
+ * 规则：
+ *   · **一级（页面级）卡片** —— 不透明底 + --radius-md + --edge-light，由下面这组选择器统一给出；
+ *   · **二级（卡片内部的块）** —— 用 --bg-layer（半透明），跟着卡片走。
+ *
+ * 为什么必须统一：原先七张卡各写各的，底色分成两派（--bg-layer 90% 半透 / --bg-layer-solid 纯白）、
+ * 圆角两档（md / lg）、内高光只有 .stat-card 有。更隐蔽的是**半透明底会跟着容器变**：
+ * 同一个 .kcard 放在灰纸（#f3f3f3）上是 #fbfbfb、放在纯白卡上是 #ffffff ——
+ * 同一张卡在不同位置呈现两种颜色，"不统一"就是这么来的。
+ *
+ * 各卡自己的 display / gap / padding / transition 仍留在各自的文件里 ——
+ * 这里只管**外观**（底、边、圆角、内高光），不碰布局。
+ */
+.u-card,
+.kcard,
+.inspector__card,
+.flash-card,
+.set-card,
+.stat-card {
+  background: var(--bg-layer-solid);
   border: var(--border-w) solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
+  box-shadow: var(--edge-light);
 }
 
 /* ------------------------------------------------------------------

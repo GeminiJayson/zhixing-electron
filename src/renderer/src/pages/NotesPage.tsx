@@ -3,7 +3,6 @@ import { sanitizeHtml } from '@shared/sanitize-html'
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { ChevronRight, ExternalLink, FileText, Maximize2, Morph, IconData, Link2, Plus, Sparkles, Tag, Trash2, UserPlus } from '@renderer/lib/icons'
-import { inkOn } from '@shared/color'
 import { subscribeDomain } from '@shared/events'
 import { useDialog } from '../components/Dialogs'
 import type { Backlink, Note, NoteFolder, NoteLink } from '@shared/types'
@@ -1410,7 +1409,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                             key={tg.id}
                             type="button"
                             className="chip chip--tag"
-                            style={{ background: tg.color, borderColor: tg.color, color: inkOn(tg.color) }}
+                            style={{ '--tag-color': tg.color } as React.CSSProperties}
                             title="点击增删标签或改颜色"
                             onClick={openTagMenu}
                           >

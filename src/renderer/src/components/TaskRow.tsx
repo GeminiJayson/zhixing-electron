@@ -3,7 +3,6 @@ import { Morph, IconData, Pencil, Play, Plus, Trash2 } from '@renderer/lib/icons
 import { priorityColor, priorityLabel } from '@shared/priority'
 import type { TaskNode } from '@shared/task'
 import { STATUS_LABELS, STATUS_TONES } from '@shared/task'
-import { inkOn } from '@shared/color'
 import { doneAtLabel, dueLabel, rangeLabel, taskProgress } from '../lib/date'
 
 interface Props {
@@ -236,7 +235,7 @@ export function TaskRow(props: Props) {
             key={tag.id}
             className="chip chip--tag"
             // 实心胶囊 + 明暗翻转的文字色：标签颜色由用户自定，浅色与深色都要看得见
-            style={{ background: tag.color, borderColor: tag.color, color: inkOn(tag.color) }}
+            style={{ '--tag-color': tag.color } as React.CSSProperties}
             title="点击增删标签或改颜色"
             onClick={(e) => {
               e.stopPropagation()

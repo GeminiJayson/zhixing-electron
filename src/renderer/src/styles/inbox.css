@@ -24,9 +24,7 @@
   flex-direction: column;
   gap: 6px;
   padding: var(--space-3);
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--border);
-  border-radius: var(--radius-lg);
+  /* 外观见 global.css 的「页面级卡片」统一块 */
   /* 悬停 / 选中 / 深链高亮之间的状态切换：即时反馈走 --dur-instant */
   transition: background-color var(--dur-instant) var(--ease-standard),
     border-color var(--dur-instant) var(--ease-standard),

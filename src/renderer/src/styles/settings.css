@@ -22,9 +22,7 @@
   flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-4);
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--border);
-  border-radius: var(--radius-lg);
+  /* 外观见 global.css 的「页面级卡片」统一块 */
 }
 /* 一组从属于上一行的子设置：左侧一道竖线做视觉归属，右缩进对齐 */
 .set-sub {
@@ -55,7 +53,7 @@
 }
 .set-row input[type='range'] {
   flex: 1;
-  accent-color: var(--accent);
+  /* accent-color 已由 global.css 在 :root 上统一给出，这里不再重复 */
 }
 .field--num {
   width: 88px;
@@ -70,11 +68,9 @@
   margin-left: auto;
 }
 /* 字段映射这种「一组小表单」：两列铺开，窄窗口自动回落成一列 */
-.set-grid-2 {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: var(--space-2) var(--space-3);
-}
+/* .set-grid-2 已并入布局原语 .u-grid（global.css），调用点全部换过去了。
+   原来行列间距不同（--space-2 / --space-3），现在统一走 --u-gap ——
+   差异只有 4px，换来的是"栅格只有一种写法"。 */
 .set-actions {
   display: flex;
   flex-wrap: wrap;

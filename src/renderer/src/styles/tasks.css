@@ -338,11 +338,9 @@
 .tl__reason::after {
   content: '」';
 }
+/* 外观（底 / 边 / 圆角 / 内高光）由 global.css 的「页面级卡片」统一给出 */
 .inspector__card {
   padding: var(--space-3);
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--border);
-  border-radius: var(--radius-lg);
 }
 .inspector__head {
   font-size: var(--text-aux);
@@ -612,7 +610,20 @@
 /* 标签胶囊：底色与文字色由行内 style 给出（颜色是用户自选的），
    这里只负责形状、按钮手感与最小尺寸 —— 不能再在这里写死 background */
 .chip--tag {
-  border-color: currentColor;
+  /*
+    配色：**淡底 + 同色系的深/浅文字**（2026-09-30 改）。
+    原先用行内 style 写实心 `background: 标签色` + `color: inkOn(标签色)` ——
+    一排标签在任务行上是一排高饱和色块，比正文还抢眼；而且 inkOn 只给
+    #111827 / #f8fafc 两个候选，中间亮度的色（青 #0D9488 之类）压深字看着发闷。
+
+    现在底色是标签色混 16% 的淡色，文字往 --fg-primary 混 78%：
+    亮色主题下 --fg-primary 是深色 → 混出深字；暗色主题下是浅色 → 混出浅字。
+    **不写两套主题规则，也不需要在 JS 里算对比度** —— color-mix 跟着令牌走。
+    边框比底色重一档（40%），给淡底一个清晰的边。
+  */
+  background: color-mix(in srgb, var(--tag-color, var(--border)) 16%, transparent);
+  border-color: color-mix(in srgb, var(--tag-color, var(--border)) 40%, transparent);
+  color: color-mix(in srgb, var(--tag-color, var(--fg-primary)) 78%, var(--fg-primary));
   /* 不设 font-weight：实测同一行里 .chip 是 400，而按钮形态的标签/状态胶囊是 500 ——
      字号（12px）与行高完全一样，但 500 看着就是"大一号、更重"，用户报的"大小不一致"
      就是这个。按钮的点击感交给 cursor / hover 底色 / focus 环，不靠加粗。 */
@@ -1334,9 +1345,7 @@ button.chip--status:focus-visible {
   flex-direction: column;
   gap: 4px;
   padding: var(--space-2);
-  background: var(--bg-layer);
-  border: var(--border-w) solid var(--border);
-  border-radius: var(--radius-md);
+  /* 外观见 global.css 的「页面级卡片」统一块 */
   cursor: grab;
   transition: border-color var(--dur-instant) var(--ease-standard),
     opacity var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-standard);
@@ -1735,13 +1744,11 @@ button.chip--status:focus-visible {
 .popmenu__item--danger {
   color: var(--danger);
 }
-button.chip--tag {
-  cursor: pointer;
-  background: transparent;
-}
-button.chip--tag:hover {
-  background: var(--bg-hover);
-}
+/* 这里原来还有一组 button.chip--tag { background: transparent } —— 那时底色由**行内 style**
+   给（实心标签色），CSS 得让位才能让 hover 改底色。现在配色回到样式表（淡底 + 同色文字），
+   那两行就成了"把淡底吃掉"的元凶：button.chip--tag 的特异性 (0,2,1) 压过 .chip--tag (0,1,0)，
+   量出来的胶囊底是 rgba(0,0,0,0)。已删；hover 交给上面的 brightness 那条，保留色相。
+   教训：CSS 与行内 style 争同一属性时，改方案必须两边一起改。 */
 .trow--drop-before {
   box-shadow: inset 0 2px 0 0 var(--accent);
 }

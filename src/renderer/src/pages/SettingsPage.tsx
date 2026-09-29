@@ -9,7 +9,9 @@ import {
 } from '@shared/ai-note'
 import {
   CUSTOM_THEME_TOKENS,
+  PACK_ACCENT,
   THEME_PACK_NAMES,
+  accentForPack,
   effectiveThemeColors,
   parseThemeOverrides,
   type ThemeColors,
@@ -29,6 +31,16 @@ interface Props {
 }
 
 type Tab = 'appearance' | 'tasks' | 'data' | 'ai' | 'about'
+
+/**
+ * 强调色是否还"在联动体系内"（没有被人为改过）。
+ *
+ * 两个来源都要认：界面上的预设色板，以及各主题包带出来的推荐色 ——
+ * 换包时强调色会被自动设成后者，如果只认前者，那么"换一次包"就会被误判成
+ * "用户自定义过"，从此不再联动。
+ */
+const isPresetAccent = (c: string): boolean =>
+  ACCENTS.includes(c) || Object.values(PACK_ACCENT).includes(c)
 
 const ACCENTS = ['#0D9488', '#2563EB', '#7C3AED', '#DB2777', '#EA580C', '#16A34A', '#D97706', '#0891B2']
 
@@ -485,8 +497,16 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                   value={settings.theme_pack}
                   onChange={(e) => {
                     const picked = e.target.value
-                    // update() 内部已经 applyAppearance，换主题包立即预览，不必重启
-                    void update('theme_pack', picked)
+                    void (async () => {
+                      // update() 内部已经 applyAppearance，换主题包立即预览，不必重启
+                      await update('theme_pack', picked)
+                      // 联动：强调色还停在体系内（没被手动改过）时，跟着新包的推荐色走，
+                      // 这样"选樱花粉"出来的就是配套的粉，而不是上一套皮肤留下的绿。
+                      // 用户一旦自己挑过色，就不再覆盖他的选择。
+                      if (isPresetAccent(settings.accent_color)) {
+                        await update('accent_color', accentForPack(picked))
+                      }
+                    })()
                   }}
                 >
                   {THEME_PACK_NAMES.map((name) => (
@@ -512,7 +532,7 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                   <label
                     className={
                       'swatch swatch--custom' +
-                      (ACCENTS.includes(settings.accent_color) ? '' : ' swatch--on')
+                      (isPresetAccent(settings.accent_color) ? '' : ' swatch--on')
                     }
                     title={`自定义强调色（当前 ${settings.accent_color}）`}
                     style={{ background: settings.accent_color }}
@@ -806,7 +826,8 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                 onBlur={() => void updateApi('task_api_rows_path', settings.task_api_rows_path)}
               />
             </label>
-            <div className="set-grid-2">
+            {/* 原来是 .set-grid-2（auto-fit minmax(220px,1fr)）—— 与 .u-grid 的默认档完全一致 */}
+            <div className="u-grid">
               {API_MAP_FIELDS.map((f) => (
                 <label className="form-row" key={f.key}>
                   <span>

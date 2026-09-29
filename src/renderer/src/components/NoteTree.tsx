@@ -17,7 +17,6 @@ import {
 import { useCollapsedSet } from '@renderer/lib/use-collapsed'
 import type { Note, NoteFolder } from '@shared/types'
 import type { AiLibraryProgress } from '@shared/ai-note'
-import { inkOn } from '@shared/color'
 import { PopMenu } from './PopMenu'
 
 /** 新建笔记时可选的类型：原先在工具栏里选，现在放到「新建」动作里选 */
@@ -249,7 +248,7 @@ export function NoteTree({
               <span
                 key={tg.id}
                 className="chip chip--tag chip--tag--mini"
-                style={{ background: tg.color, borderColor: tg.color, color: inkOn(tg.color) }}
+                style={{ '--tag-color': tg.color } as React.CSSProperties}
                 title={tg.name}
               >
                 {tg.name}
