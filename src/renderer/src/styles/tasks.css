@@ -60,7 +60,10 @@
 .field {
   min-height: var(--control-h);
   padding: 0 var(--space-3);
-  background: var(--bg-layer-solid);
+  /* 控件走玻璃层：透出它所在的卡片，观感上"控件也是玻璃"。
+     不给每个控件挂 backdrop-filter —— 那会让合成层数量爆炸，
+     而隔着半透明卡片已经看不出差别。 */
+  background: var(--glass-layer-control);
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius-md);
   transition: border-color var(--dur-instant);
@@ -595,7 +598,7 @@
   font-size: var(--text-aux);
   line-height: 16px;
   color: var(--fg-secondary);
-  background: var(--bg-hover);
+  background: var(--glass-layer-control);
   border: var(--border-w) solid transparent;
   border-radius: var(--radius-sm);
   white-space: nowrap;

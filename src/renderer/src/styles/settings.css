@@ -55,6 +55,62 @@
   flex: 1;
   /* accent-color 已由 global.css 在 :root 上统一给出，这里不再重复 */
 }
+/* ------------------------------------------------------------------
+   玻璃效果预览
+   ------------------------------------------------------------------
+   为什么需要它：这个应用的主界面是浅灰白、几乎没有纹理，而
+     · 模糊要有内容才看得出来，
+     · 饱和度要有颜色才起作用，
+     · 不透明度在白底上是白叠白、同样分不出来。
+   结果是"三个参数拖了半天没感觉"（用户实测反馈）。
+   这里自己造一块有花纹有颜色的底，参数一动就能看见差别。
+   ------------------------------------------------------------------ */
+.glass-preview {
+  position: relative;
+  height: 68px;
+  margin-top: var(--space-2);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+/* 有内容的底：径向色块 + 斜纹，模糊与饱和度都靠它才显形 */
+.glass-preview__bg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 18% 28%, var(--accent) 0 16%, transparent 17%),
+    radial-gradient(circle at 72% 66%, var(--accent-warm) 0 20%, transparent 21%),
+    radial-gradient(circle at 46% 88%, var(--danger) 0 12%, transparent 13%),
+    repeating-linear-gradient(45deg, var(--fg-tertiary) 0 5px, transparent 5px 11px),
+    var(--bg-canvas);
+}
+.glass-preview__pane {
+  position: absolute;
+  inset: 14px 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-filter);
+  border: var(--border-w) solid var(--glass-border);
+  border-radius: var(--radius-ctl);
+  color: var(--fg-primary);
+  font-size: var(--text-aux);
+}
+
+/* 带数值回显的滑块行：数值宽度固定，免得拖动时后面的文字左右跳 */
+.set-row--slider input[type='range'] {
+  flex: 1 1 auto;
+}
+.set-row__val {
+  flex: 0 0 46px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* 设置项下面的补充说明：整行铺开，不跟上面的控件挤在一行 */
+.set-row__note {
+  margin: var(--space-1) 0 var(--space-2);
+  line-height: 1.5;
+}
 .field--num {
   width: 88px;
 }

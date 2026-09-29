@@ -12,9 +12,35 @@
   /* --- 色彩：浅色（默认） --- */
   /* 窗口底由页面自己给出实色：CDP 与系统截图都不含原生材质，实色才能保证
      「看到的即真实」，同时 Windows/Linux 与 macOS 表现一致。 */
-  --bg-canvas: #f3f3f3;
-  --bg-layer: rgb(255 255 255 / 90%);
-  --bg-layer-solid: #ffffff;
+  --pack-canvas: #f3f3f3;
+  /**
+   * 画布（整个页面的底）。
+   *
+   * **它是"透多少桌面"的那个量**：窗口已经开了原生亚克力材质（见 main/index.ts 的
+   * createWindow），只要页面底是半透明的，桌面就会从底下透上来。
+   * 用 --glass-alpha 派生 —— 于是设置里那个「不透明度」滑块同时管着"玻璃多实"与
+   * "透多少桌面"，一处调、全局一致。
+   *
+   * 下限不能太低：正文的对比度是按这个底色算的，透太多会让文字压在花花绿绿的
+   * 桌面上。0.55 的下限（配合玻璃滑块 30% 起的钳制）是保守取值。
+   */
+  --bg-canvas: color-mix(in srgb, var(--pack-canvas) max(55%, calc(var(--glass-alpha) * 1.0)), transparent);
+  /**
+   * 主题包的「层色」—— 运行时由 applyTheme 写成主题包给的值（见 theme.ts 的 TOKEN_VARS）。
+   * 它只负责**色相**，通透程度交给下面四个玻璃层。
+   * 这里给个默认值，是为了在 JS 还没跑起来（首帧）时不至于没有颜色。
+   */
+  --pack-layer: #ffffff;
+  /**
+   * **层**：应用里 30 多处面（面板 / 卡片 / 菜单 / 控件 / SVG 填充）用的都是这两个令牌。
+   * 玻璃化之后它们不再是实色，而是按 --glass-alpha 派生的半透明色 ——
+   * 好处是"全局玻璃"只需要在这两个定义上生效，不必逐个改使用点，也不会漏。
+   *
+   * 名字里的 solid 是历史遗留：现在它表示"比 surface 更实的那一档"，而不是"完全不透明"。
+   * 真正需要不透明的地方（如原生控件底色）另有令牌。
+   */
+  --bg-layer: var(--glass-layer-surface);
+  --bg-layer-solid: var(--glass-layer-inset);
   --bg-hover: #f5f5f5;
   --bg-pressed: #ebebeb;
 
@@ -153,11 +179,50 @@
 
        顶边那道内高光另有其人：--edge-light（见 global.css 的 .modal），
        它与玻璃开关无关（实心底的卡片也需要它从遮罩里浮起来），所以不在这里重复造。 */
-  --glass-filter: blur(28px) saturate(185%);
-  /* 吸顶工具栏面积大得多，模糊必须更轻，否则滚动时整条内容都在抖 */
-  --glass-filter-bar: blur(14px) saturate(150%);
-  --glass-bg: rgb(255 255 255 / 56%);
-  --glass-border: rgb(255 255 255 / 72%);
+     ②' 三个参数在设置里可调（模糊半径 / 底色不透明度 / 饱和度）：
+        CSS 这边只引用中间变量，JS 改那三个变量即可 —— 亮暗主题各自的基色留在下面，
+        不必让 JS 知道当前是哪个主题。 */
+  --glass-blur: 28px;
+  --glass-alpha: 56%;
+  --glass-saturate: 185%;
+  --glass-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  /* 吸顶工具栏面积大得多，模糊必须更轻，否则滚动时整条内容都在抖 —— 取主模糊的一半 */
+  --glass-filter-bar: blur(calc(var(--glass-blur) / 2)) saturate(calc(var(--glass-saturate) * 0.8));
+  --glass-bg: rgb(255 255 255 / var(--glass-alpha));
+  /**
+   * 玻璃的边。**不能写死白色** —— 亮色主题下底色本来就是白的，
+   * 白边等于没有边，于是所有玻璃面在亮色下糊成一片（用户反馈"效果不明显"）。
+   * 改成掺正文色：亮色下是一条浅灰边、暗色下是一条浅白边，两边都看得见。
+   */
+  --glass-border: color-mix(in srgb, var(--fg-primary) 14%, transparent);
+
+  /* --- 全局玻璃的四个"层" ---
+     架构是**一层玻璃 + 各层半透明**，而不是给每个控件各挂一片 backdrop-filter：
+     后者会让合成层数量爆炸（每层都要采样背后的整块），而视觉上并不需要 ——
+     控件压在卡片上、卡片压在应用上，层层半透明叠出来的就是玻璃的层次感。
+
+     alpha 一律由 --glass-alpha 派生，所以设置里那个滑块一动，全局一起变。
+     系数是相对的：越靠内的层越实，这样"层"才分得出来。 */
+  /**
+   * 玻璃的基色。
+   *
+   * 不是纯 --pack-layer：主题包的 layer 字段本来就定义成纯白（只有 canvas 带色调），
+   * 直接拿它当基色的话，换主题包玻璃纹丝不动。这里掺 8% 的画布色，
+   * 暖色包（奶咖棕、暖沙）透出暖白，冷色包（冰川蓝、海盐蓝）透出冷白。
+   */
+  /**
+   * 玻璃的基色 = 主题包的层色掺一点**画布色**（--pack-canvas，不透明的那个）。
+   *
+   * 这里踩过一个坑：一开始掺的是 --bg-canvas —— 而它本身已经是半透明的
+   * （见上面 max(55%, …) 那条）。半透明色混进基色，等于给每一层又压了一道 alpha，
+   * 层与层的差距被抹平，暗色下尤其看不出来（基色本来就只差 12 级灰度）。
+   * 所以基色一律用**不透明**的色去混：--pack-layer 与 --pack-canvas。
+   */
+  --glass-tint: color-mix(in srgb, var(--pack-layer) 88%, var(--pack-canvas));
+  --glass-layer-canvas: color-mix(in srgb, var(--glass-tint) calc(var(--glass-alpha) * 0.55), transparent);
+  --glass-layer-surface: color-mix(in srgb, var(--glass-tint) calc(var(--glass-alpha) * 0.92), transparent);
+  --glass-layer-inset: color-mix(in srgb, var(--glass-tint) calc(var(--glass-alpha) * 1.25), transparent);
+  --glass-layer-control: color-mix(in srgb, var(--glass-tint) calc(var(--glass-alpha) * 0.8), transparent);
 
   /* 图谱连线：默认要「隐没在背景里」。深色主题直接沿用 Obsidian 的 #444；
      浅色主题不能用同一个值 —— 纯 #444 在浅底上会变成抢眼的黑线，改用同等的低对比度 */
@@ -167,9 +232,11 @@
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  --bg-canvas: #1f1f1f;
-  --bg-layer: rgb(43 43 43 / 85%);
-  --bg-layer-solid: #2b2b2b;
+  --pack-canvas: #1f1f1f;
+  --bg-canvas: color-mix(in srgb, var(--pack-canvas) max(55%, calc(var(--glass-alpha) * 1.05)), transparent);
+  --pack-layer: #2b2b2b;
+  --bg-layer: var(--glass-layer-surface);
+  --bg-layer-solid: var(--glass-layer-inset);
   --bg-hover: #383838;
   --bg-pressed: #454545;
 
@@ -195,8 +262,21 @@
 
   /* 暗色下同样两件事：透一点、边上给一道更弱的亮边
      （暗底上白色很扎眼，72% 会变成一条白线，14% 才是"反光"） */
-  --glass-bg: rgb(43 43 43 / 62%);
-  --glass-border: rgb(255 255 255 / 14%);
+  /* 暗色下同一个 --glass-alpha 会显得更透（深色底本来就吃光），所以默认值另给一档 */
+  --glass-bg: rgb(43 43 43 / calc(var(--glass-alpha) * 1.1));
+  --glass-border: color-mix(in srgb, var(--fg-primary) 16%, transparent);
+  /* 暗色同理，只是基色换成深灰 */
+  /*
+   * 暗色的跨度要比亮色**更大**：亮色下白叠白，靠 alpha 差就分得出层次；
+   * 暗色的基色（#2b2b2b）与画布（#1f1f1f）只差 12 级灰度，同样的 alpha 差
+   * 在同一块深色桌面上几乎看不出区别 —— 这就是"暗色下玻璃像失效"的原因。
+   * 所以这里把最透的一档压得更透、最实的一档拉得更实。
+   */
+  --glass-tint: color-mix(in srgb, var(--pack-layer) 88%, var(--pack-canvas));
+  --glass-layer-canvas: color-mix(in srgb, var(--glass-tint) calc(var(--glass-alpha) * 0.42), transparent);
+  --glass-layer-surface: color-mix(in srgb, var(--glass-tint) calc(var(--glass-alpha) * 1.0), transparent);
+  --glass-layer-inset: color-mix(in srgb, var(--glass-tint) calc(var(--glass-alpha) * 1.6), transparent);
+  --glass-layer-control: color-mix(in srgb, var(--glass-tint) calc(var(--glass-alpha) * 0.78), transparent);
 
   --graph-edge: #444444;
 }
@@ -244,7 +324,13 @@
 :root.theme-transition .modal,
 :root.theme-transition .popmenu,
 :root.theme-transition .widget {
-  transition: background-color var(--dur-normal) var(--ease-page), color var(--dur-normal) var(--ease-page),
+  /*
+    **刻意不transition background-color**：这些容器的底色现在全是 color-mix(...) 派生
+    （见 --glass-layer-*），而浏览器无法对 color-mix 插值 —— 加过渡的结果是切换期间
+    底色变成透明或黑，几百毫秒后才跳回正确值，看着就是"切主题时玻璃失效"。
+    文字与边框仍是普通色值，过渡照旧保留。
+  */
+  transition: color var(--dur-normal) var(--ease-page), border-color var(--dur-normal) var(--ease-page),
     border-color var(--dur-normal) var(--ease-page);
 }
 
@@ -252,14 +338,39 @@
 :root[data-glass='off'] {
   --glass-filter: none;
   --glass-filter-bar: none;
-  --glass-bg: var(--bg-layer-solid);
   --glass-border: var(--border);
+  /**
+   * **画布退回实色。**
+   * --bg-canvas 平时是按 --glass-alpha 派生的半透明色（那是"透出桌面"的量），
+   * 只换层令牌不够 —— .app 用的正是 --bg-canvas，不换掉就仍能看见桌面。
+   */
+  --bg-canvas: var(--pack-canvas);
+  /**
+   * 四个层退回实色，**直接取主题包的色，不能写 var(--bg-layer-solid)**。
+   *
+   * --bg-layer-solid 本身就是 var(--glass-layer-inset) 的别名（见文件上方），
+   * 在这里再写成 var(--bg-layer-solid) 会构成循环引用：
+   *   --bg-layer-solid → --glass-layer-inset → --bg-layer-solid
+   * CSS 对循环变量双双判为无效，于是用它们的属性全部失效 ——
+   * 实测表现就是关掉玻璃后**弹窗背景直接变透明**（--glass-bg 引用了它）。
+   */
+  --glass-layer-canvas: var(--pack-canvas);
+  --glass-layer-surface: var(--pack-layer);
+  --glass-layer-inset: var(--pack-layer);
+  --glass-layer-control: var(--pack-layer);
+  --glass-bg: var(--pack-layer);
 }
 
 /* 系统关掉「透明效果」（Windows 11 辅助功能）时同样退到不透明底。
    不支持这条媒体查询的环境不会匹配，等于没有副作用。 */
 @media (prefers-reduced-transparency: reduce) {
   :root {
+    /* 同 data-glass='off'：一律直接取主题包的色，避免与 --bg-layer* 形成循环引用 */
+    --bg-canvas: var(--pack-canvas);
+    --glass-layer-canvas: var(--pack-canvas);
+    --glass-layer-surface: var(--pack-layer);
+    --glass-layer-inset: var(--pack-layer);
+    --glass-layer-control: var(--pack-layer);
     --glass-filter: none;
     --glass-filter-bar: none;
     --glass-bg: var(--bg-layer-solid);

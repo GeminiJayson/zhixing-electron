@@ -621,9 +621,77 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                   onChange={(e) => void update('glass_enabled', e.target.checked ? '1' : '0')}
                 />
                 <span className="u-aux">
-                  标题栏 / 工具栏 / 菜单 / 模态使用半透明底与背景模糊（实验）
+                  标题栏 / 面板 / 卡片 / 控件都用半透明底，层与层之间能透出层次；
+                  「不透明度」同时决定窗口透出桌面的程度，模糊与饱和度作用于浮层。
+                  关闭后全部退回不透明实色，窗口也不再透出桌面。
                 </span>
               </label>
+              {/*
+                三个参数只在总开关打开时可调 —— 关掉时 --glass-filter 直接变 none，
+                这些滑块拖了也没有任何效果，留着会让人以为坏了。
+              */}
+              {/*
+                **预览块**：玻璃的三个参数在真实界面上很难看出差别 ——
+                这个应用的主界面是浅灰白、几乎没纹理，而"模糊"要背后有内容才看得见、
+                "饱和度"要背景有色才起作用，白叠白连不透明度都分不出来。
+                所以这里自己造一块有花纹的底，三个参数拖一下就能看见。
+              */}
+              {settings.glass_enabled && (
+                <div className="glass-preview" aria-label="玻璃效果预览">
+                  <div className="glass-preview__bg" aria-hidden />
+                  <div className="glass-preview__pane">预览</div>
+                </div>
+              )}
+              {settings.glass_enabled && (
+                <>
+                  <label className="set-row set-row--slider">
+                    <span>模糊半径</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={40}
+                      value={settings.glass_blur}
+                      aria-label="玻璃模糊半径"
+                      onChange={(e) => void update('glass_blur', e.target.value)}
+                    />
+                    <span className="u-aux set-row__val">{settings.glass_blur}px</span>
+                  </label>
+                  <label className="set-row set-row--slider">
+                    <span>不透明度</span>
+                    <input
+                      type="range"
+                      min={30}
+                      max={100}
+                      value={settings.glass_alpha}
+                      aria-label="玻璃不透明度"
+                      onChange={(e) => void update('glass_alpha', e.target.value)}
+                    />
+                    <span className="u-aux set-row__val">{settings.glass_alpha}%</span>
+                  </label>
+                  <label className="set-row set-row--slider">
+                    <span>饱和度</span>
+                    <input
+                      type="range"
+                      min={100}
+                      max={250}
+                      value={settings.glass_saturate}
+                      aria-label="玻璃饱和度"
+                      onChange={(e) => void update('glass_saturate', e.target.value)}
+                    />
+                    <span className="u-aux set-row__val">{settings.glass_saturate}%</span>
+                  </label>
+                  {/*
+                    这条说明是必要的：模糊与饱和度只作用于**浮层**（上面那个预览块 /
+                    弹窗 / 菜单），它们背后有页面内容可采。主界面的标题栏与面板背后是
+                    纯色画布 —— 糊一个纯色和没糊完全一样，所以那两层只用不透明度控制。
+                    不写清楚的话，用户拖这两个滑块看着主界面毫无变化，会以为坏了。
+                  */}
+                  <p className="u-aux set-row__note">
+                    模糊与饱和度作用于**浮层**（预览块、弹窗、菜单、吸顶工具栏）—— 它们背后有内容可采。
+                    主界面的标题栏与面板背后是纯色画布，糊了看不出差别，那两层由上面那个「不透明度」控制。
+                  </p>
+                </>
+              )}
             </section>
 
             <section className="set-card set-card--ambient">

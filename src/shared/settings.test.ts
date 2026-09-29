@@ -51,6 +51,21 @@ describe('settings 类型层', () => {
     expect(parseSettings({ glass_enabled: '0' }).glass_enabled).toBe(false)
   })
 
+  it('玻璃三参数的默认值与边界钳制', () => {
+    const d = parseSettings({})
+    expect(d.glass_blur).toBe(28)
+    expect(d.glass_alpha).toBe(56)
+    expect(d.glass_saturate).toBe(185)
+    // 越界值钳到区间内：滑块本身不会越界，但设置文件是可以手改的
+    expect(parseSettings({ glass_blur: '999' }).glass_blur).toBe(40)
+    expect(parseSettings({ glass_blur: '-5' }).glass_blur).toBe(0)
+    expect(parseSettings({ glass_alpha: '0' }).glass_alpha).toBe(30)
+    expect(parseSettings({ glass_alpha: '500' }).glass_alpha).toBe(100)
+    expect(parseSettings({ glass_saturate: '10' }).glass_saturate).toBe(100)
+    // 非数字回落默认值
+    expect(parseSettings({ glass_blur: 'abc' }).glass_blur).toBe(28)
+  })
+
   it('ui_state 原样透传（嵌套 JSON 由使用方解析）', () => {
     expect(parseSettings({ ui_state: '{"a":1}' }).ui_state).toBe('{"a":1}')
   })

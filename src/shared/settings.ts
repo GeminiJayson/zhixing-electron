@@ -26,6 +26,16 @@ export interface AppSettings {
   motion_level: MotionLevel
   /** 玻璃拟态（实验）：标题栏 / 工具栏 / 菜单 / 模态用半透明底 + 背景模糊 */
   glass_enabled: boolean
+  /**
+   * 玻璃拟态的三个可调参数。总开关（glass_enabled）关掉时它们不生效 ——
+   * 那时 --glass-filter 直接变 none，不再建合成层。
+   */
+  /** 主模糊半径（px）。吸顶工具栏取它的一半 */
+  glass_blur: number
+  /** 玻璃底色的不透明度（%）。越高越像实心卡片，模糊就白做了 */
+  glass_alpha: number
+  /** 饱和度（%）。通透感多半来自它，不只是模糊 */
+  glass_saturate: number
   pomodoro_focus_min: number
   pomodoro_break_min: number
   pomodoro_auto_break: boolean
@@ -155,6 +165,9 @@ export function parseSettings(raw: Record<string, string> = {}): AppSettings {
     motion_level: oneOf(raw.motion_level, MOTION_LEVELS, 'full'),
     // 默认开：这项是「看了再决定」的视觉实验，默认关掉了就没人会去看
     glass_enabled: bool(raw.glass_enabled, true),
+    glass_blur: num(raw.glass_blur, 28, 0, 40),
+    glass_alpha: num(raw.glass_alpha, 56, 30, 100),
+    glass_saturate: num(raw.glass_saturate, 185, 100, 250),
   tree_guide: bool(raw.tree_guide, true),
     pomodoro_focus_min: num(raw.pomodoro_focus_min, 25, 5, 90),
     pomodoro_break_min: num(raw.pomodoro_break_min, 5, 1, 30),

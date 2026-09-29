@@ -4,6 +4,23 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  /**
+   * 窗口圆角由这里画：主窗口是 transparent + frame:false 的，
+   * Windows 不会给它 DWM 圆角（普通窗口才有）。不自己画就是四个直角。
+   * overflow:hidden 让内部内容跟着圆角裁掉。
+   */
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  /* 关掉玻璃拟态时圆角照旧保留：窗口仍是无边框透明的（圆角得自己画），
+     圆角外只有四个很小的角会透出桌面，与"整片背景透出去"是两回事。 */
+  /*
+    **全局玻璃的最外一层**。
+    标题栏与主区都铺在它上面，所以两者之间不再有底色跳变 ——
+    原先标题栏完全透明（露出 --bg-canvas 的灰）、主区是 90% 白 + 边框 + 圆角，
+    交界处是「灰 vs 白」，那就是一眼看出上下两块的原因。
+    现在两者共享同一层玻璃，分隔感只由主区自己的内层卡片表达。
+  */
+  background: var(--glass-layer-canvas);
 }
 
 /* --- 标题栏（无边框窗口自定义） --- */
@@ -17,10 +34,21 @@
   padding-left: var(--space-3);
   padding-right: var(--space-3);
   user-select: none;
-  /* 标题栏刻意**不加底色**：它窗口最外层，背后就是 --bg-canvas。
-     给它单独铺一层半透明底（哪怕是玻璃）会在它与主区之间画出一条横向分界线 ——
-     实测就是「一眼看出上下是两块」的那种割裂。让它透明，标题栏才与整个窗口连成一片。
-     分隔感交给主区自己的圆角卡片（.app__content）去表达。 */
+  /**
+   * 标题栏铺 --glass-layer-surface，**与它正下方的侧栏 / 主区同层**。
+   *
+   * 这里的关键是"跟谁比"：标题栏的下沿直接贴着侧栏与主区的上沿
+   *（实测 top/bottom：标题栏 0→44，侧栏 44→812），所以决定有没有分界线的是
+   * **它们两者之间的色差**，而不是标题栏与 .app 的关系。
+   *
+   * 之前让标题栏透明（透出 .app 的 canvas 层 0.44），而侧栏/主区是 surface 层 0.736 ——
+   * 0.44 与 0.736 直接相邻，就是那条一眼可见的横向分界线。
+   * 现在两边同层，色差为零。
+   *
+   * 层次仍然在：.app__body 是更透的 canvas 层，它在窗口四周留出 8px 的缝
+   *（padding 造成），那圈缝与卡片形成"内嵌"的观感 —— 分界线没有了，层次没丢。
+   */
+  background: var(--glass-layer-surface);
 }
 .titlebar__traffic {
   width: 66px; /* 让出 macOS 红绿灯位置 */
@@ -80,8 +108,23 @@
   display: flex;
   flex: 1;
   min-height: 0;
-  padding: 0 var(--space-2) var(--space-2) var(--space-2);
+  /* 四边都留 8px 的间隔（之前上边是 0，缝成了开口的 U 形） */
+  padding: var(--space-2);
   gap: var(--space-2);
+  /**
+   * **与标题栏、侧栏同层（surface）**。
+   *
+   * 这层露出来的地方只有那圈 8px 的间隔，但它的邻居是标题栏 —— 而标题栏是 surface。
+   * 之前这里用更透的 canvas 层（0.44 vs 0.736），结果标题栏正下方那条间隔比标题栏
+   * 暗一档，在深色壁纸上就是一条刺眼的深色带，看着就是割裂（用户圈出来的正是它）。
+   *
+   * 同层之后色差为零，那圈间隔只剩"内容区比窗口边缘内缩了 8px"这一个信息 —— 靠
+   * 侧栏/主区各自的圆角与边框来读，而不是靠色差。
+   *
+   * 层次并没有因此消失：卡片用的是更实的 inset 层（比面板实一档），
+   * 玻璃的层次主要由"卡片浮在面板上"表达，这也是更主要的一层关系。
+   */
+  background: var(--glass-layer-surface);
 }
 /* 全屏编辑：笔记页发起，左侧主导航一起让位；标题栏保留（窗口按钮还要用）。
    状态在 App（见 App.tsx 的 zen），笔记页只负责发起与复位。 */
@@ -101,6 +144,13 @@
   /* 指示条的定位上下文 */
   position: relative;
   padding: var(--space-2) var(--space-1);
+  /* 与主区同一层玻璃 + 同样的圆角与玻璃边：
+     它俩是并排的两块，层级和外形要对称，否则一眼看去像"只有一边是卡片"。
+     上边同样不封口 —— 标题栏在正上方，封口会连成一条横贯整窗的线。 */
+  background: var(--glass-layer-surface);
+  border: var(--border-w) solid var(--glass-border);
+  border-top: none;
+  border-radius: var(--radius-lg);
   transition: width var(--dur-normal) var(--ease-enter), flex-basis var(--dur-normal) var(--ease-enter);
 }
 .sidebar--collapsed {
@@ -223,13 +273,23 @@
   overflow: hidden;
   /* 氛围光：左上角一层 5% 的强调色径向渐变，用 color-mix(var(--accent)) 派生 ——
      换主题包或换强调色都会自动跟着变。它只是背景，不参与任何文字对比度判定。 */
+  /* 主区是"玻璃里的一张卡片"：比最外层（.app 的 --glass-layer-canvas）实一档，
+     但不再是纯白 —— 两层的 alpha 差小了，交界处才不会画出一条线。
+     边框改用 --glass-border（白 72%）：浅色下几乎看不见，深色下是一道反光边。 */
   background:
     radial-gradient(58% 42% at 10% 0%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 72%),
-    var(--bg-layer);
-  border: var(--border-w) solid var(--border);
+    var(--glass-layer-surface);
+  /**
+   * **上边不封口**：正上方就是标题栏，封口的那条边会读成"标题栏与主区之间的分割线"。
+   * 左右下三边保留 —— 面板与窗口边缘之间仍需要一条轮廓。
+   */
+  border: var(--border-w) solid var(--glass-border);
+  border-top: none;
   border-radius: var(--radius-lg);
-  /* 内高光：让内容面板从画布上「浮起来」，而不是贴着一张纸 */
-  box-shadow: var(--edge-light);
+  /**
+   * 去掉 --edge-light：它是"贴在顶边的 1px 内高光"，本意是让面板从画布上浮起来，
+   * 但在这里它紧挨着标题栏，一条亮线同样会被读成分隔线。
+   */
 }
 
 

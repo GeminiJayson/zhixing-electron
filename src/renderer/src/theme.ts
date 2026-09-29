@@ -39,8 +39,21 @@ function mixOn(accent: string, alpha: number, bg: string): string {
 
 /** 主题包 token → 设计令牌变量（一个 token 可能喂多个变量）。 */
 const TOKEN_VARS: Record<keyof ThemeColors, string[]> = {
-  canvas: ['--bg-canvas'],
-  layer: ['--bg-layer', '--bg-layer-solid'],
+  /**
+   * 画布色同样只写中间变量：页面底的**不透明度**要跟着玻璃滑块走
+   * （它就是"透多少桌面"的那个量），而主题包只负责色相。
+   * 与 layer 的处理同理，见下面 layer 的注释。
+   */
+  canvas: ['--pack-canvas'],
+  /**
+   * 主题包的层色只写一个中间变量 --pack-layer，**不再直接写 --bg-layer / --bg-layer-solid**。
+   *
+   * 原因：应用里 30 多处面（面板、卡片、菜单、控件、SVG 填充）都在用那两个令牌，
+   * 而玻璃化要求它们全部变成"按 --glass-alpha 派生的半透明色"。逐个改使用点既容易漏，
+   * 也把"层的通透程度"这件事散到了各处。现在改成：主题包只负责**色相**（--pack-layer），
+   * 通透程度由 tokens.css 的四个玻璃层统一决定 —— 一处改完，30 多处一起变。
+   */
+  layer: ['--pack-layer'],
   hover: ['--bg-hover'],
   hover2: ['--bg-pressed'],
   fg: ['--fg-primary'],
@@ -246,7 +259,8 @@ export function applyAppearance(
   const mode = resolveThemeMode(s.theme_mode)
   // 主题身份变了才播过渡：改字号 / 行高 / 控件高度不该触发它
   const themeKey = [mode, s.theme_pack, s.accent_color, s.theme_custom_light, s.theme_custom_dark].join('|')
-  if (lastThemeKey !== null && lastThemeKey !== themeKey) beginThemeTransition(root)
+  const themeChanged = lastThemeKey !== null && lastThemeKey !== themeKey
+  if (themeChanged) beginThemeTransition(root)
   lastThemeKey = themeKey
   applyTheme(
     mode,
@@ -263,6 +277,29 @@ export function applyAppearance(
   // 玻璃拟态：只在关闭时写 off（开启时清掉属性，与 tokens.css 的默认值一致）
   if (s.glass_enabled) delete root.dataset.glass
   else root.dataset.glass = 'off'
+  /**
+   * 玻璃的三个参数写成中间变量，由 tokens.css 里的 --glass-filter / --glass-bg 引用。
+   * 这样 JS 不必知道当前是亮色还是暗色 —— 两套基色留在样式表里各自适配。
+   * 总开关关掉时不写：那时 data-glass='off' 已把整组令牌换成不透明值。
+   */
+  /**
+   * 切完主题让主进程重新确认一次窗口透明（见 preload 里 reassertTransparency 的注释）。
+   * 只在"主题身份真的变了"时调 —— 改字号、拖滑块都不需要惊动合成器。
+   */
+  // 测试环境（vitest 的 node 环境）里没有 window，所以先判存在性 ——
+  // 同文件其他地方也是这个写法
+  if (themeChanged && typeof window !== 'undefined') {
+    void window.zhixing?.app?.reassertTransparency?.()
+  }
+  if (s.glass_enabled) {
+    root.style.setProperty('--glass-blur', s.glass_blur + 'px')
+    root.style.setProperty('--glass-alpha', s.glass_alpha + '%')
+    root.style.setProperty('--glass-saturate', s.glass_saturate + '%')
+  } else {
+    root.style.removeProperty('--glass-blur')
+    root.style.removeProperty('--glass-alpha')
+    root.style.removeProperty('--glass-saturate')
+  }
   // 树的路径跟踪虚线：同样是"关闭才写 off"，选择器统一挂 html[data-tree-guide]
   if (s.tree_guide) delete root.dataset.treeGuide
   else root.dataset.treeGuide = 'off'

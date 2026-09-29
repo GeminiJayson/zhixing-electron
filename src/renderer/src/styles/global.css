@@ -18,7 +18,12 @@ body {
   font-family: var(--font-ui);
   font-size: var(--text-body);
   color: var(--fg-primary);
-  background: var(--bg-canvas);
+  /**
+   * body **不铺底**：主窗口是 transparent 的（见 main/index.ts 的 createWindow），
+   * 底色与圆角都交给 .app 那一层 —— 只有它退到窗口边界以内，圆角外才真的是透明的。
+   * 若在这里铺底，方角的底色会盖住 .app 的圆角，窗口看起来仍是直角。
+   */
+  background: transparent;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -273,7 +278,7 @@ textarea {
 }
 /* 幽灵按钮：只有一圈边，用在"次要但要显眼"的位置 */
 .btn--ghost {
-  background: transparent;
+  background: var(--glass-layer-control);
   border-color: var(--border-strong);
   color: var(--fg-secondary);
 }
@@ -979,7 +984,11 @@ html[data-surface='capture'] .modal__head button {
 .flash-card,
 .set-card,
 .stat-card {
-  background: var(--bg-layer-solid);
+  /* 卡片用 inset 层：比它所在的面板实一档，层次才分得出来 */
+  background: var(--glass-layer-inset);
+  /* 顶边那道内高光：玻璃片"浮起来"最直接的暗示。
+     主区那边去掉它是因为紧挨标题栏会读成分割线，卡片这边没有这个问题。 */
+  box-shadow: var(--edge-light);
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius-md);
   box-shadow: var(--edge-light);

@@ -113,7 +113,7 @@ describe('设计令牌完整性', () => {
 
   it('backdrop-filter 只能出现在白名单选择器上（性能护栏）', () => {
     // backdrop-filter 每帧采样背后区域：挂在列表项/滚动容器上会直接吃掉帧率。
-    const ALLOW = ['titlebar', 'popmenu', 'tagmenu', 'modal', 'palette', 'toast', 'infobar', 'tb--sticky']
+    const ALLOW = ['titlebar', 'popmenu', 'tagmenu', 'modal', 'palette', 'toast', 'infobar', 'tb--sticky', 'glass-preview']
     const offenders: string[] = []
     for (const file of cssFiles()) {
       const lines = readFileSync(file, 'utf8').split('\n')
