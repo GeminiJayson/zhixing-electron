@@ -269,6 +269,19 @@ export function applyAppearance(
     root,
     parseThemeOverrides(mode === 'dark' ? s.theme_custom_dark : s.theme_custom_light)
   )
+  /**
+   * 窗口内阴影的浓度由「窗口阴影」强度派生。
+   * 50 对应 edge 16% / inner 9%（也就是原来的观感），0 就是完全没有轮廓与厚度。
+   * 外投影在透明窗口上放不了（要么被窗口边界裁成直边，要么留出透明区露出方角），
+   * 所以窗口的轮廓只能往内画 —— 这也是这个值值得做成可调的原因。
+   */
+  /**
+   * edge 的系数：它是 1px 的细线，同样的百分比看着比面状阴影淡，所以给得比 inner 高；
+   * 但它又必须是"若有若无"的收边，不能抢内容 —— 0.3 是这两者之间试出来的值
+   *（0.5 在默认强度下偏重）。
+   */
+  root.style.setProperty('--shadow-edge', s.window_shadow * 0.3 + '%')
+  root.style.setProperty('--shadow-inner', s.window_shadow * 0.18 + '%')
   // 「设置值 → CSS 像素」的映射只在这里一处；s.font_size 已是 number，不可能再被字符串拼接
   root.style.setProperty('--text-body', `${s.font_size}px`)
   root.style.setProperty('--row-h', `${s.task_row_height}px`)

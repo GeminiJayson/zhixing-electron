@@ -219,6 +219,20 @@
    * 所以基色一律用**不透明**的色去混：--pack-layer 与 --pack-canvas。
    */
   --glass-tint: color-mix(in srgb, var(--pack-layer) 88%, var(--pack-canvas));
+  /**
+   * 窗口阴影的"画布"宽度：无边框透明窗口在 Windows 上没有 DWM 投影，
+   * 阴影只能画在窗口内部，这一圈就是留给它扩散的空间（取模糊半径的一半左右）。
+   */
+  /* （--shadow-pad 曾经用于给窗口外投影留画布，那条路走不通，已移除：
+     透明窗口的可见形状就是窗口矩形，留空间必然露出方角。见 global.css 的 body。） */
+  /**
+   * 窗口内阴影的两个浓度，由设置里的「窗口阴影」强度派生（见 theme.ts）。
+   * 这里是默认值（相当于强度 50），JS 还没跑起来时也有阴影。
+   *   edge  —— 贴边的 1px 描边，定义窗口轮廓
+   *   inner —— 较宽的内阴影，给出"窗口有厚度"的观感
+   */
+  --shadow-edge: 15%;
+  --shadow-inner: 9%;
   --glass-layer-canvas: color-mix(in srgb, var(--glass-tint) calc(var(--glass-alpha) * 0.55), transparent);
   --glass-layer-surface: color-mix(in srgb, var(--glass-tint) calc(var(--glass-alpha) * 0.92), transparent);
   --glass-layer-inset: color-mix(in srgb, var(--glass-tint) calc(var(--glass-alpha) * 1.25), transparent);

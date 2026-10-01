@@ -21,6 +21,38 @@
     现在两者共享同一层玻璃，分隔感只由主区自己的内层卡片表达。
   */
   background: var(--glass-layer-canvas);
+  /**
+   * **阴影一律向内（inset），不向外。**
+   *
+   * 外投影在透明窗口上有两种死法，都试过：
+   *   · 直接画 → 窗口边界之外的部分被裁掉，剩四条直边（"矩形边框"）；
+   *   · 留一圈 padding 给它 → 那圈是透明的，露出桌面，浅色桌面上就是一圈
+   *     发浅的方角框（"四角还有直角，颜色特别浅"）。
+   *
+   * 根子在于：transparent 窗口**可见的形状**就是整个窗口矩形，而要让圆角成立，
+   * 圆角外必须完全透明 —— 那就没有任何地方可以放外投影。
+   *
+   * 向内就完全没有这个问题：inset 阴影画在 border-box 内侧，**跟着圆角走**、
+   * 不越界、不需要留空间。两层分工：
+   *   · 第一层是贴边的 1px 描边 —— 定义轮廓，让窗口与桌面的分界清楚；
+   *   · 第二层是较宽的内阴影 —— 给出"窗口有厚度"的观感，也就是你要的那种阴影感。
+   * 按 CSS 规范，inset 阴影画在背景之上、内容之下，所以不会盖住里面的文字。
+   */
+  /**
+   * **边框线用 border 画，不能用 inset 阴影。**
+   *
+   * inset 阴影按规范画在"背景之上、内容之下"，而 .app 的子元素（标题栏 / .app__body）
+   * 把它整个铺满了 —— 那条 1px 的内描边一直被盖住，所以怎么调浓度都看不见。
+   * border 画在 padding box 之外，子元素够不到它；全局 box-sizing: border-box，
+   * 所以也不会把窗口撑大 1px。
+   *
+   * 内阴影（第二层）保留：它给出的是"窗口有厚度"的观感，和边框线是两件事。
+   */
+  /* 边框线取强调色 —— 它是"这个窗口属于当前主题"最直接的标记，
+     换了主题包或强调色会跟着变，不像中性色那样永远是同一条灰线。 */
+  border: var(--border-w) solid color-mix(in srgb, var(--accent) var(--shadow-edge), transparent);
+  /* 内阴影保持中性色：它表达的是"厚度"，掺色相反而会显得脏 */
+  box-shadow: inset 0 0 14px color-mix(in srgb, var(--fg-primary) var(--shadow-inner), transparent);
 }
 
 /* --- 标题栏（无边框窗口自定义） --- */
@@ -146,10 +178,10 @@
   padding: var(--space-2) var(--space-1);
   /* 与主区同一层玻璃 + 同样的圆角与玻璃边：
      它俩是并排的两块，层级和外形要对称，否则一眼看去像"只有一边是卡片"。
-     上边同样不封口 —— 标题栏在正上方，封口会连成一条横贯整窗的线。 */
+     上边框**要封口** —— 它是这张卡片的轮廓，缺了上边会像"被标题栏切掉了头"，
+     圆角也跟着少一段（用户反馈的"上边框缺失"就是这个）。 */
   background: var(--glass-layer-surface);
   border: var(--border-w) solid var(--glass-border);
-  border-top: none;
   border-radius: var(--radius-lg);
   transition: width var(--dur-normal) var(--ease-enter), flex-basis var(--dur-normal) var(--ease-enter);
 }
@@ -280,11 +312,11 @@
     radial-gradient(58% 42% at 10% 0%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 72%),
     var(--glass-layer-surface);
   /**
-   * **上边不封口**：正上方就是标题栏，封口的那条边会读成"标题栏与主区之间的分割线"。
-   * 左右下三边保留 —— 面板与窗口边缘之间仍需要一条轮廓。
+   * 四边封口。上边框曾经被去掉过，理由是"会读成标题栏与主区之间的分割线" ——
+   * 那个判断在当时成立（标题栏与主区底色不同，那条边会加深色差），
+   * 现在两者同层，上边框只是这张卡片自己的轮廓；去掉它反而像少了一块。
    */
   border: var(--border-w) solid var(--glass-border);
-  border-top: none;
   border-radius: var(--radius-lg);
   /**
    * 去掉 --edge-light：它是"贴在顶边的 1px 内高光"，本意是让面板从画布上浮起来，

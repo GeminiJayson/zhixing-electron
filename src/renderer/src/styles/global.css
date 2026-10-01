@@ -24,6 +24,18 @@ body {
    * 若在这里铺底，方角的底色会盖住 .app 的圆角，窗口看起来仍是直角。
    */
   background: transparent;
+  /**
+   * **不留窗口阴影的画布**（曾经加过 --shadow-pad 的 padding，已撤销）。
+   *
+   * 那次的思路是"阴影画在窗口内部，所以给它留一圈空间"，但组合出来的结果是：
+   * 这圈空间是透明的，直接露出桌面 —— 在浅色桌面上就是一圈**发浅的方角框**，
+   * 比没有阴影更难看（用户反馈"四角还有直角，颜色特别浅"）。
+   *
+   * 根子上是矛盾的：窗口是 transparent 的，它**可见的形状**就是整个窗口矩形；
+   * 想给阴影留空间就必须留出透明区，而透明区一定是方的。所以
+   * "圆角窗口 + 外投影"这一对在 Windows 的透明窗口上做不到 —— 只能二选一。
+   * 选了圆角（窗口内沿用 insets 边表达轮廓，见 app.css 的 .app）。
+   */
   -webkit-font-smoothing: antialiased;
 }
 
@@ -394,6 +406,18 @@ html[data-surface='quicknote'] #root {
   background: transparent;
 }
 html[data-surface='quicknote'] #root {
+  padding: 0;
+}
+/*
+  这些窗口本身就是那张卡片，没有窗口阴影要留空间 —— body 的 --shadow-pad 归零。
+  少归零一个，窗口边缘就会多出一圈什么都没有的空白。
+*/
+html[data-surface='condition'] body,
+html[data-surface='capture'] body,
+html[data-surface='pomodoro'] body,
+html[data-surface='reminder'] body,
+html[data-surface='widget'] body,
+html[data-surface='quicknote'] body {
   padding: 0;
 }
 /*

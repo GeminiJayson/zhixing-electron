@@ -692,6 +692,28 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                   </p>
                 </>
               )}
+              {/*
+                窗口阴影**不受玻璃开关影响**，所以放在那个条件之外 ——
+                它是窗口的轮廓，关了玻璃同样需要。
+                这个值是"内阴影"的强度：外投影在透明窗口上放不了（要么被窗口边界裁成直边，
+                要么留出透明区露出方角），所以轮廓只能往内画。
+              */}
+              <label className="set-row set-row--slider">
+                <span>窗口阴影</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={settings.window_shadow}
+                  aria-label="窗口阴影强度"
+                  onChange={(e) => void update('window_shadow', e.target.value)}
+                />
+                <span className="u-aux set-row__val">{settings.window_shadow}</span>
+              </label>
+              <p className="u-aux set-row__note">
+                窗口四周**向内**的阴影强度，0 为完全不要轮廓。向外画不了 ——
+                透明窗口的可见形状就是窗口矩形，外投影要么被边界裁成直边，要么留出透明区露出方角。
+              </p>
             </section>
 
             <section className="set-card set-card--ambient">

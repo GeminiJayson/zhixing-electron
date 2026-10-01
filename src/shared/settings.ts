@@ -36,6 +36,14 @@ export interface AppSettings {
   glass_alpha: number
   /** 饱和度（%）。通透感多半来自它，不只是模糊 */
   glass_saturate: number
+  /**
+   * 窗口内阴影的强度（0–100）。0 = 完全不要轮廓与厚度，100 = 最重。
+   *
+   * 它派生的是 app.css 里 .app 那两个 inset 阴影的浓度（见 theme.ts）：
+   * 外投影在透明窗口上放不了（要么被裁成直边，要么留出透明区露出方角），
+   * 所以窗口的轮廓感只能靠内阴影表达，强度做成可调的就更有必要。
+   */
+  window_shadow: number
   pomodoro_focus_min: number
   pomodoro_break_min: number
   pomodoro_auto_break: boolean
@@ -168,6 +176,7 @@ export function parseSettings(raw: Record<string, string> = {}): AppSettings {
     glass_blur: num(raw.glass_blur, 28, 0, 40),
     glass_alpha: num(raw.glass_alpha, 56, 30, 100),
     glass_saturate: num(raw.glass_saturate, 185, 100, 250),
+    window_shadow: num(raw.window_shadow, 50, 0, 100),
   tree_guide: bool(raw.tree_guide, true),
     pomodoro_focus_min: num(raw.pomodoro_focus_min, 25, 5, 90),
     pomodoro_break_min: num(raw.pomodoro_break_min, 5, 1, 30),
