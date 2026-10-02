@@ -283,6 +283,31 @@ export function globalSearch(input: string): SearchResult {
     }
   }
 
+  demoteUnverified(result)
   applyMru(result)
   return result
+}
+
+/**
+ * 把**待确认**的笔记排到可用笔记之后。
+ *
+ * 方案 §9 第 4 条：待确认的条目还没核对过，不该和结论平起平坐。
+ * 只在结果内部调序，不隐藏 —— 隐藏会让人以为"搜不到"，
+ * 而它们本来就该能被搜到，只是要带着"还没核对"的身份出现。
+ *
+ * Array.prototype.sort 是稳定的，所以同一组内仍保持 FTS 的 rank 顺序。
+ */
+function demoteUnverified(result: SearchResult): void {
+  const rows = result.note
+  if (rows.length < 2) return
+  const ids = rows.map((r) => r.id)
+  const marks = conn()
+    .prepare(
+      'SELECT id FROM note WHERE verified_at IS NOT NULL AND id IN (' +
+        ids.map(() => '?').join(',') +
+        ')'
+    )
+    .all(...ids) as { id: number }[]
+  const ok = new Set(marks.map((m) => m.id))
+  rows.sort((a, b) => (ok.has(b.id) ? 1 : 0) - (ok.has(a.id) ? 1 : 0))
 }

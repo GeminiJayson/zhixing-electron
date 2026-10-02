@@ -424,8 +424,33 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
     }
   }, [])
 
+  /**
+   * 知识类型的色位。
+   *
+   * 只给知识区的几类独立颜色，且刻意只分四档 —— 八种颜色挤在一张图上反而什么都看不出来。
+   * 笔记 / 项目记录仍用文件夹色：对它们来说"属于哪个项目"比"它是什么类型"更有信息量。
+   */
+  const knowledgeColor = (sub: string | undefined): string | null => {
+    switch (sub) {
+      case 'pitfall':
+        return 'var(--danger)' // 踩坑：警示色，最该一眼认出来
+      case 'method':
+        return 'var(--accent)' // 方法论：能拿来做事的东西
+      case 'concept':
+      case 'summary':
+      case 'synthesis':
+        return 'var(--accent-warm)' // 三类资料型知识共用一个色位
+      case 'output':
+        return 'var(--accent-text)'
+      default:
+        return null // note / project 走文件夹色
+    }
+  }
+
   const colorOf = (n: GraphNodePayload): string =>
-    n.kind === 'note' ? folderColor(n.colorHint) : (KIND_COLOR[n.kind] ?? ROOT_NOTE_COLOR)
+    n.kind === 'note'
+      ? (knowledgeColor(n.subKind) ?? folderColor(n.colorHint))
+      : (KIND_COLOR[n.kind] ?? ROOT_NOTE_COLOR)
 
   const selectedNode = nodes.find((n) => n.id === selected) ?? null
 

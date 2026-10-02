@@ -1520,6 +1520,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                           onChanged={reloadMeta}
                           onNotice={onNotice}
                           onInsertTemplate={insertTemplate}
+                          onOpenNote={(id) => void selectNote(id)}
                         />
                       )}
                       {/* 保存状态：图标 + 文案。此前只在脏的时候冒出一行「未保存…」，

@@ -43,6 +43,7 @@ export function KnowledgeChip({
   onChanged,
   onNotice,
   onInsertTemplate,
+  onOpenNote,
 }: {
   noteId: number
   meta: KnowledgeMetaLite | undefined
@@ -50,6 +51,8 @@ export function KnowledgeChip({
   onNotice: (m: string) => void
   /** 把模板结构插进正文。由 NotesPage 实现（它才拿得到正文 state）。 */
   onInsertTemplate: (text: string) => void
+  /** 跳到另一条笔记（从"被谁引用"点进去看那条知识） */
+  onOpenNote: (id: number) => void
 }): JSX.Element {
   const api = window.zhixing?.knowledge
   const [open, setOpen] = useState(false)
@@ -295,9 +298,15 @@ export function KnowledgeChip({
               <span className="u-aux">被 {usedBy.length} 条知识引用为来源</span>
               <div className="kbchip__srclist">
                 {usedBy.map((u) => (
-                  <span key={u.id} className="kbchip__srctag kbchip__srctag--dim">
+                  // 能点进去 —— 光知道"被引用了"不够，得能顺着看是哪条知识在用
+                  <button
+                    key={u.id}
+                    type="button"
+                    className="kbchip__srctag kbchip__srctag--dim kbchip__link"
+                    onClick={() => onOpenNote(u.id)}
+                  >
                     {u.title}
-                  </span>
+                  </button>
                 ))}
               </div>
             </div>

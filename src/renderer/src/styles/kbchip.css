@@ -154,6 +154,16 @@
   background: var(--glass-layer-control);
   color: var(--fg-secondary);
 }
+/* 可点的引用标签：能顺着它跳到引用了这条资料的那篇知识 */
+.kbchip__link {
+  border: none;
+  font: inherit;
+  cursor: pointer;
+}
+.kbchip__link:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
 
 /* ---- 核对清单 ---- */
 .kbchip__checkrow {

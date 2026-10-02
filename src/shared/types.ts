@@ -223,6 +223,15 @@ export interface GraphNodePayload {
   colorHint: string
   refId: number
   format: string
+  /**
+   * 笔记的知识类型（概念 / 摘要 / 方法论 / 踩坑 …）。
+   *
+   * 图谱上更该看出"这是概念还是踩坑"，而不是"它在哪个文件夹" ——
+   * 所以在有 subKind 时优先按它上色，colorHint 退为兜底。
+   */
+  subKind?: string
+  /** 待确认（未核对）的笔记，图谱上弱化显示 */
+  unverified?: boolean
   /** anchor：引用该段落的任务 id */
   refTask?: number
   /** anchor：段落定位键 */

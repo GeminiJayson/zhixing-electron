@@ -96,6 +96,10 @@ interface NoteRow {
   title: string | null
   folder_id: number | null
   format: string | null
+  /** 知识类型（v16 起）。图谱按它上色，比"在哪个文件夹"更能说明这是什么 */
+  kind: string | null
+  /** 非空 = 已核对。为空的是待确认条目 */
+  verified_at: string | null
 }
 
 /**
@@ -114,7 +118,9 @@ export function buildGraph(query: GraphQuery = {}): GraphPayload {
   const c = conn()
 
   let notes = c
-    .prepare('SELECT id, title, folder_id, format FROM note WHERE deleted_at IS NULL')
+    .prepare(
+      'SELECT id, title, folder_id, format, kind, verified_at FROM note WHERE deleted_at IS NULL'
+    )
     .all() as NoteRow[]
   if (folderId != null) notes = notes.filter((n) => n.folder_id === folderId)
   if (tagId != null) {
@@ -172,6 +178,10 @@ export function buildGraph(query: GraphQuery = {}): GraphPayload {
       // 根目录笔记（folder_id 为空）用独立色位 'root'，不与 folder 0 混色
       colorHint: n.folder_id == null ? 'root' : String(n.folder_id),
       format: n.format || 'markdown',
+      // 知识类型与可信状态：图谱上更该看出"这是概念还是踩坑"，
+      // 而不是"它在哪个文件夹" —— 所以有 subKind 时优先按它上色
+      subKind: n.kind || 'note',
+      unverified: !n.verified_at,
     }
     nodes.push(node)
     byId.set(node.id, node)
