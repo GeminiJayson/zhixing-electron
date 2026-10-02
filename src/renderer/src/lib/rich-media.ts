@@ -1,13 +1,40 @@
-/**
- * 富文本编辑器里「多媒体」那部分能力的共享实现：图片的读取、落盘、粘贴与拖放。
- *
- * **为什么必须共享**：笔记页的编辑器（RichTextEditor）与快速笔记浮窗（QuickNotePanel）
- * 各自建了一个 Tiptap editor。粘贴处理如果只写在其中一个里，另一个就是坏的 ——
- * 用户报的「快速笔记不支持粘贴图片」正是这么来的。
- * 项目在工具栏上已经吃过一次同样的亏（RichTextToolbar 的注释：复制一份的话，
- * 以后调样式就得改两处，迟早会不一致），这里沿用同一条判断。
- */
 import type { Editor } from '@tiptap/react'
+import Image from '@tiptap/extension-image'
+import { TableKit } from '@tiptap/extension-table/kit'
+
+/**
+ * 图片节点：正文里存缩略图（data URI），原图走附件接口存到数据目录。
+ * 这样一篇笔记放几十张图也不会把 HTML 撑成几兆。
+ * data-attachment 指回附件路径，点击预览时用它取原图。
+ */
+export const ImageWithAttach = Image.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      attachment: {
+        default: null,
+        parseHTML: (el) => el.getAttribute('data-attachment'),
+        renderHTML: (attrs) =>
+          attrs.attachment ? { 'data-attachment': String(attrs.attachment) } : {},
+      },
+    }
+  },
+})
+
+/**
+ * 两个编辑器都必须注册的媒体扩展。
+ *
+ * 抽成数组是有教训的：上一版只抽了粘贴与落盘的逻辑，没抽扩展注册，
+ * 结果快速笔记的 editor 里没有 image 节点类型 —— 粘贴时全链路都跑通了
+ *（文件读到、缩略图生成、附件走完），最后一步 insertContent 被 Tiptap 判为
+ * Unknown node type: image 静默拒绝，文档里什么都不出现。
+ *
+ * 以后再往编辑器加媒体能力，在这里加一次，笔记页与快速笔记同时生效。
+ */
+export const RICH_MEDIA_EXTENSIONS = [
+  ImageWithAttach.configure({ inline: false, allowBase64: true }),
+  TableKit.configure({ table: { resizable: true } }),
+]
 
 export interface PreparedImage {
   file: File
@@ -26,7 +53,7 @@ export function readAsDataUrl(file: File): Promise<string> {
   })
 }
 
-/** 生成缩略图的 data URI。createImageBitmap 比 img+onload 稳，也不占用 DOM。 */
+/** 生成缩略图。createImageBitmap 比 img+onload 稳，也不占用 DOM。 */
 export async function makeThumb(source: ImageBitmapSource, max = 480): Promise<string> {
   try {
     const bitmap = await createImageBitmap(source)
@@ -42,27 +69,24 @@ export async function makeThumb(source: ImageBitmapSource, max = 480): Promise<s
     bitmap.close?.()
     return canvas.toDataURL('image/webp', 0.8)
   } catch {
-    // 浏览器不支持 webp 或图片解不开：返回空串，调用方回退到原图
     return ''
   }
 }
-
 /**
- * 把一批图片文件落盘并插入编辑器。
- *
- * **粘贴、拖放、选文件三条路都走这里** —— 落盘逻辑只能有一份。
- * 粘贴若另写一遍，很容易漏掉「批量存附件」那一步，于是图片变成 base64
- * 直接写进文档，数据库被悄悄撑大。
- *
- * noteId 为空时（比如快速笔记还没落成笔记）不会落盘，只插入缩略图 ——
- * 这点是刻意的：宁可图先显示出来、之后再转存，也不要因为「还没有 id」就什么都不做。
+ * 把一批图片文件落盘并插入编辑器。粘贴、拖放、选文件三条路都走这里。
+ * noteId 为空时（快速笔记还没落成笔记）不落盘，只插缩略图 ——
+ * 宁可图先显示出来，也不要因为还没有 id 就什么都不做。
  */
 export async function insertImageFiles(
   editor: Editor | null,
   files: File[],
   noteId: number | undefined
 ): Promise<void> {
-  if (!editor || !files.length) return
+  if (!editor) {
+    console.warn('[rich-media] editor 为空，editorRef 还没拿到实例')
+    return
+  }
+  if (!files.length) return
   const prepared: PreparedImage[] = []
   for (const file of files) {
     const [full, thumb] = await Promise.all([readAsDataUrl(file), makeThumb(file)])
@@ -94,8 +118,7 @@ export async function insertImageFiles(
 
 /**
  * 生成粘贴与拖放的 editorProps。
- *
- * 只拦「剪贴板里确实有图片文件」的情况，其余（纯文本、HTML、表格）一律返回 false
+ * 只拦剪贴板里确实有图片文件的情况，其余（纯文本、HTML、表格）返回 false
  * 交给 Tiptap 自己处理 —— 表格能贴进来是因为编辑器注册了 TableKit。
  */
 export function imagePasteProps(

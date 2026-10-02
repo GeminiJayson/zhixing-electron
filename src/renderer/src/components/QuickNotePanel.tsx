@@ -6,10 +6,9 @@ import Placeholder from '@tiptap/extension-placeholder'
 import { TextStyle } from '@tiptap/extension-text-style'
 import FontSize from '@tiptap/extension-text-style/font-size'
 import Color from '@tiptap/extension-color'
-import { TableKit } from '@tiptap/extension-table/kit'
 import { CodeBlockLanguage } from './CodeBlockLanguage'
 import { RichTextToolbar } from './RichTextToolbar'
-import { imagePasteProps } from '@renderer/lib/rich-media'
+import { RICH_MEDIA_EXTENSIONS, imagePasteProps } from '@renderer/lib/rich-media'
 import { titleFromContent } from '@shared/html-text'
 import { parseSettings } from '@shared/settings'
 import { Pin } from '@renderer/lib/icons'
@@ -63,8 +62,12 @@ export function QuickNotePanel({ onClose, onNotice }: Props): React.JSX.Element 
       TextStyle,
       FontSize,
       Color,
-      /** 表格 —— 快速笔记同样要能粘贴网页表格，缺了它表格会退化成纯文本 */
-      TableKit.configure({ table: { resizable: true } }),
+      /**
+       * 图片与表格 —— 与笔记页共用同一份注册。
+       * 缺 ImageWithAttach 时粘贴图片会以 Unknown node type: image 被静默拒绝；
+       * 缺 TableKit 时粘贴的表格会退化成纯文本。
+       */
+      ...RICH_MEDIA_EXTENSIONS,
       CodeBlockLanguage,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       Placeholder.configure({ placeholder: '随手记一句…（Ctrl+Enter 存下，接着写）' }),
