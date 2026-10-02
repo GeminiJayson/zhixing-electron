@@ -1,7 +1,24 @@
 /* 笔记页里的知识库筛选条。
-   知识库不是独立页面 —— 类型与可信状态是笔记自己的属性，在这里以筛选的形式存在。 */
+   知识库不是独立页面 —— 类型与可信状态是笔记自己的属性，在这里以筛选的形式存在。
+
+   视觉上只有一套语言：**胶囊**。
+   早先这里是四种并存 —— 带描边的下拉、无边框的文字按钮、红描边胶囊、灰描边胶囊，
+   一行里各说各话。现在统一为：所有可点的东西都是同高同圆角的胶囊，
+   区别只在底色深浅（远处更淡、选中/待办更实）。描边全部去掉，
+   改用浅色实底 —— 描边在浅色主题下会显得脏，而且和上面那批羽化阴影的卡片不合拍。 */
 
 .notes-filter {
+  /**
+   * 这一条自己的高度基准 —— **在这一层求值一次**。
+   *
+   * 为什么不在每个元素上直接写 var(--control-h-sm)：实测它会在这条筛选条里
+   * 解析不出值（--control-h-sm 是 calc(var(--control-h) - 8px) 的嵌套 calc），
+   * height 因此被整条丢弃，元素退回内容高度 —— 下拉 30px、分段容器 22px、
+   * 按钮 18px，一行里三个高度。ctlheightcheck 只做文本匹配，所以照样通过。
+   *
+   * 定义在这里之后，下面所有元素引用同一个已求值的结果，加 24px 兜底防同样的坑。
+   */
+  --nf-h: var(--control-h, 32px);
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -11,18 +28,33 @@
 .notes-filter__item {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1);
 }
-/* 高度走 --control-h-sm：筛选条比正文低一档，不抢编辑器的视线 */
+/* 类型下拉：去掉描边、改成与分段控件同高的胶囊。
+   **appearance: none 是必需的** —— 原生 select 有自己的最小高度，
+   不给它 height: var(--nf-h) 也压不下去（实测渲染出 28px，
+   而旁边的按钮是 20px，一行里两个高度）。去掉原生外观后高度才真正说了算，
+   代价是箭头要自己画，所以下面补了一个内联 SVG 背景。
+   箭头颜色写死成与 --fg-secondary 一致的灰，是为了避免 currentColor
+   在 background-image 里无法继承的问题。 */
 .notes-filter__select {
-  height: var(--control-h-sm);
-  padding: 0 var(--space-2);
-  border: var(--border-w) solid var(--border);
-  border-radius: var(--radius-ctl);
-  background: var(--glass-layer-control);
+  appearance: none;
+  height: var(--nf-h);
+  padding: 0 calc(var(--space-3) + 12px) 0 var(--space-3);
+  border: none;
+  border-radius: var(--radius-pill);
+  background-color: var(--glass-layer-control);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238a8f98' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--space-3) center;
   color: var(--fg-primary);
   font: inherit;
+  line-height: 1;
+  cursor: pointer;
 }
+.notes-filter__select:hover { background-color: var(--bg-hover); }
+
+/* 分段控件：四个档位共用一个容器，选中项是浮起来的一块实底 */
 .notes-filter__seg {
   display: inline-flex;
   gap: 2px;
@@ -31,7 +63,8 @@
   background: var(--glass-layer-control);
 }
 .notes-filter__btn {
-  height: calc(var(--control-h-sm) - 4px);
+  /* 与容器内边距配套：容器 padding 2px，按钮减 4px 后两边正好贴合 */
+  height: calc(var(--nf-h) - 4px);
   padding: 0 var(--space-3);
   border: none;
   border-radius: var(--radius-pill);
@@ -39,29 +72,37 @@
   color: var(--fg-secondary);
   font: inherit;
   cursor: pointer;
+  transition: background-color var(--dur-instant) var(--ease-standard),
+    color var(--dur-instant) var(--ease-standard);
 }
 .notes-filter__btn:hover { color: var(--fg-primary); }
-/* 待确认用警示色：这个状态必须在筛选条上就能看出来 */
+/* 选中：实心底 + 一点阴影，从容器里浮出来。比原来的 accent-soft 更明确 ——
+   浅色主题下 accent-soft 与容器底色太接近，扫一眼分不出选的是哪个 */
 .notes-filter__btn--on {
-  background: var(--accent-soft);
+  background: var(--glass-layer-surface);
   color: var(--accent);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 10%);
 }
+.notes-filter__btn--on:hover { color: var(--accent); }
+
 .notes-filter__clear {
-  height: var(--control-h-sm);
-  padding: 0 var(--space-2);
+  height: var(--nf-h);
+  padding: 0 var(--space-3);
   border: none;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--accent);
   font: inherit;
   cursor: pointer;
 }
+.notes-filter__clear:hover { background: var(--bg-hover); }
 .notes-filter__count {
   margin-left: auto;
   font-variant-numeric: tabular-nums;
 }
 
-/* 三个待办数字。它们只在不为 0 时出现 —— 全清零时这一块整体消失，
-   那时候没有待办，也就没有提醒的必要 */
+/* 待办数字。只在不为 0 时出现 —— 全清零时整块消失，那时候没有提醒的必要。
+   与分段控件同高，但更淡：它们是提示，不是可以调的档位。 */
 .notes-filter__health {
   display: inline-flex;
   align-items: center;
@@ -70,9 +111,10 @@
 .notes-filter__hbtn {
   display: inline-flex;
   align-items: center;
-  height: var(--control-h-sm);
+  /* 与类型下拉同高 —— 它们是并列的两组「胶囊」，高度差一档就会看出来 */
+  height: var(--nf-h);
   padding: 0 var(--space-2);
-  border: var(--border-w) solid var(--border);
+  border: none;
   border-radius: var(--radius-pill);
   background: var(--glass-layer-control);
   color: var(--fg-secondary);
@@ -80,12 +122,12 @@
   font-size: var(--text-aux);
   font-variant-numeric: tabular-nums;
 }
-/* 待确认可点：它是最该去处理的那个数 */
+/* 待确认可点：它是最该去处理的那个数，用警示色实底而不是描边 */
 .notes-filter__hbtn--todo {
-  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
   color: var(--danger);
   cursor: pointer;
 }
 .notes-filter__hbtn--todo:hover {
-  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  background: color-mix(in srgb, var(--danger) 22%, transparent);
 }
