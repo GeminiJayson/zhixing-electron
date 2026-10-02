@@ -518,8 +518,16 @@ export function registerDbHandlers(): void {
   handle('db:flashToSubtask', (_e, id: number, parentTaskId: number) =>
     flashToSubtask(id, parentTaskId)
   )
-  handle('db:addFlash', (_e, content: string, remark?: string, sourceApp?: string, sourceUrl?: string) =>
-    addFlash(content, remark ?? '', sourceApp ?? '', sourceUrl ?? '')
+  handle(
+    'db:addFlash',
+    (
+      _e,
+      content: string,
+      remark?: string,
+      sourceApp?: string,
+      sourceUrl?: string,
+      contentFormat?: 'text' | 'html'
+    ) => addFlash(content, remark ?? '', sourceApp ?? '', sourceUrl ?? '', contentFormat ?? 'text')
   )
   handle('db:archiveFlash', (_e, id: number) => setFlashStatus(id, 'archived'))
   handle('db:unarchiveFlash', (_e, id: number) => setFlashStatus(id, 'inbox'))

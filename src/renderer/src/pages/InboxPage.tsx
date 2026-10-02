@@ -70,6 +70,11 @@ export function InboxPage({ onNotice, onChanged }: Props) {
   const [flashes, setFlashes] = useState<Flash[]>([])
   const [showArchived, setShowArchived] = useState(false)
   const [draft, setDraft] = useState('')
+  /**
+   * 粘贴进来的富文本。非空时提交走 html 分支，并存成 content_format='html' 的闪念。
+   * 用 state 而不是 ref：输入框的 placeholder 要跟着变，得触发重渲染。
+   */
+  const [pendingHtml, setPendingHtml] = useState('')
   const [selectedTask, setSelectedTask] = useState<number | null>(null)
   const [collapsed] = useState<Set<number>>(new Set())
   /** 「转子任务」正在选父任务的闪念 id */
@@ -172,8 +177,11 @@ export function InboxPage({ onNotice, onChanged }: Props) {
 
   const handleAddFlash = async (): Promise<void> => {
     const text = draft.trim()
-    if (!text) return
+    const html = pendingHtml
+    // 富文本优先：粘贴来的 HTML 才是内容本体，draft 里只是给它看的占位说明
+    if (!html && !text) return
     setDraft('')
+    setPendingHtml('')
     // 内容是从剪贴板粘进来的就顺带记下来源 URL（与划词捕获同一套解析，
     // 只传剪贴板里**确实包含这段文字**的情形，避免给手打的闪念误挂无关链接）。
     let sourceUrl = ''
@@ -183,7 +191,8 @@ export function InboxPage({ onNotice, onChanged }: Props) {
     } catch {
       sourceUrl = ''
     }
-    await window.zhixing.db.addFlash(text, '', '', sourceUrl)
+    // 富文本闪念存 HTML（列表会用沙箱 iframe 渲染），纯文本闪念照旧
+    await window.zhixing.db.addFlash(html || text, '', '', sourceUrl, html ? 'html' : 'text')
     await refresh()
   }
 
@@ -360,9 +369,25 @@ export function InboxPage({ onNotice, onChanged }: Props) {
             <input
               className="field field--compact"
               value={draft}
-              placeholder="记一条闪念，回车收进收件箱"
+              placeholder={pendingHtml ? '已捕获富文本，回车收进收件箱' : '记一条闪念，回车收进收件箱'}
               aria-label="新建闪念"
               onChange={(e) => setDraft(e.target.value)}
+              onPaste={(e) => {
+                /**
+                 * 粘贴网页内容时**直接收成富文本闪念**，而不是把 HTML 源码
+                 * 变成一坨文字塞进输入框 —— 那样用户看到的是一堆标签。
+                 *
+                 * 这里没有像最初设想的那样"展开成一个富文本编辑器"：
+                 * 闪念的定位是**先收下、之后再处理**，展开编辑器反而拖慢了它；
+                 * 而收件箱列表本来就能渲染 HTML（沙箱 iframe），收下之后立刻看得见。
+                 */
+                const html = e.clipboardData.getData('text/html')
+                if (!html || !/<(table|img|p|h[1-6]|ul|ol|blockquote)\b/i.test(html)) return
+                e.preventDefault()
+                setPendingHtml(html)
+                const t = e.clipboardData.getData('text/plain').trim()
+                setDraft(t || '（来自网页的富文本）')
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') void handleAddFlash()
               }}

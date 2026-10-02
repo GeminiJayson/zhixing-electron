@@ -47,9 +47,17 @@ const api = {
       content: string,
       remark?: string,
       sourceApp?: string,
-      sourceUrl?: string
+      sourceUrl?: string,
+      contentFormat?: 'text' | 'html'
     ): Promise<Flash | null> =>
-      ipcRenderer.invoke('db:addFlash', content, remark ?? '', sourceApp ?? '', sourceUrl ?? ''),
+      ipcRenderer.invoke(
+        'db:addFlash',
+        content,
+        remark ?? '',
+        sourceApp ?? '',
+        sourceUrl ?? '',
+        contentFormat ?? 'text'
+      ),
     updateFlashRemark: (id: number, remark: string): Promise<Flash | null> =>
       ipcRenderer.invoke('db:updateFlashRemark', id, remark),
     tagFlash: (id: number, tags: string[]): Promise<number> =>
