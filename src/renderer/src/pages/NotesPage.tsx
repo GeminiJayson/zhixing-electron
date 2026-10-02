@@ -167,6 +167,18 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     setMetaById(map)
   }, [])
 
+  /**
+   * 把模板结构插进正文。
+   *
+   * **追加而不是覆盖** —— 用户可能已经写了一半，覆盖等于毁掉他的输入。
+   * 有内容时在中间留一个空行，免得模板的第一个标题贴着上一段。
+   */
+  const insertTemplate = useCallback((text: string): void => {
+    if (!text) return
+    setContent((prev) => (prev.trim() ? prev.replace(/\s*$/, '') + '\n\n' + text : text))
+    setDirty(true)
+  }, [])
+
   /** 编辑区自身宽度是否窄到放不下并排信息卡 —— 窄了改用覆盖式抽屉 */
   const [narrow, setNarrow] = useState(false)
   /**
@@ -1507,6 +1519,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                           meta={metaById[selectedId]}
                           onChanged={reloadMeta}
                           onNotice={onNotice}
+                          onInsertTemplate={insertTemplate}
                         />
                       )}
                       {/* 保存状态：图标 + 文案。此前只在脏的时候冒出一行「未保存…」，

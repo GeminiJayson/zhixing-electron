@@ -141,3 +141,17 @@
 }
 .kbchip__hit:hover { background: var(--bg-hover); }
 
+/* ---- 被哪些知识引用为来源 ---- */
+.kbchip__used {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-top: var(--space-2);
+  border-top: var(--border-w) solid var(--border);
+}
+/* 引用者用弱化标签：它是「别人提到我」，不需要和「我的来源」同等醒目 */
+.kbchip__srctag--dim {
+  background: var(--glass-layer-control);
+  color: var(--fg-secondary);
+}
+

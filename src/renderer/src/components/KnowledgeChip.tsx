@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { CheckCircle2, CircleAlert } from '@renderer/lib/icons'
+import { templateFor } from '@shared/knowledge-templates'
 
 /**
  * 编辑区标题行上的**知识徽标**。设计见 docs/specs/knowledge-base-reorg.md。
@@ -34,11 +35,14 @@ export function KnowledgeChip({
   meta,
   onChanged,
   onNotice,
+  onInsertTemplate,
 }: {
   noteId: number
   meta: KnowledgeMetaLite | undefined
   onChanged: () => void
   onNotice: (m: string) => void
+  /** 把模板结构插进正文。由 NotesPage 实现（它才拿得到正文 state）。 */
+  onInsertTemplate: (text: string) => void
 }): JSX.Element {
   const api = window.zhixing?.knowledge
   const [open, setOpen] = useState(false)
@@ -50,9 +54,12 @@ export function KnowledgeChip({
   const [srcQuery, setSrcQuery] = useState('')
   const [srcHits, setSrcHits] = useState<{ id: number; title: string; kind: string }[]>([])
   const [srcBusy, setSrcBusy] = useState(false)
+  /** 这条笔记作为「来源」被哪些知识引用了 —— 方案 §8 规则 3 的界面侧 */
+  const [usedBy, setUsedBy] = useState<{ id: number; title: string }[]>([])
 
   const loadSources = async (): Promise<void> => {
     setSources((await api?.sources(noteId)) ?? [])
+    setUsedBy((await api?.derivedFrom(noteId)) ?? [])
   }
 
   // 换笔记时收起面板并清空草稿 —— 否则上一条的核对结论会跟着跑到下一条上
@@ -246,6 +253,36 @@ export function KnowledgeChip({
               </div>
             )}
           </div>
+
+          {/*
+            模板。三类知识条目给了固定结构（概念 / 方法论 / 踩坑），
+            它们在方案 §6 里各有"最容易漏的那一节"—— 踩坑的排查过程甚至排在根因前面，
+            因为现象和结论网上都有，只有排查路径是你自己的。
+          */}
+          {templateFor(meta.kind) && (
+            <button
+              type="button"
+              className="btn btn--ghost kbchip__act"
+              title="把这一类该有的结构插进正文"
+              onClick={() => onInsertTemplate(templateFor(meta.kind) ?? '')}
+            >
+              套用「{LABEL[meta.kind] ?? meta.kind}」模板
+            </button>
+          )}
+
+          {/* 被引用的地方：说明它已经不只是"一篇笔记"，而是某些结论的依据 */}
+          {usedBy.length > 0 && (
+            <div className="kbchip__used">
+              <span className="u-aux">被 {usedBy.length} 条知识引用为来源</span>
+              <div className="kbchip__srclist">
+                {usedBy.map((u) => (
+                  <span key={u.id} className="kbchip__srctag kbchip__srctag--dim">
+                    {u.title}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
 
           {verified ? (
             <>
