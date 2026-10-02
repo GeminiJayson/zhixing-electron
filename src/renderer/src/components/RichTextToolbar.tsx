@@ -64,6 +64,8 @@ export function RichTextToolbar({
       /** 光标处生效的文字颜色（"#rrggbb" / "rgb(...)"），空串 = 没设过 */
       color: String(ed?.getAttributes('textStyle').color ?? ''),
       codeLang: String(ed?.getAttributes('codeBlock').language ?? ''),
+      /** 光标是否在表格里 —— 决定工具栏显示"插入表格"还是表格的增删操作 */
+      inTable: ed?.isActive('table') ?? false,
     }),
   })
   const chain = (): ReturnType<Editor['chain']> => editor.chain().focus()
@@ -168,6 +170,69 @@ export function RichTextToolbar({
         <button key="q" className="text-btn" title="引用" aria-pressed={fmt.quote} onClick={() => chain().toggleBlockquote().run()}>
           引用
         </button>,
+        /**
+         * 表格。和代码块语言一样是条件渲染，但理由不同：
+         * 代码块语言是"没有对全文生效的含义"，表格则是**光标位置决定能做什么操作** ——
+         * 表格外只能插入，表格内才能增删行列。
+         *
+         * 没有这一组的话，用户插入的表格**删不掉**（只能整段选中再按退格），
+         * 列宽也调不了。这是"只能创建不能修改"的典型缺口。
+         */
+        ...(fmt.inTable
+          ? [
+              <button
+                key="tbl-row"
+                className="text-btn"
+                title="在下方插入一行"
+                onClick={() => chain().addRowAfter().run()}
+              >
+                +行
+              </button>,
+              <button
+                key="tbl-col"
+                className="text-btn"
+                title="在右侧插入一列"
+                onClick={() => chain().addColumnAfter().run()}
+              >
+                +列
+              </button>,
+              <button
+                key="tbl-rmrow"
+                className="text-btn"
+                title="删除当前行"
+                onClick={() => chain().deleteRow().run()}
+              >
+                −行
+              </button>,
+              <button
+                key="tbl-rmcol"
+                className="text-btn"
+                title="删除当前列"
+                onClick={() => chain().deleteColumn().run()}
+              >
+                −列
+              </button>,
+              <button
+                key="tbl-rm"
+                className="text-btn"
+                title="删除整个表格"
+                onClick={() => chain().deleteTable().run()}
+              >
+                删表格
+              </button>,
+            ]
+          : [
+              <button
+                key="tbl-new"
+                className="text-btn"
+                title="插入 3×3 表格（带表头行）"
+                onClick={() =>
+                  chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
+                }
+              >
+                表格
+              </button>,
+            ]),
         <button key="code" className="text-btn" title="代码块" aria-pressed={fmt.code} onClick={() => chain().toggleCodeBlock().run()}>
           代码
         </button>,
