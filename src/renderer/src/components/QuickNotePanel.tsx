@@ -70,6 +70,14 @@ export function QuickNotePanel({ onClose, onNotice }: Props): React.JSX.Element 
       Placeholder.configure({ placeholder: '随手记一句…（Ctrl+Enter 存下，接着写）' }),
     ],
     content: '',
+    /**
+     * editorRef 给粘贴/拖放回调用。
+     *
+     * **不能只靠 onCreate** —— 那样只要 onCreate 的时机晚于第一次粘贴，
+     * editorRef.current 就还是 null，insertImageFiles 会静默 return，
+     * 用户看到的就是「粘不进去」，而且没有任何报错。
+     * 下面那个 effect 在 editor 可用后的每次渲染都会补上，两个一起才稳。
+     */
     onCreate: ({ editor: ed }) => {
       editorRef.current = ed
     },
@@ -83,6 +91,11 @@ export function QuickNotePanel({ onClose, onNotice }: Props): React.JSX.Element 
       ...imagePasteProps(() => editorRef.current, () => undefined),
     },
   })
+
+  // 双保险：不依赖 onCreate 的触发时机（见上面 onCreate 的注释）
+  useEffect(() => {
+    editorRef.current = editor
+  }, [editor])
 
   /**
    * 窗口高度跟着内容走。
