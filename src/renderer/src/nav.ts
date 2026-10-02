@@ -6,6 +6,7 @@ import {
   GitBranch,
   Inbox,
   Database,
+  NotebookPen,
   Sparkles,
   Waypoints,
 } from '@renderer/lib/icons'
@@ -20,6 +21,7 @@ export type PageKey =
   | 'workflow'
   | 'graph'
   | 'review'
+  | 'knowledge'
   | 'vault'
   | 'settings'
 
@@ -32,7 +34,7 @@ export interface NavItem {
   zone: 'top' | 'bottom'
 }
 
-/** 导航结构（9 项）。 */
+/** 导航结构（10 项）。 */
 export const NAV_ITEMS: NavItem[] = [
   { key: 'today', labelKey: 'nav.today', icon: CalendarCheck, zone: 'top' },
   { key: 'tasks', labelKey: 'nav.tasks', icon: ClipboardList, zone: 'top' },
@@ -41,7 +43,8 @@ export const NAV_ITEMS: NavItem[] = [
   { key: 'workflow', labelKey: 'nav.workflow', icon: GitBranch, zone: 'top' },
   { key: 'graph', labelKey: 'nav.graph', icon: Waypoints, zone: 'top' },
   { key: 'review', labelKey: 'nav.review', icon: Sparkles, zone: 'top' },
-  // 保险箱放在回顾之后、设置之前：它是"工具"而不是"日常"，但也不属于设置
+  // 知识库与保险箱都是"工具"而不是"日常"，放在回顾之后、设置之前
+  { key: 'knowledge', labelKey: 'nav.knowledge', icon: NotebookPen, zone: 'top' },
   { key: 'vault', labelKey: 'nav.vault', icon: Database, zone: 'top' },
   { key: 'settings', labelKey: 'nav.settings', icon: CircleUser, zone: 'bottom' },
 ]

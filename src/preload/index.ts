@@ -739,6 +739,63 @@ const api = {
     },
   },
   /**
+   * 知识库。
+   *
+   * 注意这里**没有"创建可用知识"的入口** —— create 一律产出待确认，
+   * 想变可用只能走 verify，而它会对知识类条目检查来源（见方案 §4 / §8）。
+   */
+  knowledge: {
+    kinds: (): Promise<{ key: string; label: string; needsSource: boolean }[]> =>
+      Promise.resolve([
+        { key: 'note', label: '笔记', needsSource: false },
+        { key: 'project', label: '项目记录', needsSource: false },
+        { key: 'concept', label: '概念', needsSource: true },
+        { key: 'summary', label: '摘要', needsSource: true },
+        { key: 'synthesis', label: '综合分析', needsSource: true },
+        { key: 'method', label: '方法论', needsSource: true },
+        { key: 'output', label: '输出', needsSource: true },
+        { key: 'pitfall', label: '踩坑', needsSource: true },
+      ]),
+    list: (filter: {
+      kind?: string
+      status?: 'draft' | 'verified' | 'all'
+      includeArchived?: boolean
+      limit?: number
+    }): Promise<
+      {
+        id: number
+        title: string
+        kind: string
+        verified_at: string | null
+        archived_at: string | null
+        verify_note: string | null
+        updated_at: string | null
+      }[]
+    > => ipcRenderer.invoke('knowledge:list', filter),
+    counts: (): Promise<Record<string, { verified: number; draft: number }>> =>
+      ipcRenderer.invoke('knowledge:counts'),
+    meta: (id: number): Promise<unknown> => ipcRenderer.invoke('knowledge:meta', id),
+    create: (input: {
+      title: string
+      content: string
+      kind: string
+      sourceNoteId?: number | null
+    }): Promise<{ ok: boolean; id?: number; message?: string }> =>
+      ipcRenderer.invoke('knowledge:create', input),
+    verify: (id: number, note: string): Promise<{ ok: boolean; message?: string }> =>
+      ipcRenderer.invoke('knowledge:verify', id, note),
+    unverify: (id: number, reason: string): Promise<{ ok: boolean; message?: string }> =>
+      ipcRenderer.invoke('knowledge:unverify', id, reason),
+    archive: (id: number): Promise<boolean> => ipcRenderer.invoke('knowledge:archive', id),
+    unarchive: (id: number): Promise<boolean> => ipcRenderer.invoke('knowledge:unarchive', id),
+    sources: (id: number): Promise<{ title: string; kind: string; noteId: number | null }[]> =>
+      ipcRenderer.invoke('knowledge:sources', id),
+    derivedFrom: (sourceId: number): Promise<{ id: number; title: string }[]> =>
+      ipcRenderer.invoke('knowledge:derivedFrom', sourceId),
+    canDelete: (sourceId: number): Promise<{ ok: boolean; count: number; titles: string[] }> =>
+      ipcRenderer.invoke('knowledge:canDelete', sourceId),
+  },
+  /**
    * 密码保险箱。
    *
    * 注意这里**没有任何"把主密钥交给渲染层"的通道** —— 密钥始终留在主进程的

@@ -173,4 +173,38 @@ export const MIGRATIONS: Record<number, (c: Database.Database) => void> = {
     )
     c.exec("CREATE INDEX IF NOT EXISTS idx_vault_entry_updated ON vault_entry (updated_at DESC)")
   },
+  16: (c) => {
+    // V16：知识库重组。
+    //
+    // 设计见 docs/specs/knowledge-base-reorg.md。三个概念：
+    //   · kind        —— 这条笔记"是什么"（7 类 + note/project 两个工作区类型）；
+    //                    不用目录表达：目录说的是"在哪"，而模板要靠类型驱动；
+    //   · verified_at —— NULL = 待确认，非空 = 可用。**这是整套流程的核心**
+    //                    （方案 §5）：不存在"直接创建可用知识"的路径；
+    //   · archived_at —— 归档做成状态而不是目录：它是可逆的"我现在不看它了"，
+    //                    做成目录每次归档都要移动文件，移进去还分不清原本属于哪类。
+    //
+    // note_link.link_kind 区分"相关"与"来源"：链接表达相关，而来源要能追溯
+    // （derived_from / supports / contradicts）。
+    addColumn(c, "note", "kind", "kind TEXT NOT NULL DEFAULT 'note'")
+    addColumn(c, "note", "verified_at", "verified_at DATETIME")
+    addColumn(c, "note", "archived_at", "archived_at DATETIME")
+    addColumn(c, "note", "verify_note", "verify_note TEXT")
+    addColumn(c, "note_link", "link_kind", "link_kind TEXT NOT NULL DEFAULT 'related'")
+
+    /**
+     * 把已有笔记标成"可用"。
+     *
+     * 它们是你**已经写下**的东西 —— 不是"刚从网上收来还没查证"的资料。
+     * 把它们打成待确认，等于把整个知识库瞬间清空（默认视图只显示可用的），
+     * 那是最糟的迁移体验。
+     */
+    c.exec(
+      "UPDATE note SET verified_at = COALESCE(updated_at, created_at, datetime('now')) " +
+        "WHERE verified_at IS NULL"
+    )
+    // 兜底：历史库里可能有 NULL / 空的 kind
+    c.exec("UPDATE note SET kind = 'note' WHERE kind IS NULL OR kind = ''")
+    c.exec("CREATE INDEX IF NOT EXISTS idx_note_kind ON note (kind, verified_at)")
+  },
 }

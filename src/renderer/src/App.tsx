@@ -16,6 +16,7 @@ import { GraphPage } from './pages/GraphPage'
 import { InboxPage } from './pages/InboxPage'
 import { NotesPage } from './pages/NotesPage'
 import { ReviewPage } from './pages/ReviewPage'
+import { KnowledgePage } from './pages/KnowledgePage'
 import { VaultPage } from './pages/VaultPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { WorkflowPage } from './pages/WorkflowPage'
@@ -32,6 +33,7 @@ import './styles/workflow.css'
 import './styles/review.css'
 import './styles/settings.css'
 import './styles/vault.css'
+import './styles/knowledge.css'
 
 const THEME_KEY = 'zhixing.theme'
 /** 提示停留时长：Toast 的进度线与 App 的自动关闭定时器共用这一个数 */
@@ -534,6 +536,8 @@ export default function App() {
             <SettingsPage onNotice={showToast} onChanged={refreshOverview} />
           ) : page === 'review' ? (
             <ReviewPage />
+          ) : page === 'knowledge' ? (
+            <KnowledgePage onNotice={showToast} />
           ) : page === 'vault' ? (
             <VaultPage onNotice={showToast} />
           ) : page === 'workflow' ? (

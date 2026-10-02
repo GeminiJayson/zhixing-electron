@@ -4,9 +4,11 @@
  *
  * 这里是建库 DDL 的**唯一真源**，随功能直接维护：改 `SCHEMA_SQL` 后要同步升
  * `SCHEMA_VERSION`，并在 migrate.ts 的迁移链里补上同号步骤，旧库才会跟着补齐。
- * 当前 SCHEMA_VERSION = 15，共 28 张表（v15 加了密码保险箱的 vault_meta / vault_entry）。
+ * 当前 SCHEMA_VERSION = 16，共 28 张表。
+ * v15 加了密码保险箱的 vault_meta / vault_entry；
+ * v16 给 note 加了知识库需要的 kind / verified_at / archived_at / verify_note。
  */
-export const SCHEMA_VERSION = 15
+export const SCHEMA_VERSION = 16
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS attachment (
@@ -62,6 +64,10 @@ CREATE TABLE IF NOT EXISTS note (
 	deleted_at DATETIME, 
 	created_at DATETIME, 
 	updated_at DATETIME, 
+	kind TEXT NOT NULL DEFAULT 'note', 
+	verified_at DATETIME, 
+	archived_at DATETIME, 
+	verify_note TEXT, 
 	PRIMARY KEY (id), 
 	FOREIGN KEY(folder_id) REFERENCES note_folder (id)
 );
@@ -79,6 +85,7 @@ CREATE TABLE IF NOT EXISTS note_link (
 	src_note_id INTEGER NOT NULL, 
 	dst_note_id INTEGER, 
 	dst_title VARCHAR NOT NULL, 
+	link_kind TEXT NOT NULL DEFAULT 'related', 
 	PRIMARY KEY (id), 
 	CONSTRAINT uq_src_dst_title UNIQUE (src_note_id, dst_title), 
 	FOREIGN KEY(src_note_id) REFERENCES note (id) ON DELETE CASCADE, 

@@ -32,6 +32,7 @@ import { logTaskActivity } from './db/task-activity'
 import { dueTargets } from './db/workflow-scheduler'
 import { startTriggerServer, stopTriggerServer } from './http-trigger'
 import { listSettings, setSetting } from './db/settings'
+import { registerKnowledgeIpc } from './knowledge-ipc'
 import { registerVaultIpc, stopVaultTimers } from './vault/ipc'
 import { startVaultServer, stopVaultServer } from './vault/server'
 import { autoBackup, broadcastDataChanged, closeDb, currentSettings, dbPath, dbOpenError, dbReadonlyReason, dueReminders, recordReminderFire, reminderPolicy, ensureDefaultSettings, listTodayTasks, open, registerDbHandlers, saveWidgetGeometry, saveWidgetBall, setDataChangedHook, snoozeReminder, dismissReminder, instantiateWorkflow, listScheduleTargets } from './db'
@@ -2451,6 +2452,9 @@ app.whenReady().then(() => {
    * 只监听 127.0.0.1，写入类端点要令牌；锁定状态下拒收任何凭据（见 vault/server.ts）。
    */
   startVaultServer()
+
+  // 知识库：类型 / 可信状态 / 来源引用。没有"直接创建可用知识"的通道。
+  registerKnowledgeIpc()
 
   createWindow()
   // 初始化完成信号由渲染层给（App.tsx 首屏数据就绪后调 app.ready）；
