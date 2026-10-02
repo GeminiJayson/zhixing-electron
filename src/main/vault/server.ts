@@ -167,11 +167,31 @@ async function onRequest(req: IncomingMessage, res: ServerResponse): Promise<voi
       return
     }
     const url = (b.url ?? '').trim()
-    /*
-      查重按 URL 精确匹配。已经剪过同一篇就不再存一份 ——
-      反复点图标不该在收件箱里堆出一串同一个页面。
-    */
-    if (url) {
+    const html = (b.html ?? '').trim()
+    const useHtml = b.mode !== 'fallback' && html.length > 200
+    const payload = useHtml ? html : text
+
+    /**
+     * 查重的口径取决于剪藏方式 —— 这一条是踩出来的：
+     *
+     * **整页剪藏** 按 URL 去重：同一篇文章反复点图标不该堆出一串重复。
+     *
+     * **选区剪藏** 不能按 URL —— 同一页上"那个表格"和"那段结论"是两块不同的内容，
+     * 按 URL 去重会让第二次选区直接被判成重复而**悄悄丢掉**（实测就是这个现象：
+     * 先整页剪藏一页，再对同一页做选区剪藏，返回 duplicated，收件箱里什么都没进）。
+     * 改用内容指纹（正文前 200 字）去重：同一块选两次仍然只存一条，
+     * 而同一页选两块不同的内容会各存一条。
+     */
+    if (b.mode === 'selection') {
+      const fp = payload.slice(0, 200)
+      const dup = conn()
+        .prepare('SELECT id FROM flash WHERE substr(content, 1, 200) = ? LIMIT 1')
+        .get(fp)
+      if (dup) {
+        json(res, 200, { ok: true, action: 'duplicated' })
+        return
+      }
+    } else if (url) {
       const dup = conn().prepare('SELECT id FROM flash WHERE source_url = ? LIMIT 1').get(url)
       if (dup) {
         json(res, 200, { ok: true, action: 'duplicated' })
@@ -185,8 +205,6 @@ async function onRequest(req: IncomingMessage, res: ServerResponse): Promise<voi
       **存它而不是纯文本，剪藏才有意义** —— 否则存下来的是一坨没有结构的文字。
       回退模式没有可信的 HTML（那是整页 innerText），老实存纯文本。
     */
-    const html = (b.html ?? '').trim()
-    const useHtml = b.mode !== 'fallback' && html.length > 200
     addFlash(
       useHtml ? html : text,
       (b.title ?? '').trim(),
