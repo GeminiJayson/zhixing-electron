@@ -72,6 +72,11 @@ export function KnowledgeChip({
   const [srcBusy, setSrcBusy] = useState(false)
   /** 这条笔记作为「来源」被哪些知识引用了 —— 方案 §8 规则 3 的界面侧 */
   const [usedBy, setUsedBy] = useState<{ id: number; title: string }[]>([])
+  /**
+   * 挂引用时用的关系类型。
+   * 综合分析挂的是支持 / 反对（方案 §7），其余类型挂的都是"来源"。
+   */
+  const [linkKind, setLinkKind] = useState<'supports' | 'contradicts'>('supports')
 
   const loadSources = async (): Promise<void> => {
     setSources((await api?.sources(noteId)) ?? [])
@@ -177,7 +182,8 @@ export function KnowledgeChip({
     if (!api) return
     setSrcBusy(true)
     try {
-      await api.link(noteId, id)
+      // 综合分析挂的是"支持 / 反对"，其余类型挂的都是"来源"
+      await api.link(noteId, id, meta.kind === 'synthesis' ? linkKind : 'derived_from')
       setSrcQuery('')
       setSrcHits([])
       await loadSources()
@@ -239,7 +245,11 @@ export function KnowledgeChip({
             <div className="kbchip__srclist">
               {sources.length === 0 && <span className="u-aux">还没有来源</span>}
               {sources.map((s) => (
-                <span key={s.title} className="kbchip__srctag">
+                <span
+                  key={s.title}
+                  className={'kbchip__srctag' + (s.kind === 'contradicts' ? ' kbchip__srctag--against' : '')}
+                  title={s.kind === 'supports' ? '支持' : s.kind === 'contradicts' ? '反对' : '来源'}
+                >
                   {s.title}
                   <button
                     type="button"
@@ -252,9 +262,23 @@ export function KnowledgeChip({
                 </span>
               ))}
             </div>
+            {meta.kind === 'synthesis' && (
+              <div className="kbchip__seg">
+                {(['supports', 'contradicts'] as const).map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    className={'kbchip__segbtn' + (linkKind === k ? ' kbchip__segbtn--on' : '')}
+                    onClick={() => setLinkKind(k)}
+                  >
+                    {k === 'supports' ? '支持' : '反对'}
+                  </button>
+                ))}
+              </div>
+            )}
             <input
               className="kbchip__srcinput"
-              placeholder="搜笔记标题，选中即挂为来源"
+              placeholder={meta.kind === 'synthesis' ? '搜资料，选中即标为「支持」或「反对」' : '搜笔记标题，选中即挂为来源'}
               value={srcQuery}
               aria-label="搜索来源笔记"
               onChange={(e) => setSrcQuery(e.target.value)}

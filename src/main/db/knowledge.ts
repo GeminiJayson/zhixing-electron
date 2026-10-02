@@ -196,6 +196,23 @@ export function verifyKnowledge(id: number, check: CheckNote): CreateResult {
     return { ok: false, message: '关键说法还没有依据 —— 补上依据，或把它留在待确认' }
   }
 
+  /**
+   * **综合分析的专属闸门**（方案 §7）。
+   *
+   * 一条既列出支持又列出反对、却不解释"为什么还是倾向某一边"的综合分析，
+   * 等于没做 —— 它只是把矛盾原样摊开，没有产生任何判断。
+   * 所以只要挂了"反对"的资料，就必须在核对时把矛盾解释清楚。
+   */
+  if (meta.kind === 'synthesis') {
+    const contradictions = incomingSourcesOfKind(id, 'contradicts')
+    if (contradictions.length > 0 && !check.conflict.trim()) {
+      return {
+        ok: false,
+        message: '这条挂了 ' + contradictions.length + ' 份反对的资料，必须在「冲突」里解释为什么还是倾向某一边',
+      }
+    }
+  }
+
   conn()
     .prepare('UPDATE note SET verified_at = ?, verify_note = ?, updated_at = ? WHERE id = ?')
     .run(stamp(), serializeCheckNote(check), stamp(), id)
@@ -315,6 +332,16 @@ export function outgoingSources(id: number): { title: string; kind: LinkKind; no
     title: r.dst_title,
     kind: isLinkKind(r.link_kind) ? r.link_kind : 'related',
   }))
+}
+
+/** 取某一种引用（来源 / 支持 / 反对）。 */
+export function incomingSourcesOfKind(
+  id: number,
+  kind: LinkKind
+): { title: string; noteId: number | null }[] {
+  return outgoingSources(id)
+    .filter((s) => s.kind === kind)
+    .map((s) => ({ title: s.title, noteId: s.noteId }))
 }
 
 /** 只取「来源」那一种。verify 的时候看的是它。 */
