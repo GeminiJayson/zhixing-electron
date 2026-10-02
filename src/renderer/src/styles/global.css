@@ -1010,12 +1010,20 @@ html[data-surface='capture'] .modal__head button {
 .stat-card {
   /* 卡片用 inset 层：比它所在的面板实一档，层次才分得出来 */
   background: var(--glass-layer-inset);
-  /* 顶边那道内高光：玻璃片"浮起来"最直接的暗示。
-     主区那边去掉它是因为紧挨标题栏会读成分割线，卡片这边没有这个问题。 */
-  box-shadow: var(--edge-light);
-  border: var(--border-w) solid var(--border);
+  /**
+   * **不用描边，用羽化浅阴影**（--card-shadow，亮暗各一套见 tokens.css）。
+   *
+   * 原来这里是 border: 1px solid var(--border) —— 一条硬线把卡片切得很死。
+   * 但卡片本来就是"轻轻浮在面板上"的：边界该渐隐而不是被切开。
+   * --card-shadow 里同时含顶边的内高光（玻璃片受光的暗示），
+   * 所以那一项没有丢。
+   *
+   * 顺便修掉一处重复：这个块里 box-shadow 原本写了两遍（第一遍被第二遍覆盖），
+   * 现在只剩一处。
+   */
+  border: none;
   border-radius: var(--radius-md);
-  box-shadow: var(--edge-light);
+  box-shadow: var(--card-shadow);
 }
 
 /* ------------------------------------------------------------------

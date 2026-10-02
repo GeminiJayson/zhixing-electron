@@ -176,13 +176,15 @@
   /* 指示条的定位上下文 */
   position: relative;
   padding: var(--space-2) var(--space-1);
-  /* 与主区同一层玻璃 + 同样的圆角与玻璃边：
+  /* 与主区同一层玻璃 + 同样的圆角与边界处理：
      它俩是并排的两块，层级和外形要对称，否则一眼看去像"只有一边是卡片"。
-     上边框**要封口** —— 它是这张卡片的轮廓，缺了上边会像"被标题栏切掉了头"，
-     圆角也跟着少一段（用户反馈的"上边框缺失"就是这个）。 */
+     **边界用羽化阴影而不是描边**（--panel-shadow）：描边是一条硬线，把面板切得很死；
+     面板本该是"轻轻浮在画布上"的，边界该渐隐。
+     阴影自带四边，所以"上边框缺失"那类问题也不会再有。 */
   background: var(--glass-layer-surface);
-  border: var(--border-w) solid var(--glass-border);
+  border: none;
   border-radius: var(--radius-lg);
+  box-shadow: var(--panel-shadow);
   transition: width var(--dur-normal) var(--ease-enter), flex-basis var(--dur-normal) var(--ease-enter);
 }
 .sidebar--collapsed {
@@ -312,12 +314,15 @@
     radial-gradient(58% 42% at 10% 0%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 72%),
     var(--glass-layer-surface);
   /**
-   * 四边封口。上边框曾经被去掉过，理由是"会读成标题栏与主区之间的分割线" ——
-   * 那个判断在当时成立（标题栏与主区底色不同，那条边会加深色差），
-   * 现在两者同层，上边框只是这张卡片自己的轮廓；去掉它反而像少了一块。
+   * 边界用羽化阴影，不用描边 —— 与侧栏同一套处理。
+   *
+   * 这里的历史：上边框去掉过（当时标题栏与主区底色不同，那条边会加深色差），
+   * 后来又加回来（两者同层之后，缺上边像少了一块）。
+   * 换成阴影之后这个纠结自动消失：阴影是四边一体的渐隐，不存在"封不封口"的问题。
    */
-  border: var(--border-w) solid var(--glass-border);
+  border: none;
   border-radius: var(--radius-lg);
+  box-shadow: var(--panel-shadow);
   /**
    * 去掉 --edge-light：它是"贴在顶边的 1px 内高光"，本意是让面板从画布上浮起来，
    * 但在这里它紧挨着标题栏，一条亮线同样会被读成分隔线。
