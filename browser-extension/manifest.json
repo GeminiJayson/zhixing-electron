@@ -30,6 +30,7 @@
   ],
   "options_page": "options.html",
   "action": {
-    "default_title": "剪藏到知行（点一下把这一页的正文存进收件箱）"
+    "default_title": "知行 ZhiXing",
+    "default_popup": "popup.html"
   }
 }

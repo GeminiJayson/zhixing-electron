@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { CircleAlert, Database, Download, FileText, Info, Palette, RefreshCw, SlidersHorizontal, Sparkles, Tag, Timer, Trash2 } from '@renderer/lib/icons'
+import { CircleAlert, Database, Download, FileText, Info, Link2, Palette, RefreshCw, SlidersHorizontal, Sparkles, Tag, Timer, Trash2 } from '@renderer/lib/icons'
 import { parseSettings, type AppSettings } from '@shared/settings'
 import {
   AI_PROTOCOLS,
@@ -118,6 +118,15 @@ const TABS: { key: Tab; label: string }[] = [
 export function SettingsPage({ onNotice, onChanged }: Props) {
   const dialog = useDialog()
   const [tab, setTab] = useState<Tab>('appearance')
+  /**
+   * 浏览器扩展的端口与令牌。
+   * **与保险箱状态无关** —— 它服务于"扩展连本机端点"，随时都该看得到。
+   */
+  const [httpInfo, setHttpInfo] = useState<{ port: number; token: string } | null>(null)
+
+  useEffect(() => {
+    void window.zhixing?.vault?.httpInfo?.().then(setHttpInfo)
+  }, [])
   const [settings, setSettings] = useState<AppSettings>(() => parseSettings())
   const [info, setInfo] = useState<AppInfo | null>(null)
   const [recycleOpen, setRecycleOpen] = useState(false)
@@ -714,6 +723,47 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                 窗口四周**向内**的阴影强度，0 为完全不要轮廓。向外画不了 ——
                 透明窗口的可见形状就是窗口矩形，外投影要么被边界裁成直边，要么留出透明区露出方角。
               </p>
+            </section>
+
+            {/*
+              浏览器扩展的令牌**放在设置页，不放在保险箱页**。
+              它服务于"扩展连本机端点"，而那个端点同时服务密码和剪藏两件事 ——
+              把入口藏在保险箱里，会让从没用过保险箱的人永远拿不到令牌，
+              剪藏对他来说就是坏的。这是个真实的设计错误，已修正。
+            */}
+            <section className="set-card set-card--ambient">
+              <header className="set-card__head"><Link2 size={15} /> 浏览器扩展</header>
+              {httpInfo ? (
+                <>
+                  <label className="set-row">
+                    <span>访问令牌</span>
+                    <input
+                      className="vault-input"
+                      readOnly
+                      value={httpInfo.token}
+                      aria-label="浏览器扩展令牌"
+                      onFocus={(e) => e.currentTarget.select()}
+                    />
+                    <button
+                      className="btn btn--ghost"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(httpInfo.token)
+                        onNotice('令牌已复制')
+                      }}
+                    >
+                      复制
+                    </button>
+                  </label>
+                  <p className="u-aux set-row__note">
+                    把令牌粘贴到扩展的「设置」里。扩展只会把内容发到
+                    <code>127.0.0.1:{httpInfo.port}</code>，不联网。
+                    令牌不是主密码 —— 拿到它只能往收件箱和保险箱里<b>写</b>，
+                    且保险箱锁定时一律拒收。
+                  </p>
+                </>
+              ) : (
+                <p className="u-aux set-row__note">正在读取…</p>
+              )}
             </section>
 
             <section className="set-card set-card--ambient">

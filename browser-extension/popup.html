@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { width: 280px; margin: 0; padding: 12px;
+        font: 13px/1.5 system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; color: #1f2937; }
+      h1 { font-size: 13px; margin: 0 0 10px; color: #6b7280; font-weight: 500; }
+      button { width: 100%; padding: 9px 12px; margin-bottom: 8px; border: 0; border-radius: 8px;
+        font: inherit; cursor: pointer; }
+      #clip { background: #0e7490; color: #fff; font-weight: 500; }
+      #clip:disabled { opacity: 0.6; cursor: default; }
+      #opts { background: #f3f4f6; color: #374151; }
+      #msg { margin-top: 4px; font-size: 12px; line-height: 1.5; }
+      .ok { color: #065f46; }
+      .bad { color: #991b1b; }
+    </style>
+  </head>
+  <body>
+    <h1>知行 ZhiXing</h1>
+    <button id="clip">剪藏这一页到收件箱</button>
+    <button id="opts">设置（令牌 / 诊断）</button>
+    <div id="msg"></div>
+    <script src="popup.js"></script>
+  </body>
+</html>

@@ -148,12 +148,83 @@ async function capture(payload) {
   }
 }
 
-chrome.runtime.onMessage.addListener(function (msg, _sender, sendResponse) {
+/**
+ * 点扩展图标 = 把当前页面剪藏进收件箱。
+ *
+ * **主路径是 popup.js 发来的 clipActive**，不是 action.onClicked ——
+ * onClicked 依赖 service worker 醒着，而 MV3 的 worker 会被回收，
+ * 冷启动时第一次点击可能什么都没发生（用户看到的就是"点了没反应"，且无日志可查）。
+ * onClicked 保留为兜底。
+ *
+ * **只有显式操作才抓** —— 不做自动抓取。自动抓取会把浏览历史变成知识库。
+ */
+chrome.action.onClicked.addListener(function (tab) {
+  clip(tab)
+})
+
+/** 供 popup 调用：对当前激活标签页做一次剪藏，返回可显示的结果。 */
+async function clipActiveTab() {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true })
+  const tab = tabs[0]
+  if (!tab || tab.id === undefined) return { ok: false, message: '拿不到当前标签页' }
+  if (/^(chrome|edge|about|devtools):/i.test(tab.url || '')) {
+    return { ok: false, message: '浏览器内部页面不允许扩展读取' }
+  }
+  let article
+  try {
+    article = await chrome.tabs.sendMessage(tab.id, { kind: 'extract' })
+  } catch {
+    // content script 没注入：最常见的原因是扩展刚重载、页面还没刷新
+    return { ok: false, message: '这一页的脚本还没就绪 —— 刷新一下页面再试' }
+  }
+  if (!article || !article.ok || !article.text) {
+    return { ok: false, message: '没提取到正文，这一页可能是纯应用界面' }
+  }
+  return postClip(article)
+}
+
+/** 把提取结果发到本地端点。结果直接给 popup 显示，同时弹一条通知。 */
+async function postClip(article) {
+  const port = await findPort()
+  if (port === null) return { ok: false, message: '知行应用没在运行' }
+  const token = await getToken()
+  if (!token) return { ok: false, message: '还没配置令牌 —— 去设置里粘贴一次' }
+  try {
+    const r = await fetch('http://127.0.0.1:' + port + '/clip', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-vault-token': token },
+      body: JSON.stringify(article),
+    })
+    const j = await r.json().catch(function () {
+      return {}
+    })
+    if (r.status === 401) return { ok: false, message: '令牌不对，去设置里重新粘贴' }
+    if (!j.ok) return { ok: false, message: j.error || 'HTTP ' + r.status }
+    if (j.action === 'duplicated') return { ok: true, message: '这一页已经在收件箱里了' }
+    return {
+      ok: true,
+      message:
+        article.mode === 'fallback'
+          ? '已存入收件箱（只取到整页文字，可能含导航广告）'
+          : '已存入收件箱',
+    }
+  } catch (e) {
+    return { ok: false, message: '连不上知行：' + String(e && e.message ? e.message : e) }
+  }
+}
+
+async function clip(tab) {
   if (msg && msg.kind === 'capture') {
     capture(msg).then(function () {
       sendResponse({ ok: true })
     })
     return true // 异步响应
+  }
+  if (msg && msg.kind === 'clipActive') {
+    clipActiveTab().then(function (r) {
+      sendResponse(r)
+    })
+    return true
   }
   if (msg && msg.kind === 'diagnose') {
     diagnose().then(function (steps) {
