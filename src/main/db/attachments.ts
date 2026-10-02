@@ -120,13 +120,29 @@ export function importAttachmentData(
  * 让调用方能准确告诉用户哪几张没进去。
  */
 export function importAttachmentDataBatch(
-  noteId: number,
+  noteId: number | null,
   files: { fileName: string; base64: string }[]
 ): { fileName: string; ok: boolean; path?: string; message: string }[] {
   const out: { fileName: string; ok: boolean; path?: string; message: string }[] = []
-  const note = conn().prepare('SELECT id FROM note WHERE id = ?').get(noteId) as { id: number } | undefined
-  if (!note) return files.map((f) => ({ fileName: f.fileName, ok: false, message: '笔记不存在' }))
-  const dir = join(attachmentsDir(), String(noteId))
+  /**
+   * noteId 为 null：还没有归属的附件。
+   *
+   * 快速笔记粘贴的图片就是这种 —— 那时连 flash 都还没存下，更不会有 note。
+   * **文件照样落盘**，只是暂存在 attachments/pending/ 下、不写 attachment 记录
+   *（那一列的 note_id 是 NOT NULL 且外键到 note）；等它转成笔记时，
+   * flashToNote 会按正文里的 data-attachment 把文件迁到该笔记的目录并补记录。
+   *
+   * 早先这里直接返回「笔记不存在」，于是快速笔记里的原图**被静默丢弃**，
+   * 文档里只剩一张缩略图，原图再也找不回来。
+   */
+  if (noteId !== null) {
+    const note = conn()
+      .prepare('SELECT id FROM note WHERE id = ?')
+      .get(noteId) as { id: number } | undefined
+    if (!note) return files.map((f) => ({ fileName: f.fileName, ok: false, message: '笔记不存在' }))
+  }
+  const dir =
+    noteId === null ? join(attachmentsDir(), 'pending') : join(attachmentsDir(), String(noteId))
   const pending: { target: string; kind: string }[] = []
   for (const f of files) {
     try {
@@ -144,7 +160,8 @@ export function importAttachmentDataBatch(
       out.push({ fileName: f.fileName, ok: false, message: '导入失败：' + (err as Error).message })
     }
   }
-  if (pending.length) {
+  // 没有归属时只落文件、不写记录（attachment.note_id NOT NULL 且外键到 note）
+  if (pending.length && noteId !== null) {
     const c = conn()
     const ins = c.prepare('INSERT INTO attachment (note_id, path, kind, created_at) VALUES (?, ?, ?, ?)')
     const tx = c.transaction((rows: { target: string; kind: string }[]) => {

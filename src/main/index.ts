@@ -1879,9 +1879,16 @@ function registerAttachmentHandlers(): void {
   // 多图上传：一次 IPC 存一批（渲染层原先在循环里逐张调 attachment:saveData）
   ipcMain.handle(
     'attachment:saveDataBatch',
-    (_e, noteId: number, files: { fileName: string; base64: string }[]) =>
+    /**
+     * noteId 为 null 表示「还没有归属」（快速笔记粘贴的图片）。
+     *
+     * **不能写成 Number(noteId)：Number(null) 是 0，不是 null** ——
+     * 那会让下游去查 id=0 的笔记、查不到、返回「笔记不存在」，
+     * 而调用方不检查返回值，于是整件事**静默失败**，用户只看到图片没落盘。
+     */
+    (_e, noteId: number | null, files: { fileName: string; base64: string }[]) =>
       importAttachmentDataBatch(
-        Number(noteId),
+        noteId === null || noteId === undefined ? null : Number(noteId),
         (Array.isArray(files) ? files : []).map((f) => ({
           fileName: String(f?.fileName ?? ''),
           base64: String(f?.base64 ?? ''),

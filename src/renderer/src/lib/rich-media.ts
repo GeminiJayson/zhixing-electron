@@ -92,15 +92,28 @@ export async function insertImageFiles(
     const [full, thumb] = await Promise.all([readAsDataUrl(file), makeThumb(file)])
     prepared.push({ file, full, thumb })
   }
-  const saved = noteId
-    ? await window.zhixing.db.saveAttachmentsBatch(
-        noteId,
-        prepared.map((p) => ({
-          fileName: p.file.name,
-          base64: p.full.slice(p.full.indexOf(',') + 1),
-        }))
-      )
-    : []
+  /**
+   * 一律落盘 —— noteId 为空（快速笔记还没存下）时走 pending 暂存。
+   *
+   * 原先是「没有 noteId 就不落盘」，结果是粘贴的图片只留一张缩略图在文档里，
+   * **原图直接丢了**。现在原图总是先存下来，等它转成笔记时再迁移归属。
+   */
+  const saved = await window.zhixing.db.saveAttachmentsBatch(
+    noteId ?? null,
+    prepared.map((p) => ({
+      fileName: p.file.name,
+      base64: p.full.slice(p.full.indexOf(',') + 1),
+    }))
+  )
+  // 落盘失败要说出来。原先不看返回值，于是「笔记不存在」这类失败完全没有痕迹，
+  // 用户看到的是图片插进去了、但原图其实没存下来。
+  const failed = saved.filter((s) => s && !s.ok)
+  if (failed.length) {
+    console.warn(
+      '[rich-media] 原图未能落盘：',
+      failed.map((f) => f.message).join('; ')
+    )
+  }
   prepared.forEach((p, i) => {
     editor
       .chain()

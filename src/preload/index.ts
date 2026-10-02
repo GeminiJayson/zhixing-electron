@@ -120,8 +120,13 @@ const api = {
     ): Promise<{ ok: boolean; path?: string; message: string }> =>
       ipcRenderer.invoke('attachment:saveData', noteId, fileName, base64),
     /** 多图上传：一次 IPC 存一批，逐张回结果（替代渲染层的 for + saveAttachmentData） */
+    /**
+     * 批量落盘附件。
+     * noteId 为 null 表示「还没有归属」—— 快速笔记粘贴的图片那时连 flash 都还没存下。
+     * 文件会暂存在 attachments/pending/ 下，等转成笔记时再迁移归属。
+     */
     saveAttachmentsBatch: (
-      noteId: number,
+      noteId: number | null,
       files: { fileName: string; base64: string }[]
     ): Promise<{ fileName: string; ok: boolean; path?: string; message: string }[]> =>
       ipcRenderer.invoke('attachment:saveDataBatch', noteId, files),
