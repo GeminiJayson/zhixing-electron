@@ -200,6 +200,27 @@ export function unverifyKnowledge(id: number, reason: string): CreateResult {
   return { ok: true, id }
 }
 
+/**
+ * 切换类型。
+ *
+ * **一个例外要处理**：从「笔记 / 项目记录」改成知识类（概念 / 摘要 / …）之后，
+ * 这条就变成了"需要来源"的条目。如果它当时没有来源，就不该继续挂着"可用" ——
+ * 否则规则 2 会被"先建笔记再改类型"绕过去。
+ */
+export function setKnowledgeKind(id: number, kind: KnowledgeKind): { ok: boolean; demoted?: boolean } {
+  const meta = knowledgeMeta(id)
+  if (!meta) return { ok: false }
+  conn().prepare('UPDATE note SET kind = ?, updated_at = ? WHERE id = ?').run(kind, stamp(), id)
+
+  if (needsSource(kind) && meta.verified_at && incomingSources(id).length === 0) {
+    conn()
+      .prepare('UPDATE note SET verified_at = NULL, verify_note = ? WHERE id = ?')
+      .run('改为需要来源的类型，但没有来源，已退回待确认', id)
+    return { ok: true, demoted: true }
+  }
+  return { ok: true }
+}
+
 export function archiveKnowledge(id: number): void {
   conn().prepare('UPDATE note SET archived_at = ?, updated_at = ? WHERE id = ?').run(stamp(), stamp(), id)
 }

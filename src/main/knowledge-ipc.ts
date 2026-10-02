@@ -7,8 +7,10 @@ import {
   createKnowledge,
   derivedFrom,
   knowledgeCounts,
+  isKnowledgeKind,
   knowledgeMeta,
   listKnowledge,
+  setKnowledgeKind,
   outgoingSources,
   unarchiveKnowledge,
   unverifyKnowledge,
@@ -37,6 +39,9 @@ export function registerKnowledgeIpc(): void {
     unarchiveKnowledge(id)
     return true
   })
+  ipcMain.handle('knowledge:setKind', (_e, id: number, kind: string) =>
+    isKnowledgeKind(kind) ? setKnowledgeKind(id, kind) : { ok: false }
+  )
   ipcMain.handle('knowledge:sources', (_e, id: number) => outgoingSources(id))
   ipcMain.handle('knowledge:derivedFrom', (_e, sourceId: number) => derivedFrom(sourceId))
   ipcMain.handle('knowledge:canDelete', (_e, sourceId: number) => canDeleteSource(sourceId))

@@ -786,6 +786,9 @@ const api = {
       ipcRenderer.invoke('knowledge:verify', id, note),
     unverify: (id: number, reason: string): Promise<{ ok: boolean; message?: string }> =>
       ipcRenderer.invoke('knowledge:unverify', id, reason),
+    /** 改类型。若改成"需要来源"的类型而它没有来源，会自动退回待确认（返回 demoted: true） */
+    setKind: (id: number, kind: string): Promise<{ ok: boolean; demoted?: boolean }> =>
+      ipcRenderer.invoke('knowledge:setKind', id, kind),
     archive: (id: number): Promise<boolean> => ipcRenderer.invoke('knowledge:archive', id),
     unarchive: (id: number): Promise<boolean> => ipcRenderer.invoke('knowledge:unarchive', id),
     sources: (id: number): Promise<{ title: string; kind: string; noteId: number | null }[]> =>

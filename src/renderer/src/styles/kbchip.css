@@ -1,0 +1,79 @@
+/* 编辑区标题行上的知识徽标（类型 + 可信状态）。
+   类型与可信状态属于「这一篇是什么」，所以和标题、保存状态、标签同一行。 */
+
+.kbchip {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+/* 徽标本体沿用 .chip 的外观，只补状态色 */
+.chip--kb {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+/* 可用：低调的强调色 —— 它是常态，不该抢眼 */
+.chip--kb-ok {
+  color: var(--accent);
+}
+/* 待确认：警示色 + 独立小标。这个状态必须一眼可见，否则等于没设 */
+.chip--kb-draft {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+}
+.kbchip__draft {
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+/* 下拉面板：复用 .popmenu 的底与阴影，这里只管定位与内容排布 */
+.kbchip__pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 320px;
+  padding: var(--space-3);
+  text-align: left;
+}
+.kbchip__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+/* 高度走 --control-h-sm：下拉里的控件比正文控件小一档 */
+.kbchip__select {
+  flex: 1;
+  height: var(--control-h-sm);
+  padding: 0 var(--space-2);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-ctl);
+  background: var(--glass-layer-control);
+  color: var(--fg-primary);
+  font: inherit;
+}
+.kbchip__hint {
+  margin: 0;
+  line-height: 1.5;
+}
+.kbchip__area {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-2);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-ctl);
+  background: var(--glass-layer-control);
+  color: var(--fg-primary);
+  font: inherit;
+  resize: vertical;
+  line-height: 1.5;
+}
+.kbchip__act { width: 100%; }

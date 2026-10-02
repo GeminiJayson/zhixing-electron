@@ -29,6 +29,7 @@ const KNOWLEDGE_KINDS: { key: string; label: string }[] = [
   { key: 'project', label: '项目记录' },
 ]
 import { NoteTabs, type NoteTab } from '../components/NoteTabs'
+import { KnowledgeChip } from '../components/KnowledgeChip'
 import { Toolbar } from '../components/Toolbar'
 import { PopMenu } from '../components/PopMenu'
 import { TagMenu } from '../components/TagMenu'
@@ -150,6 +151,19 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   const [statusFilter, setStatusFilter] = useState<'all' | 'verified' | 'draft'>('all')
   /** id → { kind, verified }，由主进程按"全部状态含归档"一次取回 */
   const [metaById, setMetaById] = useState<Record<number, { kind: string; verified: boolean }>>({})
+
+  /**
+   * 取一次知识元信息（类型 + 可信状态）。
+   * 用 status:'all' 与 includeArchived:true 把**所有**笔记都拿回来 ——
+   * 只拿可用的话，待确认的条目在树上会凭空消失。
+   */
+  const reloadMeta = useCallback(async (): Promise<void> => {
+    const rows = await window.zhixing.knowledge?.list({ kind: 'all', status: 'all', includeArchived: true, limit: 1000 })
+    if (!rows) return
+    const map: Record<number, { kind: string; verified: boolean }> = {}
+    for (const r of rows) map[r.id] = { kind: r.kind, verified: !!r.verified_at }
+    setMetaById(map)
+  }, [])
 
   /** 编辑区自身宽度是否窄到放不下并排信息卡 —— 窄了改用覆盖式抽屉 */
   const [narrow, setNarrow] = useState(false)
@@ -299,13 +313,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
    * 用 status:'all' 与 includeArchived:true 把**所有**笔记都拿回来 ——
    * 只拿可用的话，待确认的条目在树上会凭空消失。
    */
-  void (async () => {
-    const rows = await window.zhixing.knowledge?.list({ kind: 'all', status: 'all', includeArchived: true, limit: 1000 })
-    if (!rows) return
-    const map: Record<number, { kind: string; verified: boolean }> = {}
-    for (const r of rows) map[r.id] = { kind: r.kind, verified: !!r.verified_at }
-    setMetaById(map)
-  })()
+  void reloadMeta()
 
   const fs0 = await window.zhixing.db.noteFolders()
     // 文件夹为空时补默认文件夹
@@ -1486,6 +1494,16 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                         <FormatIcon size={12} className={'ntree__type--' + formatTone} aria-hidden />
                         {formatName}
                       </span>
+                      {/* 知识徽标：这一篇是什么类型、可信吗。点开才能改类型与核对。
+                          放在格式胶囊之后 —— 两者回答的都是「这一篇是什么」。 */}
+                      {selectedId !== null && (
+                        <KnowledgeChip
+                          noteId={selectedId}
+                          meta={metaById[selectedId]}
+                          onChanged={reloadMeta}
+                          onNotice={onNotice}
+                        />
+                      )}
                       {/* 保存状态：图标 + 文案。此前只在脏的时候冒出一行「未保存…」，
                           干净时什么都不显示 —— 于是「没在动」和「已经存好」看起来一样。 */}
                       <span
