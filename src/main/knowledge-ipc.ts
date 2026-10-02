@@ -10,6 +10,7 @@ import {
   knowledgeCounts,
   isKnowledgeKind,
   isLinkKind,
+  knowledgeHealth,
   knowledgeMeta,
   linkKnowledge,
   listKnowledge,
@@ -32,6 +33,7 @@ import {
 export function registerKnowledgeIpc(): void {
   ipcMain.handle('knowledge:list', (_e, filter: KnowledgeFilter) => listKnowledge(filter ?? {}))
   ipcMain.handle('knowledge:counts', () => knowledgeCounts())
+  ipcMain.handle('knowledge:health', () => knowledgeHealth())
   ipcMain.handle('knowledge:meta', (_e, id: number) => knowledgeMeta(id))
   ipcMain.handle('knowledge:create', (_e, input: CreateKnowledgeInput) => createKnowledge(input))
   ipcMain.handle('knowledge:verify', (_e, id: number, check: CheckNote) => verifyKnowledge(id, check))

@@ -372,6 +372,44 @@ export function canDeleteSource(sourceId: number): { ok: boolean; count: number;
   return { ok: refs.length === 0, count: refs.length, titles: refs.slice(0, 5).map((r) => r.title) }
 }
 
+/**
+ * 知识库的三个"待办数字"。设计见 docs/specs/phase3-research.md §2.3。
+ *
+ * 刻意不做仪表盘 —— 这三个数的价值在于**提醒你去处理**，而提醒要出现在
+ * 你本来就待着的地方（笔记页的筛选条），不是一个要专门点进去的页面。
+ *
+ * 三个数都回答"我现在该做什么"，而不是"我做得怎么样"：
+ *   draft    —— 收了但没核对，堆着就是在给自己制造负债
+ *   noSource —— 知识类却没有来源，它们永远卡在待确认
+ *   unused   —— 有来源但没被任何知识引用，说明提炼了却没用起来
+ */
+export function knowledgeHealth(): { draft: number; noSource: number; unused: number } {
+  const c = conn()
+  const draft = (c.prepare('SELECT COUNT(*) n FROM note WHERE deleted_at IS NULL AND archived_at IS NULL AND verified_at IS NULL').get() as { n: number }).n
+
+  const noSource = (
+    c
+      .prepare(
+        'SELECT COUNT(*) n FROM note n WHERE n.deleted_at IS NULL AND n.archived_at IS NULL ' +
+          "AND n.kind IN ('concept','summary','synthesis','method','output','pitfall') " +
+          "AND NOT EXISTS (SELECT 1 FROM note_link l WHERE l.src_note_id = n.id AND l.link_kind = 'derived_from')"
+      )
+      .get() as { n: number }
+  ).n
+
+  const unused = (
+    c
+      .prepare(
+        'SELECT COUNT(*) n FROM note n WHERE n.deleted_at IS NULL AND n.archived_at IS NULL ' +
+          "AND EXISTS (SELECT 1 FROM note_link l WHERE l.src_note_id = n.id AND l.link_kind = 'derived_from') " +
+          'AND NOT EXISTS (SELECT 1 FROM note_link r WHERE r.dst_note_id = n.id)'
+      )
+      .get() as { n: number }
+  ).n
+
+  return { draft, noSource, unused }
+}
+
 /** 界面用：一条笔记加上它的知识元信息。 */
 export function noteWithMeta(id: number): (Note & { meta: KnowledgeRow }) | null {
   const n = getNote(id)

@@ -150,6 +150,8 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   const [kindFilter, setKindFilter] = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<'all' | 'verified' | 'draft' | 'archived'>('all')
   /** id → { kind, verified }，由主进程按"全部状态含归档"一次取回 */
+  /** 三个待办数字：待确认 / 无来源 / 未被引用 */
+  const [health, setHealth] = useState<{ draft: number; noSource: number; unused: number } | null>(null)
   const [metaById, setMetaById] = useState<
     Record<number, { kind: string; verified: boolean; archived: boolean }>
   >({})
@@ -160,7 +162,10 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
    * 只拿可用的话，待确认的条目在树上会凭空消失。
    */
   const reloadMeta = useCallback(async (): Promise<void> => {
-    const rows = await window.zhixing.knowledge?.list({ kind: 'all', status: 'all', includeArchived: true, limit: 1000 })
+    const k = window.zhixing.knowledge
+    if (!k) return
+    setHealth(await k.health())
+    const rows = await k.list({ kind: 'all', status: 'all', includeArchived: true, limit: 1000 })
     if (!rows) return
     const map: Record<number, { kind: string; verified: boolean; archived: boolean }> = {}
     for (const r of rows) map[r.id] = { kind: r.kind, verified: !!r.verified_at, archived: !!r.archived_at }
@@ -1441,6 +1446,34 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
           >
             清除筛选
           </button>
+        )}
+        {/*
+          三个"待办数字"（方案 phase3-research §2.3）。
+          刻意不做仪表盘 —— 它们的价值在于提醒你去处理，而提醒要出现在你本来就待着的地方。
+          三个数回答的都是"我现在该做什么"，不是"我做得怎么样"。
+        */}
+        {health && (health.draft > 0 || health.noSource > 0 || health.unused > 0) && (
+          <div className="notes-filter__health">
+            {health.draft > 0 && (
+              <button
+                className="notes-filter__hbtn notes-filter__hbtn--todo"
+                title="收了但还没核对 —— 堆着就是在给自己制造负债"
+                onClick={() => setStatusFilter('draft')}
+              >
+                待确认 {health.draft}
+              </button>
+            )}
+            {health.noSource > 0 && (
+              <span className="notes-filter__hbtn" title="知识类条目却没有来源，它们永远卡在待确认">
+                无来源 {health.noSource}
+              </span>
+            )}
+            {health.unused > 0 && (
+              <span className="notes-filter__hbtn" title="有来源但没被任何知识引用 —— 提炼了却没用起来">
+                未被引用 {health.unused}
+              </span>
+            )}
+          </div>
         )}
         <span className="u-aux notes-filter__count">
           {visibleNotes.length} / {notes.length}

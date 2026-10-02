@@ -774,6 +774,9 @@ const api = {
     > => ipcRenderer.invoke('knowledge:list', filter),
     counts: (): Promise<Record<string, { verified: number; draft: number }>> =>
       ipcRenderer.invoke('knowledge:counts'),
+    /** 三个"待办数字"：待确认 / 无来源 / 未被引用 */
+    health: (): Promise<{ draft: number; noSource: number; unused: number }> =>
+      ipcRenderer.invoke('knowledge:health'),
     meta: (id: number): Promise<unknown> => ipcRenderer.invoke('knowledge:meta', id),
     create: (input: {
       title: string

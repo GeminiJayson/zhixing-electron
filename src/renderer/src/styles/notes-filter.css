@@ -59,3 +59,33 @@
   margin-left: auto;
   font-variant-numeric: tabular-nums;
 }
+
+/* 三个待办数字。它们只在不为 0 时出现 —— 全清零时这一块整体消失，
+   那时候没有待办，也就没有提醒的必要 */
+.notes-filter__health {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.notes-filter__hbtn {
+  display: inline-flex;
+  align-items: center;
+  height: var(--control-h-sm);
+  padding: 0 var(--space-2);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--glass-layer-control);
+  color: var(--fg-secondary);
+  font: inherit;
+  font-size: var(--text-aux);
+  font-variant-numeric: tabular-nums;
+}
+/* 待确认可点：它是最该去处理的那个数 */
+.notes-filter__hbtn--todo {
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+  color: var(--danger);
+  cursor: pointer;
+}
+.notes-filter__hbtn--todo:hover {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}

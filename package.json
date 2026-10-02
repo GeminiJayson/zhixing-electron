@@ -60,6 +60,7 @@
   },
   "devDependencies": {
     "@electron/rebuild": "^3.7.2",
+    "@mozilla/readability": "^0.6.0",
     "@resvg/resvg-js": "^2.6.2",
     "@types/better-sqlite3": "^7.6.12",
     "@types/d3-force": "^3.0.10",

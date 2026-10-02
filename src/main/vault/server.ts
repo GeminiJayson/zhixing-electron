@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { conn } from '../db/connection'
+import { addFlash } from '../db/inbox'
 import { listSettings, setSetting } from '../db/settings'
 import { randomBytes } from 'node:crypto'
 import * as store from './store'
@@ -131,6 +132,55 @@ async function onRequest(req: IncomingMessage, res: ServerResponse): Promise<voi
       app: 'zhixing',
       vault: store.status(),
     })
+    return
+  }
+
+  /**
+   * 剪藏：浏览器扩展把当前页面的正文发过来。
+   *
+   * **这里不检查保险箱是否解锁** —— 剪藏和密码保险箱是两件不相干的事，
+   * 它只是共用了同一个本地端点与令牌。
+   *
+   * 落库位置是 **flash（收件箱）**，不是知识条目：抓下来的东西还没经过提炼，
+   * 按方案 §2 的分层，它属于"原始资料"那一层。
+   */
+  if (path === '/clip') {
+    if (req.method !== 'POST') {
+      json(res, 405, { ok: false, error: '只接受 POST' })
+      return
+    }
+    if (!authorized(req)) {
+      json(res, 401, { ok: false, error: 'unauthorized' })
+      return
+    }
+    const raw = await readBody(req)
+    let b: { url?: string; title?: string; text?: string; mode?: string }
+    try {
+      b = JSON.parse(raw) as typeof b
+    } catch {
+      json(res, 400, { ok: false, error: '请求体不是合法 JSON' })
+      return
+    }
+    const text = (b.text ?? '').trim()
+    if (!text) {
+      json(res, 400, { ok: false, error: '没有正文' })
+      return
+    }
+    const url = (b.url ?? '').trim()
+    /*
+      查重按 URL 精确匹配。已经剪过同一篇就不再存一份 ——
+      反复点图标不该在收件箱里堆出一串同一个页面。
+    */
+    if (url) {
+      const dup = conn().prepare('SELECT id FROM flash WHERE source_url = ? LIMIT 1').get(url)
+      if (dup) {
+        json(res, 200, { ok: true, action: 'duplicated' })
+        return
+      }
+    }
+    // remark 存标题：收件箱列表按它显示，正文太长不适合当标签
+    addFlash(text, (b.title ?? '').trim(), '浏览器扩展', url)
+    json(res, 200, { ok: true, action: 'created', mode: b.mode ?? 'readability' })
     return
   }
 
