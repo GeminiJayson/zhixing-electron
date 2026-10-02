@@ -38,11 +38,16 @@ type Tab = 'tasks' | 'flash'
 function wrapClippedHtml(html: string): string {
   return [
     '<!doctype html><html><head><meta charset="utf-8"><style>',
-    'body{margin:0;font:14px/1.7 system-ui,"Segoe UI","Microsoft YaHei",sans-serif;color:#1f2937;word-wrap:break-word}',
+    /* 横向不许溢出的两层：html/body 兜住整体，宽元素各自滚自己的。
+       只写 img/table 的 max-width 不够 —— 一个超宽 pre 或长 URL 就能
+       在 iframe 里顶出一条横向滚动条（第一版就是这样）。 */
+    'html,body{margin:0;padding:0;max-width:100%;overflow-x:hidden}',
+    'body{font:14px/1.7 system-ui,"Segoe UI","Microsoft YaHei",sans-serif;color:#1f2937;overflow-wrap:break-word;word-break:break-word}',
     'img{max-width:100%;height:auto}',
-    'pre{overflow-x:auto;padding:8px;background:#f3f4f6;border-radius:6px}',
+    'pre{overflow-x:auto;max-width:100%;padding:8px;background:#f3f4f6;border-radius:6px}',
     'code{background:#f3f4f6;padding:1px 4px;border-radius:3px}',
-    'table{border-collapse:collapse;max-width:100%}',
+    'table{border-collapse:collapse;max-width:100%;display:block;overflow-x:auto}',
+    'a{overflow-wrap:anywhere}',
     'th,td{border:1px solid #d1d5db;padding:4px 8px}',
     'blockquote{margin:0;padding-left:12px;border-left:3px solid #d1d5db;color:#4b5563}',
     'a{color:#0e7490}',

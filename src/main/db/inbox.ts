@@ -10,8 +10,17 @@ import { looksLikeHtml, titleFromContent } from '../../shared/html-text'
 
 // ---------------------------------------------------------------- 收件箱 / 闪念
 
+/**
+ * 查询 flash 时的字段清单。
+ *
+ * **加字段时记得加到这里** —— 它是显式列表，不是 SELECT *。
+ * content_format 漏掉过一次：渲染层据此判断"这段是纯文本还是网页 HTML"，
+ * 字段没返回就永远是 undefined，于是剪藏来的 HTML 被当成纯文本原样打印出来，
+ * 用户看到一屏标签。类型上不会报错（Flash.content_format 是可选的），
+ * 所以这个疏漏一路走到了界面上才被发现。
+ */
 export const FLASH_COLUMNS =
-  'id, content, remark, source_app, source_url, status, converted_type, converted_id, created_at'
+  'id, content, content_format, remark, source_app, source_url, status, converted_type, converted_id, created_at'
 
 /** 任务收件箱：未归入任何列表（list_id IS NULL）的任务。 */
 export function listInboxTasks(): Task[] {
