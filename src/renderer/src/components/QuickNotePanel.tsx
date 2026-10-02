@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { EditorContent, useEditor } from '@tiptap/react'
+import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import TextAlign from '@tiptap/extension-text-align'
 import Placeholder from '@tiptap/extension-placeholder'
 import { TextStyle } from '@tiptap/extension-text-style'
 import FontSize from '@tiptap/extension-text-style/font-size'
 import Color from '@tiptap/extension-color'
+import { TableKit } from '@tiptap/extension-table/kit'
 import { CodeBlockLanguage } from './CodeBlockLanguage'
 import { RichTextToolbar } from './RichTextToolbar'
+import { imagePasteProps } from '@renderer/lib/rich-media'
 import { titleFromContent } from '@shared/html-text'
 import { parseSettings } from '@shared/settings'
 import { Pin } from '@renderer/lib/icons'
@@ -53,18 +55,33 @@ export function QuickNotePanel({ onClose, onNotice }: Props): React.JSX.Element 
   const [flashMsg, setFlashMsg] = useState('')
   const boxRef = useRef<HTMLDivElement>(null)
 
+  /** 供粘贴/拖放回调取用；useEditor 的参数里拿不到还没初始化的 editor 本身 */
+  const editorRef = useRef<Editor | null>(null)
   const editor = useEditor({
     extensions: [
       StarterKit,
       TextStyle,
       FontSize,
       Color,
+      /** 表格 —— 快速笔记同样要能粘贴网页表格，缺了它表格会退化成纯文本 */
+      TableKit.configure({ table: { resizable: true } }),
       CodeBlockLanguage,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       Placeholder.configure({ placeholder: '随手记一句…（Ctrl+Enter 存下，接着写）' }),
     ],
     content: '',
-    editorProps: { attributes: { class: 'qn__body' } },
+    onCreate: ({ editor: ed }) => {
+      editorRef.current = ed
+    },
+    editorProps: {
+      attributes: { class: 'qn__body' },
+      /**
+       * 快速笔记没有 noteId（还没落成笔记），所以图片只插缩略图、不落盘。
+       * 这是刻意的：宁可图先显示出来，也不要因为「还没有 id」就什么都不做 ——
+       * 用户报的正是「快速笔记不支持粘贴图片」。
+       */
+      ...imagePasteProps(() => editorRef.current, () => undefined),
+    },
   })
 
   /**
