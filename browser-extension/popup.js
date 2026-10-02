@@ -36,6 +36,34 @@ document.getElementById('clip').addEventListener('click', function () {
   })
 })
 
+/**
+ * 选择区域剪藏。
+ *
+ * 和「剪藏这一页」的分工：那个交给 Readability 猜正文在哪，猜不准时会带上
+ * 导航与侧栏；这个让你直接指一块 —— "我只想要那个表格"这种需求，
+ * 全文提取无论多聪明都做不到。
+ *
+ * **面板关掉之后选择模式还在**：选择器跑在页面里（content script），
+ * 不依赖 popup 存活。所以这里的提示要告诉用户"去页面上点"。
+ */
+document.getElementById('pick').addEventListener('click', function () {
+  chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+    var tab = tabs[0]
+    if (!tab || tab.id === undefined) return
+    if (/^(chrome|edge|about|devtools):/i.test(tab.url || '')) {
+      say('浏览器内部页面不允许扩展读取', 'bad')
+      return
+    }
+    chrome.tabs.sendMessage(tab.id, { kind: 'startPicker' }, function () {
+      if (chrome.runtime.lastError) {
+        say('这一页的脚本还没就绪 —— 刷新一下页面再试', 'bad')
+        return
+      }
+      window.close()
+    })
+  })
+})
+
 // 打开面板时先看一眼配置状态，缺令牌就别让用户白点
 chrome.storage.local.get('token', function (s) {
   if (!s.token) {

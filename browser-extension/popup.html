@@ -9,7 +9,8 @@
       button { width: 100%; padding: 9px 12px; margin-bottom: 8px; border: 0; border-radius: 8px;
         font: inherit; cursor: pointer; }
       #clip { background: #0e7490; color: #fff; font-weight: 500; }
-      #clip:disabled { opacity: 0.6; cursor: default; }
+      #clip:disabled, #pick:disabled { opacity: 0.6; cursor: default; }
+      #pick { background: #e0f2fe; color: #0e7490; }
       #opts { background: #f3f4f6; color: #374151; }
       #msg { margin-top: 4px; font-size: 12px; line-height: 1.5; }
       .ok { color: #065f46; }
@@ -19,6 +20,7 @@
   <body>
     <h1>知行 ZhiXing</h1>
     <button id="clip">剪藏这一页到收件箱</button>
+    <button id="pick">选择区域剪藏</button>
     <button id="opts">设置（令牌 / 诊断）</button>
     <div id="msg"></div>
     <script src="popup.js"></script>

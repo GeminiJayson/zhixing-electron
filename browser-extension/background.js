@@ -207,6 +207,21 @@ try {
       clipActiveTab().then(sendResponse)
       return true
     }
+    /**
+     * 用户在页面上点选了一块。选择模式跑在页面里，popup 那时早就关了，
+     * 所以结果只能回到这里处理，用系统通知给出反馈。
+     */
+    if (msg && msg.kind === 'pickResult') {
+      const r = msg.result
+      if (!r || !r.ok) {
+        if (r && r.message) notify('没剪藏', r.message)
+        return false
+      }
+      postClip(r).then(function (res) {
+        notify(res.ok ? '已剪藏' : '剪藏失败', res.message || '')
+      })
+      return false
+    }
     if (msg && msg.kind === 'diagnose') {
       diagnose().then(function (steps) {
         sendResponse({ steps: steps })

@@ -65,9 +65,139 @@ function extractArticle() {
   }
 }
 
+/**
+ * 清洗选中的那块 HTML。
+ *
+ * **沙箱 iframe 已经挡住了脚本执行**，所以这不是唯一防线；但两道都要有：
+ * 存进去的东西本身干净，以后换渲染方式（比如导出成 markdown）时不会带着毒。
+ * 只删真正危险的东西，**不碰结构与内联样式** —— 那正是用户选它的理由。
+ */
+function sanitize(html) {
+  var tpl = document.createElement('template')
+  tpl.innerHTML = html
+  var drop = ['script', 'style', 'link', 'meta', 'iframe', 'object', 'embed', 'form', 'input', 'button']
+  drop.forEach(function (tag) {
+    var list = tpl.content.querySelectorAll(tag)
+    for (var i = list.length - 1; i >= 0; i--) list[i].remove()
+  })
+  var all = tpl.content.querySelectorAll('*')
+  for (var j = 0; j < all.length; j++) {
+    var el = all[j]
+    var attrs = Array.prototype.slice.call(el.attributes)
+    for (var k = 0; k < attrs.length; k++) {
+      var n = attrs[k].name.toLowerCase()
+      // on* 事件属性；javascript: 链接；以及 srcset 里可能藏的脚本
+      if (n.indexOf('on') === 0 || (n === 'href' && /^\s*javascript:/i.test(el.getAttribute('href') || ''))) {
+        el.removeAttribute(attrs[k].name)
+      }
+    }
+    // 图片的 data: 之外一律保留，它的 src 是内容的一部分
+  }
+  return tpl.innerHTML
+}
+
+/**
+ * 元素选择模式：让用户点页面上的某一块，只取那一块。
+ *
+ * **这是 Readability 的互补，不是替代** —— Readability 猜"正文在哪"，
+ * 猜不准时会带上导航、侧栏、推荐位。而"我只想要那个表格"这种需求，
+ * 全文提取无论多聪明都做不到，只能让用户指一下。
+ *
+ * 用 pointer-events:none 的高亮框而不是给元素加 outline：
+ * 后者会改到页面自身的样式，取消时可能还原不干净。
+ */
+var picker = null
+
+function stopPicker() {
+  if (!picker) return
+  picker.box.remove()
+  document.removeEventListener('mousemove', picker.onMove, true)
+  document.removeEventListener('click', picker.onClick, true)
+  document.removeEventListener('keydown', picker.onKey, true)
+  document.documentElement.style.cursor = ''
+  picker = null
+}
+
+function startPicker() {
+  if (picker) return
+  var box = document.createElement('div')
+  box.setAttribute(
+    'style',
+    'position:fixed;z-index:2147483647;pointer-events:none;border:2px solid #0e7490;' +
+      'background:rgba(14,116,144,0.12);border-radius:2px;transition:none'
+  )
+  var tip = document.createElement('div')
+  tip.setAttribute(
+    'style',
+    'position:fixed;z-index:2147483647;pointer-events:none;left:50%;top:12px;transform:translateX(-50%);' +
+      'padding:6px 14px;border-radius:999px;background:#0e7490;color:#fff;font:13px system-ui,sans-serif;' +
+      'box-shadow:0 2px 12px rgba(0,0,0,.25)'
+  )
+  tip.textContent = '点击要剪藏的区域，Esc 取消'
+  document.body.appendChild(box)
+  document.body.appendChild(tip)
+  document.documentElement.style.cursor = 'crosshair'
+
+  var onMove = function (e) {
+    var el = e.target
+    if (!el || el === box || el === tip || !el.getBoundingClientRect) return
+    var r = el.getBoundingClientRect()
+    box.style.left = r.left + 'px'
+    box.style.top = r.top + 'px'
+    box.style.width = r.width + 'px'
+    box.style.height = r.height + 'px'
+  }
+
+  var onClick = function (e) {
+    // 拦住这次点击：选择模式下不该触发页面自己的链接或按钮
+    e.preventDefault()
+    e.stopPropagation()
+    var el = e.target
+    stopPicker()
+    if (!el || !el.innerHTML) {
+      chrome.runtime.sendMessage({ kind: 'pickResult', result: { ok: false, message: '这块没有可取的内容' } })
+      return
+    }
+    var html = sanitize(el.innerHTML)
+    var text = (el.innerText || '').trim()
+    if (!html || text.length < 10) {
+      chrome.runtime.sendMessage({ kind: 'pickResult', result: { ok: false, message: '这块内容太短，换个区域试试' } })
+      return
+    }
+    chrome.runtime.sendMessage({
+      kind: 'pickResult',
+      result: {
+        ok: true,
+        url: location.href,
+        title: (document.title || '').trim(),
+        text: text,
+        html: html,
+        mode: 'selection',
+      },
+    })
+  }
+
+  var onKey = function (e) {
+    if (e.key === 'Escape') {
+      stopPicker()
+      chrome.runtime.sendMessage({ kind: 'pickResult', result: { ok: false, message: '已取消' } })
+    }
+  }
+
+  document.addEventListener('mousemove', onMove, true)
+  document.addEventListener('click', onClick, true)
+  document.addEventListener('keydown', onKey, true)
+  picker = { box: box, tip: tip, onMove: onMove, onClick: onClick, onKey: onKey }
+}
+
 chrome.runtime.onMessage.addListener(function (msg, _sender, sendResponse) {
   if (msg && msg.kind === 'extract') {
     sendResponse(extractArticle())
+    return true
+  }
+  if (msg && msg.kind === 'startPicker') {
+    startPicker()
+    sendResponse({ ok: true })
     return true
   }
   return false
