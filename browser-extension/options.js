@@ -37,4 +37,39 @@ $('test').addEventListener('click', function () {
   })
 })
 
+/**
+ * 逐步自检。扩展出问题时最难的是"看不到它走到哪一步"——
+ * 通知不弹、请求不发，用户只能看到"没反应"。这里把每一步的结果摆出来。
+ */
+$('diagnose').addEventListener('click', function () {
+  show('正在自检…')
+  chrome.runtime.sendMessage({ kind: 'diagnose' }, function (res) {
+    var box = $('diag')
+    box.innerHTML = ''
+    if (!res || !res.steps) {
+      show('诊断没有返回结果，去 chrome://extensions 里重新加载一次扩展再试。', 'bad')
+      return
+    }
+    var allOk = true
+    res.steps.forEach(function (s) {
+      if (!s.ok) allOk = false
+      var row = document.createElement('div')
+      row.className = 'diagrow ' + (s.ok ? 'ok' : 'bad')
+      var n = document.createElement('strong')
+      n.textContent = (s.ok ? '✓ ' : '✗ ') + s.name
+      var d = document.createElement('span')
+      d.textContent = s.detail
+      row.appendChild(n)
+      row.appendChild(d)
+      box.appendChild(row)
+    })
+    show(
+      allOk
+        ? '全部通过。若点图标仍没反应：先在 chrome://extensions 重新加载扩展（manifest 改过就必须重载），再确认当前页不是 chrome:// 开头的内部页面。'
+        : '有步骤没通过，按上面标红的那一条处理。',
+      allOk ? 'ok' : 'bad'
+    )
+  })
+})
+
 load()

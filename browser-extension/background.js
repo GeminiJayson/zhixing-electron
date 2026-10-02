@@ -59,6 +59,56 @@ function notify(title, message) {
   console.log('[知行]', title, message)
 }
 
+/**
+ * 自检：把"插件为什么不动"这件事拆成可观察的几步。
+ *
+ * 扩展出问题时最难的是"看不到它走到哪一步" —— 通知不弹、请求不发，
+ * 用户只能看到"没反应"。这里把每一步的结果都返回给设置页显示。
+ */
+async function diagnose() {
+  const steps = []
+  const { token } = await chrome.storage.local.get('token')
+
+  steps.push({ name: '令牌已配置', ok: !!token, detail: token ? token.slice(0, 8) + '…' : '还没填，请在下面粘贴' })
+
+  // 端口缓存可能是旧的，诊断时强制重探
+  cachedPort = null
+  const port = await findPort()
+  steps.push({
+    name: '找到知行应用',
+    ok: port !== null,
+    detail: port !== null ? '127.0.0.1:' + port : '扫描 47821–47830 都没回应，应用没在运行？',
+  })
+
+  if (port !== null && token) {
+    try {
+      const r = await fetch('http://127.0.0.1:' + port + '/vault/ping', { signal: AbortSignal.timeout(1500) })
+      const j = await r.json()
+      steps.push({ name: '端点应答', ok: !!j.ok, detail: 'vault=' + j.vault })
+    } catch (e) {
+      steps.push({ name: '端点应答', ok: false, detail: String(e && e.message ? e.message : e) })
+    }
+    try {
+      // 用一个必然被拒的请求验证"服务器认得这个令牌"：401 = 令牌不对，400 = 令牌对了但没正文
+      const r = await fetch('http://127.0.0.1:' + port + '/clip', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-vault-token': token },
+        body: JSON.stringify({ text: '' }),
+      })
+      const ok = r.status === 400
+      steps.push({
+        name: '令牌有效',
+        ok: ok,
+        detail: ok ? '通过（空正文被正确拒绝）' : r.status === 401 ? '令牌不对，重新从应用里复制' : 'HTTP ' + r.status,
+      })
+    } catch (e) {
+      steps.push({ name: '令牌有效', ok: false, detail: String(e && e.message ? e.message : e) })
+    }
+  }
+
+  return steps
+}
+
 async function capture(payload) {
   const port = await findPort()
   if (port === null) {
@@ -104,6 +154,12 @@ chrome.runtime.onMessage.addListener(function (msg, _sender, sendResponse) {
       sendResponse({ ok: true })
     })
     return true // 异步响应
+  }
+  if (msg && msg.kind === 'diagnose') {
+    diagnose().then(function (steps) {
+      sendResponse({ steps: steps })
+    })
+    return true
   }
   if (msg && msg.kind === 'probe') {
     findPort().then(function (p) {
