@@ -31,7 +31,9 @@ import { hardenWindow } from './security'
 import { logTaskActivity } from './db/task-activity'
 import { dueTargets } from './db/workflow-scheduler'
 import { startTriggerServer, stopTriggerServer } from './http-trigger'
-import { setSetting } from './db/settings'
+import { listSettings, setSetting } from './db/settings'
+import { registerVaultIpc, stopVaultTimers } from './vault/ipc'
+import { startVaultServer, stopVaultServer } from './vault/server'
 import { autoBackup, broadcastDataChanged, closeDb, currentSettings, dbPath, dbOpenError, dbReadonlyReason, dueReminders, recordReminderFire, reminderPolicy, ensureDefaultSettings, listTodayTasks, open, registerDbHandlers, saveWidgetGeometry, saveWidgetBall, setDataChangedHook, snoozeReminder, dismissReminder, instantiateWorkflow, listScheduleTargets } from './db'
 import { decideReminder } from '../shared/reminder'
 import {
@@ -2414,6 +2416,42 @@ app.whenReady().then(() => {
   })
   ipcMain.handle('window:close', (e) => BrowserWindow.fromWebContents(e.sender)?.close())
 
+  /**
+   * 密码保险箱。
+   *
+   * 自动锁定的分钟数从设置里现读（每次 tick 读一遍，改设置立即生效，不用重启）。
+   * 锁定时广播给所有窗口 —— 渲染层收到后要把已解密的列表从 React 状态里清掉，
+   * 否则锁定后界面上还留着明文（见方案 §7.3）。
+   */
+  registerVaultIpc({
+    getAutoLockMinutes: () => {
+      const raw = listSettings().vault_auto_lock_min
+      const n = Number.parseInt(raw ?? '5', 10)
+      return Number.isFinite(n) && n >= 0 ? n : 5
+    },
+    onLocked: () => {
+      for (const w of BrowserWindow.getAllWindows()) {
+        if (!w.isDestroyed()) w.webContents.send('vault:locked')
+      }
+    },
+    /**
+     * 剪贴板里出现了像密码的内容。
+     * **只往界面推一条提示**，不自动建条目、不弹窗 —— 我们不知道那段文本
+     * 是不是真的密码，也不知道它属于哪个站点，所以决定权必须留给用户。
+     */
+    onClipboardCandidate: (text: string) => {
+      for (const w of BrowserWindow.getAllWindows()) {
+        if (!w.isDestroyed()) w.webContents.send('vault:clipboardCandidate', text)
+      }
+    },
+  })
+
+  /**
+   * 浏览器扩展用的本地端点。
+   * 只监听 127.0.0.1，写入类端点要令牌；锁定状态下拒收任何凭据（见 vault/server.ts）。
+   */
+  startVaultServer()
+
   createWindow()
   // 初始化完成信号由渲染层给（App.tsx 首屏数据就绪后调 app.ready）；
   // 兜底定时器防止渲染层异常时应用一直停在欢迎页后面没有任何窗口。
@@ -2425,6 +2463,12 @@ app.whenReady().then(() => {
       revealMain()
     }
   })
+})
+
+// 退出前停掉保险箱的定时器：剪贴板清除与自动锁定不该在退出过程中再触发
+app.on('before-quit', () => {
+  stopVaultTimers()
+  stopVaultServer()
 })
 
 app.on('window-all-closed', () => {

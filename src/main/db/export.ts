@@ -21,6 +21,17 @@ import { autoBackup } from './backup'
  * 仍留着旧 id，指向已不存在的任务/笔记。
  */
 export const EXPORT_TABLES = [
+  /*
+    **这个列表刻意不含 vault_meta / vault_entry**（密码保险箱）。
+    
+    它是显式白名单，所以保险箱默认就不会被导出 —— 这正是我们要的默认值。
+    即便将来有人想加，也请先看 docs/specs/vault-design.md §6.1：
+    导出的只能是**密文**，绝不能在这里把它解密成明文再序列化，
+    那会让"导出"变成一条绕过主密码的路径。
+    
+    当前不做"导出时可勾选包含保险箱" —— 换机场景走整库备份更合适，
+    那条路径同样是密文（见 backup.ts 的 autoBackup，整库拷贝）。
+  */
   'list_folder',
   'task',
   'task_tag',

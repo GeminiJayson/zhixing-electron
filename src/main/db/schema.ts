@@ -4,9 +4,9 @@
  *
  * 这里是建库 DDL 的**唯一真源**，随功能直接维护：改 `SCHEMA_SQL` 后要同步升
  * `SCHEMA_VERSION`，并在 migrate.ts 的迁移链里补上同号步骤，旧库才会跟着补齐。
- * 当前 SCHEMA_VERSION = 14，共 26 张表。
+ * 当前 SCHEMA_VERSION = 15，共 28 张表（v15 加了密码保险箱的 vault_meta / vault_entry）。
  */
-export const SCHEMA_VERSION = 14
+export const SCHEMA_VERSION = 15
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS attachment (
@@ -260,4 +260,30 @@ CREATE TABLE IF NOT EXISTS workflow_run_log (
 	FOREIGN KEY(instance_id) REFERENCES workflow_instance (id) ON DELETE CASCADE, 
 	FOREIGN KEY(node_id) REFERENCES workflow_node (id) ON DELETE SET NULL
 );
+CREATE TABLE IF NOT EXISTS vault_meta (
+	id INTEGER PRIMARY KEY CHECK (id = 1), 
+	kdf_salt BLOB NOT NULL, 
+	kdf_params TEXT NOT NULL, 
+	verifier_ct BLOB NOT NULL, 
+	verifier_iv BLOB NOT NULL, 
+	created_at DATETIME
+);
+CREATE TABLE IF NOT EXISTS vault_entry (
+	id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, 
+	title_ct BLOB NOT NULL, 
+	title_iv BLOB NOT NULL, 
+	username_ct BLOB, 
+	username_iv BLOB, 
+	password_ct BLOB NOT NULL, 
+	password_iv BLOB NOT NULL, 
+	url_ct BLOB, 
+	url_iv BLOB, 
+	notes_ct BLOB, 
+	notes_iv BLOB, 
+	tags_ct BLOB, 
+	tags_iv BLOB, 
+	created_at DATETIME, 
+	updated_at DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_vault_entry_updated ON vault_entry (updated_at DESC);
 `

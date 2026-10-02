@@ -1,0 +1,247 @@
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import { conn } from '../db/connection'
+import { listSettings, setSetting } from '../db/settings'
+import { randomBytes } from 'node:crypto'
+import * as store from './store'
+
+/**
+ * 给浏览器扩展用的本地 HTTP 端点。
+ *
+ * **这是浏览器插件那条路，不是键盘钩子**：扩展的 content script 在页面里
+ * 读自己所在页面的登录表单，再把结果发到这里。它看不到别的标签页、别的应用，
+ * 也不需要任何系统级权限 —— 这是所有密码管理器的通行做法。
+ *
+ * 与 workflow 的触发端点（http-trigger.ts）有三处不同，都是被"对面是浏览器扩展"
+ * 这个前提逼出来的：
+ *
+ *   1. **端口必须固定**（见下），不能像那边一样 listen(0) —— 扩展没法知道随机端口；
+ *   2. **要带 CORS 头**，否则扩展的 fetch 读不到响应；
+ *   3. **需要 GET /vault/ping** 供扩展探测端口，这个端点不带令牌（只回一句"我是知行"，
+ *      不含任何用户数据）。
+ *
+ * 安全边界：只监听 127.0.0.1；写入类端点必须要令牌，而令牌只显示在设置页里，
+ * 用户手动粘进扩展。恶意网页即使猜到端口，没有令牌也只能拿到 401。
+ */
+
+/** 默认端口。固定值的唯一目的是让扩展能找过来；被占用时会在这一段里顺延。 */
+const DEFAULT_PORT = 47821
+/** 顺延范围：扩展会依次探测这一段 */
+const PORT_SPAN = 10
+/** 请求体上限：一条凭据（站点 + 账号 + 密码）远用不到 16KB */
+const MAX_BODY = 16 * 1024
+
+let server: Server | null = null
+let boundPort = 0
+
+function json(res: ServerResponse, code: number, body: unknown): void {
+  const text = JSON.stringify(body)
+  res.writeHead(code, {
+    'content-type': 'application/json; charset=utf-8',
+    'content-length': Buffer.byteLength(text),
+    'cache-control': 'no-store',
+    // 扩展有 host_permissions 时本不需要它，但留着头能让用户在 DevTools 里
+    // 手动试接口时看得到响应
+    'access-control-allow-origin': '*',
+    'access-control-allow-headers': 'content-type, x-vault-token',
+    'access-control-allow-methods': 'GET, POST, OPTIONS',
+  })
+  res.end(text)
+}
+
+function readBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve) => {
+    let size = 0
+    let text = ''
+    req.on('data', (c: Buffer) => {
+      size += c.length
+      if (size <= MAX_BODY) text += c.toString('utf8')
+    })
+    req.on('end', () => resolve(text))
+    req.on('error', () => resolve(''))
+  })
+}
+
+/** 令牌：不存在就生成一个 32 位十六进制串并存进设置。 */
+export function vaultToken(): string {
+  const existing = listSettings().vault_http_token
+  if (existing && existing.length >= 16) return existing
+  const t = randomBytes(16).toString('hex')
+  setSetting('vault_http_token', t)
+  return t
+}
+
+/** 重新生成令牌（设置页的「重新生成」按钮）。已配好的扩展需要重新粘一次。 */
+export function rotateVaultToken(): string {
+  const t = randomBytes(16).toString('hex')
+  setSetting('vault_http_token', t)
+  return t
+}
+
+export function vaultPort(): number {
+  const raw = Number.parseInt(listSettings().vault_http_port ?? '', 10)
+  return Number.isFinite(raw) && raw > 1024 && raw < 65536 ? raw : DEFAULT_PORT
+}
+
+function authorized(req: IncomingMessage): boolean {
+  const header = req.headers['x-vault-token']
+  const fromHeader = Array.isArray(header) ? header[0] : header
+  if (fromHeader && fromHeader === vaultToken()) return true
+  // 也允许放在查询串里，方便用户用 curl 手测
+  const q = (req.url ?? '').split('?')[1] ?? ''
+  const params = new URLSearchParams(q)
+  return params.get('token') === vaultToken()
+}
+
+interface CaptureBody {
+  url?: string
+  title?: string
+  username?: string
+  password?: string
+}
+
+/** 从网址里取主机名当条目标题。解不出来就用扩展传来的标题。 */
+function titleFor(b: CaptureBody): string {
+  try {
+    const h = new URL(b.url ?? '').hostname
+    if (h) return h
+  } catch {
+    // 不是合法 URL（扩展可能只给了域名），走下面的兜底
+  }
+  const t = (b.title ?? '').trim()
+  return t || '(未知站点)'
+}
+
+async function onRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const path = (req.url ?? '').split('?')[0]
+
+  // 预检：扩展在带自定义头时会先发 OPTIONS
+  if (req.method === 'OPTIONS') {
+    json(res, 204, {})
+    return
+  }
+
+  /**
+   * 探活。**不带令牌**，因为扩展得先找到端口才能带令牌。
+   * 它只回应用身份，不含任何用户数据；锁定状态下也照常回应 ——
+   * 扩展需要据此告诉用户"应用开着，只是保险箱锁着"。
+   */
+  if (path === '/vault/ping') {
+    json(res, 200, {
+      ok: true,
+      app: 'zhixing',
+      vault: store.status(),
+    })
+    return
+  }
+
+  if (path !== '/vault/capture') {
+    json(res, 404, { ok: false, error: '未知端点' })
+    return
+  }
+
+  if (req.method === 'POST' && !authorized(req)) {
+    // 401 之外什么都不说：不区分"没带令牌"和"令牌不对"
+    json(res, 401, { ok: false, error: 'unauthorized' })
+    return
+  }
+
+  if (req.method === 'GET') {
+    // 给扩展一个"待保存列表"的读口：目前只回状态，够扩展决定要不要提示用户
+    json(res, 200, { ok: true, vault: store.status() })
+    return
+  }
+
+  if (req.method !== 'POST') {
+    json(res, 405, { ok: false, error: '只接受 GET / POST' })
+    return
+  }
+
+  const body = await readBody(req)
+  let parsed: CaptureBody
+  try {
+    parsed = JSON.parse(body) as CaptureBody
+  } catch {
+    json(res, 400, { ok: false, error: '请求体不是合法 JSON' })
+    return
+  }
+
+  if (!parsed.password) {
+    json(res, 400, { ok: false, error: '缺少 password' })
+    return
+  }
+
+  if (store.status() !== 'unlocked') {
+    // 锁定时不接收任何凭据 —— 否则等于绕过了主密码
+    json(res, 423, { ok: false, error: 'locked', message: '保险箱已锁定，请先在应用里解锁' })
+    return
+  }
+
+  const title = titleFor(parsed)
+  const existing = store.list().find((e) => e.title === title)
+  if (existing) {
+    // 同一个站点已存在：更新它的账号密码，而不是新建一条重复的
+    store.update(existing.id, {
+      title,
+      username: parsed.username ?? existing.username,
+      password: parsed.password,
+      url: parsed.url ?? existing.url,
+      notes: existing.notes,
+      tags: existing.tags.includes('插件') ? existing.tags : [...existing.tags, '插件'],
+    })
+    json(res, 200, { ok: true, action: 'updated', title })
+    return
+  }
+
+  store.create({
+    title,
+    username: parsed.username ?? '',
+    password: parsed.password,
+    url: parsed.url ?? '',
+    notes: '',
+    tags: ['插件'],
+  })
+  json(res, 200, { ok: true, action: 'created', title })
+}
+
+/** 在 127.0.0.1 上找个能用的端口起服务。扩展会依次探测这一段。 */
+export function startVaultServer(onCaptured?: (title: string) => void): number {
+  if (server) return boundPort
+  const wanted = vaultPort()
+
+  const s = createServer((req, res) => {
+    void onRequest(req, res).catch(() => {
+      // 单次请求出错不该让整个端点挂掉
+      if (!res.headersSent) json(res, 500, { ok: false, error: '内部错误' })
+    })
+  })
+  server = s
+
+  /**
+   * 依次试 wanted..wanted+SPAN-1。
+   * 端口被别的程序占着是很常见的事（尤其用户同时开了两个版本），
+   * 顺延一个比直接失败好 —— 扩展本来就要扫描这一段。
+   */
+  const tryListen = (port: number, attempt: number): void => {
+    s.once('error', () => {
+      if (attempt < PORT_SPAN) tryListen(port + 1, attempt + 1)
+    })
+    s.listen(port, '127.0.0.1', () => {
+      boundPort = port
+      setSetting('vault_http_port', String(port))
+      onCaptured?.(String(port))
+    })
+  }
+  tryListen(wanted, 0)
+
+  return wanted
+}
+
+export function stopVaultServer(): void {
+  server?.close()
+  server = null
+  boundPort = 0
+}
+
+export function vaultServerPort(): number {
+  return boundPort
+}

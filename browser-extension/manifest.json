@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "知行 ZhiXing 密码助手",
+  "version": "1.0.0",
+  "description": "在网页上提交登录表单时，把账号密码交给本机的知行应用保存。不联网、不上传。",
+  "permissions": [
+    "storage",
+    "notifications"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "options_page": "options.html",
+  "action": {
+    "default_title": "知行 ZhiXing"
+  }
+}

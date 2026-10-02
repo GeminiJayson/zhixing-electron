@@ -717,6 +717,29 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
             </section>
 
             <section className="set-card set-card--ambient">
+              <header className="set-card__head"><Database size={15} /> 密码保险箱</header>
+              <label className="set-row">
+                <span>自动锁定</span>
+                <select
+                  className="vault-select"
+                  value={settings.vault_auto_lock_min}
+                  aria-label="保险箱自动锁定"
+                  onChange={(e) => void update('vault_auto_lock_min', e.target.value)}
+                >
+                  <option value={1}>1 分钟无操作</option>
+                  <option value={5}>5 分钟无操作</option>
+                  <option value={15}>15 分钟无操作</option>
+                  <option value={30}>30 分钟无操作</option>
+                  <option value={0}>从不自动锁定</option>
+                </select>
+              </label>
+              <p className="u-aux set-row__note">
+                保险箱的主密码**无法找回** —— 它不以任何形式保存，只在你输入时用于派生密钥。
+                忘记之后唯一的出路是在保险箱页面里清空重建，届时里面的条目会一并删除。
+              </p>
+            </section>
+
+            <section className="set-card set-card--ambient">
               <header className="set-card__head"><SlidersHorizontal size={15} /> 桌面浮窗</header>
               <label className="set-row">
                 <span>启用桌面浮窗</span>

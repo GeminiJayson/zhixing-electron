@@ -1,0 +1,378 @@
+/* 密码保险箱页面。设计见 docs/specs/vault-design.md §7。 */
+
+/* 三种形态共用一个外层：未初始化 / 已锁定是居中卡片，已解锁是左右两栏 */
+.vault-page {
+  /* 剪贴板提示条是相对整页定位的 */
+  position: relative;
+  display: flex;
+  /* .page 是 flex-direction: column（大部分页面都是上下结构），
+     保险箱是左右两栏，必须显式覆盖 */
+  flex-direction: row;
+  gap: var(--space-2);
+  height: 100%;
+  padding: var(--space-2);
+  overflow: hidden;
+}
+/* .page > * 被设成 flex: 0 0 auto（防止页头被压扁），
+   这里的两栏要靠 flex 撑开，得把它放开 */
+.vault-page > * {
+  flex: 0 1 auto;
+}
+.vault-page--open {
+  align-items: stretch;
+}
+
+/* ---------------------------------------------------------------- 居中卡片 */
+
+.vault-center {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(440px, 100%);
+  margin: auto;
+  padding: var(--space-5);
+  text-align: center;
+}
+.vault-center h2 {
+  margin: 0;
+  font-size: var(--text-title);
+}
+.vault-center > svg {
+  margin: 0 auto;
+  color: var(--accent);
+}
+
+.vault-input {
+  height: var(--control-h);
+  padding: 0 var(--space-3);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-ctl);
+  background: var(--glass-layer-control);
+  color: var(--fg-primary);
+  font: inherit;
+}
+.vault-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+textarea.vault-input {
+  height: auto;
+  padding: var(--space-2) var(--space-3);
+  resize: vertical;
+  line-height: 1.5;
+}
+.vault-select {
+  height: var(--control-h);
+  padding: 0 var(--space-2);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-ctl);
+  background: var(--glass-layer-control);
+  color: var(--fg-primary);
+  font: inherit;
+}
+
+/* 「忘记无法找回」的确认框：给足存在感，但不做成一整块警示色 —— 它是确认，不是报错 */
+.vault-ack {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-ctl);
+  background: var(--glass-layer-control);
+  text-align: left;
+  font-size: var(--text-aux);
+  line-height: 1.5;
+  cursor: pointer;
+}
+.vault-ack input {
+  margin-top: 2px;
+  flex: 0 0 auto;
+}
+
+.vault-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--text-aux);
+}
+.vault-hint {
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------- 左栏列表 */
+
+.vault-list {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 264px;
+  min-width: 0;
+  overflow: hidden;
+}
+.vault-list__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-bottom: var(--border-w) solid var(--border);
+}
+.vault-list__head .vault-input {
+  flex: 1;
+  min-width: 0;
+}
+/* 图标按钮做成正方形：.btn 的 padding 是为带文字的按钮准备的 */
+.vault-icon {
+  flex: 0 0 auto;
+  width: var(--control-h);
+  padding: 0;
+  /**
+   * **颜色必须显式给**。.btn 的前景色是 --fg-on-accent（白），那是为"实心强调按钮"
+   * 准备的；--ghost 变体把背景改透明，白图标就落在浅色底上看不见了
+   *（实测：按钮成了一个空白方块）。这里跟随正文色。
+   */
+  color: var(--fg-secondary);
+}
+.vault-icon:hover {
+  color: var(--fg-primary);
+}
+/**
+ * **svg 必须显式 flex: 0 0 auto**。
+ *
+ * .btn 是 inline-flex 容器，里面的 svg 默认 flex-shrink: 1；
+ * 而左栏里搜索框是 flex: 1，会把空间抢光 —— 实测 svg 的计算宽度被压成 **0**，
+ * 按钮看起来就是一个空白方块（颜色、display、opacity 全都是对的，
+ * 只有宽度是 0，所以从样式上完全看不出问题）。
+ */
+.vault-icon svg {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.vault-list__items {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-1);
+}
+.vault-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius-ctl);
+  background: transparent;
+  color: var(--fg-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.vault-item:hover {
+  background: var(--bg-hover);
+}
+.vault-item--active {
+  background: var(--accent-soft);
+  color: var(--accent-strong, var(--accent));
+}
+.vault-item__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vault-item__sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vault-empty {
+  padding: var(--space-4) var(--space-3);
+  text-align: center;
+}
+
+.vault-list__foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-top: var(--border-w) solid var(--border);
+}
+
+/* 导入按钮占满整行：它是这一栏里唯一的主行动入口 */
+.vault-import {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.vault-import__btn {
+  width: 100%;
+}
+
+/**
+ * 剪贴板提示条。横跨整个页面宽度、贴在顶部 ——
+ * 它是个"顺带一提"的东西，不该占据视觉重心，也不该遮挡内容。
+ */
+.vault-clip {
+  position: absolute;
+  top: var(--space-2);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: min(560px, calc(100% - var(--space-4)));
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-w) solid var(--glass-border);
+  border-radius: var(--radius-pill);
+  background: var(--glass-layer-inset);
+  box-shadow: var(--edge-light);
+}
+.vault-clip__text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vault-autolock {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+/* ---------------------------------------------------------------- 右栏详情 */
+
+.vault-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  overflow-y: auto;
+}
+.vault-detail__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.vault-detail__head h2 {
+  margin: 0;
+  font-size: var(--text-title);
+}
+.vault-detail__actions {
+  display: flex;
+  gap: var(--space-1);
+}
+
+/* 详情里的行：标签固定宽，控件占满剩余 —— 与设置页的 set-row 同一套观感 */
+.vault-detail .set-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.vault-detail .set-row > span:first-child {
+  flex: 0 0 52px;
+  color: var(--fg-secondary);
+  font-size: var(--text-aux);
+}
+.vault-detail .set-row .vault-input {
+  flex: 1;
+  min-width: 0;
+}
+.vault-detail .set-row--area {
+  align-items: flex-start;
+}
+.vault-detail .set-row--area > span:first-child {
+  padding-top: var(--space-2);
+}
+
+/* 强度指示：颜色是唯一的信号，不写"弱/中/强"以外的解释 —— 它就是一眼扫过的东西 */
+.vault-strength {
+  flex: 0 0 auto;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-aux);
+}
+.vault-strength--0,
+.vault-strength--1 {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+  color: var(--danger);
+}
+.vault-strength--2 {
+  background: color-mix(in srgb, var(--warning, var(--accent)) 20%, transparent);
+}
+.vault-strength--3,
+.vault-strength--4 {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent-strong, var(--accent));
+}
+
+/* ---------------------------------------------------------------- 危险操作 */
+
+.vault-detail__foot {
+  margin-top: auto;
+  padding-top: var(--space-3);
+}
+
+/* 「清空重建」的入口本身不做成红色按钮 —— 它只是把入口摆出来，
+   真正的确认在下面那一条上，避免误触 */
+.vault-danger__trigger {
+  color: var(--fg-secondary);
+}
+
+/* 浏览器扩展配置：平时只露出一行标题，点开才显示令牌 */
+.vault-ext {
+  margin-bottom: var(--space-3);
+  padding: var(--space-3);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-ctl);
+  background: var(--glass-layer-control);
+}
+.vault-ext__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--text-aux);
+  color: var(--fg-secondary);
+}
+.vault-ext__toggle {
+  flex: 0 0 auto;
+}
+.vault-ext p {
+  margin: var(--space-2) 0;
+}
+.vault-ext code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  font-size: var(--text-aux);
+}
+.vault-ext__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.vault-ext__row .vault-input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-aux);
+}
+
+.vault-danger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-w) solid color-mix(in srgb, var(--danger) 45%, transparent);
+  border-radius: var(--radius-ctl);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  font-size: var(--text-aux);
+}
+.vault-danger > span {
+  flex: 1;
+}

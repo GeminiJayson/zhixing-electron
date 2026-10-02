@@ -14,6 +14,7 @@ export const zh = {
   'nav.workflow': '工作流',
   'nav.graph': '图谱',
   'nav.review': '回顾',
+  'nav.vault': '保险箱',
   'nav.settings': '设置',
 
   // 页面标题

@@ -141,4 +141,36 @@ export const MIGRATIONS: Record<number, (c: Database.Database) => void> = {
     )
     c.exec("CREATE INDEX IF NOT EXISTS idx_task_activity_task ON task_activity(task_id, id)")
   },
+  15: (c) => {
+    // V15：密码保险箱。
+    //
+    // 两张表，字段全部是 (密文, IV) 成对。设计要点见 docs/specs/vault-design.md §4：
+    //   · **标题也加密** —— "你有哪些账号"本身就是敏感信息；
+    //   · **不建 FTS** —— 现有 *_fts 都是明文索引，密文进索引等于把明文落库；
+    //   · **不做版本历史 / 回收站** —— 避免留下历史密文副本，让"删除"语义干净。
+    //
+    // vault_meta 是单行表（CHECK id = 1）：盐、KDF 参数、主密码校验块。
+    // **主密钥本身绝不落库** —— 它只在解锁后的进程内存里存在。
+    c.exec(
+      "CREATE TABLE IF NOT EXISTS vault_meta (" +
+        "id INTEGER PRIMARY KEY CHECK (id = 1), " +
+        "kdf_salt BLOB NOT NULL, " +
+        "kdf_params TEXT NOT NULL, " +
+        "verifier_ct BLOB NOT NULL, " +
+        "verifier_iv BLOB NOT NULL, " +
+        "created_at DATETIME)"
+    )
+    c.exec(
+      "CREATE TABLE IF NOT EXISTS vault_entry (" +
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+        "title_ct BLOB NOT NULL, title_iv BLOB NOT NULL, " +
+        "username_ct BLOB, username_iv BLOB, " +
+        "password_ct BLOB NOT NULL, password_iv BLOB NOT NULL, " +
+        "url_ct BLOB, url_iv BLOB, " +
+        "notes_ct BLOB, notes_iv BLOB, " +
+        "tags_ct BLOB, tags_iv BLOB, " +
+        "created_at DATETIME, updated_at DATETIME)"
+    )
+    c.exec("CREATE INDEX IF NOT EXISTS idx_vault_entry_updated ON vault_entry (updated_at DESC)")
+  },
 }

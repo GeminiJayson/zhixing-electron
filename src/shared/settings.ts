@@ -44,6 +44,11 @@ export interface AppSettings {
    * 所以窗口的轮廓感只能靠内阴影表达，强度做成可调的就更有必要。
    */
   window_shadow: number
+  /**
+   * 保险箱自动锁定的空闲分钟数。**0 表示从不自动锁定**（允许，但设置页会标警示色）。
+   * 单位是分钟而不是秒：这个值由人读，分钟是自然的粒度。
+   */
+  vault_auto_lock_min: number
   pomodoro_focus_min: number
   pomodoro_break_min: number
   pomodoro_auto_break: boolean
@@ -177,6 +182,7 @@ export function parseSettings(raw: Record<string, string> = {}): AppSettings {
     glass_alpha: num(raw.glass_alpha, 56, 30, 100),
     glass_saturate: num(raw.glass_saturate, 185, 100, 250),
     window_shadow: num(raw.window_shadow, 50, 0, 100),
+    vault_auto_lock_min: num(raw.vault_auto_lock_min, 5, 0, 120),
   tree_guide: bool(raw.tree_guide, true),
     pomodoro_focus_min: num(raw.pomodoro_focus_min, 25, 5, 90),
     pomodoro_break_min: num(raw.pomodoro_break_min, 5, 1, 30),

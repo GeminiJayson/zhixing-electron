@@ -738,6 +738,96 @@ const api = {
       return () => ipcRenderer.removeListener('ai:libraryProgress', handler)
     },
   },
+  /**
+   * 密码保险箱。
+   *
+   * 注意这里**没有任何"把主密钥交给渲染层"的通道** —— 密钥始终留在主进程的
+   * vault/store 里，渲染层只能拿到"解密后的结果"。这是刻意的（见方案 §5.1）。
+   */
+  vault: {
+    status: (): Promise<'uninitialized' | 'locked' | 'unlocked'> => ipcRenderer.invoke('vault:status'),
+    setup: (password: string): Promise<{ ok: boolean; message?: string }> =>
+      ipcRenderer.invoke('vault:setup', password),
+    unlock: (password: string): Promise<{ ok: boolean; message?: string }> =>
+      ipcRenderer.invoke('vault:unlock', password),
+    lock: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('vault:lock'),
+    list: (): Promise<{
+      ok: boolean
+      entries: {
+        id: number
+        title: string
+        username: string
+        password: string
+        url: string
+        notes: string
+        tags: string[]
+        created_at: string
+        updated_at: string
+      }[]
+      message?: string
+    }> => ipcRenderer.invoke('vault:list'),
+    create: (input: {
+      title: string
+      username: string
+      password: string
+      url: string
+      notes: string
+      tags: string[]
+    }): Promise<{ ok: boolean; entry?: unknown; message?: string }> =>
+      ipcRenderer.invoke('vault:create', input),
+    update: (
+      id: number,
+      input: { title: string; username: string; password: string; url: string; notes: string; tags: string[] }
+    ): Promise<{ ok: boolean; message?: string }> => ipcRenderer.invoke('vault:update', id, input),
+    remove: (id: number): Promise<{ ok: boolean; message?: string }> =>
+      ipcRenderer.invoke('vault:remove', id),
+    destroy: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('vault:destroy'),
+    touch: (): Promise<boolean> => ipcRenderer.invoke('vault:touch'),
+    copy: (text: string): Promise<boolean> => ipcRenderer.invoke('vault:copy', text),
+    generate: (opts?: {
+      length?: number
+      upper?: boolean
+      lower?: boolean
+      digits?: boolean
+      symbols?: boolean
+    }): Promise<string> => ipcRenderer.invoke('vault:generate', opts),
+    strength: (password: string): Promise<{ score: number; label: string }> =>
+      ipcRenderer.invoke('vault:strength', password),
+    /** 订阅"被锁定"（手动 / 自动 / 主进程触发）。返回取消订阅函数。 */
+    onLocked: (cb: () => void): (() => void) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('vault:locked', handler)
+      return () => ipcRenderer.removeListener('vault:locked', handler)
+    },
+
+    // ------------------------------------------------------------ 浏览器导入
+    /** 机器上装了哪些浏览器、各有多少 profile */
+    browsers: (): Promise<{ key: 'chrome' | 'edge'; label: string; profiles: string[] }[]> =>
+      ipcRenderer.invoke('vault:browsers'),
+    /** 从浏览器导入已保存的密码（读的是用户自己的数据，不是键盘钩子） */
+    importBrowser: (key: 'chrome' | 'edge'): Promise<{ ok: boolean; message?: string; imported: number }> =>
+      ipcRenderer.invoke('vault:importBrowser', key),
+
+    // ------------------------------------------------------------ 浏览器扩展
+    /** 浏览器扩展要用的端口与令牌（令牌只用于写入，锁定状态下端点拒收） */
+    httpInfo: (): Promise<{ port: number; token: string }> => ipcRenderer.invoke('vault:httpInfo'),
+    /** 重新生成令牌；已配好的扩展需要重新粘一次 */
+    rotateToken: (): Promise<{ token: string }> => ipcRenderer.invoke('vault:rotateToken'),
+
+    // ------------------------------------------------------------ 剪贴板助手
+    clipboardStart: (): Promise<boolean> => ipcRenderer.invoke('vault:clipboardStart'),
+    clipboardStop: (): Promise<boolean> => ipcRenderer.invoke('vault:clipboardStop'),
+    clipboardTake: (): Promise<string> => ipcRenderer.invoke('vault:clipboardTake'),
+    /**
+     * 订阅"剪贴板里出现了像密码的内容"。
+     * 主进程只在保险箱解锁时监听，锁定时会自动停掉。
+     */
+    onClipboardCandidate: (cb: (text: string) => void): (() => void) => {
+      const handler = (_e: unknown, text: string): void => cb(text)
+      ipcRenderer.on('vault:clipboardCandidate', handler)
+      return () => ipcRenderer.removeListener('vault:clipboardCandidate', handler)
+    },
+  },
   app: {
     info: (): Promise<AppInfo> => ipcRenderer.invoke('app:info'),
     setTheme: (theme: 'light' | 'dark' | 'system'): Promise<void> =>
