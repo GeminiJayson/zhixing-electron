@@ -34,6 +34,7 @@ import './styles/review.css'
 import './styles/settings.css'
 import './styles/vault.css'
 import './styles/knowledge.css'
+import './styles/notes-filter.css'
 
 const THEME_KEY = 'zhixing.theme'
 /** 提示停留时长：Toast 的进度线与 App 的自动关闭定时器共用这一个数 */

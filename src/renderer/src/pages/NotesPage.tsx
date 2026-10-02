@@ -16,6 +16,18 @@ import { MarkdownView } from '../components/MarkdownView'
 const XlsxGrid = lazy(() => import('../components/XlsxGrid'))
 import { NoteHistory } from '../components/NoteHistory'
 import { NOTE_FORMATS, NoteTree, noteIcon, type NoteFormat } from '../components/NoteTree'
+
+/** 知识类型。与主进程 db/knowledge.ts 的 KNOWLEDGE_KINDS 对应（那边是权威）。 */
+const KNOWLEDGE_KINDS: { key: string; label: string }[] = [
+  { key: 'concept', label: '概念' },
+  { key: 'summary', label: '摘要' },
+  { key: 'synthesis', label: '综合分析' },
+  { key: 'method', label: '方法论' },
+  { key: 'output', label: '输出' },
+  { key: 'pitfall', label: '踩坑' },
+  { key: 'note', label: '笔记' },
+  { key: 'project', label: '项目记录' },
+]
 import { NoteTabs, type NoteTab } from '../components/NoteTabs'
 import { Toolbar } from '../components/Toolbar'
 import { PopMenu } from '../components/PopMenu'
@@ -128,6 +140,17 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   useEffect(() => {
     localStorage.setItem('zhixing.tree.notes', treeHidden ? '1' : '0')
   }, [treeHidden])
+  /**
+   * 知识库筛选。
+   *
+   * 知识库**不是一个独立页面** —— 类型与可信状态是笔记自己的属性，
+   * 所以它们在这里以筛选的形式存在（原方案里"六个区域"说的是区域，不是页面）。
+   */
+  const [kindFilter, setKindFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'verified' | 'draft'>('all')
+  /** id → { kind, verified }，由主进程按"全部状态含归档"一次取回 */
+  const [metaById, setMetaById] = useState<Record<number, { kind: string; verified: boolean }>>({})
+
   /** 编辑区自身宽度是否窄到放不下并排信息卡 —— 窄了改用覆盖式抽屉 */
   const [narrow, setNarrow] = useState(false)
   /**
@@ -271,7 +294,20 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   }, [])
 
   const load = useCallback(async () => {
-    const fs0 = await window.zhixing.db.noteFolders()
+    /**
+   * 取一次知识元信息（类型 + 可信状态）。
+   * 用 status:'all' 与 includeArchived:true 把**所有**笔记都拿回来 ——
+   * 只拿可用的话，待确认的条目在树上会凭空消失。
+   */
+  void (async () => {
+    const rows = await window.zhixing.knowledge?.list({ kind: 'all', status: 'all', includeArchived: true, limit: 1000 })
+    if (!rows) return
+    const map: Record<number, { kind: string; verified: boolean }> = {}
+    for (const r of rows) map[r.id] = { kind: r.kind, verified: !!r.verified_at }
+    setMetaById(map)
+  })()
+
+  const fs0 = await window.zhixing.db.noteFolders()
     // 文件夹为空时补默认文件夹
     if (fs0.length === 0) {
       await window.zhixing.db.ensureDefaultFolder()
@@ -1302,6 +1338,25 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     [openTabs, notes, selectedId, dirty, officePending]
   )
 
+  /**
+   * 按知识库的筛选条件收窄列表。
+   *
+   * 在**这里**过滤而不是改 NoteTree：树组件负责"怎么显示"，筛选是页面的事；
+   * 而且树内已有的搜索框管的是"找得到"，这里的类型/状态管的是"看哪些"。
+   */
+  const visibleNotes = useMemo(() => {
+    if (kindFilter === 'all' && statusFilter === 'all') return notes
+    return notes.filter((n) => {
+      const m = metaById[n.id]
+      // 元信息还没到时不隐藏任何东西 —— 加载间隙里闪一下比"笔记突然不见"好
+      if (!m) return true
+      if (kindFilter !== 'all' && m.kind !== kindFilter) return false
+      if (statusFilter === 'verified' && !m.verified) return false
+      if (statusFilter === 'draft' && m.verified) return false
+      return true
+    })
+  }, [notes, kindFilter, statusFilter, metaById])
+
   return (
     <div className={'page page--notes' + (zen ? ' page--zen' : '')}>
       <div className="page__head">
@@ -1318,13 +1373,61 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
           <Morph icon={treeHidden ? IconData.PanelLeftOpen : IconData.PanelLeftClose} size={15} />
         </button>
       </div>
+      {/*
+        知识库筛选。**知识库不是独立页面** —— 类型与可信状态是笔记自己的属性，
+        原方案里说的"六个区域"指的是区域，不是页面。
+        放在页面头与正文之间，横跨整宽；收起笔记树时它依然在，因为它是页级筛选。
+      */}
+      <div className="notes-filter">
+        <label className="notes-filter__item">
+          <span className="u-aux">类型</span>
+          <select
+            className="notes-filter__select"
+            value={kindFilter}
+            aria-label="按类型筛选"
+            onChange={(e) => setKindFilter(e.target.value)}
+          >
+            <option value="all">全部</option>
+            {KNOWLEDGE_KINDS.map((k) => (
+              <option key={k.key} value={k.key}>
+                {k.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="notes-filter__seg">
+          {(['all', 'verified', 'draft'] as const).map((s) => (
+            <button
+              key={s}
+              className={'notes-filter__btn' + (statusFilter === s ? ' notes-filter__btn--on' : '')}
+              onClick={() => setStatusFilter(s)}
+            >
+              {s === 'all' ? '全部' : s === 'verified' ? '可用' : '待确认'}
+            </button>
+          ))}
+        </div>
+        {(kindFilter !== 'all' || statusFilter !== 'all') && (
+          <button
+            className="notes-filter__clear"
+            onClick={() => {
+              setKindFilter('all')
+              setStatusFilter('all')
+            }}
+          >
+            清除筛选
+          </button>
+        )}
+        <span className="u-aux notes-filter__count">
+          {visibleNotes.length} / {notes.length}
+        </span>
+      </div>
       <div className="page__body">
       <div className="notes-wrap">
         {/* 笔记树：收起时整块不渲染（而不是藏起来），宽度全部让给编辑区。
             收放按钮在页面副标题旁边；全屏编辑时页面头整体让位，树也随之不显示。 */}
         {!treeHidden ? (
           <NoteTree
-            notes={notes}
+            notes={visibleNotes}
             folders={folders}
             selectedId={selectedId}
             onSelect={(id) => void selectNote(id)}
