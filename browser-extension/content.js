@@ -141,7 +141,10 @@ function flash(msg, ok) {
 
 function stopPicker() {
   if (!picker) return
+  // 两个都要移除 —— tip 是"点击要剪藏的区域"那条提示，
+  // 之前只移了高亮框，于是按 Esc 或选中之后那条提示一直挂在页面上。
   picker.box.remove()
+  picker.tip.remove()
   document.removeEventListener('mousemove', picker.onMove, true)
   document.removeEventListener('click', picker.onClick, true)
   document.removeEventListener('keydown', picker.onKey, true)

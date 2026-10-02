@@ -28,8 +28,18 @@ import * as store from './store'
 const DEFAULT_PORT = 47821
 /** 顺延范围：扩展会依次探测这一段 */
 const PORT_SPAN = 10
-/** 请求体上限：一条凭据（站点 + 账号 + 密码）远用不到 16KB */
-const MAX_BODY = 16 * 1024
+/**
+ * 请求体上限。
+ *
+ * 原来是 16KB —— 那是按"一条凭据（站点 + 账号 + 密码）"定的，完全够用。
+ * 但 /clip 也走这个 readBody：**剪藏一整篇文章的 HTML 轻松上百 KB**，
+ * 16KB 会在中途静默截断，JSON 直接残缺，端点报"请求体不是合法 JSON"，
+ * 而用户看到的是一次莫名其妙的失败（实测踩到）。
+ *
+ * 4MB 足够一篇文章（addFlash 那边对 html 另有 200000 字符的落库上限），
+ * 又不会让本机端点变成可以被灌爆的东西 —— 何况写入还需要令牌。
+ */
+const MAX_BODY = 4 * 1024 * 1024
 
 let server: Server | null = null
 let boundPort = 0
@@ -49,16 +59,24 @@ function json(res: ServerResponse, code: number, body: unknown): void {
   res.end(text)
 }
 
-function readBody(req: IncomingMessage): Promise<string> {
+interface RawBody {
+  text: string
+  /** 超出上限时为 true —— 调用方据此回 413，而不是拿一段残缺的 JSON 去解析 */
+  tooLarge: boolean
+}
+
+function readBody(req: IncomingMessage): Promise<RawBody> {
   return new Promise((resolve) => {
     let size = 0
     let text = ''
+    let tooLarge = false
     req.on('data', (c: Buffer) => {
       size += c.length
       if (size <= MAX_BODY) text += c.toString('utf8')
+      else tooLarge = true
     })
-    req.on('end', () => resolve(text))
-    req.on('error', () => resolve(''))
+    req.on('end', () => resolve({ text, tooLarge }))
+    req.on('error', () => resolve({ text: '', tooLarge: false }))
   })
 }
 
@@ -154,9 +172,15 @@ async function onRequest(req: IncomingMessage, res: ServerResponse): Promise<voi
       return
     }
     const raw = await readBody(req)
+    if (raw.tooLarge) {
+      // 明确回 413 而不是让 JSON.parse 去解析一段残缺内容 ——
+      // 后者会报"请求体不是合法 JSON"，把"太大了"说成"格式不对"，误导排查方向
+      json(res, 413, { ok: false, error: '内容太大，超出端点上限（4MB）' })
+      return
+    }
     let b: { url?: string; title?: string; text?: string; html?: string; mode?: string }
     try {
-      b = JSON.parse(raw) as typeof b
+      b = JSON.parse(raw.text) as typeof b
     } catch {
       json(res, 400, { ok: false, error: '请求体不是合法 JSON' })
       return
@@ -239,9 +263,13 @@ async function onRequest(req: IncomingMessage, res: ServerResponse): Promise<voi
   }
 
   const body = await readBody(req)
+  if (body.tooLarge) {
+    json(res, 413, { ok: false, error: '内容太大，超出端点上限（4MB）' })
+    return
+  }
   let parsed: CaptureBody
   try {
-    parsed = JSON.parse(body) as CaptureBody
+    parsed = JSON.parse(body.text) as CaptureBody
   } catch {
     json(res, 400, { ok: false, error: '请求体不是合法 JSON' })
     return
