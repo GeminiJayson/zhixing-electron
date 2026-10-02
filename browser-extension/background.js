@@ -214,13 +214,19 @@ try {
     if (msg && msg.kind === 'pickResult') {
       const r = msg.result
       if (!r || !r.ok) {
-        if (r && r.message) notify('没剪藏', r.message)
-        return false
+        sendResponse({ ok: false, message: (r && r.message) || '没有可取的内容' })
+        return true
       }
-      postClip(r).then(function (res) {
-        notify(res.ok ? '已剪藏' : '剪藏失败', res.message || '')
-      })
-      return false
+      // 结果同时回给页面（页面会画提示）与系统通知（可能被系统静默拦掉，所以不能只靠它）
+      postClip(r)
+        .then(function (res) {
+          notify(res.ok ? '已剪藏' : '剪藏失败', res.message || '')
+          sendResponse(res)
+        })
+        .catch(function (e) {
+          sendResponse({ ok: false, message: String(e && e.message ? e.message : e) })
+        })
+      return true
     }
     if (msg && msg.kind === 'diagnose') {
       diagnose().then(function (steps) {

@@ -108,6 +108,37 @@ function sanitize(html) {
  */
 var picker = null
 
+/**
+ * 在页面上直接显示结果。
+ *
+ * **不再只依赖系统通知** —— 通知在 Windows 上会被专注助手或通知设置静默拦掉，
+ * 那样用户看到的就是"点了没反应"，而东西可能已经存进去了，也可能没有，
+ * 他无从判断。页面内的提示由我们自己画，一定显示得出来。
+ */
+function flash(msg, ok) {
+  try {
+    var el = document.createElement('div')
+    el.setAttribute(
+      'style',
+      'position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:2147483647;' +
+        'padding:10px 20px;border-radius:999px;pointer-events:none;max-width:70vw;' +
+        'font:14px/1.4 system-ui,"Segoe UI","Microsoft YaHei",sans-serif;color:#fff;' +
+        'box-shadow:0 4px 20px rgba(0,0,0,.32);background:' +
+        (ok ? '#0e7490' : '#b91c1c')
+    )
+    el.textContent = msg
+    document.body.appendChild(el)
+    setTimeout(
+      function () {
+        el.remove()
+      },
+      ok ? 3000 : 7000
+    )
+  } catch (e) {
+    // 提示画不出来不该影响主流程
+  }
+}
+
 function stopPicker() {
   if (!picker) return
   picker.box.remove()
@@ -155,32 +186,44 @@ function startPicker() {
     var el = e.target
     stopPicker()
     if (!el || !el.innerHTML) {
-      chrome.runtime.sendMessage({ kind: 'pickResult', result: { ok: false, message: '这块没有可取的内容' } })
+      flash('这块没有可取的内容', false)
       return
     }
     var html = sanitize(el.innerHTML)
     var text = (el.innerText || '').trim()
     if (!html || text.length < 10) {
-      chrome.runtime.sendMessage({ kind: 'pickResult', result: { ok: false, message: '这块内容太短，换个区域试试' } })
+      flash('这块内容太短（' + text.length + ' 字），换个区域试试', false)
       return
     }
-    chrome.runtime.sendMessage({
-      kind: 'pickResult',
-      result: {
-        ok: true,
-        url: location.href,
-        title: (document.title || '').trim(),
-        text: text,
-        html: html,
-        mode: 'selection',
+    flash('正在保存…', true)
+    // 带回调：结果直接回到这里显示，不依赖系统通知
+    chrome.runtime.sendMessage(
+      {
+        kind: 'pickResult',
+        result: {
+          ok: true,
+          url: location.href,
+          title: (document.title || '').trim(),
+          text: text,
+          html: html,
+          mode: 'selection',
+        },
       },
-    })
+      function (res) {
+        if (chrome.runtime.lastError) {
+          flash('扩展后台没响应：' + chrome.runtime.lastError.message, false)
+          return
+        }
+        if (res && res.ok) flash(res.message || '已存入收件箱', true)
+        else flash((res && res.message) || '剪藏失败', false)
+      }
+    )
   }
 
   var onKey = function (e) {
     if (e.key === 'Escape') {
       stopPicker()
-      chrome.runtime.sendMessage({ kind: 'pickResult', result: { ok: false, message: '已取消' } })
+      flash('已取消', false)
     }
   }
 
