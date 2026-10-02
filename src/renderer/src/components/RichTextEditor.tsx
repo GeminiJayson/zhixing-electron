@@ -7,6 +7,7 @@ import Placeholder from '@tiptap/extension-placeholder'
 import { TextStyle } from '@tiptap/extension-text-style'
 import FontSize from '@tiptap/extension-text-style/font-size'
 import Color from '@tiptap/extension-color'
+import { TableKit } from '@tiptap/extension-table/kit'
 import { attachmentUrl } from '@shared/attachment-url'
 import { CodeBlockLanguage } from './CodeBlockLanguage'
 import { RichTextToolbar } from './RichTextToolbar'
@@ -157,9 +158,47 @@ export function RichTextEditor({
       TextStyle,
       FontSize,
       Color,
+      /**
+       * 表格。用 kit 一次注册 table / row / cell / header 四件套 ——
+       * 少注册任何一个，表格在 schema 里就不完整，粘贴进来的表格会退化成纯文本，
+       * 而**没有任何报错**（这个项目在 TextStyle 上吃过一次同样的亏，见上面的注释）。
+       * resizable 让列宽可拖，列宽存在 colwidth 属性里。
+       */
+      TableKit.configure({ table: { resizable: true } }),
       CodeBlockLanguage,
       Placeholder.configure({ placeholder: placeholder ?? '' }),
     ],
+    /**
+     * 粘贴与拖放图片。
+     *
+     * 原来图片只能通过工具栏按钮"选文件"进来 —— 而从网页复制一张图再粘贴，
+     * 是远比选文件自然的动作。**关键在于粘贴的图片必须走同一条落盘路径**：
+     * ImageWithAttach 开了 allowBase64，若不拦，Tiptap 会把 base64 原样塞进文档，
+     * 一篇带图的笔记轻松几 MB，而且全进数据库与全文索引。
+     *
+     * 这里只拦"剪贴板里确实有图片文件"的情况，其余（纯文本、HTML、表格）
+     * 一律返回 false 交给 Tiptap 自己处理 —— 表格能贴进来是因为上面注册了 TableKit。
+     */
+    editorProps: {
+      handlePaste: (_view, event) => {
+        const files = Array.from(event.clipboardData?.files ?? []).filter((f) =>
+          f.type.startsWith('image/')
+        )
+        if (!files.length) return false
+        event.preventDefault()
+        insertImageFiles(files)
+        return true
+      },
+      handleDrop: (_view, event) => {
+        const files = Array.from((event as DragEvent).dataTransfer?.files ?? []).filter((f) =>
+          f.type.startsWith('image/')
+        )
+        if (!files.length) return false
+        event.preventDefault()
+        insertImageFiles(files)
+        return true
+      },
+    },
     content: html || '',
     onUpdate: ({ editor: ed }) => {
       const h = ed.getHTML()
@@ -344,41 +383,50 @@ export function RichTextEditor({
     }
   }
 
+  /**
+   * 把一批图片文件落盘并插入。
+   *
+   * **粘贴、拖放、选文件三条路都走这里** —— 落盘逻辑（读 → 批量存附件 → 插入）
+   * 只能有一份。如果粘贴另写一遍，很容易漏掉"批量存"那一步，
+   * 于是粘贴进来的图片变成 base64 直接写进文档，数据库会被悄悄撑大。
+   */
+  const insertImageFiles = (files: File[]): void => {
+    if (!files.length) return
+    void (async () => {
+      // 先本地读取（不碰 IPC），再一次性存附件，最后统一插入。
+      // 原先是循环里逐张读 + 逐张 IPC：第 N 张失败时前 N-1 张已经落盘落库了。
+      const prepared: { file: File; full: string; thumb: string }[] = []
+      for (const file of files) {
+        const [full, thumb] = await Promise.all([readAsDataUrl(file), makeThumb(file)])
+        prepared.push({ file, full, thumb })
+      }
+      const id = noteIdRef.current
+      const saved = id
+        ? await window.zhixing.db.saveAttachmentsBatch(
+            id,
+            prepared.map((p) => ({
+              fileName: p.file.name,
+              base64: p.full.slice(p.full.indexOf(',') + 1),
+            }))
+          )
+        : []
+      prepared.forEach((p, i) => {
+        chain()
+          .insertContent({
+            type: 'image',
+            attrs: { src: p.thumb || p.full, alt: p.file.name, attachment: saved[i]?.path || null },
+            })
+            .run()
+        })
+      })()
+  }
+
   const insertImage = (): void => {
     const input = document.createElement('input')
     input.type = 'file'
     input.accept = 'image/*'
     input.multiple = true
-    input.onchange = () => {
-      const files = Array.from(input.files ?? [])
-      void (async () => {
-        // 先本地读取（不碰 IPC），再一次性存附件，最后统一插入。
-        // 原先是循环里逐张读 + 逐张 IPC：第 N 张失败时前 N-1 张已经落盘落库了。
-        const prepared: { file: File; full: string; thumb: string }[] = []
-        for (const file of files) {
-          const [full, thumb] = await Promise.all([readAsDataUrl(file), makeThumb(file)])
-          prepared.push({ file, full, thumb })
-        }
-        const id = noteIdRef.current
-        const saved = id
-          ? await window.zhixing.db.saveAttachmentsBatch(
-              id,
-              prepared.map((p) => ({
-                fileName: p.file.name,
-                base64: p.full.slice(p.full.indexOf(',') + 1),
-              }))
-            )
-          : []
-        prepared.forEach((p, i) => {
-          chain()
-            .insertContent({
-              type: 'image',
-              attrs: { src: p.thumb || p.full, alt: p.file.name, attachment: saved[i]?.path || null },
-            })
-            .run()
-        })
-      })()
-    }
+    input.onchange = () => insertImageFiles(Array.from(input.files ?? []))
     input.click()
   }
 
