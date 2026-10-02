@@ -782,8 +782,18 @@ const api = {
       sourceNoteId?: number | null
     }): Promise<{ ok: boolean; id?: number; message?: string }> =>
       ipcRenderer.invoke('knowledge:create', input),
-    verify: (id: number, note: string): Promise<{ ok: boolean; message?: string }> =>
-      ipcRenderer.invoke('knowledge:verify', id, note),
+    /** 核对通过。evidence 为 'no' 时主进程会拒绝 —— 没有依据的结论不该进可用区 */
+    verify: (
+      id: number,
+      check: {
+        v: 1
+        evidence: 'yes' | 'partial' | 'no'
+        scope: string
+        conflict: string
+        freshness: string
+        extra: string
+      }
+    ): Promise<{ ok: boolean; message?: string }> => ipcRenderer.invoke('knowledge:verify', id, check),
     unverify: (id: number, reason: string): Promise<{ ok: boolean; message?: string }> =>
       ipcRenderer.invoke('knowledge:unverify', id, reason),
     /** 改类型。若改成"需要来源"的类型而它没有来源，会自动退回待确认（返回 demoted: true） */

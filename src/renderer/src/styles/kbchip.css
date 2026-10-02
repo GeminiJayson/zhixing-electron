@@ -155,3 +155,36 @@
   color: var(--fg-secondary);
 }
 
+/* ---- 核对清单 ---- */
+.kbchip__checkrow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+/* 单行输入复用 textarea 的底与边，只是高度不同 */
+.kbchip__line {
+  height: var(--control-h-sm);
+  padding: 0 var(--space-2);
+  resize: none;
+}
+/* 「没有依据」的警告：它同时解释了为什么按钮是灰的 */
+.kbchip__warn {
+  margin: 0;
+  padding: var(--space-2);
+  border-radius: var(--radius-ctl);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+  font-size: var(--text-aux);
+  line-height: 1.5;
+}
+/* 当初的核对结论。用强调色底的引用块，与面板里其他说明区分开 */
+.kbchip__saved {
+  margin: 0;
+  padding: var(--space-2);
+  border-radius: var(--radius-ctl);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--text-aux);
+  line-height: 1.5;
+}
+

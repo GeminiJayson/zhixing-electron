@@ -1,3 +1,4 @@
+import { type CheckNote, serializeCheckNote } from '../../shared/knowledge-check'
 import { conn } from './connection'
 import { createNote, getNote } from './notes'
 import type { Note } from '../../shared/types'
@@ -177,15 +178,27 @@ function stamp(): string {
  * **知识类条目必须有来源**（方案 §8 规则 1）。没有来源的结论，
  * 三个月后你没法回答「当初凭什么信它」。
  */
-export function verifyKnowledge(id: number, verifyNote: string): CreateResult {
+export function verifyKnowledge(id: number, check: CheckNote): CreateResult {
   const meta = knowledgeMeta(id)
   if (!meta) return { ok: false, message: '条目不存在' }
+
   if (needsSource(meta.kind) && incomingSources(id).length === 0) {
     return { ok: false, message: '这条还没有来源，补上来源之后才能标为可用' }
   }
+
+  /**
+   * **方案 §9 的硬规则：关键说法没有依据，就不允许转成可用。**
+   *
+   * 核对清单的其他项都是"提示"，只有这一项是闸门 —— 它守的是整个流程的意义：
+   * 一条自己都承认"没有依据"的结论，不该出现在可用知识里。
+   */
+  if (check.evidence === 'no') {
+    return { ok: false, message: '关键说法还没有依据 —— 补上依据，或把它留在待确认' }
+  }
+
   conn()
     .prepare('UPDATE note SET verified_at = ?, verify_note = ?, updated_at = ? WHERE id = ?')
-    .run(stamp(), verifyNote.trim(), stamp(), id)
+    .run(stamp(), serializeCheckNote(check), stamp(), id)
   return { ok: true, id }
 }
 

@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { CheckCircle2, CircleAlert } from '@renderer/lib/icons'
+import {
+  EVIDENCE_LABELS,
+  type CheckNote,
+  emptyCheckNote,
+  parseCheckNote,
+  summarizeCheckNote,
+} from '@shared/knowledge-check'
 import { templateFor } from '@shared/knowledge-templates'
 
 /**
@@ -46,7 +53,13 @@ export function KnowledgeChip({
 }): JSX.Element {
   const api = window.zhixing?.knowledge
   const [open, setOpen] = useState(false)
+  /** 核对清单（结构化）。方案 §4 第 3 步 —— 一个复选框答不了「当初凭什么信它」 */
+  const [check, setCheck] = useState<CheckNote>(emptyCheckNote)
+  /** 退回原因仍然是自由文本：退回是"发生了什么"，不需要结构 */
   const [note, setNote] = useState('')
+  /** 已核对过的条目，把当时的结论显示出来 */
+  const [savedCheck, setSavedCheck] = useState<CheckNote | null>(null)
+  const [savedRaw, setSavedRaw] = useState('')
   const [busy, setBusy] = useState(false)
   const boxRef = useRef<HTMLDivElement>(null)
   /** 已有的来源。知识类条目必须至少有一条才能标为可用 —— 面板上要看得见它 */
@@ -60,12 +73,18 @@ export function KnowledgeChip({
   const loadSources = async (): Promise<void> => {
     setSources((await api?.sources(noteId)) ?? [])
     setUsedBy((await api?.derivedFrom(noteId)) ?? [])
+    // 已有的核对结论：结构化就解析，第一版的纯文本就原样显示
+    const m = (await api?.meta(noteId)) as { verify_note?: string | null } | null
+    const raw = m?.verify_note ?? ''
+    setSavedRaw(raw)
+    setSavedCheck(parseCheckNote(raw))
   }
 
   // 换笔记时收起面板并清空草稿 —— 否则上一条的核对结论会跟着跑到下一条上
   useEffect(() => {
     setOpen(false)
     setNote('')
+    setCheck(emptyCheckNote())
     setSrcQuery('')
     setSrcHits([])
     void loadSources()
@@ -120,13 +139,13 @@ export function KnowledgeChip({
   const doVerify = async (): Promise<void> => {
     setBusy(true)
     try {
-      const r = await api.verify(noteId, note)
+      const r = await api.verify(noteId, check)
       if (!r.ok) {
         onNotice(r.message ?? '核对失败')
         return
       }
       onNotice('已标为可用')
-      setNote('')
+      setCheck(emptyCheckNote())
       setOpen(false)
       onChanged()
     } finally {
@@ -286,6 +305,12 @@ export function KnowledgeChip({
 
           {verified ? (
             <>
+              {/* 把当初的依据摆出来 —— 这正是结构化想解决的问题 */}
+              {savedCheck ? (
+                <p className="kbchip__saved">{summarizeCheckNote(savedCheck)}</p>
+              ) : savedRaw ? (
+                <p className="kbchip__saved">{savedRaw}</p>
+              ) : null}
               <p className="u-aux kbchip__hint">
                 知识会被推翻。发现这条不再成立时，「退回待确认」并记下原因 ——
                 不要删掉，删掉的话下次还会踩同一个坑。
@@ -308,15 +333,58 @@ export function KnowledgeChip({
                 核对通过之前它不会被当成结论
                 {needsSource ? '；这个类型还必须先挂上来源。' : '。'}
               </p>
-              <textarea
-                className="kbchip__area"
-                rows={3}
-                placeholder="核对结论（关键说法有无依据 / 适用场景 / 是否与其他资料冲突）"
-                value={note}
-                aria-label="核对结论"
-                onChange={(e) => setNote(e.target.value)}
+              {/*
+                核对清单。四项里只有第一项是闸门 —— 选「没有依据」不允许转为可用；
+                其余三项是提示，不填也能通过（强制填会让人懒得用，见方案 §9 第 5 条）。
+              */}
+              <label className="kbchip__checkrow">
+                <span className="u-aux">关键说法有依据</span>
+                <select
+                  className="kbchip__select"
+                  value={check.evidence}
+                  aria-label="关键说法是否有依据"
+                  onChange={(e) =>
+                    setCheck({ ...check, evidence: e.target.value as CheckNote['evidence'] })
+                  }
+                >
+                  {(['yes', 'partial', 'no'] as const).map((k) => (
+                    <option key={k} value={k}>
+                      {EVIDENCE_LABELS[k]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {check.evidence === 'no' && (
+                <p className="kbchip__warn">
+                  没有依据的结论不能标为可用 —— 补上依据，或把它留在待确认。
+                </p>
+              )}
+              <input
+                className="kbchip__area kbchip__line"
+                placeholder="适用场景 / 不适用条件"
+                value={check.scope}
+                aria-label="适用场景"
+                onChange={(e) => setCheck({ ...check, scope: e.target.value })}
               />
-              <button className="btn kbchip__act" disabled={busy} onClick={() => void doVerify()}>
+              <input
+                className="kbchip__area kbchip__line"
+                placeholder="与其他资料是否冲突（冲突的话是哪一条）"
+                value={check.conflict}
+                aria-label="是否冲突"
+                onChange={(e) => setCheck({ ...check, conflict: e.target.value })}
+              />
+              <input
+                className="kbchip__area kbchip__line"
+                placeholder="时效性（有效期 / 有无更新版本）"
+                value={check.freshness}
+                aria-label="时效性"
+                onChange={(e) => setCheck({ ...check, freshness: e.target.value })}
+              />
+              <button
+                className="btn kbchip__act"
+                disabled={busy || check.evidence === 'no'}
+                onClick={() => void doVerify()}
+              >
                 <CheckCircle2 size={14} /> 核对通过，标为可用
               </button>
             </>

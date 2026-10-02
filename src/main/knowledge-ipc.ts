@@ -1,4 +1,5 @@
 import { ipcMain } from 'electron'
+import type { CheckNote } from '../shared/knowledge-check'
 import {
   type CreateKnowledgeInput,
   type KnowledgeFilter,
@@ -33,7 +34,7 @@ export function registerKnowledgeIpc(): void {
   ipcMain.handle('knowledge:counts', () => knowledgeCounts())
   ipcMain.handle('knowledge:meta', (_e, id: number) => knowledgeMeta(id))
   ipcMain.handle('knowledge:create', (_e, input: CreateKnowledgeInput) => createKnowledge(input))
-  ipcMain.handle('knowledge:verify', (_e, id: number, note: string) => verifyKnowledge(id, note))
+  ipcMain.handle('knowledge:verify', (_e, id: number, check: CheckNote) => verifyKnowledge(id, check))
   ipcMain.handle('knowledge:unverify', (_e, id: number, reason: string) => unverifyKnowledge(id, reason))
   ipcMain.handle('knowledge:archive', (_e, id: number) => {
     archiveKnowledge(id)
