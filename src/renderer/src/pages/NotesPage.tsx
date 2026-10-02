@@ -148,9 +148,11 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
    * 所以它们在这里以筛选的形式存在（原方案里"六个区域"说的是区域，不是页面）。
    */
   const [kindFilter, setKindFilter] = useState<string>('all')
-  const [statusFilter, setStatusFilter] = useState<'all' | 'verified' | 'draft'>('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'verified' | 'draft' | 'archived'>('all')
   /** id → { kind, verified }，由主进程按"全部状态含归档"一次取回 */
-  const [metaById, setMetaById] = useState<Record<number, { kind: string; verified: boolean }>>({})
+  const [metaById, setMetaById] = useState<
+    Record<number, { kind: string; verified: boolean; archived: boolean }>
+  >({})
 
   /**
    * 取一次知识元信息（类型 + 可信状态）。
@@ -160,8 +162,8 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   const reloadMeta = useCallback(async (): Promise<void> => {
     const rows = await window.zhixing.knowledge?.list({ kind: 'all', status: 'all', includeArchived: true, limit: 1000 })
     if (!rows) return
-    const map: Record<number, { kind: string; verified: boolean }> = {}
-    for (const r of rows) map[r.id] = { kind: r.kind, verified: !!r.verified_at }
+    const map: Record<number, { kind: string; verified: boolean; archived: boolean }> = {}
+    for (const r of rows) map[r.id] = { kind: r.kind, verified: !!r.verified_at, archived: !!r.archived_at }
     setMetaById(map)
   }, [])
 
@@ -1359,6 +1361,9 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
       // 元信息还没到时不隐藏任何东西 —— 加载间隙里闪一下比"笔记突然不见"好
       if (!m) return true
       if (kindFilter !== 'all' && m.kind !== kindFilter) return false
+      if (statusFilter === 'archived' && !m.archived) return false
+      // 归档是"我现在不看它了"，所以除了「归档」这一档，其他档位都不含归档条目
+      if (statusFilter !== 'archived' && statusFilter !== 'all' && m.archived) return false
       if (statusFilter === 'verified' && !m.verified) return false
       if (statusFilter === 'draft' && m.verified) return false
       return true
@@ -1404,13 +1409,13 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
           </select>
         </label>
         <div className="notes-filter__seg">
-          {(['all', 'verified', 'draft'] as const).map((s) => (
+          {(['all', 'verified', 'draft', 'archived'] as const).map((s) => (
             <button
               key={s}
               className={'notes-filter__btn' + (statusFilter === s ? ' notes-filter__btn--on' : '')}
               onClick={() => setStatusFilter(s)}
             >
-              {s === 'all' ? '全部' : s === 'verified' ? '可用' : '待确认'}
+              {s === 'all' ? '全部' : s === 'verified' ? '可用' : s === 'draft' ? '待确认' : '归档'}
             </button>
           ))}
         </div>

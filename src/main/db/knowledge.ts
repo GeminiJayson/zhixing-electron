@@ -59,7 +59,8 @@ export interface KnowledgeRow {
   updated_at: string | null
 }
 
-export type KnowledgeStatus = 'draft' | 'verified' | 'all'
+/** 'archived' 是独立一档：归档不是"另一种可信状态"，而是"我现在不看它了"。 */
+export type KnowledgeStatus = 'draft' | 'verified' | 'all' | 'archived'
 
 function ensureKind(v: unknown): KnowledgeKind {
   return isKnowledgeKind(v) ? v : 'note'
@@ -98,7 +99,11 @@ export function listKnowledge(filter: KnowledgeFilter = {}): KnowledgeRow[] {
   if (status === 'draft') where.push('n.verified_at IS NULL')
   else if (status === 'verified') where.push('n.verified_at IS NOT NULL')
 
-  if (!filter.includeArchived) where.push('n.archived_at IS NULL')
+  if (status === 'archived') {
+    where.push('n.archived_at IS NOT NULL')
+  } else if (!filter.includeArchived) {
+    where.push('n.archived_at IS NULL')
+  }
 
   const limit = Math.min(Math.max(filter.limit ?? 200, 1), 1000)
   return conn()
@@ -259,6 +264,32 @@ export function linkKnowledge(srcId: number, dstNoteId: number | null, kind: Lin
         'ON CONFLICT (src_note_id, dst_title) DO UPDATE SET link_kind = excluded.link_kind, dst_note_id = excluded.dst_note_id'
     )
     .run(srcId, dstNoteId, target, kind)
+}
+
+/** 取消一条来源引用。 */
+export function unlinkKnowledge(srcId: number, dstTitle: string): void {
+  conn().prepare('DELETE FROM note_link WHERE src_note_id = ? AND dst_title = ?').run(srcId, dstTitle)
+}
+
+/**
+ * 搜索可以当来源的笔记。
+ *
+ * **在内存里过滤而不是走 FTS** —— 这里要的是"按标题找一条笔记"，
+ * 候选量是几百条，全取回来做 includes 比走一次 FTS 更简单，也不会把
+ * 保险箱那种不该出现在索引里的东西牵扯进来。
+ */
+export function searchSourceCandidates(query: string, limit = 12): { id: number; title: string; kind: string }[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return []
+  const rows = conn()
+    .prepare(
+      'SELECT id, title, kind FROM note WHERE deleted_at IS NULL AND archived_at IS NULL ORDER BY updated_at DESC LIMIT 800'
+    )
+    .all() as { id: number; title: string; kind: string }[]
+  return rows
+    .filter((r) => r.title.toLowerCase().includes(q))
+    .slice(0, limit)
+    .map((r) => ({ id: r.id, title: r.title, kind: ensureKind(r.kind) }))
 }
 
 /** 这条知识引用了谁（来源 / 支持 / 反对 / 相关）。 */

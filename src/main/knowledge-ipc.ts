@@ -8,9 +8,13 @@ import {
   derivedFrom,
   knowledgeCounts,
   isKnowledgeKind,
+  isLinkKind,
   knowledgeMeta,
+  linkKnowledge,
   listKnowledge,
+  searchSourceCandidates,
   setKnowledgeKind,
+  unlinkKnowledge,
   outgoingSources,
   unarchiveKnowledge,
   unverifyKnowledge,
@@ -43,6 +47,15 @@ export function registerKnowledgeIpc(): void {
     isKnowledgeKind(kind) ? setKnowledgeKind(id, kind) : { ok: false }
   )
   ipcMain.handle('knowledge:sources', (_e, id: number) => outgoingSources(id))
+  ipcMain.handle('knowledge:link', (_e, id: number, sourceId: number, kind: string) => {
+    linkKnowledge(id, sourceId, isLinkKind(kind) ? kind : 'derived_from')
+    return true
+  })
+  ipcMain.handle('knowledge:unlink', (_e, id: number, title: string) => {
+    unlinkKnowledge(id, title)
+    return true
+  })
+  ipcMain.handle('knowledge:searchSources', (_e, query: string) => searchSourceCandidates(query))
   ipcMain.handle('knowledge:derivedFrom', (_e, sourceId: number) => derivedFrom(sourceId))
   ipcMain.handle('knowledge:canDelete', (_e, sourceId: number) => canDeleteSource(sourceId))
 }

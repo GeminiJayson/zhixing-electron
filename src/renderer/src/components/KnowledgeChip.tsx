@@ -45,12 +45,37 @@ export function KnowledgeChip({
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const boxRef = useRef<HTMLDivElement>(null)
+  /** 已有的来源。知识类条目必须至少有一条才能标为可用 —— 面板上要看得见它 */
+  const [sources, setSources] = useState<{ title: string; kind: string; noteId: number | null }[]>([])
+  const [srcQuery, setSrcQuery] = useState('')
+  const [srcHits, setSrcHits] = useState<{ id: number; title: string; kind: string }[]>([])
+  const [srcBusy, setSrcBusy] = useState(false)
+
+  const loadSources = async (): Promise<void> => {
+    setSources((await api?.sources(noteId)) ?? [])
+  }
 
   // 换笔记时收起面板并清空草稿 —— 否则上一条的核对结论会跟着跑到下一条上
   useEffect(() => {
     setOpen(false)
     setNote('')
+    setSrcQuery('')
+    setSrcHits([])
+    void loadSources()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [noteId])
+
+  // 搜来源：输入停下 250ms 再查，避免每敲一个字都过一遍全表
+  useEffect(() => {
+    if (!api || !srcQuery.trim()) {
+      setSrcHits([])
+      return
+    }
+    const t = setTimeout(() => {
+      void api.searchSources(srcQuery).then(setSrcHits)
+    }, 250)
+    return () => clearTimeout(t)
+  }, [api, srcQuery])
 
   // 点外面 / Escape 收起
   useEffect(() => {
@@ -119,6 +144,27 @@ export function KnowledgeChip({
     }
   }
 
+  const addSource = async (id: number): Promise<void> => {
+    if (!api) return
+    setSrcBusy(true)
+    try {
+      await api.link(noteId, id)
+      setSrcQuery('')
+      setSrcHits([])
+      await loadSources()
+      onChanged()
+    } finally {
+      setSrcBusy(false)
+    }
+  }
+
+  const removeSource = async (title: string): Promise<void> => {
+    if (!api) return
+    await api.unlink(noteId, title)
+    await loadSources()
+    onChanged()
+  }
+
   return (
     <div className="kbchip" ref={boxRef}>
       <button
@@ -154,6 +200,52 @@ export function KnowledgeChip({
               ))}
             </select>
           </label>
+
+          {/*
+            来源。它排在核对之前 —— 因为对知识类条目来说，**没有来源就不能标为可用**，
+            用户该先看到"这条有没有来源"，而不是先看到一个会被拒绝的按钮。
+          */}
+          <div className="kbchip__src">
+            <span className="u-aux">来源</span>
+            <div className="kbchip__srclist">
+              {sources.length === 0 && <span className="u-aux">还没有来源</span>}
+              {sources.map((s) => (
+                <span key={s.title} className="kbchip__srctag">
+                  {s.title}
+                  <button
+                    type="button"
+                    className="kbchip__srcdel"
+                    aria-label={'移除来源 ' + s.title}
+                    onClick={() => void removeSource(s.title)}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+            <input
+              className="kbchip__srcinput"
+              placeholder="搜笔记标题，选中即挂为来源"
+              value={srcQuery}
+              aria-label="搜索来源笔记"
+              onChange={(e) => setSrcQuery(e.target.value)}
+            />
+            {srcHits.length > 0 && (
+              <div className="kbchip__hits">
+                {srcHits.map((h) => (
+                  <button
+                    key={h.id}
+                    type="button"
+                    className="kbchip__hit"
+                    disabled={srcBusy}
+                    onClick={() => void addSource(h.id)}
+                  >
+                    {h.title}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
           {verified ? (
             <>

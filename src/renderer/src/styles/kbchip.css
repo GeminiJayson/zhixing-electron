@@ -77,3 +77,67 @@
   line-height: 1.5;
 }
 .kbchip__act { width: 100%; }
+
+/* ---- 来源选择 ---- */
+.kbchip__src {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-top: var(--space-2);
+  border-top: var(--border-w) solid var(--border);
+}
+.kbchip__srclist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+/* 来源标签可读、可移除。它是这条凭什么可信的凭据，要看得清 */
+.kbchip__srctag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--text-aux);
+}
+.kbchip__srcdel {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.kbchip__srcdel:hover { opacity: 1; }
+.kbchip__srcinput {
+  height: var(--control-h-sm);
+  padding: 0 var(--space-2);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-ctl);
+  background: var(--glass-layer-control);
+  color: var(--fg-primary);
+  font: inherit;
+}
+.kbchip__hits {
+  display: flex;
+  flex-direction: column;
+  max-height: 160px;
+  overflow-y: auto;
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-ctl);
+}
+.kbchip__hit {
+  padding: var(--space-2);
+  border: none;
+  background: transparent;
+  color: var(--fg-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.kbchip__hit:hover { background: var(--bg-hover); }
+

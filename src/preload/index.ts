@@ -793,6 +793,13 @@ const api = {
     unarchive: (id: number): Promise<boolean> => ipcRenderer.invoke('knowledge:unarchive', id),
     sources: (id: number): Promise<{ title: string; kind: string; noteId: number | null }[]> =>
       ipcRenderer.invoke('knowledge:sources', id),
+    /** 挂一条来源（kind 默认 derived_from） */
+    link: (id: number, sourceId: number, kind?: string): Promise<boolean> =>
+      ipcRenderer.invoke('knowledge:link', id, sourceId, kind ?? 'derived_from'),
+    unlink: (id: number, title: string): Promise<boolean> => ipcRenderer.invoke('knowledge:unlink', id, title),
+    /** 按标题搜可当来源的笔记 */
+    searchSources: (query: string): Promise<{ id: number; title: string; kind: string }[]> =>
+      ipcRenderer.invoke('knowledge:searchSources', query),
     derivedFrom: (sourceId: number): Promise<{ id: number; title: string }[]> =>
       ipcRenderer.invoke('knowledge:derivedFrom', sourceId),
     canDelete: (sourceId: number): Promise<{ ok: boolean; count: number; titles: string[] }> =>
