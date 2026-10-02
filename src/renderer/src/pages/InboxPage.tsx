@@ -27,6 +27,32 @@ interface Props {
 
 type Tab = 'tasks' | 'flash'
 
+/**
+ * 给剪藏来的 HTML 包一层最小样式再交给沙箱 iframe。
+ *
+ * **只加样式，不动内容** —— 任何"顺手清理一下标签"的做法都会让保格式这件事打折扣，
+ * 而隔离已经由 sandbox="" 保证了（脚本不执行），不需要再靠改内容来求安全。
+ *
+ * 高度用 CSS 控制（见 .flash-card__html），文档本身不设高度，让它自然撑开由 iframe 滚动。
+ */
+function wrapClippedHtml(html: string): string {
+  return [
+    '<!doctype html><html><head><meta charset="utf-8"><style>',
+    'body{margin:0;font:14px/1.7 system-ui,"Segoe UI","Microsoft YaHei",sans-serif;color:#1f2937;word-wrap:break-word}',
+    'img{max-width:100%;height:auto}',
+    'pre{overflow-x:auto;padding:8px;background:#f3f4f6;border-radius:6px}',
+    'code{background:#f3f4f6;padding:1px 4px;border-radius:3px}',
+    'table{border-collapse:collapse;max-width:100%}',
+    'th,td{border:1px solid #d1d5db;padding:4px 8px}',
+    'blockquote{margin:0;padding-left:12px;border-left:3px solid #d1d5db;color:#4b5563}',
+    'a{color:#0e7490}',
+    'h1,h2,h3{line-height:1.3}',
+    '</style></head><body>',
+    html,
+    '</body></html>',
+  ].join('')
+}
+
 /** 收件箱：任务收件箱 | 闪念 两个 Tab，含整理闭环（转任务 / 转笔记 / 归档）。 */
 export function InboxPage({ onNotice, onChanged }: Props) {
   const dialog = useDialog()
@@ -424,7 +450,27 @@ export function InboxPage({ onNotice, onChanged }: Props) {
                       aria-label="选中这条闪念"
                     />
                   </label>
-                  <p className="flash-card__content">{f.content}</p>
+                  {/*
+                    网页剪藏存的是 HTML，**必须用沙箱 iframe 渲染**。
+
+                    理由不是"这样更方便"，而是安全性：那段 HTML 来自不受信任的外部网页，
+                    直接插进 DOM 就等于把它的脚本、表单、iframe 一起放进来。
+                    这里用 sandbox=""（最严：连 allow-same-origin 都不给），
+                    脚本不执行、表单不能提交、也拿不到宿主页面的任何东西，
+                    而样式与结构照常显示 —— 保格式与隔离可以同时成立。
+
+                    纯文本的闪念仍然走原来的 <p>，不去套一层 iframe 增加开销。
+                  */}
+                  {f.content_format === 'html' ? (
+                    <iframe
+                      className="flash-card__html"
+                      sandbox=""
+                      title={f.remark || '剪藏的网页内容'}
+                      srcDoc={wrapClippedHtml(f.content)}
+                    />
+                  ) : (
+                    <p className="flash-card__content">{f.content}</p>
+                  )}
                   {f.remark && <p className="flash-card__remark">└ {f.remark}</p>}
                   <div className="flash-card__meta">
                     <span className="u-aux">{f.created_at.slice(0, 16)}</span>

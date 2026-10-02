@@ -334,6 +334,13 @@ export interface Backlink {
 export interface Flash {
   id: number
   content: string
+  /**
+   * 'html' 表示 content 是网页剪藏来的 HTML。
+   *
+   * 渲染方**必须用沙箱 iframe**，不能直接插进 DOM —— 那段 HTML 来自不受信任的
+   * 外部网页（见 InboxPage 里的渲染与 docs/specs/phase3-research.md §1.3）。
+   */
+  content_format?: string
   remark: string
   source_app: string
   source_url: string

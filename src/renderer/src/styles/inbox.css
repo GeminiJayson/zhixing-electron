@@ -19,6 +19,21 @@
   flex-direction: column;
   gap: var(--space-2);
 }
+/**
+ * 剪藏来的 HTML 用沙箱 iframe 渲染（见 InboxPage）。
+ *
+ * 限高是必要的：一篇文章能到几万字，不限高的话一张卡片就能撑满整个列表，
+ * 收件箱作为"待处理队列"就失去可扫读性了。超出部分在 iframe 内部滚动。
+ */
+.flash-card__html {
+  width: 100%;
+  max-height: 320px;
+  border: none;
+  background: transparent;
+  /* 让 iframe 内的内容与卡片同宽，避免出现内层横向滚动条 */
+  display: block;
+}
+
 .flash-card {
   display: flex;
   flex-direction: column;

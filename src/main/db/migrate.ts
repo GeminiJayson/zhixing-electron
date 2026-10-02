@@ -207,4 +207,16 @@ export const MIGRATIONS: Record<number, (c: Database.Database) => void> = {
     c.exec("UPDATE note SET kind = 'note' WHERE kind IS NULL OR kind = ''")
     c.exec("CREATE INDEX IF NOT EXISTS idx_note_kind ON note (kind, verified_at)")
   },
+  17: (c) => {
+    // V17：网页剪藏要保留原格式。
+    //
+    // flash.content 存的不再一定是纯文本 —— 剪藏时它是 Readability 清理过的 HTML
+    //（保留段落、标题、表格、图片），抄下来的想法仍然是纯文本。
+    // 用一列显式区分，而不是靠"看起来像 HTML"去猜：
+    // 渲染路径完全不同，猜错要么丢格式，要么把纯文本当标签吃掉。
+    //
+    // 已有行全部是纯文本，DEFAULT 'text' 正好覆盖。
+    addColumn(c, "flash", "content_format", "content_format VARCHAR DEFAULT 'text'")
+    c.exec("UPDATE flash SET content_format = 'text' WHERE content_format IS NULL OR content_format = ''")
+  },
 }

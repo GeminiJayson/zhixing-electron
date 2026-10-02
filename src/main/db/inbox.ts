@@ -43,19 +43,27 @@ export function addFlash(
   content: string,
   remark = '',
   sourceApp = '',
-  sourceUrl = ''
+  sourceUrl = '',
+  contentFormat: 'text' | 'html' = 'text'
 ): Flash | null {
   const clean = content.trim()
   if (!clean) return null
+  /**
+   * 上限从 8000 提到 200000。
+   *
+   * 8000 对"随手记一句话"够用，对**剪藏一整篇文章**完全不够 —— 一篇技术文轻松
+   * 几万字，HTML 还要额外占掉标签。上面的注释其实已经预见到这一点
+   *（"富文本条目存的是 HTML，标签本身就要占掉几百字符"），但那个上限是按短笔记定的。
+   *
+   * SQLite 存 TEXT 没有实际压力：200000 字符约 200KB，就是一篇文章的量级。
+   */
+  const limit = contentFormat === 'html' ? 200000 : 8000
   const info = conn()
     .prepare(
-      `INSERT INTO flash (content, remark, source_app, source_url, status, converted_type, converted_id, created_at)
-       VALUES (?, ?, ?, ?, 'inbox', '', 0, ?)`
+      `INSERT INTO flash (content, content_format, remark, source_app, source_url, status, converted_type, converted_id, created_at)
+       VALUES (?, ?, ?, ?, ?, 'inbox', '', 0, ?)`
     )
-    // 正文截 8000、备注截 200，避免超长内容撑爆列表与检索索引。
-    // 正文上限从 2000 提到 8000：富文本条目存的是 HTML，标签本身就要占掉几百字符，
-    // 2000 会在句子中间截断，截出来的 HTML 还是破损的（标签开合不配对）。
-    .run(clean.slice(0, 8000), remark.slice(0, 200), sourceApp, sourceUrl, nowStamp())
+    .run(clean.slice(0, limit), contentFormat, remark.slice(0, 200), sourceApp, sourceUrl, nowStamp())
   const id = Number(info.lastInsertRowid)
   reindexFlash(id)
   return getFlash(id)

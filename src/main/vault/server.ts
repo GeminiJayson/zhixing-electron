@@ -154,7 +154,7 @@ async function onRequest(req: IncomingMessage, res: ServerResponse): Promise<voi
       return
     }
     const raw = await readBody(req)
-    let b: { url?: string; title?: string; text?: string; mode?: string }
+    let b: { url?: string; title?: string; text?: string; html?: string; mode?: string }
     try {
       b = JSON.parse(raw) as typeof b
     } catch {
@@ -178,8 +178,22 @@ async function onRequest(req: IncomingMessage, res: ServerResponse): Promise<voi
         return
       }
     }
-    // remark 存标题：收件箱列表按它显示，正文太长不适合当标签
-    addFlash(text, (b.title ?? '').trim(), '浏览器扩展', url)
+    /*
+      remark 存标题：收件箱列表按它显示，正文太长不适合当标签。
+
+      mode 为 readability 时 html 是清理过的正文 HTML（保留段落、标题、表格、图片），
+      **存它而不是纯文本，剪藏才有意义** —— 否则存下来的是一坨没有结构的文字。
+      回退模式没有可信的 HTML（那是整页 innerText），老实存纯文本。
+    */
+    const html = (b.html ?? '').trim()
+    const useHtml = b.mode !== 'fallback' && html.length > 200
+    addFlash(
+      useHtml ? html : text,
+      (b.title ?? '').trim(),
+      '浏览器扩展',
+      url,
+      useHtml ? 'html' : 'text'
+    )
     json(res, 200, { ok: true, action: 'created', mode: b.mode ?? 'readability' })
     return
   }

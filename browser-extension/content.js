@@ -46,7 +46,10 @@ function extractArticle() {
         ok: true,
         url: location.href,
         title: (a.title || document.title || '').trim(),
+        // text 用于判断长度与降级；**html 才是落库的东西** ——
+        // 纯文本会丢掉段落、标题层级、表格和图片，那样剪藏就没意义了
         text: text,
+        html: a.content || '',
         mode: 'readability',
       }
     }
