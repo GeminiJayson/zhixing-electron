@@ -231,6 +231,23 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
    */
   const baselineRef = useRef('')
   /**
+   * 编辑器是否已经装载完成。
+   *
+   * 原先想用"内容与装载基线是否相同"来判断这次 onChange 算不算改动，
+   * **但这条路不可靠**：编辑器的序列化结果与 content_md 未必逐字相同
+   * （尾随换行、格式规范化），于是它一回调就被判成"脏"，而 setContent 又
+   * 触发下一次 render 与回调 —— dirty 恒为 true，保存完立刻又被置回来。
+   *
+   * 改成时间维度：装载完成后的一小段（等编辑器把初始化那几次回调走完）
+   * 才把 ready 置起来，之前的 onChange 一律不计入 dirty。
+   */
+  const editorReadyRef = useRef(false)
+
+  const reportEditorChange = useCallback((v: string): void => {
+    if (editorReadyRef.current) setDirty(true)
+    void v
+  }, [])
+  /**
    * Word/Excel「还没写回本地文件」的状态，与 dirty 分开记。
    *
    * 为什么要分：dirty 说的是「标题 / content_md 还没落库」，而 Word 的正文不在 content_md 里 ——
@@ -548,6 +565,14 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
       setContent(note.content_md ?? '')
       // 装载基线：编辑器初始化/外部同步时回调的 onChange 与它相同，不算改动
       baselineRef.current = note.content_md ?? ''
+      /*
+        装载期间编辑器会回调若干次 onChange（Markdown 是外部同步的 dispatch、
+        富文本是初始化）。那些都不算用户改动 —— 等这一帧过去再开闸。
+      */
+      editorReadyRef.current = false
+      window.setTimeout(() => {
+        editorReadyRef.current = true
+      }, 0)
       setBacklinks(back)
       setOutLinks(out)
       setAttachedTasks(attached)
@@ -2103,7 +2128,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                   */
                   onChange={(h) => {
                     setContent(h)
-                    setDirty(h !== baselineRef.current)
+                    reportEditorChange(h)
                   }}
                   placeholder="从这里开始记录富文本…"
                 />
@@ -2113,8 +2138,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                   onAttachTask={(info) => void handleBlockContext(info)}
                   onChange={(v) => {
                     setContent(v)
-                    // 同上：与装载基线相同就不算改动
-                    setDirty(v !== baselineRef.current)
+                    reportEditorChange(v)
                   }}
                   titles={notes.map((n) => n.title)}
                     onLinkPick={(info) => {
