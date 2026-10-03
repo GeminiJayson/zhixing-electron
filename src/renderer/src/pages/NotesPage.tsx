@@ -1446,7 +1446,14 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
         variant="page"
         titleNode={
           <>
-            {/* 树的收放放最前 —— 它改变的是这一页的版式，先于一切筛选 */}
+            <h1 className="page__title">{t('page.notes')}</h1>
+            <p className="page__subtitle">{t('page.notes.sub')}</p>
+          </>
+        }
+        nav={
+          <>
+            {/* 树的收放 —— 放在工具栏最前。它改变的是这一页的版式，先于一切筛选；
+                但它是「工具」不是「标题」，所以归工具栏区而不是标题区。 */}
             <button
               className="icon-btn page__head-toggle"
               aria-pressed={!treeHidden}
@@ -1454,17 +1461,8 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
               title={treeHidden ? '展开笔记树' : '收起笔记树'}
               onClick={() => setTreeHidden((prev) => !prev)}
             >
-              <Morph
-                icon={treeHidden ? IconData.PanelLeftOpen : IconData.PanelLeftClose}
-                size={15}
-              />
+              <Morph icon={treeHidden ? IconData.PanelLeftOpen : IconData.PanelLeftClose} size={15} />
             </button>
-            <h1 className="page__title">{t('page.notes')}</h1>
-            <p className="page__subtitle">{t('page.notes.sub')}</p>
-          </>
-        }
-        nav={
-          <>
           <select
             className="notes-filter__select"
             value={kindFilter}
