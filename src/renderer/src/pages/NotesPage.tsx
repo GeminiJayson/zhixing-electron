@@ -2,7 +2,7 @@ import type { EditorView } from '@codemirror/view'
 import { sanitizeHtml } from '@shared/sanitize-html'
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
-import { ChevronRight, Database, ExternalLink, FileText, Maximize2, Morph, IconData, Link2, Plus, Sparkles, Tag, Trash2, UserPlus } from '@renderer/lib/icons'
+import { ArrowLeft, ChevronRight, Database, ExternalLink, FileText, Maximize2, Morph, IconData, Link2, Plus, Sparkles, Tag, Trash2, UserPlus } from '@renderer/lib/icons'
 import { subscribeDomain } from '@shared/events'
 import { useDialog } from '../components/Dialogs'
 import type { Backlink, Note, NoteFolder, NoteLink } from '@shared/types'
@@ -1397,7 +1397,22 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
    * 都应该对应日常会待的地方。现在入口在筛选条右侧，和知识库共用同一个页面壳。
    * 放在所有 hooks 之后早返回，遵守 hooks 规则。
    */
-  if (view === 'vault') return <VaultPage onNotice={onNotice} />
+  if (view === 'vault') {
+    return (
+      <>
+        {/*
+          返回入口。**必须有** —— 换掉整页之后，筛选条上那个「保险箱」按钮也跟着没了，
+          没有这一条就进得去出不来（用户报的正是这个）。
+          放在左上角固定定位，不参与 VaultPage 自己的布局，
+          这样它三个状态分支（未初始化 / 锁定 / 已解锁）都不用改。
+        */}
+        <button className="vault-back" onClick={() => setView('notes')}>
+          <ArrowLeft size={14} /> 返回知识库
+        </button>
+        <VaultPage onNotice={onNotice} />
+      </>
+    )
+  }
 
   return (
     <div className={'page page--notes' + (zen ? ' page--zen' : '')}>
