@@ -9,6 +9,7 @@ import {
   LayoutGrid,
   Link2,
   NotebookPen,
+  Pencil,
   Pin,
   Trash2,
 } from '@renderer/lib/icons'
@@ -40,9 +41,17 @@ const TREE_KEY_STEP = 16
 /** 宽度持久化键：纯界面偏好，与 `zhixing.tree.notes`（收放）同一路 */
 const TREE_WIDTH_KEY = 'notes.treeWidth'
 
+/**
+ * 格式 → 图标。**五种格式必须各不相同。**
+ *
+ * 原先 markdown 与 word 共用 FileText —— 而 FileText 是个圆角矩形轮廓，
+ * 在 13px 下看起来就是数字「0」（用户真的把它当成了计数），
+ * 也就是说这个位置对最常用的 markdown 完全没起到辨识作用。
+ * 现在 markdown 用 NotebookPen、richtext 用 Pencil、word 保留 FileText。
+ */
 const FORMAT_ICON: Record<string, { Comp: typeof FileText; tone: string }> = {
-  markdown: { Comp: FileText, tone: 'markdown' },
-  richtext: { Comp: NotebookPen, tone: 'richtext' },
+  markdown: { Comp: NotebookPen, tone: 'markdown' },
+  richtext: { Comp: Pencil, tone: 'richtext' },
   word: { Comp: FileText, tone: 'word' },
   excel: { Comp: LayoutGrid, tone: 'excel' },
   link: { Comp: Link2, tone: 'link' },
@@ -251,7 +260,13 @@ export function NoteTree({
           const { Comp, tone } = noteIcon(n.format)
           return <Comp size={13} className={'ntree__type ntree__type--' + tone} aria-hidden />
         })()}
-        {n.pinned && <Pin size={12} className="ntree__pin" />}
+        {/*
+          必须写成三元而不是 &&。
+          pinned 来自 SQLite，是整数 0/1 而不是 boolean —— 而 JS 里
+          `0 && x` 求值为 0（不是 false），React 会把这个 0 原样渲染成文本。
+          于是每一篇没钉住的笔记，图标与标题之间都多出一个「0」。
+        */}
+        {n.pinned ? <Pin size={12} className="ntree__pin" /> : null}
         <span className="ntree__title">{n.title}</span>
         {rowTags.length > 0 && (
           <span className="ntree__tags" aria-label="笔记标签">
