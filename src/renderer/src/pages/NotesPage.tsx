@@ -32,6 +32,7 @@ import { isMotionFull } from '../lib/presence'
 // Excel 网格懒加载：ag-grid 体积可观，只有真的打开 Excel 笔记才下载
 const XlsxGrid = lazy(() => import('../components/XlsxGrid'))
 import { NoteHistory } from '../components/NoteHistory'
+import { NotePicker } from '../components/NotePicker'
 import { NOTE_FORMATS, NoteTree, noteIcon, type NoteFormat } from '../components/NoteTree'
 
 /** 知识类型。与主进程 db/knowledge.ts 的 KNOWLEDGE_KINDS 对应（那边是权威）。 */
@@ -254,7 +255,12 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   /** 「归属」动作菜单：关联任务 / 移动到文件夹 */
   const [attachMenu, setAttachMenu] = useState<{ x: number; y: number } | null>(null)
   /** 归属选择器：候选任务列表 */
-  const [taskPick, setTaskPick] = useState<{ x: number; y: number; items: { id: number; title: string }[] } | null>(null)
+  const [taskPick, setTaskPick] = useState<{
+    x: number
+    y: number
+    /** 带 listName / groupName —— 弹层按 分组 → 列表 → 任务 展示层级 */
+    items: { id: number; title: string; listName: string; groupName: string }[]
+  } | null>(null)
   /** 本笔记归属的任务（链接面板「归属」分组） */
   const [attachedTasks, setAttachedTasks] = useState<{ id: number; title: string }[]>([])
   /** Word/Excel 可编辑内容 */
@@ -287,7 +293,8 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   const [propDraft, setPropDraft] = useState('')
   /** 信息区底部新增行用：属性填「键: 值」，引用填标题 */
   const [propNew, setPropNew] = useState('')
-  const [linkNew, setLinkNew] = useState('')
+  /** 正向引用的笔记选择器锚点（null = 未打开） */
+  const [linkPick, setLinkPick] = useState<DOMRect | null>(null)
 
   const propsToText = (raw?: string | null): string => {
     if (!raw) return ''
@@ -350,20 +357,6 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
 
   const removeProp = (key: string): void => {
     void writeProps(propItems.filter((p) => p.key !== key).map((p) => p.key + ': ' + p.value))
-  }
-
-  /** 正向引用：往正文追加一行 [[标题]]，与手写 [[链接]] 走同一条路，不另建数据 */
-  const addLink = (): void => {
-    const title = linkNew.trim()
-    if (!title || !current) return
-    const body = (current.content_md ?? '').replace(/\s*$/, '')
-    void window.zhixing.db.saveNote(current.id, { content_md: body + '\n\n[[' + title + ']]\n' }).then(
-      async () => {
-        setLinkNew('')
-        await load()
-        onNotice('已添加引用')
-      }
-    )
   }
 
   /**
@@ -2339,31 +2332,22 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                 )}
               </div>
               <div className="links__foot">
-                <div className="links__add">
-                  <input
-                    className="field links__add-input"
-                    value={linkNew}
-                    aria-label="新增引用"
-                    placeholder="笔记标题"
-                    onChange={(e) => setLinkNew(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault()
-                        addLink()
-                      }
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="links__add-btn"
-                    aria-label="添加引用"
-                    title="添加"
-                    disabled={!linkNew.trim()}
-                    onClick={addLink}
-                  >
-                    <Plus size={13} />
-                  </button>
-                </div>
+                {/*
+                  正向引用改用笔记选择器而不是输入框 —— 引用要选的是「已经存在的
+                  那一篇」，凭记忆敲标题既不精确、也容易建出重复笔记。选择器带
+                  文件夹层级与类型图标，与任务项编辑框里关联笔记用的是同一个组件、
+                  同一套摆放规则（placeAnchored：下方放不下翻上方、右侧放不下往左收，
+                  实测能保证完整落在视口内）。
+                */}
+                <button
+                  type="button"
+                  className="links__add-btn links__add-btn--wide"
+                  onClick={(e) => {
+                    setLinkPick((e.currentTarget as HTMLElement).getBoundingClientRect())
+                  }}
+                >
+                  <Plus size={13} /> 选择笔记…
+                </button>
                 <p className="links__hint">正文里的 [[链接]] 会自动出现在这里</p>
               </div>
             </section>
@@ -2558,13 +2542,54 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                 })()
               },
             },
+            /*
+              按层级展示：分组 → 列表 → 任务。
+              原先是一列平铺的任务标题，用户分不清哪个是哪儿的 —— 同名任务
+              （"写文档"这种）尤其明显。分组与列表做成不可点的标题行，
+              只负责分段与缩进；任务才可点。
+            */
             ...(taskPick.items.length
-              ? taskPick.items.map((t) => ({
-                  key: `t-${t.id}`,
-                  label: t.title,
-                  onPick: () =>
-                    void (blockDraft ? handleAttachBlock(t.id, t.title) : handleAttachTask(t.id, t.title)),
-                }))
+              ? (() => {
+                  const rows: {
+                    key: string
+                    label: string
+                    depth?: number
+                    onPick: () => void
+                  }[] = []
+                  let lastGroup = '\u0000'
+                  let lastList = '\u0000'
+                  for (const t of taskPick.items) {
+                    if (t.groupName && t.groupName !== lastGroup) {
+                      lastGroup = t.groupName
+                      lastList = '\u0000'
+                      rows.push({
+                        key: 'g-' + t.groupName,
+                        label: t.groupName,
+                        depth: 0,
+                        onPick: () => undefined,
+                      })
+                    }
+                    if (t.listName && t.listName !== lastList) {
+                      lastList = t.listName
+                      rows.push({
+                        key: 'l-' + (t.groupName || '') + '-' + t.listName,
+                        label: t.listName,
+                        depth: t.groupName ? 1 : 0,
+                        onPick: () => undefined,
+                      })
+                    }
+                    rows.push({
+                      key: 't-' + t.id,
+                      label: t.title,
+                      depth: (t.groupName ? 1 : 0) + (t.listName ? 1 : 0),
+                      onPick: () =>
+                        void (blockDraft
+                          ? handleAttachBlock(t.id, t.title)
+                          : handleAttachTask(t.id, t.title)),
+                    })
+                  }
+                  return rows
+                })()
               : [
                   {
                     key: 'none',
@@ -2573,6 +2598,28 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                   },
                 ]),
           ]}
+        />
+      )}
+
+      {linkPick && current && (
+        <NotePicker
+          notes={notes}
+          folders={folders}
+          value=""
+          anchor={linkPick}
+          onPick={(id) => {
+            setLinkPick(null)
+            const target = notes.find((n) => String(n.id) === id)
+            if (!target || !current) return
+            const body = (current.content_md ?? '').replace(/\s*$/, '')
+            void window.zhixing.db
+              .saveNote(current.id, { content_md: body + '\n\n[[' + target.title + ']]\n' })
+              .then(async () => {
+                await load()
+                onNotice('已引用「' + target.title + '」')
+              })
+          }}
+          onClose={() => setLinkPick(null)}
         />
       )}
 

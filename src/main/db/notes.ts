@@ -473,21 +473,40 @@ export function noteAttachedTasks(noteId: number): { id: number; title: string }
 }
 
 /**
- * 「+ 归属 → 选任务」候选：
+ * 「关联到任务」候选。
+ *
  * 非删、非终态任务；q 非空按标题模糊过滤，按 updated_at 倒序取前 limit 条。
+ *
+ * **带上所属列表与列表分组的名字**（listName / groupName）：弹层要按层级展示，
+ * 原先只回 id 与 title，用户看到一列平铺的任务标题，根本分不清哪个是哪儿的 ——
+ * 同名任务（"写文档"这种）尤其明显。
  */
-export function noteTaskCandidates(q: string, limit = 30): { id: number; title: string }[] {
+export interface TaskCandidate {
+  id: number
+  title: string
+  /** 所属列表名；任务不属于任何列表时为空 */
+  listName: string
+  /** 列表所属的分组名（列表文件夹）；没有分组时为空 */
+  groupName: string
+}
+
+export function noteTaskCandidates(q: string, limit = 30): TaskCandidate[] {
   const needle = q.trim()
-  const base = `SELECT id, title FROM task
-      WHERE deleted_at IS NULL AND status NOT IN ('done', 'abandoned')`
+  const base = `SELECT t.id, t.title,
+        COALESCE(l.name, '') AS listName,
+        COALESCE(lf.name, '') AS groupName
+      FROM task t
+      LEFT JOIN list l ON l.id = t.list_id
+      LEFT JOIN list_folder lf ON lf.id = l.folder_id
+      WHERE t.deleted_at IS NULL AND t.status NOT IN ('done', 'abandoned')`
   if (!needle) {
     return conn()
-      .prepare(`${base} ORDER BY updated_at DESC LIMIT ?`)
-      .all(limit) as { id: number; title: string }[]
+      .prepare(`${base} ORDER BY t.updated_at DESC LIMIT ?`)
+      .all(limit) as TaskCandidate[]
   }
   return conn()
-    .prepare(`${base} AND title LIKE ? ORDER BY updated_at DESC LIMIT ?`)
-    .all(`%${needle}%`, limit) as { id: number; title: string }[]
+    .prepare(`${base} AND t.title LIKE ? ORDER BY t.updated_at DESC LIMIT ?`)
+    .all(`%${needle}%`, limit) as TaskCandidate[]
 }
 
 // ---------------------------------------------------------------- 笔记版本历史 / 孤儿 / 模板

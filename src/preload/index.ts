@@ -542,8 +542,13 @@ const api = {
     noteAttachedTasks: (noteId: number): Promise<{ id: number; title: string }[]> =>
       ipcRenderer.invoke('db:noteAttachedTasks', noteId),
     /** 「归属 → 选任务」候选：非删非终态任务 */
-    noteTaskCandidates: (q: string, limit?: number): Promise<{ id: number; title: string }[]> =>
-      ipcRenderer.invoke('db:noteTaskCandidates', q, limit ?? 30),
+    /** 「关联到任务」候选：带所属列表与列表分组，弹层据此展示层级 */
+    noteTaskCandidates: (
+      q: string,
+      limit?: number
+    ): Promise<
+      { id: number; title: string; listName: string; groupName: string }[]
+    > => ipcRenderer.invoke('db:noteTaskCandidates', q, limit ?? 30),
     quickAdd: (text: string, defaultListId?: number | null): Promise<Task | null> =>
       ipcRenderer.invoke('db:quickAdd', text, defaultListId ?? null),
     /** 等待中（暂停）：可选恢复日期 */
