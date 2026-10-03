@@ -50,7 +50,7 @@ import { listTaskActivity, logTaskActivity } from './task-activity'
 import { siblingsOf, isDescendantOf, reorderTask, moveTaskRelative, reparentTask, batchComplete, batchMove, batchSetDue, listTags, setTaskTags, ensureListId, quickAdd } from './task-ops'
 import { listTasks, listTodayTasks, recentNotes, noteCountMap, tagMap, listNotes, overview, toggleTask, cloneTaskTree, setPriority, setTitle, setStatus, setDueDate, nextSortKey, createTask, EDITABLE_FIELDS, updateTask, softDelete, batchDeleteTasks, batchUndoLast, attachTaskNote, detachTaskNote, listLinkedNotes, pauseTask, resumeTask, attachBlock, detachBlock, listLinkedContexts, contextsForNote, noteContextMap, writeNoteAfterDone, taskCandidates } from './tasks'
 import { trashItems, restoreTrash, purgeTrash, emptyTrash, emptyAllTrash, purgeTrashOlderThan, tagsWithUsage, createTag, renameTag, deleteTag, setTagColor, batchDeleteTags, mergeTags } from './trash'
-import { attachmentStats, deleteAttachment, importAttachment, listAttachments, pruneAttachments } from './attachments'
+import { attachmentStats, cleanOrphanFiles, deleteAttachment, importAttachment, listAttachments, listOrphanFiles, pruneAttachments } from './attachments'
 import { deleteSavedQuery, listSavedQueries, saveSavedQuery } from './queries'
 import { NODE_COLUMNS, orderedNodes, nextWorkflowNode, validateWorkflowTemplate, listWorkflowTemplates, getWorkflowTemplate, saveWorkflowTemplate, deleteWorkflowTemplate, duplicateWorkflowTemplate, autoLayoutWorkflowNodes, updateWorkflowNodePos, batchUpdateNodePos, setWorkflowBranch, spawnStepTask, instantiateWorkflow, getWorkflowInstance, listWorkflowInstances, listWorkflowInstancesByTask, completeWorkflowStep, abortWorkflowInstance, retryWorkflowStep, deleteWorkflowInstance, rerunWorkflowInstance, setWorkflowNotifier, splitCommand, describeWorkflowAction, runWorkflowAction, listWorkflowGroups, workflowTemplateGroups, saveWorkflowGroup, deleteWorkflowGroup, moveWorkflowTemplate, renameWorkflowInstance, listWorkflowRunLog } from './workflow'
 import type { EditableField } from './tasks'
@@ -577,6 +577,8 @@ export function registerDbHandlers(): void {
   handle('db:deleteSavedQuery', (_e, id: number) => deleteSavedQuery(id))
   handle('db:attachments', () => listAttachments())
   handle('db:attachmentStats', () => attachmentStats())
+  handle('db:orphanFiles', () => listOrphanFiles())
+  handle('db:cleanOrphanFiles', () => cleanOrphanFiles())
   handle('db:importAttachment', (_e, noteId: number, srcPath: string) =>
     importAttachment(noteId, srcPath)
   )

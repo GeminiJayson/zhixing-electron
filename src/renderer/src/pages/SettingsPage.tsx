@@ -308,6 +308,15 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
   /** 外部任务同步：状态 + 手动触发。改完地址/开关/间隔后让主进程重排定时器。 */
   const [syncStatus, setSyncStatus] = useState<{ lastAt: string; lastResult: string } | null>(null)
   const [syncing, setSyncing] = useState(false)
+  /**
+   * 暂存区里没人引用的附件。
+   *
+   * 与上面的「清理失效与孤儿文件」不是一回事：那个走 attachment 表，
+   * 清的是"记录还在、文件没了"与"目录里有文件、记录没了"；
+   * 这里清的是 attachments/pending/ 下**没有任何闪念或笔记引用**的文件 ——
+   * 搬移逻辑修好之前积下的，或者闪念被删之后留下来的。
+   */
+  const [orphans, setOrphans] = useState<{ name: string; bytes: number }[]>([])
   /** 附件统计（数量 / 占用 / 失效） */
   const [attStats, setAttStats] = useState<{ count: number; bytes: number; missing: number; dir: string } | null>(
     null
@@ -316,12 +325,20 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
   const refreshAttachments = useCallback(async (): Promise<void> => {
     try {
       setAttStats(await window.zhixing.db.attachmentStats())
+      setOrphans(await window.zhixing.db.orphanFiles())
     } catch (e) {
       // 附件统计整块消失，用户以为没有附件
       quietFailure('读取附件统计', e)
       setAttStats(null)
     }
   }, [])
+
+  /** 清掉暂存区里没人引用的附件，并刷新计数 */
+  const handleCleanOrphans = async (): Promise<void> => {
+    const n = await window.zhixing.db.cleanOrphanFiles()
+    setOrphans(await window.zhixing.db.orphanFiles())
+    onNotice(n > 0 ? '已清理 ' + n + ' 个未引用的暂存附件' : '没有可清理的暂存附件')
+  }
 
   const handlePruneAttachments = async (): Promise<void> => {
     const res = await window.zhixing.db.pruneAttachments()
@@ -1305,6 +1322,18 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                 清理失效与孤儿文件
               </button>
             </div>
+            {orphans.length > 0 && (
+              <div className="set-row set-row--end">
+                <span>未引用的暂存附件</span>
+                <span className="u-aux">
+                  {orphans.length} 个 · {formatBytes(orphans.reduce((n, o) => n + o.bytes, 0))}{' '}
+                  （没有闪念或笔记引用它们）
+                </span>
+                <button className="text-btn text-btn--danger" onClick={() => void handleCleanOrphans()}>
+                  清理
+                </button>
+              </div>
+            )}
             <label className="set-row">
               <span>回收站保留</span>
               <input

@@ -224,6 +224,79 @@ export function migratePendingAttachments(noteId: number, content: string): stri
   return next
 }
 
+export interface OrphanFile {
+  name: string
+  path: string
+  bytes: number
+}
+
+/**
+ * 列出 attachments/pending/ 下**真正没人引用**的文件。
+ *
+ * 这个目录是"还没有归属的附件"的暂存区（快速笔记粘贴图片时连 note 都还没有）。
+ * 正常路径是 flashToNote 把它们迁走 —— 但那段逻辑此前一直缺失，所以积了货；
+ * 而 flashToNote 修好之后，仍可能留下两类：**迁移之前就积下的**，以及
+ * **闪念被删掉、文件却留了下来的**。
+ *
+ * 判断"没人引用"要同时看两处：闪念正文与笔记正文里的 data-attachment。
+ * 只看其中一处会把另一处还在用的文件误报成孤儿 —— 那是删用户的东西。
+ */
+export function listOrphanFiles(): OrphanFile[] {
+  const dir = join(attachmentsDir(), 'pending')
+  if (!existsSync(dir)) return []
+  const c = conn()
+  // 正文里出现过的路径（两处合起来看）
+  const flashBodies = (c.prepare('SELECT content FROM flash').all() as { content: string }[])
+    .map((r) => r.content ?? '')
+    .join('\n')
+  const noteBodies = (
+    c.prepare('SELECT content_md FROM note WHERE deleted_at IS NULL').all() as {
+      content_md: string
+    }[]
+  )
+    .map((r) => r.content_md ?? '')
+    .join('\n')
+  const haystack = flashBodies + '\n' + noteBodies
+
+  const out: OrphanFile[] = []
+  let names: string[] = []
+  try {
+    names = readdirSync(dir)
+  } catch {
+    return []
+  }
+  for (const name of names) {
+    const p = join(dir, name)
+    let bytes = 0
+    try {
+      const st = statSync(p)
+      if (!st.isFile()) continue
+      bytes = st.size
+    } catch {
+      continue
+    }
+    const inRecord = c.prepare('SELECT 1 FROM attachment WHERE path = ?').get(p)
+    if (inRecord) continue
+    if (haystack.includes(name)) continue
+    out.push({ name, path: p, bytes })
+  }
+  return out
+}
+
+/** 删掉这些孤儿文件，返回实际删掉的数量。 */
+export function cleanOrphanFiles(): number {
+  let n = 0
+  for (const f of listOrphanFiles()) {
+    try {
+      rmSync(f.path, { force: true })
+      n++
+    } catch (err) {
+      quietFailure('清理孤儿附件', err)
+    }
+  }
+  return n
+}
+
 export function listAttachments(): AttachmentRow[] {
   const rows = conn()
     .prepare(
@@ -283,10 +356,20 @@ export function pruneAttachments(): { removedRows: number; removedFiles: number 
 
   let removedFiles = 0
   const base = attachmentsDir()
+  /*
+    **必须跳过 pending/**。
+    
+    它是"还没有归属的附件"的暂存区 —— 那里的文件按设计就没有 attachment 记录，
+    所以下面的 keep 集合里必然没有它们，会被一律当成孤儿删掉。而那些可能是
+    快速笔记刚粘贴、还没转成笔记的原图：删下去就是**直接删用户数据**。
+    暂存区由 listOrphanFiles 按"是否被闪念/笔记正文引用"逐个判断，不在这里扫。
+  */
+  const PENDING = join(base, 'pending')
   if (existsSync(base)) {
     for (const noteDir of readdirSync(base, { withFileTypes: true })) {
       if (!noteDir.isDirectory()) continue
       const dir = join(base, noteDir.name)
+      if (dir === PENDING) continue
       for (const file of readdirSync(dir, { withFileTypes: true })) {
         if (!file.isFile()) continue
         const full = join(dir, file.name)

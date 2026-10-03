@@ -137,6 +137,10 @@ const api = {
   deleteAttachment: (id: number): Promise<boolean> => ipcRenderer.invoke('db:deleteAttachment', id),
   pruneAttachments: (): Promise<{ removedRows: number; removedFiles: number }> =>
     ipcRenderer.invoke('db:pruneAttachments'),
+  /** 暂存区里没人引用的附件：搬移逻辑修好之前积下的，或闪念被删后留下的 */
+  orphanFiles: (): Promise<{ name: string; path: string; bytes: number }[]> =>
+    ipcRenderer.invoke('db:orphanFiles'),
+  cleanOrphanFiles: (): Promise<number> => ipcRenderer.invoke('db:cleanOrphanFiles'),
   /** 弹系统文件选择框并归档到指定笔记，返回归档后的路径 */
   pickAttachment: (noteId: number): Promise<{ ok: boolean; message: string; paths: string[] }> =>
     ipcRenderer.invoke('attachment:pick', noteId),
