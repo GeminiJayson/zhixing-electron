@@ -367,6 +367,8 @@ const api = {
     resolveNoteTitle: (title: string): Promise<number | null> =>
       ipcRenderer.invoke('db:resolveNoteTitle', title),
     outLinks: (id: number): Promise<NoteLink[]> => ipcRenderer.invoke('db:outLinks', id),
+    /** 全库重跑双链解析：回填「标题能解析到、dst_note_id 却没绑」的链接。返回回填条数 */
+    relinkAllNotes: (): Promise<number> => ipcRenderer.invoke('db:relinkAllNotes'),
     backlinks: (id: number): Promise<Backlink[]> => ipcRenderer.invoke('db:backlinks', id),
     saveNote: (
       id: number,

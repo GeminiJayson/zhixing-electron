@@ -99,6 +99,37 @@ export function syncNoteLinks(noteId: number, contentMd: string): void {
   }
 }
 
+/**
+ * 全库重跑一次双链解析，把"标题能解析到、dst_note_id 却没绑"的链接回填上。
+ *
+ * 这类链接不影响显示（brokenLinks 会把它们排除，因为目标确实存在），
+ * 但**凡按 id 关联的地方都看不见它** —— 图谱的边、反链查询都走 dst_note_id。
+ * 成因是标题解析在某个时刻没成功（比如目标当时还没建、或改名过程中），
+ * 而现有的绑定只发生在 saveNote 里 —— 那篇笔记不被再次保存，就永远绑不上。
+ *
+ * syncNoteLinks 的 bind 分支本身就是"重新解析 + 回填"，所以这里只是给它一个
+ * 全库范围的入口。返回实际回填的条数。
+ */
+export function relinkAllNotes(): number {
+  const c = conn()
+  const rows = c.prepare('SELECT id, content_md FROM note WHERE deleted_at IS NULL').all() as {
+    id: number
+    content_md: string | null
+  }[]
+  const unbound = c.prepare(
+    'SELECT COUNT(*) AS n FROM note_link WHERE src_note_id = ? AND dst_note_id IS NULL'
+  )
+  const countFor = (id: number): number => (unbound.get(id) as { n: number }).n
+  let fixed = 0
+  for (const r of rows) {
+    const before = countFor(r.id)
+    if (before === 0) continue
+    syncNoteLinks(r.id, r.content_md ?? '')
+    fixed += before - countFor(r.id)
+  }
+  return fixed
+}
+
 export function saveNote(
   id: number,
   fields: {

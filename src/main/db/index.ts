@@ -32,7 +32,7 @@ import { EXPORT_TABLES, buildExportJson, buildTasksCsv, buildNotesExport, import
 import { TASK_ID_OFFSET, FLASH_ID_OFFSET, FOLDER_ID_OFFSET, ANCHOR_ID_OFFSET, folderNodeId, anchorNodeId, classifyEdge, graphNodeId, buildGraphTracked, acyclicOwnershipEdges, diffGraph, graphDelta, graphNeighborhood, graphPreview, isGraphWatching, setGraphWatch, connectionAllowed, resolveEdgeKind, wouldCreateCycle, linkNotes, linkTaskNoteRef, unlinkTaskNoteRef, unlinkNotes, connectGraphNodes, removeGraphEdge, rewireGraphEdge } from './graph'
 import { FLASH_COLUMNS, getFlash, listFlashesByStatus, addFlash, setFlashStatus, deleteFlash, markFlashConverted, flashToTask, flashToNote, updateFlashRemark, tagFlash, mergeFlashes, flashToSubtask } from './inbox'
 import { shiftDay, rollRecurringToday, resumeDueToday, recordPomodoro, pomodoroToday, dueReminders, dismissReminder, snoozeReminder, saveWidgetGeometry, currentSettings, seedIfEmpty } from './maintenance'
-import { NOTE_COLUMNS, listNoteFolders, getNote, resolveNoteTitle, syncNoteLinks, saveNote, createNote, deleteNote, listOutLinks, listBacklinks, materializeDangling, bindDanglingByTitle, createNoteFolder, renameNoteFolder, ensureDefaultFolder, moveNoteFolder, deleteNoteFolder, addReferenceLink, appendNote, attachNoteBlockContext, listNoteBlockContexts, noteAttachedTasks, noteTaskCandidates, NOTE_REVISION_LIMIT, NOTE_TEMPLATES, snapshotNote, listNoteRevisions, restoreNoteRevision, orphanNotes, brokenLinks, createNoteFromTemplate, noteTagMap, setNoteTags } from './notes'
+import { NOTE_COLUMNS, listNoteFolders, getNote, resolveNoteTitle, syncNoteLinks, saveNote, createNote, deleteNote, listOutLinks, listBacklinks, materializeDangling, bindDanglingByTitle, createNoteFolder, renameNoteFolder, ensureDefaultFolder, moveNoteFolder, deleteNoteFolder, addReferenceLink, appendNote, attachNoteBlockContext, listNoteBlockContexts, noteAttachedTasks, noteTaskCandidates, NOTE_REVISION_LIMIT, NOTE_TEMPLATES, snapshotNote, listNoteRevisions, restoreNoteRevision, orphanNotes, brokenLinks, createNoteFromTemplate, noteTagMap, setNoteTags, relinkAllNotes } from './notes'
 import {
   previewOfficeNote,
   officeDocNote,
@@ -578,6 +578,7 @@ export function registerDbHandlers(): void {
   handle('db:attachments', () => listAttachments())
   handle('db:attachmentStats', () => attachmentStats())
   handle('db:orphanFiles', () => listOrphanFiles())
+  handle('db:relinkAllNotes', () => relinkAllNotes())
   handle('db:cleanOrphanFiles', () => cleanOrphanFiles())
   handle('db:importAttachment', (_e, noteId: number, srcPath: string) =>
     importAttachment(noteId, srcPath)
