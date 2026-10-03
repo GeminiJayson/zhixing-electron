@@ -1125,6 +1125,14 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     const saved = await window.zhixing.db.saveNote(noteId, { folder_id: folderId })
     const name = folderId == null ? '全部笔记' : folders.find((f) => f.id === folderId)?.name ?? ''
     onNotice(saved ? `已把笔记移入「${name}」` : '移动失败')
+    /**
+     * 必须显式更新 current。
+     *
+     * load() 只刷新 notes 与 folders 两张列表，**不动 current** ——
+     * 而信息区「归属」栏读的是 current.folder_id。于是移动之后笔记树里
+     * 那篇已经换了位置、信息区却还显示旧文件夹。
+     */
+    if (saved) setCurrent(saved)
     await load()
   }
 

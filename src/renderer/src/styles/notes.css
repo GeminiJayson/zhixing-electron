@@ -915,6 +915,10 @@ span.links__pill-text {
 .links__add:focus-within {
   border-color: var(--accent);
 }
+/* 融合控件里紧挨着输入框的那个按钮才有中缝线 */
+.links__add .links__add-btn:not(.links__add-btn--wide) {
+  border-left: var(--border-w) solid var(--border);
+}
 .links__add-input {
   flex: 1 1 auto;
   min-width: 0;
@@ -939,8 +943,13 @@ span.links__pill-text {
   width: calc(var(--control-h) + 4px);
   height: calc(var(--control-h) - 2px);
   border: none;
-  /* 中间那条分割线 */
-  border-left: var(--border-w) solid var(--border);
+  /*
+   * 中缝那条分割线**只给融合控件里的按钮**，见下面 .links__add 的规则。
+   *
+   * 原来写在这条基础规则上，于是独立按钮（--wide，如「移动到文件夹…」）
+   * 也继承了一道左边框；它自己再写 border 就叠成两条，看着就是「比旁边的粗」。
+   */
+  border-left: none;
   /**
    * 右侧两角要自己圆。
    *
