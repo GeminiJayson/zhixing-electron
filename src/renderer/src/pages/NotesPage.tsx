@@ -273,6 +273,10 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   const [replaceText, setReplaceText] = useState('')
   /** CodeMirror 实例：查找定位要走它的 selection API */
   const viewRef = useRef<EditorView | null>(null)
+  /** 失效链接的原始行（面板要按它给出「删掉这一行」的动作） */
+  const [brokenRows, setBrokenRows] = useState<
+    { src_note_id: number; src_title: string; dst_title: string }[]
+  >([])
   const [panelItems, setPanelItems] = useState<{ key: string; label: string; id: number }[]>([])
   const timer = useRef<number | null>(null)
   /** 「移动到文件夹…」目标菜单 */
@@ -1435,15 +1439,57 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
       setPanelItems(rows.map((n) => ({ key: `o-${n.id}`, label: n.title, id: n.id })))
     } else {
       const rows = await window.zhixing.db.brokenLinks()
-      setPanelItems(
-        rows.map((b, i) => ({
+      /*
+        每条失效链接给两个动作，而不只是"跳过去"。
+        
+        跳过去只能让人自己找到那一行再手删；而失效链接的成因是
+        `[[标题]]` 指向的笔记不存在 —— 要么补建那篇，要么删掉这一行。
+        这里先把"删掉这一行"给出来（改的是来源笔记的正文，所以要点确认）。
+      */
+      const items: { key: string; label: string; id: number; act: 'open' | 'drop'; title?: string }[] = []
+      for (const [i, b] of rows.entries()) {
+        items.push({
           key: `b-${i}`,
           label: `${b.src_title} → [[${b.dst_title}]]`,
           id: b.src_note_id,
-        }))
-      )
+          act: 'open',
+        })
+      }
+      setBrokenRows(rows)
+      setPanelItems(items)
+      setPanel({ kind, x: anchor.x, y: anchor.y })
+      return
     }
     setPanel({ kind, x: anchor.x, y: anchor.y })
+  }
+
+  /**
+   * 删掉一条失效链接：从**来源笔记的正文**里去掉那行 [[标题]]。
+   *
+   * 失效链接 = 正文里写着 [[某标题]] 但那篇笔记不存在。处理方式要么补建那篇、
+   * 要么删掉这一行 —— 这里给后者。改的是别人的正文，所以先确认。
+   */
+  const dropBrokenLink = async (b: {
+    src_note_id: number
+    src_title: string
+    dst_title: string
+  }): Promise<void> => {
+    const ok = await dialog.confirm({
+      title: '删掉这条失效链接',
+      message:
+        '「' + b.src_title + '」的正文里写着 [[' + b.dst_title + ']]，但这篇笔记不存在。\n' +
+        '删掉会改「' + b.src_title + '」的正文。',
+      confirmText: '删掉这一行',
+      danger: true,
+    })
+    if (!ok) return
+    const src = await window.zhixing.db.note(b.src_note_id)
+    if (!src) return
+    const next = dropLinkLine(src.content_md ?? '', b.dst_title)
+    await window.zhixing.db.saveNote(b.src_note_id, { content_md: next })
+    setPanel(null)
+    setBrokenRows((prev) => prev.filter((r) => !(r.src_note_id === b.src_note_id && r.dst_title === b.dst_title)))
+    onNotice('已从「' + b.src_title + '」里删掉那条链接')
   }
 
   /**
@@ -2793,11 +2839,24 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
           onClose={() => setPanel(null)}
           items={
             panelItems.length
-              ? panelItems.map((it) => ({
-                  key: it.key,
-                  label: it.label,
-                  onPick: () => void selectNote(it.id),
-                }))
+              ? [
+                  ...panelItems.map((it) => ({
+                    key: it.key,
+                    label: it.label,
+                    onPick: () => void selectNote(it.id),
+                  })),
+                  /*
+                    失效链接额外给一条「删掉这一行」。
+                    它改的是**来源笔记的正文**，所以先确认再动 —— 用户当前看的是
+                    体检面板，不是在编辑那篇笔记。
+                  */
+                  ...brokenRows.map((b, i) => ({
+                    key: `del-${i}`,
+                    label: `删掉「${b.src_title}」里的 [[${b.dst_title}]]`,
+                    danger: true,
+                    onPick: () => void dropBrokenLink(b),
+                  })),
+                ]
               : [{ key: 'none', label: '没有符合条件的笔记', onPick: () => undefined }]
           }
         />
