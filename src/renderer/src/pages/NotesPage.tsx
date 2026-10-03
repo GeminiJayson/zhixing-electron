@@ -18,7 +18,6 @@ import {
   Sparkles,
   Tag,
   Trash2,
-  UserPlus,
 } from '@renderer/lib/icons'
 import { subscribeDomain } from '@shared/events'
 import { useDialog } from '../components/Dialogs'
@@ -1407,10 +1406,6 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   /** chip 文案：只讲归属（文件夹名）。引用数属于信息区的反向链接栏，不塞进 chip */
   /** 标题栏胶囊的状态：库内改动与 Word/Excel 的文件写回，任一没落地都算「未保存」。 */
   const unsaved = dirty || officePending
-
-  const attachLabel = current?.folder_id
-    ? (folders.find((f) => f.id === current.folder_id)?.name ?? '已归属')
-    : attachedTasks.length > 0
       ? `关联 ${attachedTasks.length} 个任务`
       : '归属'
 
@@ -1848,17 +1843,12 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                           <Tag size={12} /> {currentTags.length === 0 ? '加标签' : '标签'}
                         </button>
                       </div>
-                      <button
-                        type="button"
-                        className="chip chip--meta"
-                        title="移动到文件夹，或关联到任务"
-                        onClick={(e) => {
-                          const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                          setAttachMenu({ x: r.left, y: r.bottom + 4 })
-                        }}
-                      >
-                        <UserPlus size={12} /> {attachLabel}
-                      </button>
+                      {/*
+                        标题行原来还有一个「归属」胶囊（文件夹名 / 关联任务数）。
+                        删掉了：同一件事在信息区已经有一整栏，标题行是"编辑这篇"的地方，
+                        不该同时承担"这篇属于谁"的展示 —— 两处显示同一个状态，
+                        迟早会出现一处更新、另一处没更新。
+                      */}
                     </>
                   }
                   /* 操作组一律靠左：富文本形态下它是空的（那六个入口挂到了格式条左侧），
@@ -2287,7 +2277,9 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                 反向链接 · {backlinks.length + attachedTasks.length}
               </header>
               <div className="links__items">
-                {backlinks.length === 0 ? (
+                {/* 空状态只在**两种引用都没有**时出现 —— 原来只判 backlinks，
+                    于是任务引用了它的时候，下面明明躺着任务胶囊，上面还说"还没有引用" */}
+                {backlinks.length === 0 && attachedTasks.length === 0 ? (
                   <p className="links__empty">还没有笔记或任务引用它</p>
                 ) : (
                   backlinks.map((b) => (

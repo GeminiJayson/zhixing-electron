@@ -975,6 +975,12 @@ span.links__pill-text {
   height: var(--control-h);
   gap: 4px;
   padding: 0 var(--space-2);
+  /**
+   * 边框要显式重置左边那条。
+   *
+   * 基础规则里的 border-left 是给融合控件做中间分割线用的，这里若不覆盖，
+   * 就会和下面这条 border 叠成两条 —— 视觉上就是「边框比旁边的粗」。
+   */
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius-ctl);
   background: var(--glass-layer-control);
