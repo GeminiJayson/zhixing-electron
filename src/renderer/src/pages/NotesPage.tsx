@@ -2,7 +2,22 @@ import type { EditorView } from '@codemirror/view'
 import { sanitizeHtml } from '@shared/sanitize-html'
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
-import { ChevronRight, Database, ExternalLink, FileText, Maximize2, Morph, IconData, Link2, Plus, Sparkles, Tag, Trash2, UserPlus } from '@renderer/lib/icons'
+import {
+  ChevronRight,
+  Database,
+  ExternalLink,
+  FilePlus2,
+  FileText,
+  Link2,
+  Maximize2,
+  Morph,
+  IconData,
+  Plus,
+  Sparkles,
+  Tag,
+  Trash2,
+  UserPlus,
+} from '@renderer/lib/icons'
 import { subscribeDomain } from '@shared/events'
 import { useDialog } from '../components/Dialogs'
 import type { Backlink, Note, NoteFolder, NoteLink } from '@shared/types'
@@ -148,8 +163,15 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
    * 知识库**不是一个独立页面** —— 类型与可信状态是笔记自己的属性，
    * 所以它们在这里以筛选的形式存在（原方案里"六个区域"说的是区域，不是页面）。
    */
-  /** 这一页有两个视图：知识库（默认）与保险箱。入口在筛选条右侧。 */
+  /** 这一页有两个视图：知识库（默认）与保险箱。入口在工具栏最右端。 */
   const [view, setView] = useState<'notes' | 'vault'>('notes')
+  /**
+   * 笔记树的搜索词。
+   *
+   * 搜索框原本长在树上（NoteTree 自己持有 state），现在挪到页面工具栏 ——
+   * 它是「对这一页所有内容的筛选」，归属该在这一层。树那边改成受控。
+   */
+  const [treeQuery, setTreeQuery] = useState('')
   const [kindFilter, setKindFilter] = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<'all' | 'verified' | 'draft' | 'archived'>('all')
   /** id → { kind, verified }，由主进程按"全部状态含归档"一次取回 */
@@ -1411,72 +1433,91 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
 
   return (
     <div className={'page page--notes' + (zen ? ' page--zen' : '')}>
-      <div className="page__head">
-        <h1 className="page__title">{t('page.notes')}</h1>
-        <p className="page__subtitle">{t('page.notes.sub')}</p>
-        {/* 笔记树的收放：就在副标题旁边 */}
-        <button
-          className="icon-btn page__head-toggle"
-          aria-pressed={!treeHidden}
-          aria-label={treeHidden ? '展开笔记树' : '收起笔记树'}
-          title={treeHidden ? '展开笔记树' : '收起笔记树'}
-          onClick={() => setTreeHidden((prev) => !prev)}
-        >
-          <Morph icon={treeHidden ? IconData.PanelLeftOpen : IconData.PanelLeftClose} size={15} />
-        </button>
-      </div>
       {/*
-        知识库筛选。**知识库不是独立页面** —— 类型与可信状态是笔记自己的属性，
-        原方案里说的"六个区域"指的是区域，不是页面。
-        放在页面头与正文之间，横跨整宽；收起笔记树时它依然在，因为它是页级筛选。
+        页面工具栏：树收放、标题、知识库筛选、待办数字、搜索、树级动作、保险箱入口
+        全部收在同一个 Toolbar 里。
+
+        这些都是「对这一页所有内容生效」的东西 —— 原先按位置散在三处
+        （page__head、notes-filter、以及长在笔记树上的搜索框与三个动作），
+        同一类操作分居三地，树也被压得很重。收进工具栏之后还白得一个能力：
+        空间不够时框架会自动把右侧的次要操作折进「更多」浮层。
       */}
-      <div className="notes-filter">
-        <label className="notes-filter__item">
-          <span className="u-aux">类型</span>
+      <Toolbar
+        variant="page"
+        titleNode={
+          <>
+            {/* 树的收放放最前 —— 它改变的是这一页的版式，先于一切筛选 */}
+            <button
+              className="icon-btn page__head-toggle"
+              aria-pressed={!treeHidden}
+              aria-label={treeHidden ? '展开笔记树' : '收起笔记树'}
+              title={treeHidden ? '展开笔记树' : '收起笔记树'}
+              onClick={() => setTreeHidden((prev) => !prev)}
+            >
+              <Morph
+                icon={treeHidden ? IconData.PanelLeftOpen : IconData.PanelLeftClose}
+                size={15}
+              />
+            </button>
+            <h1 className="page__title">{t('page.notes')}</h1>
+            <p className="page__subtitle">{t('page.notes.sub')}</p>
+          </>
+        }
+        nav={
+          <>
           <select
             className="notes-filter__select"
             value={kindFilter}
             aria-label="按类型筛选"
             onChange={(e) => setKindFilter(e.target.value)}
           >
-            <option value="all">全部</option>
+            {/* 「所有类型」而不是「全部」—— 右边状态那一组也有个"全部"，
+                两个都叫"全部"会让人不知道在筛什么 */}
+            <option value="all">所有类型</option>
             {KNOWLEDGE_KINDS.map((k) => (
               <option key={k.key} value={k.key}>
                 {k.label}
               </option>
             ))}
           </select>
-        </label>
-        <div className="notes-filter__seg">
-          {(['all', 'verified', 'draft', 'archived'] as const).map((s) => (
-            <button
-              key={s}
-              className={'notes-filter__btn' + (statusFilter === s ? ' notes-filter__btn--on' : '')}
-              onClick={() => setStatusFilter(s)}
-            >
-              {s === 'all' ? '全部' : s === 'verified' ? '可用' : s === 'draft' ? '待确认' : '归档'}
-            </button>
-          ))}
-        </div>
-        {(kindFilter !== 'all' || statusFilter !== 'all') && (
-          <button
-            className="notes-filter__clear"
-            onClick={() => {
-              setKindFilter('all')
-              setStatusFilter('all')
-            }}
-          >
-            清除筛选
-          </button>
-        )}
-        {/*
-          三个"待办数字"（方案 phase3-research §2.3）。
-          刻意不做仪表盘 —— 它们的价值在于提醒你去处理，而提醒要出现在你本来就待着的地方。
-          三个数回答的都是"我现在该做什么"，不是"我做得怎么样"。
-        */}
-        {health && (health.draft > 0 || health.noSource > 0 || health.unused > 0) && (
-          <div className="notes-filter__health">
-            {health.draft > 0 && (
+            <div className="notes-filter__seg">
+              {(['all', 'verified', 'draft', 'archived'] as const).map((s) => (
+                <button
+                  key={s}
+                  className={
+                    'notes-filter__btn' + (statusFilter === s ? ' notes-filter__btn--on' : '')
+                  }
+                  onClick={() => setStatusFilter(s)}
+                >
+                  {s === 'all'
+                    ? '全部'
+                    : s === 'verified'
+                      ? '可用'
+                      : s === 'draft'
+                        ? '待确认'
+                        : '归档'}
+                </button>
+              ))}
+            </div>
+            {(kindFilter !== 'all' || statusFilter !== 'all') && (
+              <button
+                className="notes-filter__clear"
+                onClick={() => {
+                  setKindFilter('all')
+                  setStatusFilter('all')
+                }}
+              >
+                清除筛选
+              </button>
+            )}
+          </>
+        }
+        meta={
+          <>
+            {/* 三个"待办数字"（方案 phase3-research §2.3）。
+                刻意不做仪表盘 —— 它们的价值在于提醒你去处理，
+                而提醒要出现在你本来就待着的地方。 */}
+            {health && health.draft > 0 && (
               <button
                 className="notes-filter__hbtn notes-filter__hbtn--todo"
                 title="收了但还没核对 —— 堆着就是在给自己制造负债"
@@ -1485,39 +1526,91 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                 待确认 {health.draft}
               </button>
             )}
-            {health.noSource > 0 && (
+            {health && health.noSource > 0 && (
               <span className="notes-filter__hbtn" title="知识类条目却没有来源，它们永远卡在待确认">
                 无来源 {health.noSource}
               </span>
             )}
-            {health.unused > 0 && (
-              <span className="notes-filter__hbtn" title="有来源但没被任何知识引用 —— 提炼了却没用起来">
+            {health && health.unused > 0 && (
+              <span
+                className="notes-filter__hbtn"
+                title="有来源但没被任何知识引用 —— 提炼了却没用起来"
+              >
                 未被引用 {health.unused}
               </span>
             )}
-          </div>
-        )}
-        <span className="u-aux notes-filter__count">
-          {visibleNotes.length} / {notes.length}
-        </span>
-        {/* 保险箱入口。它原本在侧边导航里占一格，但那是偶尔进去看一眼的东西 ——
-            导航的每一格都该对应日常会待的地方。放在这一条的最右端（计数之后），
-            和筛选控件分开，因为它不是筛选，是"换个视图"。 */}
-        <button
-          className="notes-filter__vault"
-          title="密码保险箱"
-          aria-label="打开密码保险箱"
-          onClick={() => setView('vault')}
-        >
-          <Database size={14} /> 保险箱
-        </button>
-      </div>
+            <span className="notes-filter__count">
+              {visibleNotes.length} / {notes.length}
+            </span>
+          </>
+        }
+        search={
+          <input
+            className="field field--compact"
+            value={treeQuery}
+            onChange={(e) => setTreeQuery(e.target.value)}
+            placeholder="搜索标题…"
+            aria-label="搜索笔记标题"
+          />
+        }
+        /*
+          树级动作原本长在笔记树上（搜索框下面那三个整行按钮），
+          现在收进工具栏 —— 空间不够时框架会自动把它们折进「更多」浮层。
+        */
+        secondary={[
+          <button
+            key="ai"
+            className={libJob ? 'text-btn text-btn--danger' : 'text-btn'}
+            title={
+              libJob
+                ? '正在整理整个笔记库；点此停止'
+                : '逐篇整理整个笔记库（按类型分别处理，可随时停止）'
+            }
+            onClick={() => void handleLibraryOrganize()}
+          >
+            <Sparkles size={14} />{' '}
+            {libJob ? `停止整理（${libJob.done}/${libJob.total}）` : 'AI 整理全库'}
+          </button>,
+          <button
+            key="attach"
+            className="text-btn"
+            title="把本地文件复制进数据目录并挂到当前笔记（原文件移动或删除也不影响）"
+            onClick={() => void handleAddAttachment()}
+          >
+            <FilePlus2 size={14} /> 添加附件
+          </button>,
+          <button
+            key="audit"
+            className="text-btn"
+            title="链接体检：没有入链的孤儿笔记 / 指向不存在笔记的失效链接"
+            onClick={(e) => {
+              const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+              void handleLinkAudit('orphan', { x: r.left, y: r.bottom + 4 })
+            }}
+          >
+            <Link2 size={14} /> 链接体检
+          </button>,
+        ]}
+        primary={
+          /* 保险箱入口。它原本在侧边导航里占一格，但那是偶尔进去看一眼的东西 ——
+             导航的每一格都该对应日常会待的地方。 */
+          <button
+            className="notes-filter__vault"
+            title="密码保险箱"
+            aria-label="打开密码保险箱"
+            onClick={() => setView('vault')}
+          >
+            <Database size={14} /> 保险箱
+          </button>
+        }
+      />
       <div className="page__body">
       <div className="notes-wrap">
         {/* 笔记树：收起时整块不渲染（而不是藏起来），宽度全部让给编辑区。
             收放按钮在页面副标题旁边；全屏编辑时页面头整体让位，树也随之不显示。 */}
         {!treeHidden ? (
           <NoteTree
+        queryProp={treeQuery}
             notes={visibleNotes}
             folders={folders}
             selectedId={selectedId}

@@ -10,8 +10,6 @@ import {
   Link2,
   NotebookPen,
   Pin,
-  Search,
-  Sparkles,
   Trash2,
 } from '@renderer/lib/icons'
 import { useCollapsedSet } from '@renderer/lib/use-collapsed'
@@ -78,6 +76,8 @@ interface Props {
   onRenameFolder: (id: number, currentName: string) => void
   onDeleteFolder: (id: number) => void
   onMoveFolder: (id: number, parentId: number | null) => void
+  /** 搜索词（受控）—— 搜索框已挪到页面工具栏，状态由宿主页持有 */
+  queryProp?: string
   /** 整库 AI 整理的进度；非空表示正在跑（按钮变成「停止」） */
   libJob?: AiLibraryProgress | null
   /** 触发 / 停止整库整理 */
@@ -108,6 +108,7 @@ export function NoteTree({
   onRenameFolder,
   onDeleteFolder,
   onMoveFolder,
+  queryProp,
   libJob = null,
   onOrganizeLibrary,
   onAddAttachment,
@@ -119,7 +120,17 @@ export function NoteTree({
    * 三棵树共用 lib/use-collapsed.ts 的同一套行为。
    */
   const { collapsed, toggle: toggleFolder, setCollapsed } = useCollapsedSet('zhixing.tree.collapsed.notes')
+  /**
+   * 搜索词由宿主页持有（受控）。
+   *
+   * 搜索框与树级动作已挪到页面工具栏 —— 它们都是「对这一页所有内容生效」的东西，
+   * 长在树上会让树显得很重，而树上真正该有的只有树本身。
+   * state 跟着一起提上去，这里只是把 prop 回填进本地变量，过滤逻辑一行都不用改。
+   */
   const [query, setQuery] = useState('')
+  useEffect(() => {
+    setQuery(queryProp ?? '')
+  }, [queryProp])
   /** 树宽（可拖右边缘调整 / 键盘微调），默认与 CSS 里的 240px 一致 */
   const [treeWidth, setTreeWidth] = useState<number>(() => {
     try {
@@ -383,59 +394,6 @@ export function NoteTree({
       aria-label="笔记树"
       style={{ width: treeWidth, flexBasis: treeWidth }}
     >
-      {/* 搜索框不是「工具」而是「表单行」：独立于工具栏，才能撑满树的宽度 */}
-      <div className="ntree__search-wrap">
-        <Search size={14} aria-hidden />
-        <input
-          className="field ntree__search-input"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="搜索标题…"
-          aria-label="搜索笔记标题"
-        />
-      </div>
-      {/* 树级动作：整库整理属于「整棵树」的操作，放在搜索框下面比塞进编辑器工具栏更顺手 */}
-      {(onOrganizeLibrary || onAddAttachment || onLinkAudit) && (
-        <div className="ntree__topbar">
-          <button
-            className={libJob ? 'text-btn text-btn--danger' : 'text-btn'}
-            title={
-              libJob
-                ? `正在整理：${libJob.currentTitle || '…'}（成功 ${libJob.ok} / 失败 ${libJob.failed}）；点此停止，当前这一篇会跑完`
-                : '逐篇整理整个笔记库（按类型分别处理，可随时停止）'
-            }
-            onClick={() => onOrganizeLibrary?.()}
-          >
-            <Sparkles size={13} /> {libJob ? `停止整理（${libJob.done}/${libJob.total}）` : 'AI 整理全库'}
-          </button>
-          {onAddAttachment && (
-            <button
-              className="text-btn"
-              title="把本地文件复制进数据目录并挂到当前笔记（原文件移动或删除也不影响）"
-              onClick={() => onAddAttachment()}
-            >
-              <FilePlus2 size={13} /> 添加附件
-            </button>
-          )}
-          {onLinkAudit && (
-            <button
-              className="text-btn"
-              title="链接体检：没有入链的孤儿笔记 / 指向不存在笔记的失效链接"
-              onClick={(e) => {
-                const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                setAuditMenu({ x: r.left, y: r.bottom + 4 })
-              }}
-            >
-              <Link2 size={13} /> 链接体检
-            </button>
-          )}
-          {libJob && (
-            <span className="u-aux ntree__topbar-hint" title={libJob.currentTitle}>
-              {libJob.currentTitle || '准备中…'}
-            </span>
-          )}
-        </div>
-      )}
       <div className="ntree__body">
         {rootNotes.map((n) => noteRow(n, 0, null))}
         {childrenOf(null).map((f) => folderNode(f, 0))}
