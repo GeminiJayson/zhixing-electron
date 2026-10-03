@@ -73,10 +73,18 @@ export function NotePicker({ notes, folders, value, anchor, onPick, onClose }: P
     const onEsc = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') onClose()
     }
-    document.addEventListener('mousedown', onDocDown)
+    /**
+     * **必须在捕获阶段监听。**
+     *
+     * 这个选择器被用在任务编辑弹窗里，而那个弹窗的遮罩上有
+     * onMouseDown={e => e.stopPropagation()}（Dialogs.tsx）—— 冒泡被掐断，
+     * 挂在 document 上的普通监听永远收不到点击，于是弹层点外面也不消失。
+     * 捕获阶段先于冒泡，不受它影响。
+     */
+    document.addEventListener('mousedown', onDocDown, true)
     document.addEventListener('keydown', onEsc)
     return () => {
-      document.removeEventListener('mousedown', onDocDown)
+      document.removeEventListener('mousedown', onDocDown, true)
       document.removeEventListener('keydown', onEsc)
     }
   }, [onClose])
