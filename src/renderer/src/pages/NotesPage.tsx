@@ -3,11 +3,13 @@ import { sanitizeHtml } from '@shared/sanitize-html'
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import {
+  X,
   ChevronRight,
   Database,
   ExternalLink,
   FilePlus2,
   FileText,
+  FolderPlus,
   Link2,
   Maximize2,
   Morph,
@@ -283,6 +285,9 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
 
   /** 笔记属性（每行一条 key: value），落库为 JSON 对象 */
   const [propDraft, setPropDraft] = useState('')
+  /** 信息区底部新增行用：属性填「键: 值」，引用填标题 */
+  const [propNew, setPropNew] = useState('')
+  const [linkNew, setLinkNew] = useState('')
 
   const propsToText = (raw?: string | null): string => {
     if (!raw) return ''
@@ -308,13 +313,131 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     return JSON.stringify(obj)
   }
 
-  const saveProps = async (): Promise<void> => {
+  /**
+   * 属性列表。**propDraft 仍是唯一真相** —— 这里是它的只读视图。
+   * 信息区改成胶囊展示后需要"一条一条"的形态，但保存路径没变：
+   * 仍把整段文本解析成 JSON 存进 props。少一个数据源，就少一处不一致。
+   */
+  const propItems = propDraft
+    .split('\n')
+    .map((line) => {
+      const i = line.indexOf(':')
+      if (i <= 0) return null
+      const k = line.slice(0, i).trim()
+      if (!k) return null
+      return { key: k, value: line.slice(i + 1).trim() }
+    })
+    .filter((x): x is { key: string; value: string } => x !== null)
+
+  /** 改属性都落到 propDraft 并立刻保存 —— 不让用户改完还得再点一次保存 */
+  const writeProps = async (lines: string[]): Promise<void> => {
+    const text = lines.join('\n')
+    setPropDraft(text)
     if (selectedId == null) return
-    const next = parsePropsText(propDraft)
-    if (next === (current?.props ?? '{}')) return
-    await window.zhixing.db.saveNote(selectedId, { props: next })
+    await window.zhixing.db.saveNote(selectedId, { props: parsePropsText(text) })
     await load()
-    onNotice('已保存属性')
+  }
+
+  const addProp = (): void => {
+    const raw = propNew.trim()
+    if (!raw) return
+    // 允许只写键（"来源"）不写值 —— 先把位置占下来也是常见用法
+    const line = raw.includes(':') ? raw : raw + ': '
+    void writeProps(propItems.map((p) => p.key + ': ' + p.value).concat(line)).then(() =>
+      setPropNew('')
+    )
+  }
+
+  const removeProp = (key: string): void => {
+    void writeProps(propItems.filter((p) => p.key !== key).map((p) => p.key + ': ' + p.value))
+  }
+
+  /** 正向引用：往正文追加一行 [[标题]]，与手写 [[链接]] 走同一条路，不另建数据 */
+  const addLink = (): void => {
+    const title = linkNew.trim()
+    if (!title || !current) return
+    const body = (current.content_md ?? '').replace(/\s*$/, '')
+    void window.zhixing.db.saveNote(current.id, { content_md: body + '\n\n[[' + title + ']]\n' }).then(
+      async () => {
+        setLinkNew('')
+        await load()
+        onNotice('已添加引用')
+      }
+    )
+  }
+
+  /**
+   * 从正文里删掉那一行 [[标题]]。
+   * 用整行字符串比较而不是正则：标题里可能有正则元字符，转义漏一个就会误删别的行。
+   */
+  const dropLinkLine = (contentMd: string, title: string): string =>
+    contentMd
+      .split('\n')
+      .filter((line) => line.trim() !== '[[' + title + ']]')
+      .join('\n')
+
+  const handleRemoveOutLink = (l: { dst_title: string }): void => {
+    if (!current) return
+    const next = dropLinkLine(current.content_md ?? '', l.dst_title)
+    void window.zhixing.db.saveNote(current.id, { content_md: next }).then(async () => {
+      await load()
+      onNotice('已删除引用')
+    })
+  }
+
+  /**
+   * 反向链接：**改的是对方那篇笔记的正文**。
+   *
+   * 反链不是一条独立记录，而是"别人的正文里写着 [[这篇的标题]]"。
+   * 所以删它只能去改对方的内容 —— 这也是为什么要先确认：
+   * 它在动一篇用户当前没在看的笔记。
+   */
+  const handleRemoveBacklink = async (b: {
+    src_note_id: number
+    src_title: string
+  }): Promise<void> => {
+    if (!current) return
+    const ok = await dialog.confirm({
+      title: '删除反向链接',
+      message:
+        '「' +
+        b.src_title +
+        '」的正文里写着指向这篇的 [[' +
+        (current.title ?? '') +
+        ']]。删掉会改的是那一篇，不是这一篇。',
+      confirmText: '删掉那条链接',
+      danger: true,
+    })
+    if (!ok) return
+    const src = await window.zhixing.db.note(b.src_note_id)
+    if (!src) return
+    const next = dropLinkLine(src.content_md ?? '', current.title ?? '')
+    await window.zhixing.db.saveNote(b.src_note_id, { content_md: next })
+    await load()
+    onNotice('已从「' + b.src_title + '」里删掉那条链接')
+  }
+
+  /** 归属栏：点文件夹胶囊在笔记树里定位它 */
+  const handleRevealFolder = (id: number): void => {
+    window.dispatchEvent(new CustomEvent('zhixing:open-note-folder', { detail: { id } }))
+  }
+
+  const handleMoveNoteToFolder = (folderId: number | null): void => {
+    if (!current) return
+    void handleMoveNote(current.id, folderId)
+  }
+
+  /** 归属栏：点任务胶囊跳到那个任务 */
+  const handleOpenTask = (id: number): void => {
+    window.dispatchEvent(new CustomEvent('zhixing:open-task', { detail: { id } }))
+  }
+
+  const handleDetachTask = (taskId: number): void => {
+    if (!current) return
+    void window.zhixing.db.detachTaskNote(taskId, current.id).then(async () => {
+      await load()
+      onNotice('已解除关联')
+    })
   }
 
   // 切笔记时把属性铺进编辑框
@@ -1202,8 +1325,6 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     await window.zhixing.db.setTagColor(id, color)
   }
 
-  const dangling = outLinks.filter((l) => l.dst_note_id == null)
-
   /** 属性条数：信息条收起时也要能看到「有几条」，不然用户不知道点开有什么 */
   const propCount = propDraft.split('\n').filter((l) => l.trim()).length
 
@@ -2065,82 +2186,226 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
             {/* 退场期间正文也要留着：否则抽屉还挂在屏幕上、里面却已经空了 */}
             {linksExpanded && (
             <div className="links__body">
-            <section className="links__card">
-              <div className="note-props">
-                  <header className="links__head">
-                    属性 · {propCount}
-                  </header>
-                  <textarea
-                    className="field note-props__editor"
-                    rows={3}
-                    value={propDraft}
-                    aria-label="笔记属性"
-                    placeholder={'每行一条，例如\n来源: 书籍\n评分: 5'}
-                    onChange={(e) => setPropDraft(e.target.value)}
-                    onBlur={() => void saveProps()}
+            {/*
+              四栏并排：属性 / 反向链接 / 正向引用 / 归属。
+
+              每栏内部是「胶囊列表（自己滚）+ 底部新增行 + 底部提示行」的三段结构，
+              信息区高度固定 —— 它不该因为某栏内容变多就把正文挤上去，
+              那样每加一条引用正文都会跳一下。
+
+              胶囊承载跳转（点胶囊本体），删除图标居右（点它只删不跳）。
+            */}
+            <section className="links__col">
+              <header className="links__head">属性 · {propItems.length}</header>
+              <div className="links__items">
+                {propItems.length === 0 ? (
+                  <p className="links__empty">还没有属性</p>
+                ) : (
+                  propItems.map((p) => (
+                    <span key={p.key} className="links__pill" title={p.key + ": " + p.value}>
+                      <span className="links__pill-text">
+                        <b>{p.key}</b>
+                        {p.value ? " " + p.value : ""}
+                      </span>
+                      <button
+                        type="button"
+                        className="links__pill-del"
+                        aria-label={"删除属性 " + p.key}
+                        title="删除"
+                        onClick={() => removeProp(p.key)}
+                      >
+                        <X size={11} />
+                      </button>
+                    </span>
+                  ))
+                )}
+              </div>
+              <div className="links__foot">
+                <div className="links__add">
+                  <input
+                    className="field links__add-input"
+                    value={propNew}
+                    aria-label="新增属性"
+                    placeholder="键: 值"
+                    onChange={(e) => setPropNew(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault()
+                        addProp()
+                      }
+                    }}
                   />
-                </div>
-                <header className="links__head">反向链接 · {backlinks.length}</header>
-              {backlinks.length === 0 ? (
-                <p className="u-aux">还没有其他笔记引用它。</p>
-              ) : (
-                backlinks.map((b) => (
-                  <button key={b.src_note_id} className="links__item" onClick={() => void selectNote(b.src_note_id)}>
-                    <strong>{b.src_title}</strong>
-                    <span className="u-aux">{b.snippet}</span>
+                  <button
+                    type="button"
+                    className="links__add-btn"
+                    aria-label="添加属性"
+                    title="添加"
+                    disabled={!propNew.trim()}
+                    onClick={addProp}
+                  >
+                    <Plus size={13} />
                   </button>
-                ))
-              )}
+                </div>
+                <p className="links__hint">每行一条，形如 来源: 书籍</p>
+              </div>
             </section>
-            <section className="links__card">
-              <header className="links__head">引用（正向）· {outLinks.length}</header>
-              {outLinks.length === 0 ? (
-                <p className="u-aux">正文里还没有 [[链接]]；点上方「引用」也可主动添加。</p>
-              ) : (
-                outLinks.map((l) =>
-                  l.dst_note_id != null ? (
-                    <button key={l.id} className="links__item" onClick={() => void selectNote(l.dst_note_id!)}>
-                      <strong>{l.dst_title}</strong>
-                    </button>
-                  ) : (
-                    <button
+
+            <section className="links__col">
+              <header className="links__head">反向链接 · {backlinks.length}</header>
+              <div className="links__items">
+                {backlinks.length === 0 ? (
+                  <p className="links__empty">还没有其他笔记引用它</p>
+                ) : (
+                  backlinks.map((b) => (
+                    <span key={b.src_note_id} className="links__pill">
+                      <button
+                        type="button"
+                        className="links__pill-text"
+                        title={b.snippet || b.src_title}
+                        onClick={() => void selectNote(b.src_note_id)}
+                      >
+                        <b>{b.src_title}</b>
+                      </button>
+                      <button
+                        type="button"
+                        className="links__pill-del"
+                        aria-label={"删除反向链接 " + b.src_title}
+                        title="从对方正文里删掉这条链接"
+                        onClick={() => void handleRemoveBacklink(b)}
+                      >
+                        <X size={11} />
+                      </button>
+                    </span>
+                  ))
+                )}
+              </div>
+              <div className="links__foot">
+                <p className="links__hint">别人引用这篇时自动出现</p>
+              </div>
+            </section>
+
+            <section className="links__col">
+              <header className="links__head">正向引用 · {outLinks.length}</header>
+              <div className="links__items">
+                {outLinks.length === 0 ? (
+                  <p className="links__empty">正文里还没有 [[链接]]</p>
+                ) : (
+                  outLinks.map((l) => (
+                    <span
                       key={l.id}
-                      className="links__item links__item--dangling"
-                      onClick={() => void handleCreateFromLink(l.dst_title)}
-                      title="目标笔记还不存在，点击创建并绑定"
+                      className={"links__pill" + (l.dst_note_id == null ? " links__pill--dangling" : "")}
                     >
-                      <span className="dangling">[[{l.dst_title}]]</span>
-                      <span className="u-aux"><Plus size={11} /> 创建</span>
-                    </button>
-                  )
-                )
-              )}
+                      <button
+                        type="button"
+                        className="links__pill-text"
+                        title={l.dst_note_id == null ? "目标还不存在，点击创建并绑定" : "打开这篇笔记"}
+                        onClick={() =>
+                          l.dst_note_id != null
+                            ? void selectNote(l.dst_note_id)
+                            : void handleCreateFromLink(l.dst_title)
+                        }
+                      >
+                        <b>{l.dst_title}</b>
+                      </button>
+                      <button
+                        type="button"
+                        className="links__pill-del"
+                        aria-label={"删除引用 " + l.dst_title}
+                        title="从正文里删掉这行引用"
+                        onClick={() => handleRemoveOutLink(l)}
+                      >
+                        <X size={11} />
+                      </button>
+                    </span>
+                  ))
+                )}
+              </div>
+              <div className="links__foot">
+                <div className="links__add">
+                  <input
+                    className="field links__add-input"
+                    value={linkNew}
+                    aria-label="新增引用"
+                    placeholder="笔记标题"
+                    onChange={(e) => setLinkNew(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault()
+                        addLink()
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="links__add-btn"
+                    aria-label="添加引用"
+                    title="添加"
+                    disabled={!linkNew.trim()}
+                    onClick={addLink}
+                  >
+                    <Plus size={13} />
+                  </button>
+                </div>
+                <p className="links__hint">正文里的 [[链接]] 会自动出现在这里</p>
+              </div>
             </section>
-            {/* 归属分组（任务关联 + 所在文件夹） */}
-            <section className="links__card">
+
+            <section className="links__col">
               <header className="links__head">
                 归属 · {attachedTasks.length + (current.folder_id ? 1 : 0)}
               </header>
-              {current.folder_id ? (
-                <p className="u-aux">
-                  文件夹 · {folders.find((f) => f.id === current.folder_id)?.name ?? '未知'}
-                </p>
-              ) : (
-                <p className="u-aux">未归属文件夹</p>
-              )}
-              {attachedTasks.length === 0 ? (
-                <p className="u-aux">还没有关联任务；点上方「归属」可挂到某任务或某文件夹。</p>
-              ) : (
-                attachedTasks.map((task) => (
-                  <p key={task.id} className="u-aux">
-                    任务 · {task.title}
-                  </p>
-                ))
-              )}
+              <div className="links__items">
+                {!current.folder_id && attachedTasks.length === 0 && (
+                  <p className="links__empty">未归属文件夹，也没有关联任务</p>
+                )}
+                {current.folder_id ? (
+                  <span className="links__pill">
+                    <button
+                      type="button"
+                      className="links__pill-text"
+                      title="在笔记树里定位这个文件夹"
+                      onClick={() => handleRevealFolder(current.folder_id as number)}
+                    >
+                      <FolderPlus size={11} />
+                      <b>{folders.find((f) => f.id === current.folder_id)?.name ?? "未知"}</b>
+                    </button>
+                    <button
+                      type="button"
+                      className="links__pill-del"
+                      aria-label="移出文件夹"
+                      title="移出文件夹"
+                      onClick={() => handleMoveNoteToFolder(null)}
+                    >
+                      <X size={11} />
+                    </button>
+                  </span>
+                ) : null}
+                {attachedTasks.map((task) => (
+                  <span key={task.id} className="links__pill">
+                    <button
+                      type="button"
+                      className="links__pill-text"
+                      title="打开这个任务"
+                      onClick={() => handleOpenTask(task.id)}
+                    >
+                      <b>{task.title}</b>
+                    </button>
+                    <button
+                      type="button"
+                      className="links__pill-del"
+                      aria-label={"解除关联 " + task.title}
+                      title="解除关联"
+                      onClick={() => handleDetachTask(task.id)}
+                    >
+                      <X size={11} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <div className="links__foot">
+                <p className="links__hint">点上方「归属」可挂到任务或文件夹</p>
+              </div>
             </section>
-            {dangling.length > 0 && (
-              <p className="u-aux">有 {dangling.length} 条待建链接，点击即可创建目标笔记。</p>
-            )}
             </div>
             )}
           </aside>
