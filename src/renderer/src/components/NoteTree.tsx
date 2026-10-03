@@ -98,7 +98,10 @@ interface Props {
    * 它查的是「整个库」的链接健康度，与「这一篇怎么编辑」不在一个语义层；
    * 2026-09 从编辑区工具栏挪到树上 —— 单篇工具栏因此少两个常驻按钮。
    */
-  onLinkAudit?: (kind: 'orphan' | 'broken', anchor: { x: number; y: number }) => void
+  onLinkAudit?: (
+    kind: 'orphan' | 'broken' | 'relink',
+    anchor: { x: number; y: number }
+  ) => void
   /** 每篇笔记的标签：行内显示小胶囊（最多两个，其余折成 +N） */
   tagsOf?: (noteId: number) => { id: number; name: string; color: string }[]
 }
@@ -561,6 +564,17 @@ export function NoteTree({
               key: 'broken',
               label: '失效链接（指向不存在的笔记）',
               onPick: () => onLinkAudit?.('broken', auditMenu),
+            },
+            /*
+              第三项不是"列出来看"，而是一个**修复动作** —— 库里有链接的标题能解析到
+              目标、dst_note_id 却没绑上（绑定只发生在保存那篇笔记时，它不再被保存
+              就永远绑不上）。这类链接在 brokenLinks 里不算失效，但图谱与反链
+              都按 id 走，于是看不见它。
+            */
+            {
+              key: 'relink',
+              label: '修复未绑定的链接（标题在、id 没连上）',
+              onPick: () => onLinkAudit?.('relink', auditMenu),
             },
           ]}
         />

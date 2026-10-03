@@ -1431,9 +1431,19 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
    * 入口已挪到笔记树（整库视角的操作），结果仍用同一个浮层列出。
    */
   const handleLinkAudit = async (
-    kind: 'orphan' | 'broken',
+    kind: 'orphan' | 'broken' | 'relink',
     anchor: { x: number; y: number }
   ): Promise<void> => {
+    /*
+      relink 不是"列出来看"，它直接跑修复。
+      这类链接（标题能解析到、dst_note_id 却是空）在 brokenLinks 里不算失效，
+      但图谱的边与反链查询都按 id 走 —— 不修就永远看不见它。
+    */
+    if (kind === 'relink') {
+      const n = await window.zhixing.db.relinkAllNotes()
+      onNotice(n > 0 ? '已修复 ' + n + ' 条未绑定的链接' : '没有需要修复的链接')
+      return
+    }
     if (kind === 'orphan') {
       const rows = await window.zhixing.db.orphanNotes()
       setPanelItems(rows.map((n) => ({ key: `o-${n.id}`, label: n.title, id: n.id })))
