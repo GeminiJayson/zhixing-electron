@@ -1542,6 +1542,14 @@ button.chip--status:focus-visible {
   display: flex;
   flex-direction: column;
   padding: 0;
+  /**
+   * 必须盖过模态弹窗。
+   *
+   * .popmenu 的层级是 --z-menu(40)，而模态遮罩是 --z-modal(60) ——
+   * 这个选择器被用在任务编辑弹窗里，虽然已经 portal 到 body，
+   * 层级不够时照样被遮罩挡住。
+   */
+  z-index: calc(var(--z-modal) + 1);
 }
 .note-picker__search {
   display: flex;

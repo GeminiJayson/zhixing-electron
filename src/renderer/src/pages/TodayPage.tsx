@@ -332,7 +332,12 @@ export function TodayPage({ overview, onChanged, onNotice, onOpenNote, onFocusTa
         {/* 原来是 .stat-grid（固定 4 列）。改用布局原语 .u-grid--4 —— 
             它与 .stat-grid 算出来的是同一套列，但间距与列数由令牌与调用点给，
             不必再为每种"几列"造一个类名。 */}
-        <section className="u-grid u-grid--4" aria-label="概览">
+        /*
+          带 .section 是必需的：它提供块与块之间的下边距。
+          原先只写了布局原语 .u-grid--4，于是概览区没有任何 margin，
+          与「今日待办」紧贴在一起 —— 这一页三块的间距应当一致。
+        */
+        <section className="u-grid u-grid--4 section" aria-label="概览">
           {cards.map((c) => {
             const Icon = c.icon
             return (
