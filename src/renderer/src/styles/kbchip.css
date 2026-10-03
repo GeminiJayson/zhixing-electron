@@ -31,16 +31,27 @@
   line-height: 16px;
 }
 
-/* 下拉面板：复用 .popmenu 的底与阴影，这里只管定位与内容排布 */
+/**
+ * 下拉面板：复用 .popmenu 的底与阴影，这里只管定位与内容排布。
+ *
+ * 定位改过一轮：原先 left: 0 + 固定 320px。徽标长在编辑区标题行偏右的位置，
+ * 面板往右再伸 320px 就出了工作区，右半截被裁掉 —— 用户报的「显示到外面去了」
+ * 就是这个。而且面板内容这几轮加了不少（来源区、核对清单、模板按钮），
+ * 没有限高的话纵向也会顶出视口。
+ *
+ * 现在：贴右边缘展开、宽度随视口收窄、限高并允许内部滚动。
+ */
 .kbchip__pop {
   position: absolute;
   top: calc(100% + 6px);
-  left: 0;
+  right: 0;
   z-index: 30;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  width: 320px;
+  width: min(360px, calc(100vw - 48px));
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
   padding: var(--space-3);
   text-align: left;
 }
