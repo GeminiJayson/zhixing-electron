@@ -740,6 +740,12 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
               剪藏对他来说就是坏的。（原先确实放在保险箱页，是个设计错误。）
               现在插件的职责已经不只密码，这里才是它该在的地方。
             */}
+          </>
+        )}
+
+        {/* 浏览器扩展归「集成」：与「外部任务同步」同属"和外部系统对接" */}
+        {tab === 'integrations' && (
+          <>
             <section className="set-card set-card--ambient">
               <header className="set-card__head"><Link2 size={15} /> 浏览器扩展</header>
               {httpInfo ? (
@@ -807,7 +813,11 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                 <p className="u-aux set-row__note">正在读取…</p>
               )}
             </section>
+          </>
+        )}
 
+        {tab === 'general' && (
+          <>
             <section className="set-card set-card--ambient">
               <header className="set-card__head"><SlidersHorizontal size={15} /> 桌面浮窗</header>
               <label className="set-row">
@@ -909,7 +919,9 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
           </>
         )}
 
-        {tab === 'tasks' && (
+        {/* 外部任务同步归「集成」：与「浏览器扩展」同属"和外部系统对接"，
+            此前一个在外观、一个在任务与提醒，分居两处。 */}
+        {tab === 'integrations' && (
           <section className="set-card">
             <header className="set-card__head"><RefreshCw size={15} /> 外部任务同步</header>
             <p className="u-aux">
@@ -1209,7 +1221,7 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
           </section>
         )}
 
-        {tab === 'tasks' && (
+        {tab === 'hotkeys' && (
           <section className="set-card">
             <header className="set-card__head"><SlidersHorizontal size={15} /> 全局热键</header>
             {HOTKEY_ROWS.map((row) => (
