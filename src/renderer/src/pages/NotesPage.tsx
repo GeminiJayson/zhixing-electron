@@ -224,10 +224,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   const fadeFromRef = useRef<number | null>(null)
   const [dirty, setDirtyRaw] = useState(false)
   /** 临时诊断：把每一次「置脏」的调用栈打出来，定位 dirty 恒为 true 的来源 */
-  const setDirty = useCallback((v: boolean): void => {
-    if (v) console.warn('[dirty→true]', new Error().stack)
-    setDirtyRaw(v)
-  }, [])
+  const setDirty = useCallback((v: boolean): void => setDirtyRaw(v), [])
   /**
    * 装载时的正文基线。
    *
@@ -1452,11 +1449,14 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     setPanel({ kind, x: anchor.x, y: anchor.y })
   }
 
-  /** chip 文案：只讲归属（文件夹名）。引用数属于信息区的反向链接栏，不塞进 chip */
-  /** 标题栏胶囊的状态：库内改动与 Word/Excel 的文件写回，任一没落地都算「未保存」。 */
+  /**
+   * 标题栏胶囊的状态：库内改动与 Word/Excel 的文件写回，任一没落地都算「未保存」。
+   *
+   * 注意这里**必须是一个布尔值**：此前删除标题行的「归属」chip 时用正则删多了，
+   * 把那个三元表达式的后半段（`关联 N 个任务` / `归属`）留在了这一行后面 ——
+   * 于是 unsaved 成了一个永远为真的字符串，chip 恒显示「未保存」。
+   */
   const unsaved = dirty || officePending
-      ? `关联 ${attachedTasks.length} 个任务`
-      : '归属'
 
   /**
    * 正文自带格式条的形态：富文本，以及 Word 可编辑（同一套 RichTextEditor，

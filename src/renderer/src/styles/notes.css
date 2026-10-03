@@ -847,6 +847,14 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  /*
+   * 图标不许被压缩。
+   *
+   * SVG 默认 flex-shrink: 1，而这一行又是 overflow: hidden + 省略号 ——
+   * 标题一长，先被挤掉的就是图标（宽度归零后只剩标题）。图标是"这条链接
+   * 指向笔记还是任务"的唯一线索，它比标题末尾那几个字重要得多。
+   */
+  flex-shrink: 0;
   min-width: 0;
   padding: 2px var(--space-2);
   border: none;
@@ -866,6 +874,21 @@ span.links__pill-text {
 .links__pill-text b {
   font-weight: 500;
   color: var(--fg-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 图标本身也不参与收缩，并禁止它被压成 0 宽 */
+.links__pill-text > svg {
+  flex: 0 0 auto;
+}
+/*
+ * 胶囊里的删除按钮同样不许被标题挤掉。
+ *
+ * 之前只有文字部分能收缩，标题一长就把图标与删除按钮一起顶出可视区 ——
+ * 图标和删除是这枚胶囊的两个功能入口，比标题末尾那几个字重要。
+ */
+.links__pill-del {
+  flex: 0 0 auto;
 }
 .links__pill-text:hover {
   color: var(--accent);
