@@ -32,7 +32,7 @@ import { EXPORT_TABLES, buildExportJson, buildTasksCsv, buildNotesExport, import
 import { TASK_ID_OFFSET, FLASH_ID_OFFSET, FOLDER_ID_OFFSET, ANCHOR_ID_OFFSET, folderNodeId, anchorNodeId, classifyEdge, graphNodeId, buildGraphTracked, acyclicOwnershipEdges, diffGraph, graphDelta, graphNeighborhood, graphPreview, isGraphWatching, setGraphWatch, connectionAllowed, resolveEdgeKind, wouldCreateCycle, linkNotes, linkTaskNoteRef, unlinkTaskNoteRef, unlinkNotes, connectGraphNodes, removeGraphEdge, rewireGraphEdge } from './graph'
 import { FLASH_COLUMNS, getFlash, listFlashesByStatus, addFlash, setFlashStatus, deleteFlash, markFlashConverted, flashToTask, flashToNote, updateFlashRemark, tagFlash, mergeFlashes, flashToSubtask } from './inbox'
 import { shiftDay, rollRecurringToday, resumeDueToday, recordPomodoro, pomodoroToday, dueReminders, dismissReminder, snoozeReminder, saveWidgetGeometry, currentSettings, seedIfEmpty } from './maintenance'
-import { NOTE_COLUMNS, listNoteFolders, getNote, resolveNoteTitle, syncNoteLinks, saveNote, createNote, deleteNote, listOutLinks, listBacklinks, materializeDangling, bindDanglingByTitle, createNoteFolder, renameNoteFolder, ensureDefaultFolder, moveNoteFolder, deleteNoteFolder, addReferenceLink, appendNote, attachNoteBlockContext, listNoteBlockContexts, noteAttachedTasks, noteTaskCandidates, NOTE_REVISION_LIMIT, NOTE_TEMPLATES, snapshotNote, listNoteRevisions, restoreNoteRevision, orphanNotes, brokenLinks, createNoteFromTemplate, noteTagMap, setNoteTags, relinkAllNotes } from './notes'
+import { NOTE_COLUMNS, listNoteFolders, getNote, resolveNoteTitle, syncNoteLinks, saveNote, createNote, deleteNote, listOutLinks, listBacklinks, materializeDangling, bindDanglingByTitle, createNoteFolder, renameNoteFolder, ensureDefaultFolder, moveNoteFolder, deleteNoteFolder, addReferenceLink, appendNote, listNoteBlockContexts, noteLinkedTasks, noteTaskCandidates, NOTE_REVISION_LIMIT, NOTE_TEMPLATES, snapshotNote, listNoteRevisions, restoreNoteRevision, orphanNotes, brokenLinks, createNoteFromTemplate, noteTagMap, setNoteTags, relinkAllNotes } from './notes'
 import {
   previewOfficeNote,
   officeDocNote,
@@ -48,7 +48,7 @@ import { listFolders, listTasksByList, createListFolder, renameListFolder, delet
 import { linkTaskWikiNotes } from './task-note-links'
 import { listTaskActivity, logTaskActivity } from './task-activity'
 import { siblingsOf, isDescendantOf, reorderTask, moveTaskRelative, reparentTask, batchComplete, batchMove, batchSetDue, listTags, setTaskTags, ensureListId, quickAdd } from './task-ops'
-import { listTasks, listTodayTasks, recentNotes, noteCountMap, tagMap, listNotes, overview, toggleTask, cloneTaskTree, setPriority, setTitle, setStatus, setDueDate, nextSortKey, createTask, EDITABLE_FIELDS, updateTask, softDelete, batchDeleteTasks, batchUndoLast, attachTaskNote, detachTaskNote, listLinkedNotes, pauseTask, resumeTask, attachBlock, detachBlock, listLinkedContexts, contextsForNote, noteContextMap, writeNoteAfterDone, taskCandidates } from './tasks'
+import { listTasks, listTodayTasks, recentNotes, noteCountMap, tagMap, listNotes, overview, toggleTask, cloneTaskTree, setPriority, setTitle, setStatus, setDueDate, nextSortKey, createTask, EDITABLE_FIELDS, updateTask, softDelete, batchDeleteTasks, batchUndoLast, linkTaskNote, unlinkTaskNote, listLinkedNotes, pauseTask, resumeTask, linkTaskNoteBlock, unlinkTaskNoteBlock, listLinkedContexts, contextsForNote, noteContextMap, writeNoteAfterDone, taskCandidates } from './tasks'
 import { trashItems, restoreTrash, purgeTrash, emptyTrash, emptyAllTrash, purgeTrashOlderThan, tagsWithUsage, createTag, renameTag, deleteTag, setTagColor, batchDeleteTags, mergeTags } from './trash'
 import { attachmentStats, cleanOrphanFiles, deleteAttachment, importAttachment, listAttachments, listOrphanFiles, pruneAttachments } from './attachments'
 import { deleteSavedQuery, listSavedQueries, saveSavedQuery } from './queries'
@@ -99,7 +99,7 @@ const WRITE_DOMAINS: Record<string, DataDomain | DataDomain[]> = {
   'db:saveExcelNote': 'note',
   'db:appendNote': 'note',
   // 段落锚同时改到笔记侧（定位）与任务侧（关联段落），两侧都要刷新
-  'db:attachNoteBlock': ['note', 'task'],
+  'db:linkTaskNoteBlock': ['note', 'task'],
   'db:bindDanglingByTitle': 'note',
   'db:materializeDangling': 'note',
   'db:addFlash': 'flash',
@@ -152,14 +152,15 @@ const WRITE_DOMAINS: Record<string, DataDomain | DataDomain[]> = {
   'db:pauseTask': 'task',
   'db:resumeTask': 'task',
   // 段落级上下文：任务侧「关联段落」与笔记侧反链/图谱两侧都要刷新
-  'db:attachBlock': ['task', 'note'],
-  'db:detachBlock': ['task', 'note'],
+  // （db:linkTaskNoteBlock 已在上面登记过，这里不重复 —— 它原先是两个 IPC 通道
+  //   attachBlock / attachNoteBlock，合并成一个名字后在两张表里会撞车）
+  'db:unlinkTaskNoteBlock': ['task', 'note'],
   // 任务↔笔记的归属关联（写 task_note_link）此前漏登记：行内 ⇄N 计数与图谱边不会跟着刷新
-  'db:attachTaskNote': 'task',
+  'db:linkTaskNote': 'task',
   // 显式重解析任务正文的 [[链接]]：
   // 新建/改名已会自动回绑，这个入口是给「修复上线前就写坏的历史数据」用的
   'db:linkTaskWikiNotes': 'task',
-  'db:detachTaskNote': 'task',
+  'db:unlinkTaskNote': 'task',
   // 建默认笔记文件夹会写 note_folder
   'db:ensureDefaultFolder': 'note',
   'db:writeNoteAfterDone': ['task', 'note'],
@@ -365,12 +366,12 @@ export function registerDbHandlers(): void {
   handle('db:pauseTask', (_e, id: number, resumeAt?: string | null) => pauseTask(id, resumeAt ?? null))
   handle('db:resumeTask', (_e, id: number, status?: TaskStatus) => resumeTask(id, status ?? 'todo'))
   handle(
-    'db:attachBlock',
+    'db:linkTaskNoteBlock',
     (_e, taskId: number, noteId: number, blockKey: string, snippet?: string) =>
-      attachBlock(taskId, noteId, blockKey, snippet ?? '')
+      linkTaskNoteBlock(taskId, noteId, blockKey, snippet ?? '')
   )
-  handle('db:detachBlock', (_e, taskId: number, noteId: number, blockKey?: string) =>
-    detachBlock(taskId, noteId, blockKey ?? '')
+  handle('db:unlinkTaskNoteBlock', (_e, taskId: number, noteId: number, blockKey?: string) =>
+    unlinkTaskNoteBlock(taskId, noteId, blockKey ?? '')
   )
   handle('db:linkedContexts', (_e, taskId: number) => listLinkedContexts(taskId))
   handle('db:contextsForNote', (_e, noteId: number) => contextsForNote(noteId))
@@ -381,11 +382,11 @@ export function registerDbHandlers(): void {
   handle('db:taskCandidates', (_e, q?: string, limit?: number) => taskCandidates(q ?? '', limit ?? 20))
   handle('db:linkTaskWikiNotes', (_e, taskId: number) => linkTaskWikiNotes(taskId))
 
-  handle('db:attachTaskNote', (_e, taskId: number, noteId: number) =>
-    attachTaskNote(taskId, noteId)
+  handle('db:linkTaskNote', (_e, taskId: number, noteId: number) =>
+    linkTaskNote(taskId, noteId)
   )
-  handle('db:detachTaskNote', (_e, taskId: number, noteId: number) =>
-    detachTaskNote(taskId, noteId)
+  handle('db:unlinkTaskNote', (_e, taskId: number, noteId: number) =>
+    unlinkTaskNote(taskId, noteId)
   )
   handle('db:linkedNotes', (_e, taskId: number) => listLinkedNotes(taskId))
   handle('db:graphConnectionAllowed', (_e, srcKind: string, dstKind: string) =>
@@ -686,11 +687,11 @@ export function registerDbHandlers(): void {
     addReferenceLink(srcId, target)
   )
   handle('db:appendNote', (_e, id: number, text: string) => appendNote(id, text))
-  handle('db:attachNoteBlock', (_e, taskId: number, noteId: number, blockKey: string, snippet: string) =>
-    attachNoteBlockContext(taskId, noteId, blockKey, snippet)
+  handle('db:linkTaskNoteBlock', (_e, taskId: number, noteId: number, blockKey: string, snippet: string) =>
+    linkTaskNoteBlock(taskId, noteId, blockKey, snippet)
   )
   handle('db:noteBlockContexts', (_e, noteId: number) => listNoteBlockContexts(noteId))
-  handle('db:noteAttachedTasks', (_e, noteId: number) => noteAttachedTasks(noteId))
+  handle('db:noteLinkedTasks', (_e, noteId: number) => noteLinkedTasks(noteId))
   handle('db:noteTaskCandidates', (_e, q: string, limit?: number) =>
     noteTaskCandidates(q ?? '', limit ?? 30)
   )

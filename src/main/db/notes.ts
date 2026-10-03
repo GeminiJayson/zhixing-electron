@@ -467,25 +467,12 @@ export function appendNote(noteId: number, text: string): Note | null {
   return getNote(noteId)
 }
 
-/**
- * 段落级上下文：
- * 记录「任务关联了本笔记的某一段落」，同 (task, note, block_key) 幂等。
- * 「选文转任务并关联段落」写这里，供任务侧一键跳回本段。
- */
-export function attachNoteBlockContext(
-  taskId: number,
-  noteId: number,
-  blockKey: string,
-  snippet = ''
-): number {
-  if (!blockKey) return 0
-  return conn()
-    .prepare(
-      `INSERT OR IGNORE INTO task_note_context (task_id, note_id, block_key, snippet, created_at)
-       VALUES (?, ?, ?, ?, ?)`
-    )
-    .run(taskId, noteId, blockKey, snippet, nowStamp()).changes
-}
+/*
+  段落级关联的写入实现**只在 tasks.ts 的 linkTaskNoteBlock 里有一份**。
+  这里原先也写了一遍（attachNoteBlockContext），SQL 与参数逐字相同 ——
+  两份实现意味着以后改约束必然漏掉一处。现在从那边转出，保持调用点不变。
+*/
+export { linkTaskNoteBlock } from './tasks'
 
 /** 某笔记的全部段落上下文。 */
 export function listNoteBlockContexts(
@@ -505,7 +492,7 @@ export function listNoteBlockContexts(
 }
 
 /** 本笔记归属的任务。 */
-export function noteAttachedTasks(noteId: number): { id: number; title: string }[] {
+export function noteLinkedTasks(noteId: number): { id: number; title: string }[] {
   return conn()
     .prepare(
       `SELECT t.id, t.title FROM task t JOIN task_note_link l ON l.task_id = t.id

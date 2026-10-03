@@ -73,8 +73,14 @@ export function recentNotes(limit = 5): Note[] {
 }
 
 
-/** 手动建立任务↔笔记关联（笔记页「归属任务」、图谱里拉边用）。 */
-export function attachTaskNote(taskId: number, noteId: number): number {
+/**
+ * 建立任务与**整篇**笔记的关联（笔记页「关联到任务」、图谱里拉边用）。
+ *
+ * 与 linkTaskNoteBlock 的区别只在粒度：那个到段落，这个到整篇。
+ * 名字里的 link 而不是 attach —— attach* 这一族留给附件（文件），
+ * 两类东西共用一个前缀正是原先分不清 attachTaskNote 与 attachBlock 的原因。
+ */
+export function linkTaskNote(taskId: number, noteId: number): number {
   return conn()
     .prepare(
       "INSERT OR IGNORE INTO task_note_link (task_id, note_id, source) VALUES (?, ?, 'manual')"
@@ -82,8 +88,8 @@ export function attachTaskNote(taskId: number, noteId: number): number {
     .run(taskId, noteId).changes
 }
 
-/** 解除任务↔笔记关联。 */
-export function detachTaskNote(taskId: number, noteId: number): number {
+/** 解除任务与整篇笔记的关联。 */
+export function unlinkTaskNote(taskId: number, noteId: number): number {
   return conn()
     .prepare('DELETE FROM task_note_link WHERE task_id = ? AND note_id = ?')
     .run(taskId, noteId).changes
@@ -424,9 +430,15 @@ export function resumeTask(id: number, status: TaskStatus = 'todo'): Task | null
 // ------------------------------------------------ 任务↔笔记「段落级」上下文
 
 /**
- * 记录任务关联笔记内某段落（幂等）。task 必须已存在，否则返回 null。
+ * 关联任务与笔记里的**某一段落**（幂等）。
+ *
+ * 这段 INSERT 原先在 tasks.ts 与 notes.ts 各写了一份（attachBlock /
+ * attachNoteBlockContext），SQL 与参数逐字相同 —— 两份实现意味着以后改约束
+ * （比如加一列、改幂等键）必然漏掉其中一处。现在只留这一份。
+ *
+ * 返回更新后的任务；task 不存在时返回 null。
  */
-export function attachBlock(
+export function linkTaskNoteBlock(
   taskId: number,
   noteId: number,
   blockKey: string,
@@ -445,7 +457,7 @@ export function attachBlock(
 }
 
 /** 解除段落上下文；blockKey 为空则解除该 (task,note) 的全部段落。 */
-export function detachBlock(taskId: number, noteId: number, blockKey = ''): number {
+export function unlinkTaskNoteBlock(taskId: number, noteId: number, blockKey = ''): number {
   const c = conn()
   return blockKey
     ? c

@@ -182,7 +182,7 @@ describe('架构约束 · HTML 消毒只有一份', () => {
  *
  * \`handle(channel, fn)\` 靠 \`WRITE_DOMAINS[channel]\` 决定写完之后广播哪个域 —— 这个「写在哪生效」
  * 的知识是手抄的。审计发现它已经漂了两处：\`db:setFlashStatus\` 是死键（通道从未注册），
- * 而真正在跑的 \`db:archiveFlash\` 与 \`db:attachTaskNote\` 不在表里 —— 写库成功却零广播，
+ * 而真正在跑的 \`db:archiveFlash\` 与 \`db:linkTaskNote\` 不在表里 —— 写库成功却零广播，
  * 其它页面与浮窗就停在旧数据上，而且不报错。
  */
 describe('架构约束 · 广播域表不许漂移', () => {
@@ -455,7 +455,7 @@ describe('架构约束 · 检查脚本必须能失败', () => {
  */
 describe('架构约束 · 任务↔笔记关联必须能掉链', () => {
   const read = (p: string): string => readFileSync(join(process.cwd(), p), 'utf8')
-  // 对账逻辑已挪到叶子模块 task-note-links.ts；写入点还剩 attachTaskNote 在 tasks.ts。
+  // 对账逻辑已挪到叶子模块 task-note-links.ts；写入点还剩 linkTaskNote 在 tasks.ts。
   // 两处都要扫 —— 只扫一处正是「改了 A 忘了 B」的老毛病。
   const WRITERS = ['src/main/db/task-note-links.ts', 'src/main/db/tasks.ts']
   const src = WRITERS.map(read).join('\n')

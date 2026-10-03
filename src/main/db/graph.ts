@@ -6,7 +6,7 @@ import type {
 } from '../../shared/types'
 import { priorityLabel } from '../../shared/priority'
 import { conn } from './connection'
-import { attachTaskNote, detachTaskNote } from './tasks'
+import { linkTaskNote, unlinkTaskNote } from './tasks'
 import { reparentTask } from './task-ops'
 import { saveNote } from './notes'
 import { quietFailure } from '../../shared/quiet-failure'
@@ -850,7 +850,7 @@ export function connectGraphNodes(
   if (srcKind === 'note' && dstKind === 'note') return linkNotes(srcRef, dstRef)
   if (srcKind === 'task' && dstKind === 'note') {
     if (edgeKind === 'reference') return linkTaskNoteRef(srcRef, dstRef)
-    attachTaskNote(srcRef, dstRef)
+    linkTaskNote(srcRef, dstRef)
     return true
   }
   if (srcKind === 'folder' && dstKind === 'note') {
@@ -879,7 +879,7 @@ export function removeGraphEdge(
       const noteRef = srcKind === 'note' ? srcRef : dstRef
       return edgeKind === 'reference'
         ? unlinkTaskNoteRef(taskRef, noteRef)
-        : detachTaskNote(taskRef, noteRef) > 0
+        : unlinkTaskNote(taskRef, noteRef) > 0
     }
     if (srcKind === 'task' && dstKind === 'task') return reparentTask(dstRef, null) !== null
     if (srcKind === 'note' && dstKind === 'note') return unlinkNotes(srcRef, dstRef)

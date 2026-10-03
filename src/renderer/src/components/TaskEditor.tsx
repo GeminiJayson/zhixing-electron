@@ -87,7 +87,7 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
 
   /** 解除整篇级关联：两张表都清一次（哪张有就删哪张） */
   const detachLinkedNote = async (noteId: number): Promise<void> => {
-    await window.zhixing.db.detachTaskNote(task.id, noteId)
+    await window.zhixing.db.unlinkTaskNote(task.id, noteId)
     await loadContexts()
   }
 
@@ -127,7 +127,7 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
     const block = blocks.find((b) => b.key === pickBlock)
     if (!noteId || !block) return
     // 引文快照自动取段落原文（前 200 字）：用户不必再手抄一遍，而且它本来就是"当时的原文"
-    await window.zhixing.db.attachBlock(task.id, noteId, block.key, block.text.slice(0, 200))
+    await window.zhixing.db.linkTaskNoteBlock(task.id, noteId, block.key, block.text.slice(0, 200))
     setPickBlock('')
     await loadContexts()
   }
@@ -141,13 +141,13 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
     const key = cellKey(cellSheet, ref)
     if (!key) return
     const label = cellSheet.trim() ? `${cellSheet.trim()}!${ref}` : ref
-    await window.zhixing.db.attachBlock(task.id, noteId, key, label)
+    await window.zhixing.db.linkTaskNoteBlock(task.id, noteId, key, label)
     setCellRef('')
     await loadContexts()
   }
 
   const detachContext = async (c: TaskNoteContext): Promise<void> => {
-    await window.zhixing.db.detachBlock(task.id, c.note_id, c.block_key)
+    await window.zhixing.db.unlinkTaskNoteBlock(task.id, c.note_id, c.block_key)
     await loadContexts()
   }
 

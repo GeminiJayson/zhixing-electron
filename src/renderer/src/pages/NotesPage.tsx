@@ -474,7 +474,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
 
   const handleDetachTask = (taskId: number): void => {
     if (!current) return
-    void window.zhixing.db.detachTaskNote(taskId, current.id).then(async () => {
+    void window.zhixing.db.unlinkTaskNote(taskId, current.id).then(async () => {
       await load()
       onNotice('已解除关联')
     })
@@ -561,7 +561,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
         window.zhixing.db.note(selectedId),
         window.zhixing.db.backlinks(selectedId),
         window.zhixing.db.outLinks(selectedId),
-        window.zhixing.db.noteAttachedTasks(selectedId),
+        window.zhixing.db.noteLinkedTasks(selectedId),
       ])
       if (!alive || !note) return
       setCurrent(note)
@@ -616,7 +616,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     if (selectedId == null) return
     return subscribeDomain(['note'], () => {
       void window.zhixing.db.backlinks(selectedId).then(setBacklinks)
-      void window.zhixing.db.noteAttachedTasks(selectedId).then(setAttachedTasks)
+      void window.zhixing.db.noteLinkedTasks(selectedId).then(setAttachedTasks)
       // 标签是 note 域的数据（note_tag）：别的页面改了标签颜色 / 关联，这里要跟着换
       void loadNoteTags()
     })
@@ -1111,9 +1111,9 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   /** 关联到任务。这是**引用**关系，不是归属 —— 见 docs/specs/ownership-vs-reference.md */
   const handleAttachTask = async (taskId: number, taskTitle: string): Promise<void> => {
     if (selectedId == null) return
-    const added = await window.zhixing.db.attachTaskNote(taskId, selectedId)
+    const added = await window.zhixing.db.linkTaskNote(taskId, selectedId)
     onNotice(added ? `已把本笔记关联到任务「${taskTitle}」` : `本笔记已关联任务「${taskTitle}」，未重复归属`)
-    setAttachedTasks(await window.zhixing.db.noteAttachedTasks(selectedId))
+    setAttachedTasks(await window.zhixing.db.noteLinkedTasks(selectedId))
   }
 
   /**
@@ -1130,7 +1130,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     const links = await window.zhixing.db.contextsForNote(selectedId)
     const hit = links.find((l) => l.block_key === info.blockKey)
     if (hit) {
-      const n = await window.zhixing.db.detachBlock(hit.task_id, selectedId, info.blockKey)
+      const n = await window.zhixing.db.unlinkTaskNoteBlock(hit.task_id, selectedId, info.blockKey)
       onNotice(n ? '已解除这段文字与任务的关联' : '这段文字没有关联任务')
       setReloadToken((t) => t + 1)
       return
@@ -1142,7 +1142,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   /** 把右键选中的那一段挂到任务上。 */
   const handleAttachBlock = async (taskId: number, taskTitle: string): Promise<void> => {
     if (selectedId == null || !blockDraft) return
-    const res = await window.zhixing.db.attachBlock(
+    const res = await window.zhixing.db.linkTaskNoteBlock(
       taskId,
       selectedId,
       blockDraft.blockKey,
@@ -1252,7 +1252,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     })
     if (blockKey) {
       const fp = blockKey || blockFingerprint(quote.split('\n')[0])
-      await window.zhixing.db.attachNoteBlock(task.id, current.id, fp, quote)
+      await window.zhixing.db.linkTaskNoteBlock(task.id, current.id, fp, quote)
     }
     onNotice(blockKey ? `已创建任务「${taskTitle}」并关联本段` : `已创建任务「${taskTitle}」`)
   }
@@ -2805,7 +2805,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                 const [out, back, attached] = await Promise.all([
                   window.zhixing.db.outLinks(current.id),
                   window.zhixing.db.backlinks(current.id),
-                  window.zhixing.db.noteAttachedTasks(current.id),
+                  window.zhixing.db.noteLinkedTasks(current.id),
                 ])
                 setOutLinks(out)
                 setBacklinks(back)

@@ -165,10 +165,10 @@ const api = {
       ipcRenderer.invoke('db:isListDescendantOf', ancestorId, nodeId),
     moveTaskToList: (taskId: number, listId: number | null): Promise<number> =>
       ipcRenderer.invoke('db:moveTaskToList', taskId, listId),
-    attachTaskNote: (taskId: number, noteId: number): Promise<number> =>
-      ipcRenderer.invoke('db:attachTaskNote', taskId, noteId),
-    detachTaskNote: (taskId: number, noteId: number): Promise<number> =>
-      ipcRenderer.invoke('db:detachTaskNote', taskId, noteId),
+    linkTaskNote: (taskId: number, noteId: number): Promise<number> =>
+      ipcRenderer.invoke('db:linkTaskNote', taskId, noteId),
+    unlinkTaskNote: (taskId: number, noteId: number): Promise<number> =>
+      ipcRenderer.invoke('db:unlinkTaskNote', taskId, noteId),
     /** 某任务关联的笔记（task_note_link 与 task_note_ref 合并去重） */
     linkedNotes: (taskId: number): Promise<Note[]> => ipcRenderer.invoke('db:linkedNotes', taskId),
       /** 显式重解析任务正文里的 [[链接]] */
@@ -537,17 +537,17 @@ const api = {
     appendNote: (id: number, text: string): Promise<Note | null> =>
       ipcRenderer.invoke('db:appendNote', id, text),
     /** 选文转任务时落「段落定位锚」 */
-    attachNoteBlock: (
+    linkTaskNoteBlock: (
       taskId: number,
       noteId: number,
       blockKey: string,
       snippet: string
-    ): Promise<number> => ipcRenderer.invoke('db:attachNoteBlock', taskId, noteId, blockKey, snippet),
+    ): Promise<number> => ipcRenderer.invoke('db:linkTaskNoteBlock', taskId, noteId, blockKey, snippet),
     noteBlockContexts: (noteId: number): Promise<unknown[]> =>
       ipcRenderer.invoke('db:noteBlockContexts', noteId),
     /** 本笔记归属的任务（笔记页「归属」分组） */
-    noteAttachedTasks: (noteId: number): Promise<{ id: number; title: string }[]> =>
-      ipcRenderer.invoke('db:noteAttachedTasks', noteId),
+    noteLinkedTasks: (noteId: number): Promise<{ id: number; title: string }[]> =>
+      ipcRenderer.invoke('db:noteLinkedTasks', noteId),
     /** 「归属 → 选任务」候选：非删非终态任务 */
     /** 「关联到任务」候选：带所属列表与列表分组，弹层据此展示层级 */
     noteTaskCandidates: (
@@ -564,16 +564,8 @@ const api = {
     /** 恢复：默认回待办并清恢复日期 */
     resumeTask: (id: number, status?: TaskStatus): Promise<Task | null> =>
       ipcRenderer.invoke('db:resumeTask', id, status ?? 'todo'),
-    /** 段落级上下文：挂载 / 解除 / 查询 */
-    attachBlock: (
-      taskId: number,
-      noteId: number,
-      blockKey: string,
-      snippet?: string
-    ): Promise<Task | null> =>
-      ipcRenderer.invoke('db:attachBlock', taskId, noteId, blockKey, snippet ?? ''),
-    detachBlock: (taskId: number, noteId: number, blockKey?: string): Promise<number> =>
-      ipcRenderer.invoke('db:detachBlock', taskId, noteId, blockKey ?? ''),
+    unlinkTaskNoteBlock: (taskId: number, noteId: number, blockKey?: string): Promise<number> =>
+      ipcRenderer.invoke('db:unlinkTaskNoteBlock', taskId, noteId, blockKey ?? ''),
     linkedContexts: (taskId: number): Promise<TaskNoteContext[]> =>
       ipcRenderer.invoke('db:linkedContexts', taskId),
     contextsForNote: (noteId: number): Promise<TaskNoteContext[]> =>

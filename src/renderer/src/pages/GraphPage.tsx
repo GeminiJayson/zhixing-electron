@@ -478,7 +478,7 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
             await window.zhixing.db.linkTaskNoteRef(src.refId, dst.refId)
             onNotice('已建立任务引用笔记')
           } else {
-            await window.zhixing.db.attachTaskNote(src.refId, dst.refId)
+            await window.zhixing.db.linkTaskNote(src.refId, dst.refId)
             onNotice('已建立任务归属笔记')
           }
         } else if (src.kind === 'folder' && dst.kind === 'note') {
