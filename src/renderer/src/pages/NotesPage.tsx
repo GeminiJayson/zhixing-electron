@@ -1635,6 +1635,8 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
         同一类操作分居三地，树也被压得很重。收进工具栏之后还白得一个能力：
         空间不够时框架会自动把右侧的次要操作折进「更多」浮层。
       */}
+      {/* 全屏编辑：这一页的标题与筛选工具全部让位，只留正文 */}
+      {zen ? null : (
       <Toolbar
         variant="page"
         titleNode={
@@ -1772,11 +1774,12 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
           </button>
         }
       />
+      )}
       <div className="page__body">
       <div className="notes-wrap">
         {/* 笔记树：收起时整块不渲染（而不是藏起来），宽度全部让给编辑区。
             收放按钮在页面副标题旁边；全屏编辑时页面头整体让位，树也随之不显示。 */}
-        {!treeHidden ? (
+        {!treeHidden && !zen ? (
           <NoteTree
         queryProp={treeQuery}
             notes={visibleNotes}
