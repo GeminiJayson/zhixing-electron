@@ -153,27 +153,3 @@
   background: var(--accent-soft);
   color: var(--accent);
 }
-
-/* 保险箱页的返回入口。固定左上角 —— 保险箱自己有 .page 外壳与三段布局，
-   把返回条塞进它的布局会牵动三个状态分支，固定定位则一处生效。 */
-.vault-back {
-  position: fixed;
-  z-index: 40;
-  top: var(--space-4);
-  left: var(--space-4);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  height: var(--control-h);
-  padding: 0 var(--space-3);
-  border: none;
-  border-radius: var(--radius-pill);
-  background: var(--glass-layer-inset);
-  color: var(--fg-secondary);
-  font: inherit;
-  cursor: pointer;
-  box-shadow: var(--card-shadow);
-}
-.vault-back:hover {
-  color: var(--accent);
-}

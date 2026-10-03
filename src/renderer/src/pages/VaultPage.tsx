@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Archive, CheckCircle2, Copy, Plus, RefreshCw, RotateCcw, Trash2 } from '@renderer/lib/icons'
+import {
+  Archive,
+  ArrowLeft,
+  CheckCircle2,
+  Copy,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  Trash2,
+} from '@renderer/lib/icons'
 
 /**
  * 密码保险箱。
@@ -43,7 +52,22 @@ const AUTO_LOCK_CHOICES = [
   { value: 0, label: '从不' },
 ]
 
-export function VaultPage({ onNotice }: { onNotice: (msg: string) => void }): JSX.Element {
+export function VaultPage({
+  onNotice,
+  onBack,
+}: {
+  onNotice: (msg: string) => void
+  /**
+   * 返回知识库。保险箱现在是知识库页的第二个视图，不是独立页面 ——
+   * 三个状态分支（未初始化 / 已锁定 / 已解锁）都要有出口，
+   * 因为前两个分支里没有"锁定"按钮可依附。
+   *
+   * 早先做成固定定位的悬浮按钮，结果**位置不对也点不到**：
+   * position: fixed 在祖先带 transform / filter 时会相对那个祖先定位，
+   * 而且会被同层内容盖住。放在各分支自己的按钮旁边才是稳的。
+   */
+  onBack?: () => void
+}): JSX.Element {
   const [status, setStatus] = useState<Status>('uninitialized')
   const [entries, setEntries] = useState<Entry[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
@@ -386,6 +410,11 @@ export function VaultPage({ onNotice }: { onNotice: (msg: string) => void }): JS
           <button className="btn" disabled={busy} onClick={() => void doSetup()}>
             {busy ? '正在派生密钥…' : '创建保险箱'}
           </button>
+          {onBack && (
+            <button className="btn btn--ghost" onClick={onBack}>
+              稍后再说
+            </button>
+          )}
           <p className="u-aux vault-hint">
             派生密钥需要约 1 秒，这是刻意的 —— 它让暴力破解的代价同样高昂。
           </p>
@@ -416,6 +445,11 @@ export function VaultPage({ onNotice }: { onNotice: (msg: string) => void }): JS
           <button className="btn" disabled={busy} onClick={() => void doUnlock()}>
             {busy ? '正在解锁…' : '解锁'}
           </button>
+          {onBack && (
+            <button className="btn btn--ghost" onClick={onBack}>
+              返回知识库
+            </button>
+          )}
         </div>
       </div>
     )
@@ -450,6 +484,12 @@ export function VaultPage({ onNotice }: { onNotice: (msg: string) => void }): JS
           <button className="btn btn--ghost vault-icon" title="新建" onClick={startNew}>
             <Plus size={16} />
           </button>
+          {/* 返回与锁定并排 —— 都是"离开当前视图"，位置也该在一起 */}
+          {onBack && (
+            <button className="btn btn--ghost vault-icon" title="返回知识库" onClick={onBack}>
+              <ArrowLeft size={16} />
+            </button>
+          )}
           <button className="btn btn--ghost vault-icon" title="锁定" onClick={() => void api.lock()}>
             <Archive size={16} />
           </button>

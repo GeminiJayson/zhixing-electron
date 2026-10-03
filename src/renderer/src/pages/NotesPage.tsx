@@ -2,7 +2,7 @@ import type { EditorView } from '@codemirror/view'
 import { sanitizeHtml } from '@shared/sanitize-html'
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
-import { ArrowLeft, ChevronRight, Database, ExternalLink, FileText, Maximize2, Morph, IconData, Link2, Plus, Sparkles, Tag, Trash2, UserPlus } from '@renderer/lib/icons'
+import { ChevronRight, Database, ExternalLink, FileText, Maximize2, Morph, IconData, Link2, Plus, Sparkles, Tag, Trash2, UserPlus } from '@renderer/lib/icons'
 import { subscribeDomain } from '@shared/events'
 import { useDialog } from '../components/Dialogs'
 import type { Backlink, Note, NoteFolder, NoteLink } from '@shared/types'
@@ -1399,18 +1399,13 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
    */
   if (view === 'vault') {
     return (
-      <>
-        {/*
-          返回入口。**必须有** —— 换掉整页之后，筛选条上那个「保险箱」按钮也跟着没了，
-          没有这一条就进得去出不来（用户报的正是这个）。
-          放在左上角固定定位，不参与 VaultPage 自己的布局，
-          这样它三个状态分支（未初始化 / 锁定 / 已解锁）都不用改。
-        */}
-        <button className="vault-back" onClick={() => setView('notes')}>
-          <ArrowLeft size={14} /> 返回知识库
-        </button>
-        <VaultPage onNotice={onNotice} />
-      </>
+      /*
+        返回入口交给 VaultPage 自己在每个状态分支里渲染 —— 它三个分支的按钮区不同，
+        只有它自己知道往哪儿放。（早先在这里放了个固定定位的悬浮按钮，
+        结果位置不对也点不到：position: fixed 在祖先带 transform/filter 时会
+        相对那个祖先定位，还被同层内容盖住。）
+      */
+      <VaultPage onNotice={onNotice} onBack={() => setView('notes')} />
     )
   }
 
