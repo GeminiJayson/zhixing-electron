@@ -935,12 +935,20 @@ span.links__pill-text {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: calc(var(--control-h-sm) + 4px);
-  height: calc(var(--control-h-sm) - 2px);
+  width: calc(var(--control-h) + 4px);
+  height: calc(var(--control-h) - 2px);
   border: none;
   /* 中间那条分割线 */
   border-left: var(--border-w) solid var(--border);
-  border-radius: 0;
+  /**
+   * 右侧两角要自己圆。
+   *
+   * 外层 .links__add 有 overflow:hidden，理论上会把按钮的直角裁成圆的 ——
+   * 但**背景色不受父级 overflow 裁剪之外的圆角影响**，实测悬停时的色块
+   * 仍是直角矩形（用户报的「+ 按钮悬浮还是矩形背景」）。直接给按钮自己
+   * 右侧圆角，就不依赖外层裁剪了。
+   */
+  border-radius: 0 var(--radius-ctl) var(--radius-ctl) 0;
   background: transparent;
   color: var(--accent);
   cursor: pointer;
@@ -962,6 +970,8 @@ span.links__pill-text {
  */
 .links__add-btn--wide {
   width: 100%;
+  /* 与新增属性的输入框同高 —— 两个都是「设置页那套控件」，高度都取 --control-h */
+  height: var(--control-h);
   gap: 4px;
   padding: 0 var(--space-2);
   border: var(--border-w) solid var(--border);

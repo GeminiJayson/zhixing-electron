@@ -2207,7 +2207,9 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
               胶囊承载跳转（点胶囊本体），删除图标居右（点它只删不跳）。
             */}
             <section className="links__col">
-              <header className="links__head">属性 · {propItems.length}</header>
+              <header className="links__head" title="每行一条，形如「来源: 书籍」">
+                属性 · {propItems.length}
+              </header>
               <div className="links__items">
                 {propItems.length === 0 ? (
                   <p className="links__empty">还没有属性</p>
@@ -2257,12 +2259,17 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                     <Plus size={13} />
                   </button>
                 </div>
-                <p className="links__hint">每行一条，形如 来源: 书籍</p>
+
               </div>
             </section>
 
             <section className="links__col">
-              <header className="links__head">反向链接 · {backlinks.length}</header>
+              <header
+                className="links__head"
+                title="别人引用这篇时自动出现；删除会改对方那篇的正文"
+              >
+                反向链接 · {backlinks.length}
+              </header>
               <div className="links__items">
                 {backlinks.length === 0 ? (
                   <p className="links__empty">还没有其他笔记引用它</p>
@@ -2291,12 +2298,14 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                 )}
               </div>
               <div className="links__foot">
-                <p className="links__hint">别人引用这篇时自动出现</p>
+
               </div>
             </section>
 
             <section className="links__col">
-              <header className="links__head">正向引用 · {outLinks.length}</header>
+              <header className="links__head" title="正文里的 [[链接]] 会自动出现在这里">
+                正向引用 · {outLinks.length}
+              </header>
               <div className="links__items">
                 {outLinks.length === 0 ? (
                   <p className="links__empty">正文里还没有 [[链接]]</p>
@@ -2348,7 +2357,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                 >
                   <Plus size={13} /> 选择笔记…
                 </button>
-                <p className="links__hint">正文里的 [[链接]] 会自动出现在这里</p>
+
               </div>
             </section>
 
@@ -2405,7 +2414,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                 ))}
               </div>
               <div className="links__foot">
-                <p className="links__hint">点上方「归属」可挂到任务或文件夹</p>
+
               </div>
             </section>
             </div>
@@ -2501,6 +2510,8 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
               onPick: () => void handleMoveNote(moveMenu.noteId, f.id),
             })),
           ]}
+          searchable
+          searchPlaceholder="输入文件夹名筛选…"
         />
       )}
 
@@ -2530,6 +2541,8 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
           x={taskPick.x}
           y={taskPick.y}
           onClose={() => setTaskPick(null)}
+          searchable
+          searchPlaceholder="输入任务标题筛选…"
           items={[
             {
               key: 'search',

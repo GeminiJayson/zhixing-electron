@@ -16,6 +16,12 @@ export interface PopMenuItem {
    * 折叠起来反而要多点一次。
    */
   depth?: number
+  /**
+   * 分组标题行：不可点，只负责分段与缩进。
+   * 显式标记而不是靠"onPick 是空函数"去猜 —— 那种判断在搜索过滤时
+   * 会把标题行一起滤掉，层级就塌了。
+   */
+  header?: boolean
   onPick: () => void
 }
 
@@ -24,14 +30,29 @@ interface Props {
   y: number
   items: PopMenuItem[]
   onClose: () => void
+  /**
+   * 菜单内联搜索。项多时（关联任务动辄几十条）不该再弹一层"按关键词搜索…"
+   * 的输入对话框 —— 那要多点一次、而且对话框还盖住了列表本身，
+   * 用户看不到自己在筛什么。直接在菜单顶部给一个输入框最直接。
+   */
+  searchable?: boolean
+  searchPlaceholder?: string
 }
 
 /** 退场时长：必须与 global.css 里 `.popmenu--pop.is-leaving` 用的 --dur-instant 一致。 */
 const EXIT_MS = 100
 
 /** 通用弹出菜单：优先级菜单、标签菜单、任务行右键菜单共用。 */
-export function PopMenu({ x, y, items, onClose }: Props) {
+export function PopMenu({
+  x,
+  y,
+  items,
+  onClose,
+  searchable = false,
+  searchPlaceholder = '输入关键词筛选…',
+}: Props) {
   const ref = useRef<HTMLDivElement>(null)
+  const [q, setQ] = useState('')
   // 「关闭意图」和「真正卸载」要分开：父组件是条件渲染，onClose 一被调用本组件立刻从树上消失，
   // 退场动画根本没有落点。所以先把自己置成退场态，等动画走完再通知父组件卸载。
   const [open, setOpen] = useState(true)
@@ -86,13 +107,45 @@ export function PopMenu({ x, y, items, onClose }: Props) {
 
   if (!mounted) return null
 
+  /**
+   * 搜索时**保留层级标题行**（onPick 是空函数的那些）。
+   *
+   * 只过滤可选项会让"分组 → 列表 → 任务"的层级在搜索后塌掉，
+   * 用户看到一列光秃秃的任务标题，又回到了分不清哪个是哪儿的原点。
+   * 搜索框自己也要留着（它在 items 之外，不受影响）。
+   */
+  const needle = q.trim().toLowerCase()
+  const shown =
+    searchable && needle
+      ? items.filter((it) => it.header || it.label.toLowerCase().includes(needle))
+      : items
+
   return (
     <div className={'popmenu popmenu--pop' + (leaving ? ' is-leaving' : '')} ref={ref} role="menu">
-      {items.map((it) => (
+      {searchable && (
+        <div className="popmenu__search">
+          <input
+            className="field popmenu__search-input"
+            value={q}
+            placeholder={searchPlaceholder}
+            aria-label="筛选"
+            autoFocus
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.stopPropagation()
+                requestClose()
+              }
+            }}
+          />
+        </div>
+      )}
+      {shown.map((it) => (
         <button
           key={it.key}
           role="menuitem"
-          className={`popmenu__item${it.danger ? ' popmenu__item--danger' : ''}`}
+          className={`popmenu__item${it.danger ? ' popmenu__item--danger' : ''}${it.header ? ' popmenu__item--header' : ''}`}
+          disabled={it.header}
           /* 层级缩进。内联样式而不是类名：深度是数据，档数不定 */
           style={it.depth ? { paddingLeft: 'calc(var(--space-3) + ' + it.depth * 14 + 'px)' } : undefined}
           onClick={() => {

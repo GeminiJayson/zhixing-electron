@@ -739,6 +739,27 @@ button.chip--status:focus-visible {
   /* 进出场统一由 global.css 的 .popmenu.popmenu--pop 提供（pop-in / pop-out）：
      这里不再写第二条 animation，否则两处真相、且必然有一条是死代码。 */
 }
+/* 内联搜索行：菜单顶部一个输入框，项多时直接筛 */
+.popmenu__search {
+  padding: 2px 2px 6px;
+  margin-bottom: 4px;
+  border-bottom: var(--border-w) solid var(--border);
+}
+.popmenu__search-input {
+  width: 100%;
+  height: var(--control-h-sm);
+  font-size: var(--text-aux);
+}
+/* 分组标题行：不可点，只负责分段与缩进 */
+.popmenu__item--header {
+  color: var(--fg-tertiary);
+  font-size: var(--text-aux);
+  cursor: default;
+}
+.popmenu__item--header:hover {
+  background: transparent;
+}
+
 .popmenu__item {
   display: flex;
   align-items: center;
