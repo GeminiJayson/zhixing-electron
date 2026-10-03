@@ -16,6 +16,7 @@ import {
   IconData,
   Plus,
   Sparkles,
+  SquareCheck,
   Tag,
   Trash2,
 } from '@renderer/lib/icons'
@@ -2344,6 +2345,8 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                         title={b.snippet || b.src_title}
                         onClick={() => void selectNote(b.src_note_id)}
                       >
+                        {/* 笔记与任务混在同一栏，靠图标区分 */}
+                        <FileText size={11} aria-hidden />
                         <b>{b.src_title}</b>
                       </button>
                       <button
@@ -2372,6 +2375,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                       title="打开这个任务"
                       onClick={() => handleOpenTask(task.id)}
                     >
+                      <SquareCheck size={11} aria-hidden />
                       <b>{task.title}</b>
                     </button>
                     <button
@@ -2425,6 +2429,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                             : void handleCreateFromLink(l.dst_title)
                         }
                       >
+                        <FileText size={11} aria-hidden />
                         <b>{l.dst_title}</b>
                       </button>
                       <button

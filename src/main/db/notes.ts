@@ -230,17 +230,28 @@ export function listOutLinks(noteId: number): NoteLink[] {
     .all(noteId) as NoteLink[]
 }
 
-/** 反链：按 dst_note_id 或 dst_title 命中本笔记的来源。 */
+/**
+ * 反链：谁引用了我。
+ *
+ * **只按 dst_note_id 命中，不再按标题兜底。**
+ *
+ * 原先写的是 `dst_note_id = ? OR dst_title = ?` —— 那第二条是为了"目标被软删后
+ * 仍能看到反链"（deleteNote 会把 dst_note_id 置空但保留标题）。但代价是
+ * **同名笔记会互相命中**：A 引用了「发布记录」，那么另一篇也叫「发布记录」的
+ * 笔记也会在自己的反链里看到 A。连接关系一律以 id 为准，这类误判不该存在。
+ *
+ * 目标重新出现时 dst_note_id 会被重新绑上（syncNoteLinks / relink 系列），
+ * 所以去掉标题兜底不会让引用永久丢失。
+ */
 export function listBacklinks(noteId: number): Backlink[] {
-  const me = getNote(noteId)
   const rows = conn()
     .prepare(
       `SELECT l.src_note_id, l.dst_title, n.title AS src_title, n.content_md
          FROM note_link l JOIN note n ON n.id = l.src_note_id
-        WHERE n.deleted_at IS NULL AND (l.dst_note_id = ? OR l.dst_title = ?)
+        WHERE n.deleted_at IS NULL AND l.dst_note_id = ?
         ORDER BY n.updated_at DESC`
     )
-    .all(noteId, me?.title ?? '') as {
+    .all(noteId) as {
     src_note_id: number
     dst_title: string
     src_title: string
