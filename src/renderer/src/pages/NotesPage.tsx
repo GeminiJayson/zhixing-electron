@@ -223,6 +223,14 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   const fadeFromRef = useRef<number | null>(null)
   const [dirty, setDirty] = useState(false)
   /**
+   * 装载时的正文基线。
+   *
+   * 用来回答"这次 onChange 是真的用户在改，还是编辑器在装载时回调了一次" ——
+   * 后者在 MarkdownEditor（外部同步 dispatch）与 RichTextEditor（初始化）上都会发生，
+   * 无条件置 dirty 会让刚打开的笔记直接显示"未保存"。
+   */
+  const baselineRef = useRef('')
+  /**
    * Word/Excel「还没写回本地文件」的状态，与 dirty 分开记。
    *
    * 为什么要分：dirty 说的是「标题 / content_md 还没落库」，而 Word 的正文不在 content_md 里 ——
@@ -538,6 +546,8 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
       setCurrent(note)
       setTitle(note.title)
       setContent(note.content_md ?? '')
+      // 装载基线：编辑器初始化/外部同步时回调的 onChange 与它相同，不算改动
+      baselineRef.current = note.content_md ?? ''
       setBacklinks(back)
       setOutLinks(out)
       setAttachedTasks(attached)
@@ -2085,9 +2095,15 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                   noteId={current.id}
                   html={content}
                   leading={editorActions}
+                  /*
+                    只有内容**真的偏离装载基线**才置 dirty。
+                    编辑器在装载正文时会回调一次 onChange（初始化 / 外部同步），
+                    无条件置 dirty 的结果就是：刚打开一篇还没动过的笔记，
+                    标题栏已经写着"未保存"。
+                  */
                   onChange={(h) => {
                     setContent(h)
-                    setDirty(true)
+                    setDirty(h !== baselineRef.current)
                   }}
                   placeholder="从这里开始记录富文本…"
                 />
@@ -2097,7 +2113,8 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                   onAttachTask={(info) => void handleBlockContext(info)}
                   onChange={(v) => {
                     setContent(v)
-                    setDirty(true)
+                    // 同上：与装载基线相同就不算改动
+                    setDirty(v !== baselineRef.current)
                   }}
                   titles={notes.map((n) => n.title)}
                     onLinkPick={(info) => {
