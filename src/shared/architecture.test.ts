@@ -558,6 +558,19 @@ describe('架构约束 · CDP 样板只许减少', () => {
 describe('架构约束 · 笔记出现后任务正文要能补链', () => {
   const read = (p: string): string => readFileSync(join(process.cwd(), p), 'utf8')
 
+  /**
+   * preload 下所有源码拼起来。
+   *
+   * preload 的实现按域拆在 api/ 下（db 的 173 个方法分了七个文件），
+   * 方法不再保证写在 index.ts 里 —— 只认 index.ts 的断言会在重构后无谓地红。
+   */
+  const readPreloadDir = (): string => {
+    const dir = join(process.cwd(), 'src/preload')
+    return walk(dir)
+      .map((f) => readFileSync(f, 'utf8'))
+      .join('\n')
+  }
+
   it('新建与改名两条路都要触发回绑', () => {
     const s = read('src/main/db/notes.ts')
     const hits = s.match(/relinkTasksForTitle\(/g) ?? []
@@ -572,7 +585,12 @@ describe('架构约束 · 笔记出现后任务正文要能补链', () => {
 
   it('修复历史数据的显式入口要挂到 IPC 上', () => {
     expect(read('src/main/db/index.ts')).toContain("'db:linkTaskWikiNotes'")
-    expect(read('src/preload/index.ts')).toContain('linkTaskWikiNotes')
+    /*
+      扫整个 preload 目录而不是只读 index.ts。
+      preload 的实现按域拆到了 api/ 下（db 那 173 个方法分了七个文件），
+      方法不再保证写在 index.ts 里 —— 只认 index.ts 的断言会在重构后无谓地红。
+    */
+    expect(readPreloadDir()).toContain('linkTaskWikiNotes')
   })
 })
 
