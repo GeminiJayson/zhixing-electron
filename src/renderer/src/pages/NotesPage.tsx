@@ -24,9 +24,9 @@ import type { Backlink, Note, NoteFolder, NoteLink } from '@shared/types'
 import type { AiLibraryProgress } from '@shared/ai-note'
 import { parseLinkItems, type NoteLinkItem } from '@shared/note-links'
 import { t } from '../i18n'
-import { isMotionFull, usePresence } from '../lib/presence'
 import { MarkdownEditor, RichTextEditor, blockFingerprint, locateBlockInView } from '../components/MarkdownEditor'
 import { MarkdownView } from '../components/MarkdownView'
+import { isMotionFull } from '../lib/presence'
 // Excel 网格懒加载：ag-grid 体积可观，只有真的打开 Excel 笔记才下载
 const XlsxGrid = lazy(() => import('../components/XlsxGrid'))
 import { NoteHistory } from '../components/NoteHistory'
@@ -66,10 +66,8 @@ const AUTOSAVE_MS = 800
 
 /**
  * 覆盖式抽屉的退场窗口，与 notes.css 里 .links--drawer.is-leaving 那条
- * `drawer-out var(--dur-fast)` 对齐。usePresence 用它决定「先留着播完」还是「直接卸载」——
  * 动效非 full 档时它同步卸载，不会白等这一下。
  */
-const LINKS_DRAWER_EXIT_MS = 150
 
 /** 读一个时长令牌的毫秒数（--dur-fast）。读不到按 0 处理 = 直接切换。 */
 function readTokenMs(name: string): number {
@@ -214,16 +212,6 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     setDirty(true)
   }, [])
 
-  /** 编辑区自身宽度是否窄到放不下并排信息卡 —— 窄了改用覆盖式抽屉 */
-  const [narrow, setNarrow] = useState(false)
-  /**
-   * 窄窗口的覆盖式抽屉：与「并排展开」是同一个 <aside> 的两种形态，收起就是摘掉
-   * links--drawer 这个类。要让它有退场动画，就得把「要不要渲染」交给 usePresence ——
-   * 关闭时先挂 .is-leaving 把 --dur-fast 那段播完再摘类（动效非 full 档时它同步摘掉，不等动画）。
-   */
-  const linksDrawer = usePresence(narrow && linksExpanded, LINKS_DRAWER_EXIT_MS)
-  /** 退场窗口里 linksExpanded 已经是 false，抽屉还得留在 DOM 里把动画播完 */
-  const linksDrawerShown = narrow && (linksExpanded || linksDrawer.mounted)
   const mainRef = useRef<HTMLDivElement | null>(null)
   /** 正文区：切 tab / 换笔记时在它身上补一次极轻的淡入（见下面的 effect） */
   const sheetBodyRef = useRef<HTMLDivElement | null>(null)
@@ -1220,23 +1208,6 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   const propCount = propDraft.split('\n').filter((l) => l.trim()).length
 
   /**
-   * 编辑区宽度自查：量的是 `.notes-main` 而不是窗口 ——
-   * 1280 窗口下这里约 776px，三组信息并排够用；1024 窗口下只剩约 520px，
-   * 再并排就会把「还没有其他笔记引用它。」折成两行。窄了就换覆盖式抽屉。
-   */
-  useEffect(() => {
-    const el = mainRef.current
-    if (!el || typeof ResizeObserver === 'undefined') return
-    const ro = new ResizeObserver((entries) => {
-      // 阈值取 660：1280 窗口下编辑区约 736px（并排刚好够用），
-      // 取 720 会让默认窗口贴着断点，拖动笔记树宽度就来回跳形态
-      setNarrow((entries[0]?.contentRect.width ?? el.clientWidth) < 660)
-    })
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-
-  /**
    * 笔记多标签切换：正文区补一次极轻的淡入（opacity 0→1，--dur-fast / --ease-enter）。
    *
    * 为什么不用 key 驱动：正文容器里住着 ProseMirror / CodeMirror 实例，给 .sheet 挂 key
@@ -2050,53 +2021,49 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
 
         {linksOpen && current && (
           <>
-            {/* 窄窗口：展开态改成覆盖式抽屉，不挤压正文（挤压会把提示文案折成两行）。
-                收起时不立刻摘掉 —— 先挂 .is-leaving 把退场动画播完，见上面的 usePresence */}
-            {linksDrawerShown && (
-              <div
-                className={'links__scrim' + (linksDrawer.leaving ? ' is-leaving' : '')}
-                aria-hidden
-                onClick={() => setLinksExpanded(false)}
-              />
-            )}
+            {/*
+              信息区**只有一种展开方式：向上展开**，无论笔记树是开是关、编辑区宽还是窄。
+              原先窄窗口会切成覆盖式抽屉（右侧滑出 + 遮罩），于是同一块内容有两种形态、
+              两种交互，用户看到的是"笔记树一开它就换个样子"。
+            */}
             <aside
-              className={
-                'links' +
-                (linksExpanded ? ' links--open' : ' links--collapsed') +
-                (linksDrawerShown ? ' links--drawer' : '') +
-                (linksDrawer.leaving ? ' is-leaving' : '')
-              }
+              className={'links' + (linksExpanded ? ' links--open' : ' links--collapsed')}
               aria-label="链接面板"
             >
-            {/* 收起态只有这一行：信息区默认收起，正文才能拿到最大高度 */}
-            <div className="links__bar">
-              <button
-                type="button"
-                className="links__toggle"
-                aria-expanded={linksExpanded}
-                title={linksExpanded ? '收起信息区' : '展开属性 / 反向链接 / 引用 / 归属'}
-                onClick={() => setLinksExpanded((v) => !v)}
-              >
+            {/*
+              收起态只有这一行：信息区默认收起，正文才能拿到最大高度。
+
+              **整条都可点**，而不是只有左边那个「信息」按钮 —— 它本来就是一条通栏的
+              信息头，把可点区域限制在一小段文字上，用户得瞄准。
+              「隐藏」按钮也去掉了：它和"收起"是同一件事的两种说法，
+              收起本来就等价于隐藏，多一个按钮只会让人犹豫该点哪个。
+            */}
+            <div
+              className="links__bar"
+              role="button"
+              tabIndex={0}
+              aria-expanded={linksExpanded}
+              title={linksExpanded ? '收起信息区' : '展开属性 / 反向链接 / 引用 / 归属'}
+              onClick={() => setLinksExpanded((v) => !v)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  setLinksExpanded((v) => !v)
+                }
+              }}
+            >
+              <span className="links__toggle">
                 <ChevronRight size={13} className={'links__caret' + (linksExpanded ? ' links__caret--open' : '')} />
                 信息
-              </button>
+              </span>
               <span className="links__counts">
                 属性 {propCount} · 反链 {backlinks.length} · 引用 {outLinks.length} · 归属{' '}
                 {attachedTasks.length + (current.folder_id ? 1 : 0)}
               </span>
               <span className="links__spacer" />
-              {narrow && linksExpanded ? (
-                <button className="text-btn" onClick={() => setLinksExpanded(false)}>
-                  关闭
-                </button>
-              ) : (
-                <button className="text-btn" onClick={() => setLinksOpen(false)}>
-                  隐藏
-                </button>
-              )}
             </div>
             {/* 退场期间正文也要留着：否则抽屉还挂在屏幕上、里面却已经空了 */}
-            {(linksExpanded || linksDrawerShown) && (
+            {linksExpanded && (
             <div className="links__body">
             <section className="links__card">
               <div className="note-props">
