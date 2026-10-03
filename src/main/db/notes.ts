@@ -497,7 +497,7 @@ export function noteTaskCandidates(q: string, limit = 30): TaskCandidate[] {
         COALESCE(g.name, '') AS groupName
       FROM task t
       LEFT JOIN list_folder l ON l.id = t.list_id
-      LEFT JOIN list_folder lf ON lf.id = l.folder_id
+      LEFT JOIN list_folder g ON g.id = l.parent_id AND g.kind = 'group'
       WHERE t.deleted_at IS NULL AND t.status NOT IN ('done', 'abandoned')`
   if (!needle) {
     return conn()

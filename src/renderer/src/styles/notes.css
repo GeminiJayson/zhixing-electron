@@ -952,13 +952,27 @@ span.links__pill-text {
   opacity: 0.4;
   cursor: default;
 }
-/* 撑满整行的按钮变体 */
+/**
+ * 撑满整行的按钮变体（「选择笔记…」）。
+ *
+ * **它必须自己带圆角与边框**：融合那套规则里 .links__add-btn 是被
+ * border-radius: 0 + 外层 overflow:hidden 裁成直角的（它贴在输入框右边），
+ * 而这个变体是独立按钮、没有外层裁切 —— 沿用那套就会得到一个直角矩形，
+ * 悬停时的底色块尤其明显（用户报的「悬浮背景是矩形，影响观感」）。
+ */
 .links__add-btn--wide {
   width: 100%;
   gap: 4px;
   padding: 0 var(--space-2);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-ctl);
+  background: var(--glass-layer-control);
   font: inherit;
   font-size: var(--text-aux);
+}
+.links__add-btn--wide:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
 }
 /* 提示文字弱化：更小字号 + 更淡颜色，它是说明不是内容 */
 .links__hint {
