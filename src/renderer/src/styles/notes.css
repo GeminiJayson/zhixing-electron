@@ -791,14 +791,152 @@
 .links__spacer {
   flex: 1;
 }
-/* 展开态：三组横向并排，高度上限 220px（与改造前一致），超出内部滚动 */
+/* 展开态：**四栏并排 + 固定总高**，每栏内部自己滚。
+   固定高度是有意的 —— 信息区若随内容长高，每加一条引用正文都会跳一下。 */
 .links__body {
-  display: flex;
-  flex-direction: row;
-  gap: var(--space-3);
-  max-height: 220px;
-  overflow: auto;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+  height: 240px;
   padding: 0 var(--space-3) var(--space-3);
+}
+/* 窄了改两列两行，总高相应提高，仍然是固定的 */
+@media (max-width: 1100px) {
+  .links__body {
+    height: 340px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.links__col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--glass-layer-inset);
+  box-shadow: var(--card-shadow);
+}
+/* 内容区撑满分栏：不管有没有内容都占满，底部的新增/提示才总能贴在栏底。
+   用 flex:1 + min-height:0 而不是 min-height:100% —— 后者在 flex 容器里不收缩，
+   内容一多就把底部挤出去。 */
+.links__items {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: var(--space-1);
+  padding: 2px 0;
+}
+.links__empty {
+  margin: 0;
+  color: var(--fg-tertiary);
+  font-size: var(--text-aux);
+}
+/* 胶囊：本体是跳转按钮，删除图标居右 */
+.links__pill {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--glass-layer-control);
+}
+.links__pill-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 2px var(--space-2);
+  border: none;
+  background: transparent;
+  color: var(--fg-secondary);
+  font: inherit;
+  font-size: var(--text-aux);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+span.links__pill-text {
+  cursor: default;
+}
+.links__pill-text b {
+  font-weight: 500;
+  color: var(--fg-primary);
+}
+.links__pill-text:hover {
+  color: var(--accent);
+}
+.links__pill--dangling .links__pill-text b {
+  color: var(--danger);
+}
+.links__pill-del {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-1);
+  border: none;
+  background: transparent;
+  color: var(--fg-tertiary);
+  cursor: pointer;
+}
+.links__pill-del:hover {
+  color: var(--danger);
+}
+/* 底部区永远贴底、不被内容顶走 */
+.links__foot {
+  flex: 0 0 auto;
+  margin-top: auto;
+  padding-top: var(--space-1);
+  border-top: var(--border-w) solid var(--border);
+}
+/* 新增行：输入框与按钮**必须同行**，栏再窄也不许换行。
+   靠 nowrap + 输入框 min-width:0 实现：输入框可收缩，按钮 flex:0 0 auto 保住。 */
+.links__add {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+.links__add-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: var(--control-h-sm);
+  font-size: var(--text-aux);
+}
+.links__add-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  border: none;
+  border-radius: var(--radius-ctl);
+  background: var(--accent-soft);
+  color: var(--accent);
+  cursor: pointer;
+}
+.links__add-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+/* 撑满整行的按钮变体 */
+.links__add-btn--wide {
+  width: 100%;
+  gap: 4px;
+  padding: 0 var(--space-2);
+  font: inherit;
+  font-size: var(--text-aux);
+}
+/* 提示文字弱化：更小字号 + 更淡颜色，它是说明不是内容 */
+.links__hint {
+  margin: 2px 0 0;
+  color: var(--fg-tertiary);
+  font-size: 11px;
+  line-height: 1.4;
 }
 .links__card {
   flex: 1;
