@@ -192,6 +192,8 @@ export function MarkdownEditor({
 }: Props) {
   const onReadyRef = useRef(onReady)
   onReadyRef.current = onReady
+  /** 正在由外部同步正文：这一段时间里的 docChanged 不往上报 */
+  const suppressRef = useRef(false)
   const onHandleRef = useRef(onHandle)
   onHandleRef.current = onHandle
   const hostRef = useRef<HTMLDivElement>(null)
@@ -226,7 +228,9 @@ export function MarkdownEditor({
           EditorView.lineWrapping,
           keymap.of([...completionKeymap, ...defaultKeymap, ...historyKeymap, indentWithTab]),
           EditorView.updateListener.of((u) => {
-            if (u.docChanged) onChangeRef.current(u.state.doc.toString())
+            /* 外部同步正文引起的变化不往上报 —— 否则会与上层的 dirty 状态形成回环 */
+            if (u.docChanged && !suppressRef.current) onChangeRef.current(u.state.doc.toString())
+            if (suppressRef.current) return
             /*
               输入双方括号后，把位置与已输入前缀交给宿主。
               只在文档变化时判定，且只在光标紧跟在一段未闭合的双方括号之后触发 ——
@@ -278,13 +282,27 @@ export function MarkdownEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // 外部改正文（切笔记、回滚版本）时替换文档内容，且不触发 onChange 回环
+  /**
+   * 外部改正文（切笔记、回滚版本、程序化插入）时替换文档内容。
+   *
+   * **必须屏蔽这一次的 onChange** —— dispatch 一定会让 docChanged 为 true，
+   * 而 updateListener 是无条件转发 onChange 的。原先注释写着"不触发 onChange 回环"，
+   * 但代码并没有做任何屏蔽，于是：外部同步 → onChange → 上层 setDirty(true)，
+   * 保存完刚清掉的 dirty 立刻又被置回来，标题栏就一直停在"未保存"。
+   *
+   * dispatch 与 updateListener 是同步的，所以用 ref 标记在这一小段里屏蔽即可。
+   */
   useEffect(() => {
     const view = viewRef.current
     if (!view) return
     const current = view.state.doc.toString()
     if (current === value) return
-    view.dispatch({ changes: { from: 0, to: current.length, insert: value } })
+    suppressRef.current = true
+    try {
+      view.dispatch({ changes: { from: 0, to: current.length, insert: value } })
+    } finally {
+      suppressRef.current = false
+    }
   }, [value])
 
   // 查找词变化时重算全部命中高亮
