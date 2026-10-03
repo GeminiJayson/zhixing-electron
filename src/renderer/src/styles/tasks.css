@@ -716,6 +716,21 @@ button.chip--status:focus-visible {
   position: fixed;
   z-index: var(--z-menu);
   min-width: 120px;
+  /**
+   * 高度上限 + 内部滚动。
+   *
+   * 没有上限时，菜单会随项数一直长下去 —— 关联任务那个弹层动辄几十条，
+   * 长到比视口还高。而 placeAnchored 的兜底是「夹进视口」，菜单本身比视口高时
+   * 夹也夹不下，底部那些项永远看不见（用户报的「任务太多，弹框太大，显示不全」）。
+   *
+   * 用 max-height 而不是 height：项少时仍然按内容收缩，不留一大片空白。
+   * 量 offsetHeight 的 placeAnchored 读到的也是**限制后**的高度，翻上/夹下的
+   * 判断因此仍然成立。
+   */
+  max-height: min(70vh, 480px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-width: 120px;
   padding: 4px;
   background: var(--bg-layer-solid);
   border: var(--border-w) solid var(--border);
