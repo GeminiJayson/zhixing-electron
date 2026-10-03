@@ -221,7 +221,12 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   const bodyFadeRef = useRef<Animation | null>(null)
   /** 上一次做淡入的笔记 id，null 表示还没进过这篇（首次进入不播，页面本身已有进场动画） */
   const fadeFromRef = useRef<number | null>(null)
-  const [dirty, setDirty] = useState(false)
+  const [dirty, setDirtyRaw] = useState(false)
+  /** 临时诊断：把每一次「置脏」的调用栈打出来，定位 dirty 恒为 true 的来源 */
+  const setDirty = useCallback((v: boolean): void => {
+    if (v) console.warn('[dirty→true]', new Error().stack)
+    setDirtyRaw(v)
+  }, [])
   /**
    * 装载时的正文基线。
    *
@@ -2729,6 +2734,24 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
             void window.zhixing.db
               .saveNote(current.id, { content_md: body + '\n\n[[' + target.title + ']]\n' })
               .then(async () => {
+                /**
+                 * 写入后必须**重查派生数据**再刷新列表。
+                 *
+                 * load() 只刷新 notes/folders 两张列表，不动 outLinks ——
+                 * 于是刚加的引用要等切一次笔记才出现。这与「移动到文件夹后
+                 * 归属栏不更新」是同一个根因：load() 不碰派生状态。
+                 */
+                const [out, back, attached] = await Promise.all([
+                  window.zhixing.db.outLinks(current.id),
+                  window.zhixing.db.backlinks(current.id),
+                  window.zhixing.db.noteAttachedTasks(current.id),
+                ])
+                setOutLinks(out)
+                setBacklinks(back)
+                setAttachedTasks(attached)
+                setContent(body + '\n\n[[' + target.title + ']]\n')
+                baselineRef.current = body + '\n\n[[' + target.title + ']]\n'
+                setDirty(false)
                 await load()
                 onNotice('已引用「' + target.title + '」')
               })
