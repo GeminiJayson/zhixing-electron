@@ -417,6 +417,20 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     onNotice('已从「' + b.src_title + '」里删掉那条链接')
   }
 
+  /**
+   * 把文件夹按层级展开成「父在前、子紧随」的序列，并带上深度。
+   *
+   * 直接 folders.map 出来的是平铺列表，看不出谁属于谁 —— 用户报的
+   * 「移动到文件夹的弹窗没有层级」就是这个。先排序再给 depth，弹层负责缩进。
+   */
+  const folderTree = (): { f: NoteFolder; depth: number }[] => {
+    const walk = (parentId: number | null, depth: number): { f: NoteFolder; depth: number }[] =>
+      folders
+        .filter((f) => (f.parent_id ?? null) === parentId)
+        .flatMap((f) => [{ f, depth }].concat(walk(f.id, depth + 1)))
+    return walk(null, 0)
+  }
+
   /** 归属栏：点文件夹胶囊在笔记树里定位它 */
   const handleRevealFolder = (id: number): void => {
     window.dispatchEvent(new CustomEvent('zhixing:open-note-folder', { detail: { id } }))
@@ -2177,10 +2191,14 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                 <ChevronRight size={13} className={'links__caret' + (linksExpanded ? ' links__caret--open' : '')} />
                 信息
               </span>
-              <span className="links__counts">
-                属性 {propCount} · 反链 {backlinks.length} · 引用 {outLinks.length} · 归属{' '}
-                {attachedTasks.length + (current.folder_id ? 1 : 0)}
-              </span>
+              {/* 统计只在收起态显示 —— 展开后每栏标题上已经各有一个数字，
+                  再在顶上重复一遍是多余的（用户指出的） */}
+              {!linksExpanded && (
+                <span className="links__counts">
+                  属性 {propCount} · 反链 {backlinks.length} · 引用 {outLinks.length} · 归属{' '}
+                  {attachedTasks.length + (current.folder_id ? 1 : 0)}
+                </span>
+              )}
               <span className="links__spacer" />
             </div>
             {/* 退场期间正文也要留着：否则抽屉还挂在屏幕上、里面却已经空了 */}
@@ -2492,9 +2510,10 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
               label: '移出到「全部笔记」',
               onPick: () => void handleMoveNote(moveMenu.noteId, null),
             },
-            ...folders.map((f) => ({
+            ...folderTree().map(({ f, depth }) => ({
               key: `f-${f.id}`,
               label: f.name,
+              depth,
               onPick: () => void handleMoveNote(moveMenu.noteId, f.id),
             })),
           ]}

@@ -7,6 +7,15 @@ export interface PopMenuItem {
   label: string
   danger?: boolean
   checked?: boolean
+  /**
+   * 层级缩进（0 = 顶层）。
+   *
+   * 文件夹与任务分组是有父子关系的，平铺成一列看不出谁属于谁 ——
+   * 用户报的"移动到文件夹/关联任务的弹窗没有层级"就是这个。
+   * 只做缩进不做折叠：这两个弹窗的使用场景都是"快速找到某一项"，
+   * 折叠起来反而要多点一次。
+   */
+  depth?: number
   onPick: () => void
 }
 
@@ -84,6 +93,8 @@ export function PopMenu({ x, y, items, onClose }: Props) {
           key={it.key}
           role="menuitem"
           className={`popmenu__item${it.danger ? ' popmenu__item--danger' : ''}`}
+          /* 层级缩进。内联样式而不是类名：深度是数据，档数不定 */
+          style={it.depth ? { paddingLeft: 'calc(var(--space-3) + ' + it.depth * 14 + 'px)' } : undefined}
           onClick={() => {
             it.onPick()
             requestClose()
