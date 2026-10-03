@@ -885,12 +885,13 @@ span.links__pill-text {
 .links__pill-del:hover {
   color: var(--danger);
 }
-/* 底部区永远贴底、不被内容顶走 */
+/* 底部区永远贴底、不被内容顶走。
+   原先这里有一条 border-top 做分割，去掉了：栏内空间本来就紧（240px 里四栏分），
+   而内容区与底部区的界限靠间距已经能看出来，多一条线只是噪音。 */
 .links__foot {
   flex: 0 0 auto;
   margin-top: auto;
   padding-top: var(--space-1);
-  border-top: var(--border-w) solid var(--border);
 }
 /**
  * 新增行：输入框与按钮**融合成一个控件**，中间用一条分割线分开。

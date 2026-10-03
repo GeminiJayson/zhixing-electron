@@ -11,16 +11,44 @@ import {
 } from '@codemirror/view'
 import type { DecorationSet } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
+import { closeBrackets, completionKeymap } from '@codemirror/autocomplete'
 import { markdown } from '@codemirror/lang-markdown'
-import { autocompletion, closeBrackets, completionKeymap } from '@codemirror/autocomplete'
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { tags } from '@lezer/highlight'
+
+/**
+ * 交给宿主的编辑器句柄。
+ *
+ * 只暴露宿主真正要用的两个能力 —— 补全选中后需要「按坐标定位弹层」与
+ * 「替换掉光标前那半截输入」。不要直接把整个 EditorView 交出去：
+ * 那等于把整个 CodeMirror 的 API 面变成模块的公开契约。
+ */
+export interface MarkdownEditorHandle {
+  coordsAtPos: (pos: number) => { left: number; top: number; bottom: number }
+  replaceRange: (from: number, to: number, insert: string) => void
+}
 
 interface Props {
   value: string
   onChange: (value: string) => void
-  /** `[[` 补全的候选：全部笔记标题 */
+  /** 笔记标题（保留：别处仍在用） */
   titles: string[]
+  /**
+   * 输入双方括号时把「位置 + 已输入前缀」交给宿主，由宿主打开笔记选择器。
+   *
+   * 原先是 CodeMirror 自带的 autocompletion 下拉，只有纯标题、没有文件夹层级。
+   * 现在改用与信息区正向引用同一个选择器（带层级、带类型图标、同一套摆放规则）。
+   * 编辑器只负责「在哪一段上补」，选什么、怎么展示由宿主决定。
+   */
+  onLinkPick?: (info: { from: number; to: number; query: string }) => void
+  /**
+   * 补全需要的两个能力（定位弹层 / 替换那半截输入）。
+   *
+   * 单独一个回调而不是复用 onReady —— 后者交的是完整的 EditorView，
+   * locateBlockInView 等地方要靠它；把公开契约放大到整个 CodeMirror API 面
+   * 只为了两个方法，代价太大。
+   */
+  onHandle?: (h: MarkdownEditorHandle) => void
   /** 实例就绪后交回 EditorView，供外部做查找定位 */
   onReady?: (view: EditorView) => void
   /**
@@ -154,17 +182,23 @@ export function MarkdownEditor({
   value,
   onChange,
   titles,
+  onLinkPick,
   placeholder,
   onReady,
+  onHandle,
   onAttachTask,
   highlight = '',
   onCreateTask,
 }: Props) {
   const onReadyRef = useRef(onReady)
   onReadyRef.current = onReady
+  const onHandleRef = useRef(onHandle)
+  onHandleRef.current = onHandle
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const titlesRef = useRef<string[]>(titles)
+  const onLinkPickRef = useRef(onLinkPick)
+  onLinkPickRef.current = onLinkPick
   const onChangeRef = useRef(onChange)
   const [menu, setMenu] = useState<{ x: number; y: number; text: string } | null>(null)
   titlesRef.current = titles
@@ -174,23 +208,6 @@ export function MarkdownEditor({
     const host = hostRef.current
     if (!host) return
 
-    /** 输入 `[[` 后按前缀过滤笔记标题。 */
-    const wikiCompletion = autocompletion({
-      override: [
-        (ctx) => {
-          const before = ctx.matchBefore(/\[\[[^\]]*$/)
-          if (!before) return null
-          if (before.from === before.to && !ctx.explicit) return null
-          const word = before.text.slice(2)
-          const options = titlesRef.current
-            .filter((t) => t.toLowerCase().includes(word.toLowerCase()))
-            .slice(0, 20)
-            .map((t) => ({ label: t, type: 'text' as const }))
-          return { from: before.from + 2, options, validFor: /^[^\]]*$/ }
-        },
-      ],
-      activateOnTyping: true,
-    })
 
     const view = new EditorView({
       parent: host,
@@ -203,7 +220,6 @@ export function MarkdownEditor({
           closeBrackets(),
           markdown(),
           syntaxHighlighting(mdHighlight),
-          wikiCompletion,
           cmPlaceholder(placeholder ?? ''),
           editorTheme,
           findField,
@@ -211,12 +227,45 @@ export function MarkdownEditor({
           keymap.of([...completionKeymap, ...defaultKeymap, ...historyKeymap, indentWithTab]),
           EditorView.updateListener.of((u) => {
             if (u.docChanged) onChangeRef.current(u.state.doc.toString())
+            /*
+              输入双方括号后，把位置与已输入前缀交给宿主。
+              只在文档变化时判定，且只在光标紧跟在一段未闭合的双方括号之后触发 ——
+              否则光标移到别处也会反复弹选择器。
+            */
+            if (!u.docChanged) return
+            const pick = onLinkPickRef.current
+            if (!pick) return
+            const sel = u.state.selection.main
+            if (!sel.empty) return
+            const before = u.state.sliceDoc(Math.max(0, sel.head - 200), sel.head)
+            const m = /\[\[([^\]]*)$/.exec(before)
+            if (!m) return
+            pick({ from: sel.head - m[0].length, to: sel.head, query: m[1] })
           }),
         ],
       }),
     })
     viewRef.current = view
+    const handle: MarkdownEditorHandle = {
+      coordsAtPos: (pos: number) => {
+        // coordsAtPos 在位置已滚出视口时会返回 null —— 退到编辑器顶端，
+        // 让弹层至少贴着一个合理的位置，而不是抛错
+        const c = view.coordsAtPos(pos)
+        if (!c) {
+          const box = view.dom.getBoundingClientRect()
+          return { left: box.left, top: box.top, bottom: box.top + 20 }
+        }
+        return { left: c.left, top: c.top, bottom: c.bottom }
+      },
+      replaceRange: (from: number, to: number, insert: string) => {
+        view.dispatch({
+          changes: { from, to, insert },
+          selection: { anchor: from + insert.length },
+        })
+      },
+    }
     onReadyRef.current?.(view)
+    onHandleRef.current?.(handle)
 
     // 右键只由下面那一个 React onContextMenu 处理。
     // 这里原先另挂了一份原生 contextmenu 监听来做「关联任务」，同一次右键会**两个菜单同时弹**

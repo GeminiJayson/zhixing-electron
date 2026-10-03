@@ -33,6 +33,7 @@ import { isMotionFull } from '../lib/presence'
 const XlsxGrid = lazy(() => import('../components/XlsxGrid'))
 import { NoteHistory } from '../components/NoteHistory'
 import { NotePicker } from '../components/NotePicker'
+import type { MarkdownEditorHandle } from '../components/MarkdownEditor'
 import { NOTE_FORMATS, NoteTree, noteIcon, type NoteFormat } from '../components/NoteTree'
 
 /** 知识类型。与主进程 db/knowledge.ts 的 KNOWLEDGE_KINDS 对应（那边是权威）。 */
@@ -295,6 +296,10 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   const [propNew, setPropNew] = useState('')
   /** 正向引用的笔记选择器锚点（null = 未打开） */
   const [linkPick, setLinkPick] = useState<DOMRect | null>(null)
+  /** 正文里输入 [[ 的位置（null = 没在补全） */
+  const [linkTrigger, setLinkTrigger] = useState<{ from: number; to: number; query: string } | null>(null)
+  /** Markdown 编辑器的 view，补全选中后要用它替换那半截 [[ */
+  const mdViewRef = useRef<MarkdownEditorHandle | null>(null)
 
   const propsToText = (raw?: string | null): string => {
     if (!raw) return ''
@@ -2097,11 +2102,22 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                     setDirty(true)
                   }}
                   titles={notes.map((n) => n.title)}
+                    onLinkPick={(info) => {
+                      setLinkTrigger(info)
+                      // 锚点取光标处：选择器贴在正在输入的那一行下方，而不是挂在某个按钮上
+                      const view = mdViewRef.current
+                      if (!view) return
+                      const c = view.coordsAtPos(info.to)
+                      setLinkPick({ left: c.left, top: c.top, bottom: c.bottom } as DOMRect)
+                    }}
                   placeholder="用 Markdown 写作；输入 [[ 可链接到其他笔记"
                   highlight={findOpen ? findText : ''}
                   onCreateTask={(text, blockKey) => void handleCreateTaskFromSelection(text, blockKey)}
                   onReady={(v) => {
                     viewRef.current = v
+                  }}
+                  onHandle={(h) => {
+                    mdViewRef.current = h
                   }}
                 />
               )}
@@ -2416,6 +2432,35 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
               <div className="links__foot">
 
               </div>
+              <div className="links__foot">
+                {/*
+                  归属栏原先只有删除、没有新增。胶囊展示的是既有关系，
+                  而"挂到某个任务/文件夹"只能去标题行的「归属」按钮做 ——
+                  栏内补齐这两个动作，与另两栏的底部区结构一致。
+                */}
+                <div className="links__add">
+                  <button
+                    type="button"
+                    className="links__add-btn links__add-btn--wide"
+                    onClick={(e) => {
+                      const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                      void openTaskPick(r.left, r.bottom + 4)
+                    }}
+                  >
+                    <Plus size={13} /> 关联任务…
+                  </button>
+                  <button
+                    type="button"
+                    className="links__add-btn links__add-btn--wide"
+                    onClick={(e) => {
+                      const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                      setMoveMenu({ noteId: current.id, x: r.left, y: r.bottom + 4 })
+                    }}
+                  >
+                    <FolderPlus size={13} /> 移动到文件夹…
+                  </button>
+                </div>
+              </div>
             </section>
             </div>
             )}
@@ -2621,9 +2666,20 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
           value=""
           anchor={linkPick}
           onPick={(id) => {
-            setLinkPick(null)
             const target = notes.find((n) => String(n.id) === id)
-            if (!target || !current) return
+            const trig = linkTrigger
+            setLinkPick(null)
+            setLinkTrigger(null)
+            if (!target) return
+            /*
+              正文补全：把光标前那半截 [[（含已输入的前缀）整段替换成完整的 [[标题]]，
+              而不是再追加一行。dispatch 会触发 onChange，落盘与建链接因此照常发生。
+            */
+            if (trig) {
+              mdViewRef.current?.replaceRange(trig.from, trig.to, "[[" + target.title + "]]")
+              return
+            }
+            if (!current) return
             const body = (current.content_md ?? '').replace(/\s*$/, '')
             void window.zhixing.db
               .saveNote(current.id, { content_md: body + '\n\n[[' + target.title + ']]\n' })
