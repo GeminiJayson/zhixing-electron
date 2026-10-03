@@ -1,5 +1,6 @@
 import { nextSortKey } from './tasks'
-import { createNote } from './notes'
+import { createNote, saveNote } from './notes'
+import { migratePendingAttachments } from './attachments'
 import type {
   Flash,
   Task,
@@ -248,6 +249,16 @@ export function flashToNote(
   const title = f.remark?.trim() || titleFromContent(content) || '来自闪念'
   const note = createNote(title, folderId, content, fmt)
   if (!note) return null
+  /*
+    把暂存在 attachments/pending/ 的附件迁到这篇笔记目录下并补记录。
+    快速笔记粘贴图片时还没有 note，只能先落在 pending/；那一步的注释承诺
+    「转成笔记时迁过去」，但这里一直没有实现 —— 于是原图永远留在 pending/。
+    迁移会改路径，所以改完要把正文写回去。
+  */
+  const migrated = migratePendingAttachments(note.id, content)
+  if (migrated !== content) {
+    saveNote(note.id, { content_md: migrated })
+  }
   markFlashConverted(id, 'note', note.id)
   return note.id
 }

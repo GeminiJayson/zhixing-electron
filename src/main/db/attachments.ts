@@ -7,8 +7,17 @@
  *
  * 只做四件事：导入 / 列出 / 删除 / 清理；不做预览、不改写正文。
  */
-import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { basename, extname, join } from 'node:path'
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
+import { basename, dirname, extname, join } from 'node:path'
 import { quietFailure } from '../../shared/quiet-failure'
 import { conn, dataDir, nowStamp } from './connection'
 
@@ -170,6 +179,49 @@ export function importAttachmentDataBatch(
     tx(pending)
   }
   return out
+}
+
+/** 正文里 data-attachment 的取值（富文本 img 上记的附件路径）。 */
+const ATTACHMENT_RE = /data-attachment="([^"]+)"/g
+
+/**
+ * 把暂存在 attachments/pending/ 下的附件迁到它所属笔记的目录，并补上记录。
+ *
+ * **这是 importAttachmentDataBatch 那段注释承诺过、但一直没有实现的一步。**
+ * 快速笔记（连 flash 都还没存下时）粘贴的图片走的是 `noteId === null` 分支：
+ * 文件落在 pending/、不写 attachment 记录（那一列 NOT NULL 且外键到 note）。
+ * 承诺是"等它转成笔记时迁过去"，但 flashToNote 里从来没有这段逻辑 ——
+ * 于是那些原图永远留在 pending/ 下，应用里查不到、删笔记时也不会被清理。
+ *
+ * 返回迁移后的正文（路径要跟着改），没有可迁的就原样返回。
+ */
+export function migratePendingAttachments(noteId: number, content: string): string {
+  const matches = [...content.matchAll(ATTACHMENT_RE)]
+  if (!matches.length) return content
+
+  const pendingDir = join(attachmentsDir(), 'pending')
+  const targetDir = join(attachmentsDir(), String(noteId))
+  const c = conn()
+  const ins = c.prepare('INSERT INTO attachment (note_id, path, kind, created_at) VALUES (?, ?, ?, ?)')
+  const exists = c.prepare('SELECT 1 FROM attachment WHERE note_id = ? AND path = ?')
+
+  let next = content
+  for (const m of matches) {
+    const oldPath = m[1]
+    // 只处理确实躺在 pending/ 下的；已经在目标目录里的原样保留
+    if (dirname(oldPath) !== pendingDir) continue
+    if (exists.get(noteId, oldPath)) continue
+    try {
+      mkdirSync(targetDir, { recursive: true })
+      const newPath = join(targetDir, basename(oldPath))
+      renameSync(oldPath, newPath)
+      ins.run(noteId, newPath, (extname(newPath).replace('.', '') || 'file').toLowerCase(), nowStamp())
+      next = next.split(oldPath).join(newPath)
+    } catch {
+      // 文件已被移走或权限不足：保留原路径，下次再试（宁可路径旧，也不能丢正文）
+    }
+  }
+  return next
 }
 
 export function listAttachments(): AttachmentRow[] {
