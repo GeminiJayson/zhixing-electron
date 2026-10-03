@@ -131,3 +131,25 @@
 .notes-filter__hbtn--todo:hover {
   background: color-mix(in srgb, var(--danger) 22%, transparent);
 }
+
+
+/* 保险箱入口：不是筛选，是「换个视图」，所以和左边那组留出更大间距，
+   悬停时用强调色 —— 它在一行筛选控件里是唯一的导航动作。 */
+.notes-filter__vault {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--nf-h);
+  margin-left: var(--space-2);
+  padding: 0 var(--space-3);
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--fg-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+.notes-filter__vault:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}

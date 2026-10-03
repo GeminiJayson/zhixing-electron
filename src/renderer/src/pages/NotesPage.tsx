@@ -2,7 +2,7 @@ import type { EditorView } from '@codemirror/view'
 import { sanitizeHtml } from '@shared/sanitize-html'
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
-import { ChevronRight, ExternalLink, FileText, Maximize2, Morph, IconData, Link2, Plus, Sparkles, Tag, Trash2, UserPlus } from '@renderer/lib/icons'
+import { ChevronRight, Database, ExternalLink, FileText, Maximize2, Morph, IconData, Link2, Plus, Sparkles, Tag, Trash2, UserPlus } from '@renderer/lib/icons'
 import { subscribeDomain } from '@shared/events'
 import { useDialog } from '../components/Dialogs'
 import type { Backlink, Note, NoteFolder, NoteLink } from '@shared/types'
@@ -31,6 +31,7 @@ const KNOWLEDGE_KINDS: { key: string; label: string }[] = [
 import { NoteTabs, type NoteTab } from '../components/NoteTabs'
 import { KnowledgeChip } from '../components/KnowledgeChip'
 import { Toolbar } from '../components/Toolbar'
+import { VaultPage } from './VaultPage'
 import { PopMenu } from '../components/PopMenu'
 import { TagMenu } from '../components/TagMenu'
 
@@ -147,6 +148,8 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
    * 知识库**不是一个独立页面** —— 类型与可信状态是笔记自己的属性，
    * 所以它们在这里以筛选的形式存在（原方案里"六个区域"说的是区域，不是页面）。
    */
+  /** 这一页有两个视图：知识库（默认）与保险箱。入口在筛选条右侧。 */
+  const [view, setView] = useState<'notes' | 'vault'>('notes')
   const [kindFilter, setKindFilter] = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<'all' | 'verified' | 'draft' | 'archived'>('all')
   /** id → { kind, verified }，由主进程按"全部状态含归档"一次取回 */
@@ -1387,6 +1390,15 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     })
   }, [notes, kindFilter, statusFilter, metaById])
 
+  /**
+   * 保险箱是这一页的第二个视图，不是独立页面。
+   *
+   * 它原本在侧边导航里占一格，但那是"偶尔进去看一眼"的东西 —— 导航的每一格
+   * 都应该对应日常会待的地方。现在入口在筛选条右侧，和知识库共用同一个页面壳。
+   * 放在所有 hooks 之后早返回，遵守 hooks 规则。
+   */
+  if (view === 'vault') return <VaultPage onNotice={onNotice} />
+
   return (
     <div className={'page page--notes' + (zen ? ' page--zen' : '')}>
       <div className="page__head">
@@ -1478,6 +1490,17 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
         <span className="u-aux notes-filter__count">
           {visibleNotes.length} / {notes.length}
         </span>
+        {/* 保险箱入口。它原本在侧边导航里占一格，但那是偶尔进去看一眼的东西 ——
+            导航的每一格都该对应日常会待的地方。放在这一条的最右端（计数之后），
+            和筛选控件分开，因为它不是筛选，是"换个视图"。 */}
+        <button
+          className="notes-filter__vault"
+          title="密码保险箱"
+          aria-label="打开密码保险箱"
+          onClick={() => setView('vault')}
+        >
+          <Database size={14} /> 保险箱
+        </button>
       </div>
       <div className="page__body">
       <div className="notes-wrap">

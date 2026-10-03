@@ -5,7 +5,6 @@ import {
   FileText,
   GitBranch,
   Inbox,
-  Database,
   Sparkles,
   Waypoints,
 } from '@renderer/lib/icons'
@@ -41,9 +40,8 @@ export const NAV_ITEMS: NavItem[] = [
   { key: 'workflow', labelKey: 'nav.workflow', icon: GitBranch, zone: 'top' },
   { key: 'graph', labelKey: 'nav.graph', icon: Waypoints, zone: 'top' },
   { key: 'review', labelKey: 'nav.review', icon: Sparkles, zone: 'top' },
-  // 保险箱是"工具"而不是"日常"，放在回顾之后、设置之前。
-  // 知识库**不在这里** —— 它不是独立页面，类型与可信状态是笔记自己的属性，
-  // 以筛选的形式长在笔记页上（见 notes-filter.css 与 KnowledgeChip.tsx）。
-  { key: 'vault', labelKey: 'nav.vault', icon: Database, zone: 'top' },
+  // 这里原本还有一项"保险箱"。它和知识库是同一个页面的两个视图，
+  // 入口挪到了知识库页顶部筛选条的右侧 —— 导航里不该为"偶尔进去看一眼"
+  // 的东西长期占一格（见 NotesPage 的 view 切换）。
   { key: 'settings', labelKey: 'nav.settings', icon: CircleUser, zone: 'bottom' },
 ]
