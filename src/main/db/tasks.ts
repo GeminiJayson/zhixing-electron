@@ -89,14 +89,27 @@ export function detachTaskNote(taskId: number, noteId: number): number {
     .run(taskId, noteId).changes
 }
 
-/** 某任务关联的笔记。 */
+/**
+ * 某任务关联的笔记。
+ *
+ * **两张表都要查**：task_note_link（笔记页「关联到任务」建的）与
+ * task_note_ref（图谱里拉边建的）。它们的列几乎一样，只是历史语义标签不同 ——
+ * 图谱把前者叫"归属"、后者叫"引用"，但按 docs/specs/ownership-vs-reference.md
+ * 的定义，**任务对笔记的关联本质都是引用**，所以这里合并展示。
+ *
+ * UNION 顺带把两边都存在的同一对去重。
+ */
 export function listLinkedNotes(taskId: number): Note[] {
   return conn()
     .prepare(
       'SELECT n.* FROM note n JOIN task_note_link l ON l.note_id = n.id ' +
-        'WHERE l.task_id = ? AND n.deleted_at IS NULL ORDER BY n.id'
+        'WHERE l.task_id = ? AND n.deleted_at IS NULL ' +
+        'UNION ' +
+        'SELECT n.* FROM note n JOIN task_note_ref r ON r.note_id = n.id ' +
+        'WHERE r.task_id = ? AND n.deleted_at IS NULL ' +
+        'ORDER BY title'
     )
-    .all(taskId) as Note[]
+    .all(taskId, taskId) as Note[]
 }
 
 export function noteCountMap(): { task_id: number; c: number }[] {

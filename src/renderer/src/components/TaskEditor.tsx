@@ -77,9 +77,19 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
   const [folders, setFolders] = useState<NoteFolder[]>([])
   const [saving, setSaving] = useState(false)
 
+  /** 整篇级的关联（task_note_link 与 task_note_ref 合并去重） */
+  const [linkedNotes, setLinkedNotes] = useState<Note[]>([])
+
   const loadContexts = useCallback(async (): Promise<void> => {
     setContexts(await window.zhixing.db.linkedContexts(task.id))
+    setLinkedNotes(await window.zhixing.db.linkedNotes(task.id))
   }, [task.id])
+
+  /** 解除整篇级关联：两张表都清一次（哪张有就删哪张） */
+  const detachLinkedNote = async (noteId: number): Promise<void> => {
+    await window.zhixing.db.detachTaskNote(task.id, noteId)
+    await loadContexts()
+  }
 
   useEffect(() => {
     void loadContexts()
@@ -287,6 +297,53 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
               />
             </label>
           )}
+
+          {/*
+            已关联笔记 —— 与下面的「关联笔记段落」是**同一种关系的两种精度**：
+            这一块是整篇级（task_note_link / task_note_ref），下面那块是段落级
+            （task_note_context）。按 docs/specs/ownership-vs-reference.md，
+            任务对笔记的关联本质是引用，与"归属"（属于哪个清单）不是一回事。
+          */}
+          <section className="form-row">
+            <span>已关联笔记（{linkedNotes.length}）</span>
+            {linkedNotes.length === 0 ? (
+              <p className="u-aux">还没有关联整篇笔记。</p>
+            ) : (
+              <ul className="ctx-list">
+                {linkedNotes.map((n) => (
+                  <li key={n.id} className="ctx-row">
+                    <button
+                      className="text-btn"
+                      onClick={() =>
+                        window.dispatchEvent(
+                          new CustomEvent('zhixing:open-note', { detail: n.id })
+                        )
+                      }
+                    >
+                      {n.title}
+                    </button>
+                    <span className="u-aux">整篇</span>
+                    <span className="modal__spacer" />
+                    <button className="text-btn" onClick={() => void detachLinkedNote(n.id)}>
+                      解除
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="ctx-add">
+              <button
+                type="button"
+                className="text-btn"
+                onClick={(e) => {
+                  setPickerAnchor((e.currentTarget as HTMLElement).getBoundingClientRect())
+                  setPickerOpen(true)
+                }}
+              >
+                关联整篇笔记…
+              </button>
+            </div>
+          </section>
 
           <section className="form-row">
             <span>关联笔记段落（{contexts.length}）</span>

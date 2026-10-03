@@ -165,7 +165,8 @@ const api = {
       ipcRenderer.invoke('db:attachTaskNote', taskId, noteId),
     detachTaskNote: (taskId: number, noteId: number): Promise<number> =>
       ipcRenderer.invoke('db:detachTaskNote', taskId, noteId),
-    linkedNotes: (taskId: number): Promise<unknown[]> => ipcRenderer.invoke('db:linkedNotes', taskId),
+    /** 某任务关联的笔记（task_note_link 与 task_note_ref 合并去重） */
+    linkedNotes: (taskId: number): Promise<Note[]> => ipcRenderer.invoke('db:linkedNotes', taskId),
       /** 显式重解析任务正文里的 [[链接]] */
       linkTaskWikiNotes: (taskId: number): Promise<number[]> =>
         ipcRenderer.invoke('db:linkTaskWikiNotes', taskId),
