@@ -5,7 +5,6 @@ import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation } 
 import type { Simulation, SimulationLinkDatum, SimulationNodeDatum } from 'd3-force'
 import { Maximize2, RefreshCw } from '@renderer/lib/icons'
 import type { GraphDelta, GraphNodePayload, GraphPayload, NoteFolder } from '@shared/types'
-import { t } from '../i18n'
 import { Toolbar } from '../components/Toolbar'
 import { GraphNodeIcon } from '../components/GraphNodeIcon'
 import { usePanZoom } from '../lib/usePanZoom'
@@ -775,8 +774,8 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
     <div className="page page--graph">
       <div className="page__body">
       <Toolbar
-        title={t('page.graph')}
-        subtitle={t('page.graph.sub')}
+        title={'图谱'}
+        subtitle={'笔记与任务的关联'}
         nav={(
           <div className="seg" role="group" aria-label="范围">
             {(['all', 'n1', 'n2'] as Scope[]).map((s) => (

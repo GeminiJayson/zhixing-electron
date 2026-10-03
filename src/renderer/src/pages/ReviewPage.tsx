@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Award } from '@renderer/lib/icons'
 import type { ReviewStats } from '@shared/types'
-import { t } from '../i18n'
 
 /** 回顾页：周趋势 + 12 周热力图 + 标签分布 + 成就。图表全部自绘 SVG。
  *  顶部那块「任务统计」卡片已删：它的口径与今日页概览重复，这里只留图表；
@@ -18,8 +17,8 @@ export function ReviewPage() {
     return (
       <div className="page page--review">
         <div className="page__head">
-          <h1 className="page__title">{t('page.review')}</h1>
-          <p className="page__subtitle">{t('page.review.sub')}</p>
+          <h1 className="page__title">{'回顾'}</h1>
+          <p className="page__subtitle">{'完成情况与番茄记录'}</p>
         </div>
         <div className="page__body">
           <p className="empty-hint">正在统计…</p>
@@ -46,8 +45,8 @@ export function ReviewPage() {
   return (
     <div className="page page--review">
       <div className="page__head">
-        <h1 className="page__title">{t('page.review')}</h1>
-        <p className="page__subtitle">{t('page.review.sub')}</p>
+        <h1 className="page__title">{'回顾'}</h1>
+        <p className="page__subtitle">{'完成情况与番茄记录'}</p>
       </div>
       <div className="page__body">
 

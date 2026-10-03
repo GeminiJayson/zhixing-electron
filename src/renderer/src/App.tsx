@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { bindHostEvents, subscribeDomain } from '@shared/events'
-import { t } from './i18n'
 import { parseSettings, type AppSettings } from '@shared/settings'
 import { applyAppearance, applyMotion, resolveThemeMode } from './theme'
 import { CommandPalette } from './components/CommandPalette'
@@ -491,7 +490,7 @@ export default function App() {
     <DialogProvider>
       <div className={'app' + (zen ? ' app--zen' : '')}>
         <TitleBar
-        title={`知行 ZhiXing · ${t(current.labelKey)}`}
+        title={`知行 ZhiXing · ${current.label}`}
         theme={theme}
         onToggleTheme={toggleTheme}
         signature={appearance?.signature}

@@ -25,7 +25,6 @@ import { useDialog } from '../components/Dialogs'
 import type { Backlink, Note, NoteFolder, NoteLink } from '@shared/types'
 import type { AiLibraryProgress } from '@shared/ai-note'
 import { parseLinkItems, type NoteLinkItem } from '@shared/note-links'
-import { t } from '../i18n'
 import { MarkdownEditor, RichTextEditor, blockFingerprint, locateBlockInView } from '../components/MarkdownEditor'
 import { MarkdownView } from '../components/MarkdownView'
 import { isMotionFull } from '../lib/presence'
@@ -1639,8 +1638,8 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
         variant="page"
         titleNode={
           <>
-            <h1 className="page__title">{t('page.notes')}</h1>
-            <p className="page__subtitle">{t('page.notes.sub')}</p>
+            <h1 className="page__title">{'知识库'}</h1>
+            <p className="page__subtitle">{'Markdown、Office 与链接笔记'}</p>
           </>
         }
         nav={

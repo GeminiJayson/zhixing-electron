@@ -2,7 +2,6 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { Morph, IconData } from '@renderer/lib/icons'
 import { NAV_ITEMS, type PageKey } from '../nav'
 import { isMotionFull } from '../lib/presence'
-import { t } from '../i18n'
 
 interface Props {
   page: PageKey
@@ -72,12 +71,12 @@ export function Sidebar({ page, collapsed, inboxCount, onSelect, onToggleCollaps
           className={`nav-item${active ? ' nav-item--active' : ''}`}
           onClick={() => onSelect(item.key)}
           aria-current={active ? 'page' : undefined}
-          title={collapsed ? t(item.labelKey) : undefined}
+          title={collapsed ? item.label : undefined}
         >
           <span className="nav-item__icon">
             <Icon size={20} strokeWidth={2} />
           </span>
-          {!collapsed && <span className="nav-item__label">{t(item.labelKey)}</span>}
+          {!collapsed && <span className="nav-item__label">{item.label}</span>}
           {!collapsed && item.key === 'inbox' && inboxCount > 0 && (
             /* key 用数量：数字一变就重建节点，于是 badge-pop 动画重播一次 */
             <span key={inboxCount} className="nav-item__badge">

@@ -22,7 +22,6 @@ import type {
 } from '@shared/types'
 import { subscribeDomain } from '@shared/events'
 import { parseSettings } from '@shared/settings'
-import { t } from '../i18n'
 import { useDialog } from '../components/Dialogs'
 import { PopMenu, type PopMenuItem } from '../components/PopMenu'
 import { TagMenu } from '../components/TagMenu'
@@ -1219,8 +1218,8 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
       <div className="page__body">
 
       <Toolbar
-        title={t('page.tasks')}
-        subtitle={t('page.tasks.sub')}
+        title={'任务'}
+        subtitle={'树 / 看板 / 象限 / 日历'}
         nav={(
           <div className="seg" role="group" aria-label="视图切换">
             {VIEWS.map((v) => (

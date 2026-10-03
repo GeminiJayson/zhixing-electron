@@ -26,7 +26,6 @@ function rememberCommand(id: string): void {
 }
 import { Hash, Inbox, NotebookPen, Plus, Search, SquareCheck, TerminalSquare } from '@renderer/lib/icons'
 import { NAV_ITEMS, type PageKey } from '../nav'
-import { t } from '../i18n'
 
 interface Props {
   open: boolean
@@ -187,10 +186,10 @@ export function CommandPalette({ open, onClose, onNavigate, onOpenNote, onQuickA
     }
 
     for (const n of NAV_ITEMS) {
-      if (query && !t(n.labelKey).toLowerCase().includes(query)) continue
+      if (query && !n.label.toLowerCase().includes(query)) continue
       out.push({
         key: 'page-' + n.key,
-        label: '转到' + t(n.labelKey),
+        label: '转到' + n.label,
         hint: '命令 · 页面',
         icon: 'page',
         run: () => onNavigate(n.key),

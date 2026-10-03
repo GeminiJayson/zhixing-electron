@@ -13,7 +13,6 @@ import {
 } from '@renderer/lib/icons'
 import { buildTaskTree, effectiveDoneMap, type TaskNode } from '@shared/task'
 import type { Flash, NoteFolder, Task } from '@shared/types'
-import { t } from '../i18n'
 import { Toolbar } from '../components/Toolbar'
 import { useDialog } from '../components/Dialogs'
 import { TaskRow } from '../components/TaskRow'
@@ -352,8 +351,8 @@ export function InboxPage({ onNotice, onChanged }: Props) {
       <div className="page__body">
 
       <Toolbar
-        title={t('page.inbox')}
-        subtitle={t('page.inbox.sub')}
+        title={'收件箱'}
+        subtitle={'待整理的闪念'}
         nav={(
           <div className="seg" role="tablist" aria-label="收件箱分区">
             <button role="tab" aria-selected={tab === 'tasks'} onClick={() => setTab('tasks')}>

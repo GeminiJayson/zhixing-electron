@@ -50,7 +50,6 @@ import {
   withBranchTarget,
   type BranchSlot,
 } from '@shared/workflow-branch'
-import { t } from '../i18n'
 import { Toolbar } from '../components/Toolbar'
 import { WorkflowStepDialog } from '../components/WorkflowStepDialog'
 import { WorkflowScheduleDialog } from '../components/WorkflowScheduleDialog'
@@ -1233,8 +1232,8 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     <div className="page page--workflow">
       <div className="page__body">
   <Toolbar
-    title={t('page.workflow')}
-    subtitle={t('page.workflow.sub')}
+    title={'工作流'}
+    subtitle={'可复用的流程模板'}
     nav={(
       // 模板树的收放：按需求放在工具栏最左边
       <button

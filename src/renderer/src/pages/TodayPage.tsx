@@ -4,7 +4,6 @@ import { isMotionFull } from '../lib/presence'
 import { useDialog } from '../components/Dialogs'
 import { buildTaskTree, effectiveDoneMap, type TaskNode } from '@shared/task'
 import type { Note, Overview, TodayTasks } from '@shared/types'
-import { t } from '../i18n'
 import { PriorityMenu } from '../components/PriorityMenu'
 import { StatusMenu } from '../components/StatusMenu'
 import { TaskRow } from '../components/TaskRow'
@@ -306,7 +305,7 @@ export function TodayPage({ overview, onChanged, onNotice, onOpenNote, onFocusTa
   return (
     <div className="page today-page">
       <div className="page__head">
-        <h1 className="page__title">{t('page.today')}</h1>
+        <h1 className="page__title">{'今日'}</h1>
         <p className="page__subtitle">{greeting}</p>
       </div>
       <div className="page__body">

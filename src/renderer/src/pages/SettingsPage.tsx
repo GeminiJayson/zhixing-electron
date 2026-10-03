@@ -16,7 +16,6 @@ import {
   parseThemeOverrides,
   type ThemeColors,
 } from '@shared/theme-packs'
-import { t } from '../i18n'
 import { Toolbar } from '../components/Toolbar'
 import { applyAppearance, prefersReducedMotion, resolveThemeMode } from '../theme'
 import { useDialog } from '../components/Dialogs'
@@ -478,8 +477,8 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
     <div className="page page--settings">
       <div className="page__body">
       <Toolbar
-        title={t('page.settings')}
-        subtitle={t('page.settings.sub')}
+        title={'设置'}
+        subtitle={'外观、行为与数据'}
         /* 不吸顶：这一页的标题行与分区 tab 本来就固定不动（滚动收在下面的 .set-body 里），
            再加吸顶那一套（滚动后铺底色 + 投影 + 收副标题）只会在 tab 下方多出一条色带。 */
         sticky={false}
