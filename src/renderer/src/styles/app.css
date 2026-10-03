@@ -470,18 +470,24 @@
   flex-direction: column;
   flex: 1 1 0;
   min-height: 0;
-  margin-bottom: var(--space-4);
+  /*
+   * 与 .section 的 margin-bottom 保持一致（space-5）。
+   * 原先这里是 space-4，于是「概览 → 今日待办」比「今日待办 → 最近笔记」
+   * 少一档，前一组看着挤在一起 —— 同一页里三块的间距应当是同一个值。
+   */
+  margin-bottom: var(--space-5);
 }
 .today-page .section__scroll {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
 }
-/* 今日待办比「最近笔记」高 100px：两块本来就是 flex: 1 1 0 等分剩余高度，
-   给前者一个 100px 的 flex-basis，差值正好等于 basis 之差（多余的 basis 会
-   从「剩余高度」里扣掉再按 grow 平分，所以两块的高差恒等于 100px）。 */
+/* 今日待办比「最近笔记」高 150px：两块本来就是 flex: 1 1 0 等分剩余高度，
+   给前者一个 150px 的 flex-basis，差值正好等于 basis 之差（多余的 basis 会
+   从「剩余高度」里扣掉再按 grow 平分，所以两块的高差恒等于 150px）。
+   从 100 提到 150 是按用户要求：最近笔记不需要那么高，把 50px 让给待办。 */
 .today-page .page__body > .section--today-todo {
-  flex-basis: 100px;
+  flex-basis: 150px;
 }
 .section__head {
   display: flex;

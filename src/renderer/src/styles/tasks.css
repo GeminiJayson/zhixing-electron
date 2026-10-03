@@ -490,6 +490,18 @@
   border: var(--border-w) solid var(--accent);
   border-radius: var(--radius-sm);
 }
+/**
+ * 关掉聚焦时的外轮廓。
+ *
+ * 这一条是「双边框」的根源：全局 :focus-visible 会给所有元素加 outline，
+ * 而 .field 那类控件在 656 行豁免了它、.trow__input 没有 ——
+ * 它的类名是 trow__input 而不是 field。于是双击进入编辑时，
+ * accent 边框与外轮廓同时出现，看着就是两条线。
+ * 边框本身已经是强调色，焦点提示不缺这一道。
+ */
+.trow__input:focus-visible {
+  outline: none;
+}
 /* 行内胶囊：循环 / streak / 区间 / 标签 / 笔记数。
    它们是普通 flex 项，因此按钮组浮现时会自然排到按钮组左侧，不会被压住。 */
 .trow__chips {

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { Note, NoteFolder } from '@shared/types'
 import { NOTE_FORMATS, noteIcon } from './NoteTree'
 import { Search } from '@renderer/lib/icons'
@@ -82,7 +83,18 @@ export function NotePicker({ notes, folders, value, anchor, onPick, onClose }: P
 
   const total = groups.reduce((n, g) => n + g.notes.length, 0)
 
-  return (
+  /**
+   * **必须用 Portal 挂到 body。**
+   *
+   * 这个弹层是 position: fixed，但它会被用在任务编辑弹窗里 —— 而那个弹窗有
+   * `backdrop-filter`。backdrop-filter 与 transform 一样会创建 containing block，
+   * 于是 fixed 不再相对视口，而是相对弹窗定位：既被弹窗边界裁掉（显示不全），
+   * 又因为参与了弹窗的布局把它撑大。
+   *
+   * 挂到 body 之后就脱离了那个 containing block，placeAnchored 的视口坐标
+   * 也才重新成立。
+   */
+  return createPortal(
     <div className="popmenu note-picker" ref={ref} role="listbox" aria-label="选择笔记">
       <div className="note-picker__search">
         <Search size={13} aria-hidden />
@@ -126,6 +138,7 @@ export function NotePicker({ notes, folders, value, anchor, onPick, onClose }: P
           ))
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
