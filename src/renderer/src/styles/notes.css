@@ -981,7 +981,10 @@ span.links__pill-text {
    * 基础规则里的 border-left 是给融合控件做中间分割线用的，这里若不覆盖，
    * 就会和下面这条 border 叠成两条 —— 视觉上就是「边框比旁边的粗」。
    */
+  /* 四边都要显式写全：基础规则里有 border-left（融合控件的中缝），
+     只写 border 简写在某些层叠顺序下仍会留下它 —— 那就是「边框比旁边粗」 */
   border: var(--border-w) solid var(--border);
+  border-left: var(--border-w) solid var(--border);
   border-radius: var(--radius-ctl);
   background: var(--glass-layer-control);
   font: inherit;
