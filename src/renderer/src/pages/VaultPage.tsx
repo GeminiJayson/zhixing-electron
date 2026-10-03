@@ -89,9 +89,6 @@ export function VaultPage({
   const [importing, setImporting] = useState(false)
   /** 剪贴板里疑似密码的内容；只提示，不自动保存 */
   const [clipCandidate, setClipCandidate] = useState('')
-  /** 浏览器扩展要用的端口与令牌 */
-  const [httpInfo, setHttpInfo] = useState<{ port: number; token: string } | null>(null)
-  const [showToken, setShowToken] = useState(false)
 
   const api = window.zhixing?.vault
   const draftIdRef = useRef<number | null>(null)
@@ -161,7 +158,6 @@ export function VaultPage({
   // 解锁后取一次扩展配置
   useEffect(() => {
     if (!api || status !== 'unlocked') return
-    void api.httpInfo().then(setHttpInfo)
   }, [api, status])
 
   // 任何交互都算"有活动"，自动锁定的计时以它为准
@@ -638,46 +634,6 @@ export function VaultPage({
         {error && <p className="vault-error">{error}</p>}
 
         <footer className="vault-detail__foot">
-          {/*
-            浏览器扩展的配置。令牌要显式点开才显示 —— 它会出现在屏幕上，
-            而屏幕可能正被别人看着；但它不是主密码，拿到也只能"写"，
-            且锁定状态下端点一律拒收。
-          */}
-          {httpInfo && (
-            <div className="vault-ext">
-              <div className="vault-ext__head">
-                <span>浏览器扩展</span>
-                <button className="btn btn--ghost vault-ext__toggle" onClick={() => setShowToken((v) => !v)}>
-                  {showToken ? '隐藏令牌' : '连接浏览器'}
-                </button>
-              </div>
-              {showToken && (
-                <>
-                  <p className="u-aux">
-                    在扩展的「扩展程序选项」里填入下面这串令牌。扩展只会把凭据发到
-                    <code>127.0.0.1:{httpInfo.port}</code>，不联网。
-                  </p>
-                  <div className="vault-ext__row">
-                    <input className="vault-input" readOnly value={httpInfo.token} aria-label="扩展令牌" />
-                    <button
-                      className="btn btn--ghost vault-icon"
-                      title="复制令牌"
-                      onClick={() => void copy(httpInfo.token, '令牌')}
-                    >
-                      <Copy size={15} />
-                    </button>
-                    <button
-                      className="btn btn--ghost"
-                      title="重新生成（已配好的扩展需要重新粘贴）"
-                      onClick={() => void api.rotateToken().then((r) => setHttpInfo({ ...httpInfo, token: r.token }))}
-                    >
-                      重新生成
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
           {confirmDestroy ? (
             <div className="vault-danger">
               <span>清空后所有条目都会消失，且无法恢复。确定？</span>

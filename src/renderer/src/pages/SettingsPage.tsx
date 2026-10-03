@@ -123,6 +123,8 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
    * **与保险箱状态无关** —— 它服务于"扩展连本机端点"，随时都该看得到。
    */
   const [httpInfo, setHttpInfo] = useState<{ port: number; token: string } | null>(null)
+  /** 令牌默认不显示：它会出现在屏幕上，而屏幕可能正被别人看着 */
+  const [showToken, setShowToken] = useState(false)
 
   useEffect(() => {
     void window.zhixing?.vault?.httpInfo?.().then(setHttpInfo)
@@ -726,36 +728,70 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
             </section>
 
             {/*
-              浏览器扩展的令牌**放在设置页，不放在保险箱页**。
-              它服务于"扩展连本机端点"，而那个端点同时服务密码和剪藏两件事 ——
+              浏览器扩展**归设置页，不归保险箱**。
+              它服务于"扩展连本机端点"，而那个端点同时服务密码与剪藏两件事 ——
               把入口藏在保险箱里，会让从没用过保险箱的人永远拿不到令牌，
-              剪藏对他来说就是坏的。这是个真实的设计错误，已修正。
+              剪藏对他来说就是坏的。（原先确实放在保险箱页，是个设计错误。）
+              现在插件的职责已经不只密码，这里才是它该在的地方。
             */}
             <section className="set-card set-card--ambient">
               <header className="set-card__head"><Link2 size={15} /> 浏览器扩展</header>
               {httpInfo ? (
                 <>
-                  <label className="set-row">
+                  <div className="set-row">
                     <span>访问令牌</span>
-                    <input
-                      className="vault-input"
-                      readOnly
-                      value={httpInfo.token}
-                      aria-label="浏览器扩展令牌"
-                      onFocus={(e) => e.currentTarget.select()}
-                    />
-                    <button
-                      className="btn btn--ghost"
-                      onClick={() => {
-                        void navigator.clipboard.writeText(httpInfo.token)
-                        onNotice('令牌已复制')
-                      }}
-                    >
-                      复制
+                    {showToken ? (
+                      <input
+                        className="vault-input"
+                        readOnly
+                        value={httpInfo.token}
+                        aria-label="浏览器扩展令牌"
+                        onFocus={(e) => e.currentTarget.select()}
+                      />
+                    ) : (
+                      <span className="u-aux">已生成，点右侧显示</span>
+                    )}
+                    {/* 令牌默认不显示 —— 它会出现在屏幕上，而屏幕可能正被别人看着。
+                        这一点从保险箱页搬过来时保留：那里原本也是要点开才看的。 */}
+                    <button className="btn btn--ghost" onClick={() => setShowToken((v) => !v)}>
+                      {showToken ? '隐藏' : '显示'}
                     </button>
-                  </label>
+                  </div>
+                  {showToken && (
+                    <div className="set-row">
+                      <span />
+                      <button
+                        className="btn btn--ghost"
+                        onClick={() => {
+                          void navigator.clipboard.writeText(httpInfo.token)
+                          onNotice('令牌已复制')
+                        }}
+                      >
+                        复制
+                      </button>
+                      <button
+                        className="btn btn--ghost"
+                        title="重新生成（已配好的扩展需要重新粘贴）"
+                        onClick={async () => {
+                          const ok = await dialog.confirm({
+                            title: '重新生成令牌',
+                            message: '已经连上的浏览器扩展会立刻失效，需要在扩展设置里重新粘贴新令牌。',
+                            confirmText: '重新生成',
+                          })
+                          if (!ok) return
+                          const r = await window.zhixing?.vault?.rotateToken?.()
+                          // rotateToken 只回 token，端口是设置页自己那份
+                          if (r) setHttpInfo({ ...httpInfo, token: r.token })
+                          onNotice('令牌已重新生成')
+                        }}
+                      >
+                        重新生成
+                      </button>
+                    </div>
+                  )}
                   <p className="u-aux set-row__note">
-                    把令牌粘贴到扩展的「设置」里。扩展只会把内容发到
+                    一个令牌同时服务两件事：**保存登录凭据**与**剪藏网页正文**。
+                    在扩展的「设置」里粘贴它，扩展只会把内容发到
                     <code>127.0.0.1:{httpInfo.port}</code>，不联网。
                     令牌不是主密码 —— 拿到它只能往收件箱和保险箱里<b>写</b>，
                     且保险箱锁定时一律拒收。
