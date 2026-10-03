@@ -253,7 +253,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   const timer = useRef<number | null>(null)
   /** 「移动到文件夹…」目标菜单 */
   const [moveMenu, setMoveMenu] = useState<{ noteId: number; x: number; y: number } | null>(null)
-  /** 「归属」动作菜单：关联任务 / 移动到文件夹 */
+  /** 标题行那个动作菜单：移动到文件夹（归属）+ 关联到任务（引用）两件事 */
   const [attachMenu, setAttachMenu] = useState<{ x: number; y: number } | null>(null)
   /** 归属选择器：候选任务列表 */
   const [taskPick, setTaskPick] = useState<{
@@ -262,7 +262,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     /** 带 listName / groupName —— 弹层按 分组 → 列表 → 任务 展示层级 */
     items: { id: number; title: string; listName: string; groupName: string }[]
   } | null>(null)
-  /** 本笔记归属的任务（链接面板「归属」分组） */
+  /** 引用了这篇的任务（链接面板「反向链接」栏）。任务用 [[标题]] 引用笔记，属引用关系 */
   const [attachedTasks, setAttachedTasks] = useState<{ id: number; title: string }[]>([])
   /** Word/Excel 可编辑内容 */
   const [officeEdit, setOfficeEdit] = useState<{ kind: string; html: string; rows: string[][]; message: string } | null>(null)
@@ -1070,7 +1070,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     setOutLinks(await window.zhixing.db.outLinks(selectedId))
   }
 
-  /** 归属到任务。 */
+  /** 关联到任务。这是**引用**关系，不是归属 —— 见 docs/specs/ownership-vs-reference.md */
   const handleAttachTask = async (taskId: number, taskTitle: string): Promise<void> => {
     if (selectedId == null) return
     const added = await window.zhixing.db.attachTaskNote(taskId, selectedId)
@@ -1404,7 +1404,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     setPanel({ kind, x: anchor.x, y: anchor.y })
   }
 
-  /** 归属 chip 文案：优先文件夹名，其次关联任务数，都没有就是「归属」 */
+  /** chip 文案：只讲归属（文件夹名）。引用数属于信息区的反向链接栏，不塞进 chip */
   /** 标题栏胶囊的状态：库内改动与 Word/Excel 的文件写回，任一没落地都算「未保存」。 */
   const unsaved = dirty || officePending
 
@@ -1851,7 +1851,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                       <button
                         type="button"
                         className="chip chip--meta"
-                        title="把本笔记归属到某任务或某文件夹"
+                        title="移动到文件夹，或关联到任务"
                         onClick={(e) => {
                           const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
                           setAttachMenu({ x: r.left, y: r.bottom + 4 })
@@ -2284,11 +2284,11 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                 className="links__head"
                 title="别人引用这篇时自动出现；删除会改对方那篇的正文"
               >
-                反向链接 · {backlinks.length}
+                反向链接 · {backlinks.length + attachedTasks.length}
               </header>
               <div className="links__items">
                 {backlinks.length === 0 ? (
-                  <p className="links__empty">还没有其他笔记引用它</p>
+                  <p className="links__empty">还没有笔记或任务引用它</p>
                 ) : (
                   backlinks.map((b) => (
                     <span key={b.src_note_id} className="links__pill">
@@ -2312,9 +2312,47 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                     </span>
                   ))
                 )}
+                {/*
+                  引用了这篇的**任务**。
+                  任务对笔记的关联本质是引用 —— 任务备注里写着 [[这偏的标题]]，
+                  改名时的修复逻辑（note-assoc.ts）就是照着这条在跑。
+                  原先它被摆在「归属」栏，与"属于哪个文件夹"混为一谈。
+                */}
+                {attachedTasks.map((task) => (
+                  <span key={task.id} className="links__pill">
+                    <button
+                      type="button"
+                      className="links__pill-text"
+                      title="打开这个任务"
+                      onClick={() => handleOpenTask(task.id)}
+                    >
+                      <b>{task.title}</b>
+                    </button>
+                    <button
+                      type="button"
+                      className="links__pill-del"
+                      aria-label={"解除关联 " + task.title}
+                      title="解除关联"
+                      onClick={() => handleDetachTask(task.id)}
+                    >
+                      <X size={11} />
+                    </button>
+                  </span>
+                ))}
               </div>
               <div className="links__foot">
-
+                <div className="links__add">
+                  <button
+                    type="button"
+                    className="links__add-btn links__add-btn--wide"
+                    onClick={(e) => {
+                      const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                      void openTaskPick(r.left, r.bottom + 4)
+                    }}
+                  >
+                    <Plus size={13} /> 关联到任务…
+                  </button>
+                </div>
               </div>
             </section>
 
@@ -2379,11 +2417,11 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
 
             <section className="links__col">
               <header className="links__head">
-                归属 · {attachedTasks.length + (current.folder_id ? 1 : 0)}
+                归属 · {current.folder_id ? 1 : 0}
               </header>
               <div className="links__items">
-                {!current.folder_id && attachedTasks.length === 0 && (
-                  <p className="links__empty">未归属文件夹，也没有关联任务</p>
+                {!current.folder_id && (
+                  <p className="links__empty">未归入任何文件夹</p>
                 )}
                 {current.folder_id ? (
                   <span className="links__pill">
@@ -2407,48 +2445,14 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                     </button>
                   </span>
                 ) : null}
-                {attachedTasks.map((task) => (
-                  <span key={task.id} className="links__pill">
-                    <button
-                      type="button"
-                      className="links__pill-text"
-                      title="打开这个任务"
-                      onClick={() => handleOpenTask(task.id)}
-                    >
-                      <b>{task.title}</b>
-                    </button>
-                    <button
-                      type="button"
-                      className="links__pill-del"
-                      aria-label={"解除关联 " + task.title}
-                      title="解除关联"
-                      onClick={() => handleDetachTask(task.id)}
-                    >
-                      <X size={11} />
-                    </button>
-                  </span>
-                ))}
-              </div>
-              <div className="links__foot">
-
               </div>
               <div className="links__foot">
                 {/*
-                  归属栏原先只有删除、没有新增。胶囊展示的是既有关系，
-                  而"挂到某个任务/文件夹"只能去标题行的「归属」按钮做 ——
-                  栏内补齐这两个动作，与另两栏的底部区结构一致。
+                  归属栏只做一件事：把这篇放进某个文件夹/分类。
+                  「关联到任务」挪去反向链接栏 —— 那是引用关系，不是容器关系
+                  （见 docs/specs/ownership-vs-reference.md）。
                 */}
                 <div className="links__add">
-                  <button
-                    type="button"
-                    className="links__add-btn links__add-btn--wide"
-                    onClick={(e) => {
-                      const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                      void openTaskPick(r.left, r.bottom + 4)
-                    }}
-                  >
-                    <Plus size={13} /> 关联任务…
-                  </button>
                   <button
                     type="button"
                     className="links__add-btn links__add-btn--wide"
@@ -2519,7 +2523,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
             },
             {
               key: 'attach',
-              label: '归属到任务…',
+              label: '关联到任务…',
               onPick: () => void openTaskPick(ctxMenu.x, ctxMenu.y),
             },
             {
