@@ -823,6 +823,14 @@
 .links__items {
   flex: 1 1 auto;
   min-height: 0;
+  /**
+   * overflow-x 必须显式写成 hidden。
+   *
+   * 只写 overflow-y: auto 时，按 CSS 规则另一个方向会从 visible 被提升成 auto ——
+   * 于是标题过长的胶囊会把这一栏顶出横向滚动条。竖向滚动是需要的（项多时），
+   * 横向不该有：过长的内容一律走省略号。
+   */
+  overflow-x: hidden;
   overflow-y: auto;
   display: flex;
   flex-wrap: wrap;
@@ -840,6 +848,14 @@
   display: inline-flex;
   align-items: center;
   max-width: 100%;
+  /**
+   * 胶囊自己也是 flex 子项（在 .links__items 里），**必须 min-width: 0**
+   * 才肯收缩到内容宽度以下 —— 否则 max-width: 100% 只限制了它的盒子，
+   * 里面的文字照样以固有宽度撑开，把删除按钮顶到胶囊外。
+   * overflow: hidden 负责把溢出的部分裁掉，配合标题自己的省略号。
+   */
+  min-width: 0;
+  overflow: hidden;
   border-radius: var(--radius-pill);
   background: var(--glass-layer-control);
 }
@@ -847,14 +863,26 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  /*
-   * 图标不许被压缩。
+  /**
+   * **必须显式 min-width: 0。**
    *
-   * SVG 默认 flex-shrink: 1，而这一行又是 overflow: hidden + 省略号 ——
-   * 标题一长，先被挤掉的就是图标（宽度归零后只剩标题）。图标是"这条链接
-   * 指向笔记还是任务"的唯一线索，它比标题末尾那几个字重要得多。
+   * flex 子项的默认值是 min-width: auto —— 它不会收缩到内容宽度以下，
+   * 所以标题一长，这一项就把同行的删除按钮整个挤出胶囊
+   * （父级 overflow: hidden 只裁不缩，删除按钮直接被裁掉）。
+   * 加上 0 之后它才能真正让位，标题自己走省略号。
    */
-  flex-shrink: 0;
+  min-width: 0;
+  /**
+   * **这里绝不能写 flex-shrink: 0。**
+   *
+   * 曾经为了"让图标不被压缩"加过它 —— 加错了元素：它锁住的是整个文字区，
+   * 于是标题一长，这个盒子就再也不肯收缩，把同行的删除按钮整个顶出胶囊
+   * （实测 pill-text 宽 271 而胶囊只有 180）。
+   *
+   * 图标由下面 .links__pill-text > svg 的 flex: 0 0 auto 单独保住；
+   * 文字区这里必须能收缩，才能给删除按钮让出位置、自己走省略号。
+   */
+  flex: 1 1 auto;
   min-width: 0;
   padding: 2px var(--space-2);
   border: none;
@@ -874,8 +902,14 @@ span.links__pill-text {
 .links__pill-text b {
   font-weight: 500;
   color: var(--fg-primary);
+  /*
+   * 标题自己也要 min-width: 0 才肯收缩 —— 它同样是 flex 子项，
+   * 光有 overflow/ellipsis 而没有可收缩的宽度，省略号永远不会出现。
+   */
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 /* 图标本身也不参与收缩，并禁止它被压成 0 宽 */
 .links__pill-text > svg {
