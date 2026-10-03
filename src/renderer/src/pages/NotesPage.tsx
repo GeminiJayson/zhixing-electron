@@ -222,9 +222,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   const bodyFadeRef = useRef<Animation | null>(null)
   /** 上一次做淡入的笔记 id，null 表示还没进过这篇（首次进入不播，页面本身已有进场动画） */
   const fadeFromRef = useRef<number | null>(null)
-  const [dirty, setDirtyRaw] = useState(false)
-  /** 临时诊断：把每一次「置脏」的调用栈打出来，定位 dirty 恒为 true 的来源 */
-  const setDirty = useCallback((v: boolean): void => setDirtyRaw(v), [])
+  const [dirty, setDirty] = useState(false)
   /**
    * 装载时的正文基线。
    *
