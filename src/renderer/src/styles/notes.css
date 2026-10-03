@@ -892,32 +892,61 @@ span.links__pill-text {
   padding-top: var(--space-1);
   border-top: var(--border-w) solid var(--border);
 }
-/* 新增行：输入框与按钮**必须同行**，栏再窄也不许换行。
-   靠 nowrap + 输入框 min-width:0 实现：输入框可收缩，按钮 flex:0 0 auto 保住。 */
+/**
+ * 新增行：输入框与按钮**融合成一个控件**，中间用一条分割线分开。
+ *
+ * 早先是两个各自独立的控件（输入框一个边框、按钮一个 accent-soft 底），
+ * 视觉上割裂，而且那个加号图标在浅色底上不够显眼（用户报的「不明显」）。
+ * 现在外层一个边框与圆角包住两者，输入框去掉自己的边框与圆角，
+ * 按钮只留左边一条分割线 —— 加号用强调色，它的可点性靠颜色而不是靠底色块。
+ *
+ * 输入框与按钮仍**必须同行**：nowrap + 输入框 min-width:0，按钮 flex:0 0 auto。
+ */
 .links__add {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
-  gap: var(--space-1);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-ctl);
+  background: var(--glass-layer-control);
+  overflow: hidden;
+}
+.links__add:focus-within {
+  border-color: var(--accent);
 }
 .links__add-input {
   flex: 1 1 auto;
   min-width: 0;
-  height: var(--control-h-sm);
+  height: auto;
+  padding: 0 var(--space-2);
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--fg-primary);
+  font: inherit;
   font-size: var(--text-aux);
+  line-height: calc(var(--control-h-sm) - 2px);
+}
+.links__add-input:focus {
+  outline: none;
 }
 .links__add-btn {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--control-h-sm);
-  height: var(--control-h-sm);
+  width: calc(var(--control-h-sm) + 4px);
+  height: calc(var(--control-h-sm) - 2px);
   border: none;
-  border-radius: var(--radius-ctl);
-  background: var(--accent-soft);
+  /* 中间那条分割线 */
+  border-left: var(--border-w) solid var(--border);
+  border-radius: 0;
+  background: transparent;
   color: var(--accent);
   cursor: pointer;
+}
+.links__add-btn:hover:not(:disabled) {
+  background: var(--accent-soft);
 }
 .links__add-btn:disabled {
   opacity: 0.4;

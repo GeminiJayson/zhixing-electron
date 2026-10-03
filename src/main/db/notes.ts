@@ -494,9 +494,9 @@ export function noteTaskCandidates(q: string, limit = 30): TaskCandidate[] {
   const needle = q.trim()
   const base = `SELECT t.id, t.title,
         COALESCE(l.name, '') AS listName,
-        COALESCE(lf.name, '') AS groupName
+        COALESCE(g.name, '') AS groupName
       FROM task t
-      LEFT JOIN list l ON l.id = t.list_id
+      LEFT JOIN list_folder l ON l.id = t.list_id
       LEFT JOIN list_folder lf ON lf.id = l.folder_id
       WHERE t.deleted_at IS NULL AND t.status NOT IN ('done', 'abandoned')`
   if (!needle) {
