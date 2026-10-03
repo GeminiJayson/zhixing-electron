@@ -8,17 +8,6 @@
    改用浅色实底 —— 描边在浅色主题下会显得脏，而且和上面那批羽化阴影的卡片不合拍。 */
 
 .notes-filter {
-  /**
-   * 这一条自己的高度基准 —— **在这一层求值一次**。
-   *
-   * 为什么不在每个元素上直接写 var(--control-h-sm)：实测它会在这条筛选条里
-   * 解析不出值（--control-h-sm 是 calc(var(--control-h) - 8px) 的嵌套 calc），
-   * height 因此被整条丢弃，元素退回内容高度 —— 下拉 30px、分段容器 22px、
-   * 按钮 18px，一行里三个高度。ctlheightcheck 只做文本匹配，所以照样通过。
-   *
-   * 定义在这里之后，下面所有元素引用同一个已求值的结果，加 24px 兜底防同样的坑。
-   */
-  --nf-h: var(--control-h, 32px);
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -32,14 +21,14 @@
 }
 /* 类型下拉：去掉描边、改成与分段控件同高的胶囊。
    **appearance: none 是必需的** —— 原生 select 有自己的最小高度，
-   不给它 height: var(--nf-h) 也压不下去（实测渲染出 28px，
+   不给它 height: var(--control-h) 也压不下去（实测渲染出 28px，
    而旁边的按钮是 20px，一行里两个高度）。去掉原生外观后高度才真正说了算，
    代价是箭头要自己画，所以下面补了一个内联 SVG 背景。
    箭头颜色写死成与 --fg-secondary 一致的灰，是为了避免 currentColor
    在 background-image 里无法继承的问题。 */
 .notes-filter__select {
   appearance: none;
-  height: var(--nf-h);
+  height: var(--control-h);
   padding: 0 calc(var(--space-3) + 12px) 0 var(--space-3);
   border: none;
   border-radius: var(--radius-pill);
@@ -64,7 +53,7 @@
 }
 .notes-filter__btn {
   /* 与容器内边距配套：容器 padding 2px，按钮减 4px 后两边正好贴合 */
-  height: calc(var(--nf-h) - 4px);
+  height: calc(var(--control-h) - 4px);
   padding: 0 var(--space-3);
   border: none;
   border-radius: var(--radius-pill);
@@ -86,7 +75,7 @@
 .notes-filter__btn--on:hover { color: var(--accent); }
 
 .notes-filter__clear {
-  height: var(--nf-h);
+  height: var(--control-h);
   padding: 0 var(--space-3);
   border: none;
   border-radius: var(--radius-pill);
@@ -112,7 +101,7 @@
   display: inline-flex;
   align-items: center;
   /* 与类型下拉同高 —— 它们是并列的两组「胶囊」，高度差一档就会看出来 */
-  height: var(--nf-h);
+  height: var(--control-h);
   padding: 0 var(--space-2);
   border: none;
   border-radius: var(--radius-pill);
@@ -139,7 +128,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  height: var(--nf-h);
+  height: var(--control-h);
   margin-left: var(--space-2);
   padding: 0 var(--space-3);
   border: none;
