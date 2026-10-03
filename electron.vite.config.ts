@@ -17,5 +17,17 @@ export default defineConfig({
       },
     },
     plugins: [react()],
+    server: {
+      watch: {
+        /**
+         * 忽略编辑工具留下的临时目录。
+         *
+         * 编辑器/工具写文件时会先落一个 `.<name>.<pid>.<hash>.tmpdir` 再改名，
+         * 而 Vite 的 watcher 会去监听它 —— 那个目录可能已被删掉或仍被占用，
+         * 于是 watch 报 EBUSY 直接把 dev 进程带崩（实测就是这么挂的）。
+         */
+        ignored: ['**/*.tmpdir/**', '**/.*.tmp', '**/*.tmpdir'],
+      },
+    },
   },
 })

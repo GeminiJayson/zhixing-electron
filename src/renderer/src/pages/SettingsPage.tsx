@@ -30,7 +30,7 @@ interface Props {
   onChanged: () => Promise<void>
 }
 
-type Tab = 'appearance' | 'tasks' | 'data' | 'ai' | 'about'
+type Tab = 'general' | 'hotkeys' | 'tasks' | 'integrations' | 'data' | 'ai' | 'about'
 
 /**
  * 强调色是否还"在联动体系内"（没有被人为改过）。
@@ -107,17 +107,23 @@ const HOTKEY_ROWS: { key: keyof AppSettings; label: string; hint: string }[] = [
   },
 ]
 
+/**
+ * 分区顺序按「从常用到少用」：日常会调的（通用、快捷键、任务）在前，
+ * 一次配好就不动的（集成、数据、AI、关于）在后。
+ */
 const TABS: { key: Tab; label: string }[] = [
-  { key: 'appearance', label: '外观' },
+  { key: 'general', label: '通用' },
+  { key: 'hotkeys', label: '快捷键' },
   { key: 'tasks', label: '任务与提醒' },
-  { key: 'data', label: '数据' },
+  { key: 'integrations', label: '集成' },
+  { key: 'data', label: '数据与安全' },
   { key: 'ai', label: 'AI 整理' },
   { key: 'about', label: '关于' },
 ]
 
 export function SettingsPage({ onNotice, onChanged }: Props) {
   const dialog = useDialog()
-  const [tab, setTab] = useState<Tab>('appearance')
+  const [tab, setTab] = useState<Tab>('general')
   /**
    * 浏览器扩展的端口与令牌。
    * **与保险箱状态无关** —— 它服务于"扩展连本机端点"，随时都该看得到。
@@ -494,7 +500,7 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
       />
 
       <div className="set-body">
-        {tab === 'appearance' && (
+        {tab === 'general' && (
           <>
             <section className="set-card set-card--ambient">
               <header className="set-card__head"><Palette size={15} /> 主题</header>
@@ -800,29 +806,6 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
               ) : (
                 <p className="u-aux set-row__note">正在读取…</p>
               )}
-            </section>
-
-            <section className="set-card set-card--ambient">
-              <header className="set-card__head"><Database size={15} /> 密码保险箱</header>
-              <label className="set-row">
-                <span>自动锁定</span>
-                <select
-                  className="vault-select"
-                  value={settings.vault_auto_lock_min}
-                  aria-label="保险箱自动锁定"
-                  onChange={(e) => void update('vault_auto_lock_min', e.target.value)}
-                >
-                  <option value={1}>1 分钟无操作</option>
-                  <option value={5}>5 分钟无操作</option>
-                  <option value={15}>15 分钟无操作</option>
-                  <option value={30}>30 分钟无操作</option>
-                  <option value={0}>从不自动锁定</option>
-                </select>
-              </label>
-              <p className="u-aux set-row__note">
-                保险箱的主密码**无法找回** —— 它不以任何形式保存，只在你输入时用于派生密钥。
-                忘记之后唯一的出路是在保险箱页面里清空重建，届时里面的条目会一并删除。
-              </p>
             </section>
 
             <section className="set-card set-card--ambient">
@@ -1255,6 +1238,33 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
               改键后立即生效。组合被系统或其他程序占用时会注册失败（行尾标出），
               此时只有托盘菜单里对应那一项可用 —— 换一个组合再试即可。
               「读取选中并速记」在 Electron 侧无跨应用模拟复制能力，降级为读取系统剪贴板。
+            </p>
+          </section>
+        )}
+
+        {/* 密码保险箱归「数据与安全」：它管的是本地条目的加密与自动锁定，
+            与「数据」那张卡（附件 / 备份 / 回收站）是同一类关注点。 */}
+        {tab === 'data' && (
+          <section className="set-card set-card--ambient">
+            <header className="set-card__head"><Database size={15} /> 密码保险箱</header>
+            <label className="set-row">
+              <span>自动锁定</span>
+              <select
+                className="vault-select"
+                value={settings.vault_auto_lock_min}
+                aria-label="保险箱自动锁定"
+                onChange={(e) => void update('vault_auto_lock_min', e.target.value)}
+              >
+                <option value={1}>1 分钟无操作</option>
+                <option value={5}>5 分钟无操作</option>
+                <option value={15}>15 分钟无操作</option>
+                <option value={30}>30 分钟无操作</option>
+                <option value={0}>从不自动锁定</option>
+              </select>
+            </label>
+            <p className="u-aux set-row__note">
+              保险箱的主密码**无法找回** —— 它不以任何形式保存，只在你输入时用于派生密钥。
+              忘记之后唯一的出路是在保险箱页面里清空重建，届时里面的条目会一并删除。
             </p>
           </section>
         )}
