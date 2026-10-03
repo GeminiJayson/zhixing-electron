@@ -783,6 +783,8 @@ const api = {
         archived_at: string | null
         verify_note: string | null
         updated_at: string | null
+      /** 是否有来源（derived_from 引用）—— 筛选条上「无来源」那一档用它 */
+      has_source: number
       }[]
     > => ipcRenderer.invoke('knowledge:list', filter),
     counts: (): Promise<Record<string, { verified: number; draft: number }>> =>

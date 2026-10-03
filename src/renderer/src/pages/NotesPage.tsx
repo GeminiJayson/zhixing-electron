@@ -173,12 +173,10 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
    */
   const [treeQuery, setTreeQuery] = useState('')
   const [kindFilter, setKindFilter] = useState<string>('all')
-  const [statusFilter, setStatusFilter] = useState<'all' | 'verified' | 'draft' | 'archived'>('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'verified' | 'draft' | 'archived' | 'noSource'>('all')
   /** id → { kind, verified }，由主进程按"全部状态含归档"一次取回 */
-  /** 三个待办数字：待确认 / 无来源 / 未被引用 */
-  const [health, setHealth] = useState<{ draft: number; noSource: number; unused: number } | null>(null)
   const [metaById, setMetaById] = useState<
-    Record<number, { kind: string; verified: boolean; archived: boolean }>
+    Record<number, { kind: string; verified: boolean; archived: boolean; hasSource: boolean }>
   >({})
 
   /**
@@ -189,11 +187,18 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   const reloadMeta = useCallback(async (): Promise<void> => {
     const k = window.zhixing.knowledge
     if (!k) return
-    setHealth(await k.health())
     const rows = await k.list({ kind: 'all', status: 'all', includeArchived: true, limit: 1000 })
     if (!rows) return
-    const map: Record<number, { kind: string; verified: boolean; archived: boolean }> = {}
-    for (const r of rows) map[r.id] = { kind: r.kind, verified: !!r.verified_at, archived: !!r.archived_at }
+    const map: Record<
+      number,
+      { kind: string; verified: boolean; archived: boolean; hasSource: boolean }
+    > = {}
+    for (const r of rows) map[r.id] = {
+      kind: r.kind,
+      verified: !!r.verified_at,
+      archived: !!r.archived_at,
+      hasSource: !!r.has_source,
+    }
     setMetaById(map)
   }, [])
 
@@ -1396,6 +1401,17 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
    * 在**这里**过滤而不是改 NoteTree：树组件负责"怎么显示"，筛选是页面的事；
    * 而且树内已有的搜索框管的是"找得到"，这里的类型/状态管的是"看哪些"。
    */
+  /**
+   * 哪些类型**才谈得上**缺来源。
+   *
+   * note（笔记）与 project（项目记录）不是知识类，本来就不需要来源 ——
+   * 把它们算进「无来源」会让这个数字等于全部笔记（实测 32/32），指标就失去意义了。
+   * 口径与主进程 knowledgeHealth 一致。
+   */
+  const NEEDS_SOURCE = new Set(['concept', 'summary', 'synthesis', 'method', 'output', 'pitfall'])
+  const lacksSource = (m: { kind: string; hasSource: boolean }): boolean =>
+    NEEDS_SOURCE.has(m.kind) && !m.hasSource
+
   const visibleNotes = useMemo(() => {
     if (kindFilter === 'all' && statusFilter === 'all') return notes
     return notes.filter((n) => {
@@ -1408,9 +1424,38 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
       if (statusFilter !== 'archived' && statusFilter !== 'all' && m.archived) return false
       if (statusFilter === 'verified' && !m.verified) return false
       if (statusFilter === 'draft' && m.verified) return false
+      if (statusFilter === 'noSource' && !lacksSource(m)) return false
       return true
     })
   }, [notes, kindFilter, statusFilter, metaById])
+
+  /**
+   * 每个档位的条数。
+   *
+   * 先按类型筛，再按档位数 —— 这样数字与"点了之后会看到几条"是一致的。
+   * 归档不进任何其他档（它是"我现在不看它了"），无来源也不含归档条目。
+   *
+   * 元信息还没到的条目算进"全部"、不算进具体档位：加载间隙里数字跳动一下
+   * 比显示一个假的 0 好。
+   */
+  const tabCounts = useMemo(() => {
+    const inKind = notes.filter((n) => {
+      const m = metaById[n.id]
+      return !m || kindFilter === 'all' || m.kind === kindFilter
+    })
+    const count = (pred: (m: { kind: string; verified: boolean; archived: boolean; hasSource: boolean }) => boolean): number =>
+      inKind.filter((n) => {
+        const m = metaById[n.id]
+        return m ? pred(m) : false
+      }).length
+    return {
+      all: inKind.length,
+      verified: count((m) => m.verified && !m.archived),
+      draft: count((m) => !m.verified && !m.archived),
+      archived: count((m) => m.archived),
+      noSource: count((m) => lacksSource(m) && !m.archived),
+    }
+  }, [notes, metaById, kindFilter])
 
   /**
    * 保险箱是这一页的第二个视图，不是独立页面。
@@ -1478,22 +1523,31 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
               </option>
             ))}
           </select>
+            {/*
+              筛选档位。每一档都带条数 —— 这样"有多少待确认"和"点进去看什么"
+              是同一个数字，不必再在旁边摆一组待办胶囊（那组数字与这里的重复，
+              用户指出的正是这个）。无来源也收进这里，它和可信状态一样是"看哪些"。
+            */}
             <div className="notes-filter__seg">
-              {(['all', 'verified', 'draft', 'archived'] as const).map((s) => (
+              {(
+                [
+                  ['all', '全部'],
+                  ['verified', '可用'],
+                  ['draft', '待确认'],
+                  ['noSource', '无来源'],
+                  ['archived', '归档'],
+                ] as const
+              ).map(([key, label]) => (
                 <button
-                  key={s}
+                  key={key}
                   className={
-                    'notes-filter__btn' + (statusFilter === s ? ' notes-filter__btn--on' : '')
+                    'notes-filter__btn' + (statusFilter === key ? ' notes-filter__btn--on' : '')
                   }
-                  onClick={() => setStatusFilter(s)}
+                  title={label + '：' + tabCounts[key] + ' 条'}
+                  onClick={() => setStatusFilter(key)}
                 >
-                  {s === 'all'
-                    ? '全部'
-                    : s === 'verified'
-                      ? '可用'
-                      : s === 'draft'
-                        ? '待确认'
-                        : '归档'}
+                  {label}
+                  <span className="notes-filter__n">{tabCounts[key]}</span>
                 </button>
               ))}
             </div>
@@ -1508,38 +1562,6 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                 清除筛选
               </button>
             )}
-          </>
-        }
-        meta={
-          <>
-            {/* 三个"待办数字"（方案 phase3-research §2.3）。
-                刻意不做仪表盘 —— 它们的价值在于提醒你去处理，
-                而提醒要出现在你本来就待着的地方。 */}
-            {health && health.draft > 0 && (
-              <button
-                className="notes-filter__hbtn notes-filter__hbtn--todo"
-                title="收了但还没核对 —— 堆着就是在给自己制造负债"
-                onClick={() => setStatusFilter('draft')}
-              >
-                待确认 {health.draft}
-              </button>
-            )}
-            {health && health.noSource > 0 && (
-              <span className="notes-filter__hbtn" title="知识类条目却没有来源，它们永远卡在待确认">
-                无来源 {health.noSource}
-              </span>
-            )}
-            {health && health.unused > 0 && (
-              <span
-                className="notes-filter__hbtn"
-                title="有来源但没被任何知识引用 —— 提炼了却没用起来"
-              >
-                未被引用 {health.unused}
-              </span>
-            )}
-            <span className="notes-filter__count">
-              {visibleNotes.length} / {notes.length}
-            </span>
           </>
         }
         search={

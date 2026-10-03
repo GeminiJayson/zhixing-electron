@@ -142,3 +142,12 @@
   background: var(--accent-soft);
   color: var(--accent);
 }
+
+/* 档位里的条数。用等宽数字，切换档位时数字不会左右跳 */
+.notes-filter__n {
+  margin-left: var(--space-1);
+  font-size: var(--text-aux);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.6;
+}
+.notes-filter__btn--on .notes-filter__n { opacity: 1; }
