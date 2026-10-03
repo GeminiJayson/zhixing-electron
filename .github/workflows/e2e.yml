@@ -1,0 +1,49 @@
+name: E2E
+
+# 端到端验证：这些脚本会真的启动 Electron、建窗口、走一遍交互。
+# 因此跑在 windows-latest（应用的主目标平台），而不是 ubuntu ——
+# 无头 Linux 上要额外搭 xvfb，而且测的也不是实际发布的平台。
+#
+# **它不在每次 push 上跑**：E2E 慢、且对 CI 的图形环境敏感。
+# 触发方式是手动（workflow_dispatch）与每日一次（schedule）。
+#
+# 脚本失败不会让整个流程标红 —— 先让它们在 CI 上跑起来、积累稳定性数据，
+# 再决定哪些可以升为必过项。这一步的目标是"把 E2E 接进来"，不是立刻卡门。
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 18 * * *'   # 每日 UTC 18:00（北京时间次日 02:00）
+
+jobs:
+  e2e:
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 构建（E2E 脚本加载 out/）
+        run: npm run build
+
+      - name: 窗口安全加固
+        run: node scripts/securitycheck.mjs
+
+      - name: 双链与失效链接
+        run: node scripts/notelinkcheck.mjs
+
+      - name: 收件箱与闪念转笔记
+        run: node scripts/inboxcheck.mjs
+
+      - name: 写入与保存
+        run: node scripts/writecheck.mjs
+
+      - name: 附件归档
+        run: node scripts/attachmentcheck.mjs
