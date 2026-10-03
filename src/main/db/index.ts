@@ -687,9 +687,12 @@ export function registerDbHandlers(): void {
     addReferenceLink(srcId, target)
   )
   handle('db:appendNote', (_e, id: number, text: string) => appendNote(id, text))
-  handle('db:linkTaskNoteBlock', (_e, taskId: number, noteId: number, blockKey: string, snippet: string) =>
-    linkTaskNoteBlock(taskId, noteId, blockKey, snippet)
-  )
+  /*
+    段落级关联的 IPC 通道只有一个 —— 它原先是两个（attachBlock / attachNoteBlock），
+    合并成同一个名字后两处 handler 并存，主进程会以
+    "Attempted to register a second handler for 'db:linkTaskNoteBlock'" 直接崩。
+    这类重复 tsc 查不出来（handle 的签名不冲突），只有真的启动才暴露。
+  */
   handle('db:noteBlockContexts', (_e, noteId: number) => listNoteBlockContexts(noteId))
   handle('db:noteLinkedTasks', (_e, noteId: number) => noteLinkedTasks(noteId))
   handle('db:noteTaskCandidates', (_e, q: string, limit?: number) =>
