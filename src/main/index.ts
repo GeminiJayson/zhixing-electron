@@ -99,17 +99,6 @@ let pendingDeepLink: string | null = null
  * 不只是贴在边缘的一个把手。
  * 形态与位置是解耦的：球的位置/边长独立存在 widget_ball，贴边只是它的一种停靠状态。
  */
-let widgetMode: 'full' | 'ball' = 'full'
-/** 球形态几何：位置 + 球体边长 + 上次展开尺寸（展开时按它还原浮窗） */
-let widgetBall = {
-  x: 0,
-  y: 0,
-  size: 96,
-  /** 悬浮球的体型（bloub 的形状 id，见 shared/bloub） */
-  shape: BLOUB_DEFAULT_SHAPE,
-  expandedWidth: 290,
-  expandedHeight: 380,
-}
 /** 球拖动中的起点：渲染层按下后由主进程按屏幕光标位移重算位置（光标可能移出窗口） */
 let widgetBallDrag: {
   startCursor: { x: number; y: number }
@@ -1768,16 +1757,16 @@ app.whenReady().then(() => {
   ipcMain.handle('widget:setClickThrough', (_e, enabled: boolean) => widget.applyWidgetClickThrough(enabled))
   ipcMain.handle('widget:undock', () => widget.expandWidget())
   /** 浮窗当前形态：'ball' 悬浮球 / 'full' 完整卡片（渲染层挂载时先问一次） */
-  ipcMain.handle('widget:mode', () => widgetMode)
-  ipcMain.handle('widget:ballShape', () => widgetBall.shape)
+  ipcMain.handle('widget:mode', () => widget.getMode())
+  ipcMain.handle('widget:ballShape', () => widget.getBallShape())
   // 与右键菜单同一个入口：应用内也能改体型（也让端到端验证不必去点原生菜单）
-  ipcMain.handle('widget:widget.setBallShape', (_e, id: string) => widget.setBallShape(String(id)))
+  ipcMain.handle('widget:setBallShape', (_e, id: string) => widget.setBallShape(String(id)))
   // 悬浮球拖动：渲染层只报告「正在拖」，位移由主进程按屏幕光标重算（光标可能移出窗口）
   ipcMain.handle('widget:dragStart', () => widget.ballDragStart())
   ipcMain.handle('widget:dragTo', () => widget.ballDragTo())
   ipcMain.handle('widget:dragEnd', (_e, moved: boolean) => widget.ballDragEnd(moved === true))
   // 悬浮球大小（滚轮 / 右键菜单），主进程钳在 BALL_SIZE_MIN~MAX
-  ipcMain.handle('widget:widget.setBallSize', (_e, size: number) => widget.setBallSize(Number(size)))
+  ipcMain.handle('widget:setBallSize', (_e, size: number) => widget.setBallSize(Number(size)))
   // 浮窗右键菜单
   ipcMain.handle('widget:contextMenu', () => {
     if (!widget.getWindow()) return
@@ -1790,19 +1779,19 @@ app.whenReady().then(() => {
           {
             label: '小（88）',
             type: 'radio',
-            checked: widgetBall.size <= 96,
+            checked: widget.getBall().size <= 96,
             click: () => widget.setBallSize(BALL_SIZE_MIN),
           },
           {
             label: '中（112）',
             type: 'radio',
-            checked: widgetBall.size > 96 && widgetBall.size <= 128,
+            checked: widget.getBall().size > 96 && widget.getBall().size <= 128,
             click: () => widget.setBallSize(112),
           },
           {
             label: '大（144）',
             type: 'radio',
-            checked: widgetBall.size > 128,
+            checked: widget.getBall().size > 128,
             click: () => widget.setBallSize(144),
           },
         ],
@@ -1814,7 +1803,7 @@ app.whenReady().then(() => {
         submenu: BLOUB_SHAPES.map((s) => ({
           label: s.label,
           type: 'radio' as const,
-          checked: widgetBall.shape === s.id,
+          checked: widget.getBall().shape === s.id,
           click: () => widget.setBallShape(s.id),
         })),
       })

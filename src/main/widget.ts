@@ -1,6 +1,6 @@
 import { BrowserWindow, screen } from 'electron'
 import { join } from 'node:path'
-import { BLOUB_DEFAULT_SHAPE, normalizeBloubShape } from '@shared/bloub'
+import { BLOUB_DEFAULT_SHAPE, normalizeBloubShape } from '../shared/bloub'
 import { hardenWindow } from './security'
 import { saveWidgetBall, saveWidgetGeometry } from './db/maintenance'
 import {
@@ -665,6 +665,12 @@ function applyWidgetClickThrough(enabled: boolean): void {
     applyWidgetOpacity,
     applyWidgetClickThrough,
     // 只读访问器
+    /** 'full' | 'ball' —— 渲染层与托盘都要用它决定显示形态 */
+    getMode: () => S.mode,
+    /** 球体几何（位置 + 边长 + 体型） */
+    getBall: () => S.ball,
+    /** 球体体型 id（bloub 的形状） */
+    getBallShape: () => S.ball.shape,
     show: () => {
       if (S.window && !S.window.isDestroyed()) S.window.show()
     },
