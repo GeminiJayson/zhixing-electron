@@ -102,7 +102,7 @@ npm run dev                           # 开发模式（HMR）
 | 数据安全 | `importcheck`(13)、`securitycheck`(5) |
 | UI / 交互 | `dialogcheck`(10)、`editorcheck`(8)、`layoutcheck`、`vlistcheck`(8)、`officecheck`(18)、`interactioncheck`(32)、`themecheck`(18)、`graphcheck`(5)、`richpiccheck`(5)、`tasklistuxcheck`(12)、`taglistcheck`(22)、`bloubcheck`(11)、`notesheetcheck`(50)、`notetabcheck`(18) |
 | 架构 / 可访问性 | `eventcheck`(8)、`contrast-audit`、`check-jieba-fallback`(4) |
-| 构建 / 发布 | `ensure-jieba-win-binding`、`upload-release` |
+| 构建 / 发布 | `ensure-jieba-win-binding`、`release` |
 | 视觉诊断 | `capture`、`bigcapture`、`diag-today` |
 
 进 `package.json` 的入口共 **21 条**。常用：`dev` / `build` / `typecheck` / `test`；检查类 `check:jieba` / `check:security` / `check:contrast` / `check:ctlheight` / `check:interaction`；构建发布 `dist:win` / `dist:dir` / `postdist:*` / `binding:win` / `release` / `release:dry`；图标生成 `gen:icons` / `gen:app-icons`。
@@ -133,7 +133,7 @@ npm run release         # 构建 → 打包 → 源码归档 → 对齐标签 �
 
 **两条硬校验**（`scripts/release.mjs`，都是踩过坑才加的）：开始时**工作树必须干净**；结束时核对 Release 的 `targetCommitish` 与 `HEAD` **一致** —— 上一版就因为标签停在旧提交，Release 页面自动生成的源码归档是旧代码。
 
-`--skip-build` 可跳过构建（只重做源码归档与 Release）。`scripts/upload-release.mjs` 是**给 Gitee 的历史脚本**，当前远程是 GitHub，不用它。
+`--skip-build` 可跳过构建（只重做源码归档与 Release）。
 
 当前**未配置代码签名**（SmartScreen 提示未知发布者）、**未接入 electron-updater**、**仅 Windows 目标**（macOS 需 `.icns` 与公证）。
 
@@ -200,7 +200,7 @@ zhixing-electron/
 | [01-需求规格说明书](docs/01-需求规格说明书.md) | 需求（R-T/N/I/G/D/S/P + NFR）、完成度快照、有意简化汇总、范围外清单、需求→验证资产映射 |
 | [02-技术架构设计](docs/02-技术架构设计.md) | 三进程分层与目录结构、contextBridge 暴露面、IPC 与按域广播、数据层、schema v18、共享层、构建链、验证体系、安全模型、架构债 |
 | [03-UI-UX交互设计](docs/03-UI-UX交互设计.md) | 设计令牌体系（`tokens.css`）、布局框架、任务页四视图、侧栏/标题栏、桌面浮窗与托盘、命令面板、编辑器、交互缺口清单 |
-| [windows-build.md](docs/windows-build.md) | Windows 出包、jieba binding 前置、Gitee 上传、数据位置、未配置项 |
+| [windows-build.md](docs/windows-build.md) | Windows 出包、jieba binding 前置、出包后发布（GitHub Releases）、数据位置、未配置项 |
 | [audit/design-review-2026-09-21.md](docs/audit/design-review-2026-09-21.md) | 全库设计缺陷审计（72 条）与复核结论 |
 | [optimization-proposals.md](docs/optimization-proposals.md) | 工程债提案（**状态：已实施**） |
 | [MAINTENANCE.md](docs/MAINTENANCE.md) | **文档地图与同步规则** —— 改了功能 / UI 要动哪几份文档，以及怎么核对没漏 |

@@ -96,20 +96,21 @@ npm 会自动执行 ``pre<script>`` / ``post<script>`` 钩子，所以不必手�
 - **代码签名**：未配置证书，Windows 会弹 SmartScreen 提示「未知发布者」；
 - **macOS 包**：仅配置了 Windows 目标，macOS 需要 `.icns` 与公证流程；
 - **自动更新**：未接入 electron-updater。
-## 出包后上传到 Gitee Release
 
-仓库 `origin` 已指向 Gitee，脚本默认**只预演**，不会动远端：
+## 出包后发布
+
+发布走 **GitHub Releases**：
 
 ```bash
-node scripts/upload-release.mjs v0.1.1            # 预演：列出将上传的文件
-node scripts/upload-release.mjs v0.1.1 --upload   # 真正创建 Release 并上传附件
+npm run release:dry     # 预演：打印计划，不做任何写操作
+npm run release         # 构建 → 打包 → 源码归档 → 对齐标签 → 更新 GitHub Release → 校验
 ```
 
-> 出包前先把 `package.json` 的 version 改掉（`npm version <x.y.z> --no-git-tag-version`）：产物文件名带版本号，
-> 沿用旧版本号既会让用户下到旧包，也会因为 Gitee 同一个 tag 只能有一个 Release 而创建失败。
+脚本是 `scripts/release.mjs`，带两条硬校验（都是踩过坑才加的）：
 
-Token 来源优先级：`--token=xxx` > 环境变量 `GITEE_TOKEN` > `git remote origin` URL 里的凭据。
-脚本只挑 `dist/` 下的 `.exe / .zip / .7z`，跳过 `win-unpacked/`、`.yml` 清单与 `.blockmap`。
+1. **开始时工作树必须干净** —— 拒绝带着未提交改动发版；
+2. **结束时核对 Release 的 `targetCommitish` 与 `HEAD` 一致** ——
+   上一版就是因为 tag 停在旧提交，Release 页面自动生成的源码归档是**旧代码**。
 
-> 安全提醒：仓库当前把 token 明文放在 `origin` 的 remote URL 里（`git remote -v` 可见）。
-> 建议改用 `GITEE_TOKEN` 环境变量或换成 SSH，并轮换一次现有 token。
+出包前先把 `package.json` 的 version 改掉（`npm version <x.y.z> --no-git-tag-version`）：
+产物文件名带版本号，沿用旧版本号会让用户下到旧包。
