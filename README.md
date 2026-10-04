@@ -3,7 +3,7 @@
 **知行 ZhiXing**：一个本地优先的个人待办 + 知识图谱桌面客户端（Electron + React + TypeScript）。
 
 - 仓库：`zhixing-electron`（GitHub: [GeminiJayson/zhixing-electron](https://github.com/GeminiJayson/zhixing-electron)），当前版本 **`1.19.1`**（`package.json`），安装包与便携版见仓库 Releases。
-- 八页功能面已全部实现（`src/renderer/src/nav.ts` / `App.tsx`），分域与逐项状态见 §2；已决策不做的方向不计入缺口（见 §15）。
+- **九个页面的功能面已全部实现**（`src/renderer/src/nav.ts` / `App.tsx`），分域与逐项状态见 §2；已决策不做的方向不计入缺口（见 §15）。
 - 本地优先：核心功能零网络依赖、无遥测、无账号（NFR-01）。
 - 数据全部落在本机一个 SQLite 文件里，可直接备份 / 恢复 / 整库导出导入。
 
@@ -15,15 +15,15 @@
 
 | 项 | 约定 | 证据 |
 | --- | --- | --- |
-| 数据目录 | 默认 `%APPDATA%/ZhiXing`，`ZHIXING_HOME` 可整体覆盖（便携模式） | `src/main/db/connection.ts:18-32` |
+| 数据目录 | 默认 `%APPDATA%/ZhiXing`，`ZHIXING_HOME` 可整体覆盖（便携模式） | `src/main/db/connection.ts` |
 | schema | `SCHEMA_VERSION = 18`，建库 DDL 集中在 `schema.ts` | `src/main/db/schema.ts` |
-| 表规模 | 24 张 = 21 业务表 + 3 张 FTS5 虚拟表 | `docs/02` §6.1 |
-| 迁移链 | v1–v12 顺序迁移，旧库自动补齐 | `src/main/db/migrate.ts:22-118` |
-| 分词 | jieba `cut_for_search` 写入索引，查询侧走 `unicode61` | `src/main/db/fts-query.ts:33-47`、`fts-query.test.ts` |
-| 时间戳 | 统一 `YYYY-MM-DD HH:MM:SS.ffffff`（微秒 6 位） | `src/main/db/connection.ts:178-190` |
-| 连接 | `journal_mode=WAL`、`foreign_keys=ON`、`busy_timeout=4000` | `src/main/db/connection.ts:141-143` |
+| 表规模 | 25 张业务表 + 3 张 FTS5 虚拟表 | `docs/02` §6.1 |
+| 迁移链 | v1–v18 逐号升级（缺号显式报错，不跳级） | `src/main/db/migrate.ts` |
+| 分词 | jieba `cut_for_search` 写入索引，查询侧走 `unicode61` | `src/main/db/fts-query.ts`、`fts-query.test.ts` |
+| 时间戳 | 统一 `YYYY-MM-DD HH:MM:SS.ffffff`（微秒 6 位） | `src/main/db/connection.ts` |
+| 连接 | `journal_mode=WAL`、`foreign_keys=ON`、`busy_timeout=4000` | `src/main/db/connection.ts` |
 
-库文件不存在时，首次运行会自建数据目录与库文件，并执行 v1–v12 迁移链。
+库文件不存在时，首次运行会自建数据目录与库文件，并按 `SCHEMA_VERSION` 逐号执行迁移链。
 
 ## 2. 功能实现进度（2026-10-04 重核）
 
@@ -105,9 +105,9 @@ npm run dev                           # 开发模式（HMR）
 | 构建 / 发布 | `ensure-jieba-win-binding`、`upload-release` |
 | 视觉诊断 | `capture`、`bigcapture`、`diag-today` |
 
-进 `package.json` 的 npm 入口共 6 条：`typecheck` / `test` / `check:jieba` / `check:security` / `check:contrast` / `check:interaction`；其余按需手工执行。
+进 `package.json` 的入口共 **21 条**。常用：`dev` / `build` / `typecheck` / `test`；检查类 `check:jieba` / `check:security` / `check:contrast` / `check:ctlheight` / `check:interaction`；构建发布 `dist:win` / `dist:dir` / `postdist:*` / `binding:win` / `release` / `release:dry`；图标生成 `gen:icons` / `gen:app-icons`。
 
-单元测试为 vitest：**49 个测试文件 / 547 个用例**，只覆盖纯函数（`vitest.config.ts:11-19` 明确排除涉及 SQLite / IPC / 真实窗口的部分，那部分留在 `scripts/*.mjs`）。
+单元测试为 vitest：**49 个测试文件 / 547 个用例**，只覆盖纯函数（`vitest.config.ts` 明确排除涉及 SQLite / IPC / 真实窗口的部分，那部分留在 `scripts/*.mjs`）。
 
 ## 7. 打包与发布
 
@@ -155,13 +155,19 @@ zhixing-electron/
 ├── tsconfig.json  tsconfig.node.json  tsconfig.web.json  vitest.config.ts
 ├── resources/                     # icon.ico、trayTemplate.png
 ├── src/
-│   ├── main/                      # 主进程：index.ts（窗口/托盘/热键/浮窗）、security.ts、log.ts
-│   │   └── db/                    # 数据层 22 文件（connection / schema / migrate / tasks / notes / graph / …）
-│   ├── preload/                   # 唯一特权入口，contextBridge 暴露 window.zhixing
-│   ├── renderer/                  # React 应用：pages/（八页）components/ lib/ styles/ i18n/
-│   └── shared/                    # 主/渲染共用纯函数 19 文件（types / events / settings / color / …）
-├── scripts/                       # 73 个顶层验证与构建脚本
-└── docs/                          # 01–03 主文档 + windows-build / audit / research 等
+│   ├── main/                      # 主进程（20 个顶层 .ts）
+│   │   ├── index.ts               # 入口：生命周期 / IPC 注册 / 深链 / 菜单 / 广播
+│   │   ├── widget.ts              # 悬浮球与浮窗（状态在闭包里）
+│   │   ├── window.ts              # 主窗与启动欢迎页
+│   │   ├── tray.ts  hotkey.ts     # 系统托盘 / 全局热键
+│   │   ├── security.ts  log.ts    # 导航三道出口 / 文件日志
+│   │   └── db/                    # 数据层 31 个 .ts（connection / schema / migrate / tasks / notes / graph / …）
+│   ├── preload/                   # index.ts（拼装）+ api/（7 个域文件）+ index.d.ts
+│   ├── renderer/                  # React 应用：pages/（9 页）components/（47 个）lib/（23 个）styles/（16 个 CSS）
+│   └── shared/                    # 主/渲染共用纯函数 62 文件（types / events / settings / color / …）
+├── scripts/                       # 73 个 .mjs（顶层共 75 个文件）
+├── CONTEXT.md                     # 术语表：只在词义会误解时收录
+└── docs/                          # 01–03 主文档 + 方案/审计/调研/发布说明
 ```
 
 ## 11. 已知缺口与后续行动
@@ -169,23 +175,34 @@ zhixing-electron/
 仍然缺的（不含 §15 已决策不做的方向）：
 
 1. **工作流触发器（定时 / 系统事件）** —— 节点编排已经就绪，缺的是「自动开始」的触发模型（见 §17）。
-2. **块级引用** —— 复用现有 `block_key` 指纹，做笔记内 `((block))` 引用与反链面板。
-3. **笔记数据库视图** —— 依赖「保存的查询」与「笔记属性」（两项都已具备），把笔记按属性筛成看板 / 表格。
-4. **习惯打卡 / 按任务累计用时** —— 习惯可用「重复任务 + 连续天数」近似；用时统计在 `ReviewStats` 基础上补「按任务聚合」。
-5. **Word / Excel 笔记的应用内预览** —— 当前只做「登记 + 用系统应用打开」。
+2. **笔记数据库视图** —— 依赖「保存的查询」与「笔记属性」（两项都已具备），把笔记按属性筛成看板 / 表格。
+3. **习惯打卡 / 按任务累计用时** —— 习惯可用「重复任务 + 连续天数」近似；用时统计在 `ReviewStats` 基础上补「按任务聚合」。
+4. **用户脚本扩展点** —— `<数据目录>/scripts/` 里的脚本作为命令面板 / 工作流动作（离线版 Extension API）。
+
+> **已从缺口里移出的**：块级引用（`block_key` 已用于段落级关联与深链定位，不再另做语法，见 §15）；
+> Word / Excel 笔记（**已可编辑并自动写回 `.docx` / `.xlsx`**，见 `NotesPage.tsx` 的 `commitWord`）。
 
 ## 12. 文档导航
 
 | 文档 | 内容 |
 | --- | --- |
 | [01-需求规格说明书](docs/01-需求规格说明书.md) | 需求（R-T/N/I/G/D/S/P + NFR）、完成度快照、有意简化汇总、范围外清单、需求→验证资产映射 |
-| [02-技术架构设计](docs/02-技术架构设计.md) | 三进程分层、contextBridge 暴露面、IPC 与按域广播、数据层、schema v12、共享层、构建链、验证体系、安全模型、架构债 |
+| [02-技术架构设计](docs/02-技术架构设计.md) | 三进程分层与目录结构、contextBridge 暴露面、IPC 与按域广播、数据层、schema v18、共享层、构建链、验证体系、安全模型、架构债 |
 | [03-UI-UX交互设计](docs/03-UI-UX交互设计.md) | 设计令牌体系（`tokens.css`）、布局框架、任务页四视图、侧栏/标题栏、桌面浮窗与托盘、命令面板、编辑器、交互缺口清单 |
 | [windows-build.md](docs/windows-build.md) | Windows 出包、jieba binding 前置、Gitee 上传、数据位置、未配置项 |
 | [audit/design-review-2026-09-21.md](docs/audit/design-review-2026-09-21.md) | 全库设计缺陷审计（72 条）与复核结论 |
-| [optimization-proposals.md](docs/optimization-proposals.md) | O1–O11 工程债提案，均已闭合 |
+| [optimization-proposals.md](docs/optimization-proposals.md) | 工程债提案（**状态：已实施**） |
+| [MAINTENANCE.md](docs/MAINTENANCE.md) | **文档地图与同步规则** —— 改了功能 / UI 要动哪几份文档，以及怎么核对没漏 |
+| [specs/](docs/specs) | 方案与规范：知识库重组、归属 vs 引用、第三期调研、保险箱设计 |
+| [audit/gaps-2026-10-04.md](docs/audit/gaps-2026-10-04.md) | 全库缺口审计（本轮的起点） |
+| [research/product-comparison-2026.md](docs/research/product-comparison-2026.md) | 竞品对比调研 |
+| [release-notes-v*.md](docs/release-notes-v1.20.0.md) | 逐版本发布说明（v1.0.0 – v1.20.0） |
+| [adr/](docs/adr) | 架构决策记录 —— 一个决定一份，写清否掉了什么与代价 |
+| [agents/](docs/agents) | Agent 工作流：issue 跟踪、triage 标签、领域文档 |
+| [CONTEXT.md](CONTEXT.md) | 术语表：归属 vs 引用、清单/分组/文件夹同表、软删除等容易误解的词 |
 
 三份主文档的事实基准是 `src/**` 当前工作树，与代码冲突时以代码为准。
+**改完代码后按 [MAINTENANCE.md](docs/MAINTENANCE.md) 的对照表同步文档。**
 
 ## 13. 安全模型（Electron 侧独有）
 
@@ -219,8 +236,8 @@ zhixing-electron/
 | 块级引用语法（双层括号引用与反链面板） | 不做：block_key 指纹与段落锚已用于「段落级关联」与深链定位，不再另做一套语法 |
 | 多语言界面 | 不做：维持中文单语。**i18n 骨架已整套移除** —— 留着一个没人用的骨架比删掉更容易腐坏 |
 | macOS / Linux 出包 | 不做：仅 Windows 目标；「热键读取选中文字」也只在 Windows 实现，其它平台降级读剪贴板 |
-| 窗口特效（mica / 亚克力）、边缘缩放、浮窗开关 UI | 不做：维持现有窗口形态 |
-| 边缘缩放、浮窗开关 UI | 不做：维持现有窗口形态 |
+| 窗口特效（mica / 亚克力） | 不做：**截图对比后选了真透明** —— `backgroundMaterial` 由 DWM 绘制会铺满整个窗口矩形，代价是窗口变直角 |
+| 只读模式的 UI 入口 | 不做：打开失败时的诊断与只读横幅已够用（`dbReadonlyReason`） |
 
 ## 16. 旧缺口清单的重核结论（2026-10-04）
 
@@ -246,7 +263,6 @@ duplicateWorkflowTemplate、「版本回滚」实际叫 restoreNoteRevision、�
 | --- | --- | --- |
 | **工作流触发器（定时 / 系统事件）** | 给模板加触发器：每天定时、开机后、文件夹变化、剪贴板匹配 —— 把已有的节点编排接上「自动开始」。对标 Alfred Workflows / Apple 快捷指令的触发模型 | **未做（本轮明确推迟，落盘在此）** |
 | 笔记的数据库视图 | 依赖「保存的查询」与「笔记属性」（两项均已完成），让笔记按属性筛成看板 / 表格 | 未做 |
-| 块级引用 | 复用现有 `block_key` 指纹，做笔记内 `((block))` 引用与反链面板 | 未做 |
 | 习惯打卡 / 按任务累计用时 | 习惯可用「重复任务 + 连续天数」近似；用时统计在 `ReviewStats` 基础上补「按任务聚合」 | 未做 |
 | 用户脚本扩展点 | `<数据目录>/scripts/` 里的脚本作为命令面板 / 工作流动作（离线版 Extension API） | 未做 |
 
