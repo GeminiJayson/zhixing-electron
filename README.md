@@ -54,7 +54,7 @@
 | UI | React `^18.3.1` + TypeScript `^5.7.2` | 无 UI 框架，样式全走 CSS 语义 token（16 个 CSS 文件） |
 | 数据 | better-sqlite3 `^11.10.0` | 原生模块，直接读写本机 `zhixing.db` |
 | 分词 | @node-rs/jieba `^2.0.3` | `cut_for_search` 分词，未装 binding 时自动降级 |
-| 编辑器 | CodeMirror 6（6 个包） | Markdown 高亮、`[[` 补全、撤销栈 |
+| 编辑器 | CodeMirror 6（7 个包） | Markdown 高亮、`[[` 补全、撤销栈 |
 | 图谱 | d3-force `^3.0.0` | 力导向布局；连线几何为自研纯函数 |
 | 文档解析 | mammoth `^1.12.3`、xlsx `^0.18.5` | Office 只读预览（主进程解析 + HTML 清洗） |
 | 打包 | electron-builder `^26.15.3` | NSIS + portable，`asarUnpack` 原生模块 |
@@ -124,7 +124,18 @@ npm run dist:win    # 先跑 ensure-jieba-win-binding.mjs → electron-vite buil
 - **`dist:win` 必须带 jieba binding**：`@node-rs/jieba` 的各平台二进制放在它自己的 `optionalDependencies` 里，npm 只装当前平台那份；另一平台出的 Windows 包缺 `jieba.win32-x64-msvc.node` 会启动即崩。`ensure-jieba-win-binding.mjs` 按包自声明版本补齐，**不要绕过 npm script 直接调 `electron-builder`**。`npm run binding:win` 可单独补齐，`npm run check:jieba` 验证运行时降级守卫。
 - **dist 后必须还原本机 ABI**：`dist:*` 已接 `postdist:*` → `npm run rebuild`，否则开发模式启动即报 `better-sqlite3` 加载失败。
 
-发布：`node scripts/upload-release.mjs v<版本>` 默认只预演，加 `--upload` 才创建 Gitee Release，token 三级回退（`--token` > `GITEE_TOKEN` > `git remote`）。当前**未配置代码签名**（SmartScreen 提示未知发布者）、**未接入 electron-updater**、**仅 Windows 目标**（macOS 需 `.icns` 与公证）。
+发布走 **GitHub Releases**，一条命令：
+
+```bash
+npm run release:dry     # 预演：打印计划，不做任何写操作
+npm run release         # 构建 → 打包 → 源码归档 → 对齐标签 → 更新 GitHub Release → 校验
+```
+
+**两条硬校验**（`scripts/release.mjs`，都是踩过坑才加的）：开始时**工作树必须干净**；结束时核对 Release 的 `targetCommitish` 与 `HEAD` **一致** —— 上一版就因为标签停在旧提交，Release 页面自动生成的源码归档是旧代码。
+
+`--skip-build` 可跳过构建（只重做源码归档与 Release）。`scripts/upload-release.mjs` 是**给 Gitee 的历史脚本**，当前远程是 GitHub，不用它。
+
+当前**未配置代码签名**（SmartScreen 提示未知发布者）、**未接入 electron-updater**、**仅 Windows 目标**（macOS 需 `.icns` 与公证）。
 
 ## 8. `schema.ts` 是建库 DDL 的唯一真源
 
