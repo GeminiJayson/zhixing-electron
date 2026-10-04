@@ -1,7 +1,7 @@
 {
   "name": "zhixing-electron",
-  "version": "1.20.0",
-  "description": "知行 ZhiXing — Electron 重构版（本地优先待办 + 知识图谱）",
+  "version": "1.21.0",
+  "description": "鐭ヨ ZhiXing 鈥?Electron 閲嶆瀯鐗堬紙鏈湴浼樺厛寰呭姙 + 鐭ヨ瘑鍥捐氨锛?,
   "main": "./out/main/index.js",
   "private": true,
   "scripts": {
