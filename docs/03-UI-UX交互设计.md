@@ -1,4 +1,4 @@
-`text
+```text
 ┌──────────────────────────────────────────────────────────────┐
 │ TitleBar（44px，drag-region）  标题 · 签名 ·(主题/最小化/最大化/关闭) │
 ├───────────┬──────────────────────────────────────────────────┤
@@ -11,13 +11,13 @@
 叠加层：CapturePanel / CommandPalette / TaskEditor / Dialog（--z-modal）
         InfoBar（--z-float）
         ReminderPopup（--z-reminder）、Toast（--z-toast）
-`
-`text
+```
+```text
 [笔记树 ntree]  |  [notes-main / editor]              |  [links 面板]
 文件夹 + 笔记 |  editor__bar（标题输入 + 动作按钮）   |  反向链接 · N
 新建/格式下拉 |  find-bar（Ctrl+F，role=search）      |  引用（正向）· N
               |  正文区（编辑器 / 预览 / Office / 链接） |  失效链接
-`
+```
 # 03 · UI/UX 交互设计（Electron 实现）
 
 > **文档对象**：知行 ZhiXing 的 Electron 重构实现（拆分后仓库 `zhixing-electron`）。
@@ -456,7 +456,7 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 
 ### 8.1 布局：一张笔记纸 + 一条信息条（`NotesPage.tsx`，2026-09 重排）
 
-`text
+```text
 笔记树 240px（可拖 180–460）│ 笔记多标签页（≥2 篇打开时出现，30px；横向滚动）
                             │ 笔记纸（编辑区唯一的卡片，占满编辑区）
                             │   ├─ 标题行：标题 · 保存状态胶囊 · 标签胶囊 · 归属胶囊
@@ -465,7 +465,7 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
                             │   └─ 正文：Markdown / 富文本 / Word / Excel / 链接 / 预览（一律无内层边框）
                             ↑ 以上三块铺满纸面，共用同一条左边缘
                                      信息条（默认收起，34px；全宽，与纸同宽）
-`
+```
 
 - **分隔条与工作流同一套（2026-09-26）**：笔记树右缘那条分隔条（`.ntree__resizer`）改成工作流模板树分隔条（`.wf-splitter`）的规格 —— **12px 命中区 + 伪元素画的 2px 细线**（平时 `--border`，hover / 聚焦 / 拖拽中变 `--accent`），可聚焦（`tabIndex=0`，`role="separator"` + `aria-orientation` + `aria-valuenow/min/max`），← → 各 16px、Home 复位；宽度默认 240（180–460）并落 localStorage（`notes.treeWidth`）。此前是 7px 的透明块、悬停才整条泛蓝（`color-mix` 45%）、没有键盘入口，ARIA 只有 role 与 label —— 拖拽手感与可访问性都弱一档。拖拽期间根元素挂 `.ntree.is-resizing`（细线变强调色、整块禁止选中文本），与工作流的 `.wf-wrap.is-resizing` 是同一件事。两页侧栏的宽度规格（默认 / 上下界 / 键盘步长）现在取同一组数：改一边要同时改另一边。回归：`notesheetcheck` 两条断言。
 - **笔记多标签页（2026-09-26）**：打开过的笔记以 tab 留在编辑区顶部一条 30px 的横条里（**≥2 篇才渲染** —— 只有一篇时不占位）。树上单击 = 新开一枚（已打开则只激活、不重复开）；上限 12，到顶挤掉最久未使用的。关掉当前那枚按「**右邻 → 左邻 → 空态**」接上，× 按钮与中键点击都能关。**装不下时**（内容宽 > 可视宽）右端固定出现一个「选择」入口（`⌄ N`），点开列出全部已打开的笔记、当前那枚带勾 —— 横向滚动是个不可见的手势，被推出视口的那几篇不能等于没有入口。切换前先 `flushPending()` 落盘，所以切走再回来内容不丢。列表与激活项存 localStorage（`zhixing.noteTabs`）—— 切页会卸载整个笔记页、重启更不用说，恢复全靠它；全屏编辑（zen）时整条让位。**正文状态仍只有一份**（方案里的路线 1）：切 tab 复用 `selectNote()` 重新读库，代价是滚动位置不记忆（切回来滚到顶部），要消除需给每枚 tab 分桶独立草稿。设计与拍板见 `docs/note-tabs-plan.md`，回归 `scripts/notetabcheck.mjs`（18 项）。
@@ -950,9 +950,9 @@ SVG 的 `<text>` 既不换行也不缩放，超出的部分直接画到节点框
 
 **根因**在 `components/RichTextEditor.tsx` 那个"外部 html → 编辑器"的同步 effect，它的第一句是：
 
-`ts
+```ts
 if (!editor || editor.isFocused) return
-`
+```
 
 这个守卫的**本意**是"别在用户打字时把内容顶掉"，但它把**外部真的换了内容**也一起挡了：切换笔记时 React 复用同一个编辑器实例、ProseMirror 的焦点仍在里面，于是新笔记的 HTML（Word 是异步从 `officeDoc` 取回来的）永远进不来。用户"再点一次能恢复"，正是因为那次重建了实例、`isFocused` 归位。
 
