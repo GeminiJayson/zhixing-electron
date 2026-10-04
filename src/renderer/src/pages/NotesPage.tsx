@@ -19,7 +19,6 @@ import {
 import { subscribeDomain } from '@shared/events'
 import { useDialog } from '../components/Dialogs'
 import type { Note, NoteFolder } from '@shared/types'
-import type { AiLibraryProgress } from '@shared/ai-note'
 import { parseLinkItems, type NoteLinkItem } from '@shared/note-links'
 import { MarkdownEditor, RichTextEditor, blockFingerprint, locateBlockInView } from '../components/MarkdownEditor'
 import { MarkdownView } from '../components/MarkdownView'
