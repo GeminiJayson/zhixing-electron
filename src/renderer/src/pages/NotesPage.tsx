@@ -1276,8 +1276,10 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
    * 口径与主进程 knowledgeHealth 一致。
    */
   const visibleNotes = useMemo(() => {
-    if (kindFilter === 'all' && statusFilter === 'all') return notes
-    return notes.filter((n) => {
+    const filtered =
+      kindFilter === 'all' && statusFilter === 'all'
+        ? notes
+        : notes.filter((n) => {
       const m = metaById[n.id]
       // 元信息还没到时不隐藏任何东西 —— 加载间隙里闪一下比"笔记突然不见"好
       if (!m) return true
@@ -1289,7 +1291,23 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
       if (statusFilter === 'draft' && m.verified) return false
       if (statusFilter === 'noSource' && !lacksSource(m)) return false
       return true
-    })
+          })
+
+    /*
+      **待确认的排到后面。**
+
+      第一期只做了标记（类型 + 可信状态），没做排序 —— 于是「待确认」和「可用」
+      混在一起按创建时间排，未核实的条目会插在中间。浏览时先看到能用的更合理：
+      待确认意味着"还没核实过"，它的可信度天然低于已确认的。
+
+      归档条目不受影响（它有自己的档位）。元信息没到的按"可用"对待 ——
+      加载间隙里不要让它跳位置。sort 是稳定的，同组内保持原有顺序。
+    */
+    const rank = (id: number): number => {
+      const m = metaById[id]
+      return m && !m.verified && !m.archived ? 1 : 0
+    }
+    return [...filtered].sort((a, b) => rank(a.id) - rank(b.id))
   }, [notes, kindFilter, statusFilter, metaById])
 
   /**
