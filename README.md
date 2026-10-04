@@ -16,7 +16,7 @@
 | 项 | 约定 | 证据 |
 | --- | --- | --- |
 | 数据目录 | 默认 `%APPDATA%/ZhiXing`，`ZHIXING_HOME` 可整体覆盖（便携模式） | `src/main/db/connection.ts:18-32` |
-| schema | `SCHEMA_VERSION = 12`，建库 DDL 集中在 `schema.ts` | `src/main/db/schema.ts` |
+| schema | `SCHEMA_VERSION = 18`，建库 DDL 集中在 `schema.ts` | `src/main/db/schema.ts` |
 | 表规模 | 24 张 = 21 业务表 + 3 张 FTS5 虚拟表 | `docs/02` §6.1 |
 | 迁移链 | v1–v12 顺序迁移，旧库自动补齐 | `src/main/db/migrate.ts:22-118` |
 | 分词 | jieba `cut_for_search` 写入索引，查询侧走 `unicode61` | `src/main/db/fts-query.ts:33-47`、`fts-query.test.ts` |
@@ -79,7 +79,7 @@
 | --- | --- | --- |
 | 壳 | Electron `^33.3.1` | 无边框窗口 + 自定义标题栏（`titleBarStyle: hiddenInset`） |
 | 构建 | electron-vite `^2.3.0` + Vite `^5.4.11` | main / preload / renderer 一次构建到 `out/` |
-| UI | React `^18.3.1` + TypeScript `^5.7.2` | 无 UI 框架，样式全走 CSS 语义 token（11 个 CSS 文件） |
+| UI | React `^18.3.1` + TypeScript `^5.7.2` | 无 UI 框架，样式全走 CSS 语义 token（16 个 CSS 文件） |
 | 数据 | better-sqlite3 `^11.10.0` | 原生模块，直接读写本机 `zhixing.db` |
 | 分词 | @node-rs/jieba `^2.0.3` | `cut_for_search` 分词，未装 binding 时自动降级 |
 | 编辑器 | CodeMirror 6（6 个包） | Markdown 高亮、`[[` 补全、撤销栈 |
@@ -109,7 +109,7 @@ npm run dev                           # 开发模式（HMR）
 
 ## 6. 验证脚本体系
 
-`scripts/` 顶层 **71 个 `.mjs`**（另有 `verify-seed.cjs`）验证与构建脚本，以及 `scripts/fixtures/gen-office-fixtures.py` 夹具生成器。
+`scripts/` 顶层 **73 个 `.mjs`**（另有 `verify-seed.cjs`）验证与构建脚本，以及 `scripts/fixtures/gen-office-fixtures.py` 夹具生成器。
 
 统一方法论：**拷贝备份库到临时 `ZHIXING_HOME` → 启动真实 Electron（`--remote-debugging-port`）+ WebSocket/CDP → 经 IPC 操作 → 用 `sqlite3` CLI 校验落库**；多数脚本只在副本库上跑，绝不碰真实库。
 
@@ -135,7 +135,7 @@ npm run dev                           # 开发模式（HMR）
 
 进 `package.json` 的 npm 入口共 6 条：`typecheck` / `test` / `check:jieba` / `check:security` / `check:contrast` / `check:interaction`；其余按需手工执行。
 
-单元测试为 vitest：**37 个测试文件 / 415 个用例**，只覆盖纯函数（`vitest.config.ts:11-19` 明确排除涉及 SQLite / IPC / 真实窗口的部分，那部分留在 `scripts/*.mjs`）。
+单元测试为 vitest：**49 个测试文件 / 547 个用例**，只覆盖纯函数（`vitest.config.ts:11-19` 明确排除涉及 SQLite / IPC / 真实窗口的部分，那部分留在 `scripts/*.mjs`）。
 
 ## 7. 打包与发布
 
@@ -188,7 +188,7 @@ zhixing-electron/
 │   ├── preload/                   # 唯一特权入口，contextBridge 暴露 window.zhixing
 │   ├── renderer/                  # React 应用：pages/（八页）components/ lib/ styles/ i18n/
 │   └── shared/                    # 主/渲染共用纯函数 19 文件（types / events / settings / color / …）
-├── scripts/                       # 66 个顶层验证与构建脚本
+├── scripts/                       # 73 个顶层验证与构建脚本
 └── docs/                          # 01–03 主文档 + windows-build / audit / research 等
 ```
 
