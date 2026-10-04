@@ -325,6 +325,28 @@ export function importFromJsonFile(filePath: string): {
   }
   if (data.app !== 'zhixing') return { ok: false, message: '不是「知行」的导出文件' }
 
+  /*
+    密码保险箱的数据不能合并进来。
+
+    导出侧刻意不含 vault_meta / vault_entry（见 EXPORT_TABLES 的说明），所以正常
+    导出的文件不会有它们。但手工拼的文件可能有 —— 而保险箱内容是用**某个主密码**
+    加密的：合并进来只会得到解不开的死数据，还可能覆盖掉当前的 vault_meta
+    （盐与校验串一换，原本能解开的库也进不去了）。
+
+    所以明确拒绝，并说清原因；不静默导入、也不静默跳过。
+  */
+  const vaultTables = Object.keys(data).filter((k) => k.startsWith('vault_'))
+  if (vaultTables.length) {
+    return {
+      ok: false,
+      message:
+        '这个导出文件包含密码保险箱数据（' +
+        vaultTables.join('、') +
+        '），无法合并 —— 它的主密码可能与当前库不同，合进来会变成解不开的数据。' +
+        '请单独恢复该保险箱，或从导出文件里去掉这几项再试。',
+    }
+  }
+
   // 导入前自动备份（用户数据安全的第一道闸）：改走 BackupService.autoBackup，
   // 与启动备份/恢复前备份落在同一个 backups/ 目录并一起纳入 10 份 prune；
   // 此前写进 backups/before-import/ 子目录，既不 prune 也没走备份服务。

@@ -2,6 +2,7 @@ import { clipboard, ipcMain } from 'electron'
 import { type BrowserKey, availableBrowsers, importFromBrowser } from './chrome'
 import { rotateVaultToken, vaultPort, vaultServerPort, vaultToken } from './server'
 import { GENERATE_DEFAULTS, type GenerateOptions, generatePassword, strengthOf } from './generate'
+import { shouldAutoLock, shouldClearClipboard } from './timers'
 import * as store from './store'
 import type { VaultEntryInput } from './store'
 
@@ -39,7 +40,8 @@ export function copySecret(text: string): void {
   clipboard.writeText(text)
   if (clipboardTimer) clearTimeout(clipboardTimer)
   clipboardTimer = setTimeout(() => {
-    if (clipboard.readText() === text) clipboard.clear()
+    // 判据抽在 timers.ts 里并有单测：只在内容仍是那个值时才清
+    if (shouldClearClipboard(clipboard.readText(), text)) clipboard.clear()
     clipboardTimer = null
   }, CLIPBOARD_TTL_MS)
 }
@@ -48,10 +50,8 @@ export function copySecret(text: string): void {
 function startAutoLock(getMinutes: () => number, onLock: () => void): void {
   if (autoLockTimer) clearInterval(autoLockTimer)
   autoLockTimer = setInterval(() => {
-    const minutes = getMinutes()
-    if (minutes <= 0) return
-    if (store.status() !== 'unlocked') return
-    if (store.idleMs() >= minutes * 60_000) {
+    // 判据抽在 timers.ts 里并有单测（含 0=从不、未解锁不重复锁）
+    if (shouldAutoLock(getMinutes(), store.status(), store.idleMs())) {
       store.lock()
       onLock()
     }
