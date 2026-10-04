@@ -38,5 +38,7 @@ scripts/tmp-*.mjs
 
 dist-portable/
 
-dist-full/
+# 构建产物：dist/ 与任何 dist-<变体>/。用通配是因为 git add -A 曾把
+# dist-nsis/ 下 180MB 的 exe 一起提交，被 GitHub 拒收（单文件上限 100MB）。
+dist-*/
 
