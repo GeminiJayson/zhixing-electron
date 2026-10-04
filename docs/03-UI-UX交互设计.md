@@ -9,7 +9,7 @@
 │ 折叠按钮  │                                                  │
 └───────────┴──────────────────────────────────────────────────┘
 叠加层：CapturePanel / CommandPalette / TaskEditor / Dialog（--z-modal）
-        PomodoroBar、InfoBar（--z-float）
+        InfoBar（--z-float）
         ReminderPopup（--z-reminder）、Toast（--z-toast）
 `
 `text
@@ -547,7 +547,10 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 | 撤销条 InfoBar | `--z-float`，`role="status"` | 6s 自动消失；「撤销」按钮 + Ctrl+Z；删除类撤销走回收站 restore | `App.tsx`、 |
 | `ReminderPopup` | `--z-reminder`，`role="alertdialog"` | 30s 轮询；正文含提醒时刻与截止；动作：稍后 5/15/30 分、查看、知道了 | `components/ReminderPopup.tsx`、 |
 
-`PomodoroBar`（`--z-float`，`role="status"`）显示阶段、`mm:ss`、任务名、进度条、暂停/继续、结束；休息阶段换成 `pomo--break` 皮肤（`PomodoroBar.tsx`）。
+**番茄钟**是第三个独立小窗（`?pomodoro=1`，见 §6.1b），**不是本窗口里的条状控件** ——
+原来那个 `components/PomodoroBar.tsx` 已随「三个入口统一走 IPC」一起删除。
+小窗自己渲染阶段（工作 / 休息）、`mm:ss`、任务名、进度条、暂停/继续、结束；
+宿主是 `src/renderer/src/PomodoroWindowApp.tsx`。
 
 ### 9.2b 弹出菜单同构：状态 / 优先级 / 标签（2026-09-27 收口）
 
