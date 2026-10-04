@@ -42,17 +42,12 @@ export interface WidgetDeps {
  * 用工厂返回闭包内的访问器，状态既不外泄、也不用把 159 处引用改成 "某个全局对象.x" ——
  * 后者试过，批量替换会把「let widgetWindow: T = null」这种**声明**也改坏。
  */
-export function createWidgetModule(deps: WidgetDeps): {
-  createWidgetWindow: () => void
-  toggleWidget: () => void
-  syncWidgetVisibility: () => void
-  /** 当前浮窗（可能为 null） */
-  getWindow: () => BrowserWindow | null
-  /** 当前是不是球形态 —— 窗口创建与托盘都要判断 */
-  isBall: () => boolean
-  /** 浮窗是否已显示过（托盘菜单据此决定要不要先建） */
-  show: () => void
-} {
+/*
+  返回类型不显式写：它有二十多项，手写一遍等于把 return 里的清单维护两遍 ——
+  上一版就是这么漏掉 collapseWidgetToBall 等十几项的。让 TS 从 return 推断，
+  调用方拿到的类型一样精确（错的属性名照样报错）。
+*/
+export function createWidgetModule(deps: WidgetDeps) {
   const {
     isDev,
     followWidgetSoon,
@@ -640,14 +635,44 @@ function applyWidgetClickThrough(enabled: boolean): void {
 }
 /** 冷启动时收到的深链：等渲染进程就绪后再派发 */
 
+  /*
+    这里列出**要被主进程别处调用**的那些。工具函数（readWidgetGeometry / readWidgetBall /
+    persistBall / restoreBall / rememberBallPosition / snapBallToNearestEdge）是内部的，
+    不外传 —— 上一版把这份清单写短了（只列 6 项），结果调用方报了一串
+    "Property 'collapseWidgetToBall' does not exist"。
+  */
   return {
+    // 窗口与形态
     createWidgetWindow,
     toggleWidget,
     syncWidgetVisibility,
-    getWindow: () => S.window,
-    isBall: () => S.mode === 'ball',
+    expandWidget,
+    collapseWidgetToBall,
+    maybeDockWidget,
+    sendWidgetMode,
+    applyWidgetBounds,
+    // 球体交互
+    ballDragStart,
+    ballDragTo,
+    ballDragEnd,
+    setBallSize,
+    setBallShape,
+    // 边缘缩放
+    widgetResizeStart,
+    widgetResizeTo,
+    widgetResizeEnd,
+    // 外观
+    applyWidgetOpacity,
+    applyWidgetClickThrough,
+    // 只读访问器
     show: () => {
       if (S.window && !S.window.isDestroyed()) S.window.show()
+    },
+    getWindow: () => S.window,
+    isBall: () => S.mode === 'ball',
+    isManualOpen: () => S.manualOpen,
+    setManualOpen: (v: boolean) => {
+      S.manualOpen = v
     },
   }
 }
