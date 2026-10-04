@@ -6,28 +6,6 @@
 
 ---
 
-```text
-┌──────────────────────────────────────────────────────────────┐
-│ TitleBar（44px，drag-region）  标题 · 签名 ·(主题/最小化/最大化/关闭) │
-├───────────┬──────────────────────────────────────────────────┤
-│ Sidebar   │ <main class="app__content">                      │
-│ 220 / 48  │   .page                                          │
-│ 8 项导航  │     .page__head（标题 + 副标题）                  │
-│ 收件箱徽标│     .page__body（工具栏 + 工作区）                 │
-│ 折叠按钮  │                                                  │
-└───────────┴──────────────────────────────────────────────────┘
-叠加层：CapturePanel / CommandPalette / TaskEditor / Dialog（--z-modal）
-        InfoBar（--z-float）
-        ReminderPopup（--z-reminder）、Toast（--z-toast）
-```
-
-```text
-[笔记树 ntree]  |  [notes-main / editor]              |  [links 面板]
-文件夹 + 笔记 |  editor__bar（标题输入 + 动作按钮）   |  反向链接 · N
-新建/格式下拉 |  find-bar（Ctrl+F，role=search）      |  引用（正向）· N
-              |  正文区（编辑器 / 预览 / Office / 链接） |  失效链接
-```
-
 ## 1. 设计原则与真源
 
 1. **唯一真源**：`src/renderer/src/styles/tokens.css` 是设计的**唯一真源**（`tokens.css`）。组件样式一律引用语义变量，**禁止写死色值与圆角**。
@@ -264,6 +242,21 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 
 ## 3. 布局框架
 
+```text
+┌──────────────────────────────────────────────────────────────┐
+│ TitleBar（44px，drag-region）  标题 · 签名 ·(主题/最小化/最大化/关闭) │
+├───────────┬──────────────────────────────────────────────────┤
+│ Sidebar   │ <main class="app__content">                      │
+│ 220 / 48  │   .page                                          │
+│ 8 项导航  │     .page__head（标题 + 副标题）                  │
+│ 收件箱徽标│     .page__body（工具栏 + 工作区）                 │
+│ 折叠按钮  │                                                  │
+└───────────┴──────────────────────────────────────────────────┘
+叠加层：CapturePanel / CommandPalette / TaskEditor / Dialog（--z-modal）
+        InfoBar（--z-float）
+        ReminderPopup（--z-reminder）、Toast（--z-toast）
+```
+
 ### 3.0 滚动驱动（2026-09-27）
 
 页面正文（`.page__body`）滚过 24px 后，吸顶工具栏进入"抬起"态（`Toolbar.tsx` 加 `.tb--lifted`）：
@@ -457,6 +450,13 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 ## 8. 编辑器与笔记交互
 
 ### 8.1 布局：一张笔记纸 + 一条信息条（`NotesPage.tsx`，2026-09 重排）
+
+```text
+[笔记树 ntree]  |  [notes-main / editor]              |  [links 面板]
+文件夹 + 笔记 |  editor__bar（标题输入 + 动作按钮）   |  反向链接 · N
+新建/格式下拉 |  find-bar（Ctrl+F，role=search）      |  引用（正向）· N
+              |  正文区（编辑器 / 预览 / Office / 链接） |  失效链接
+```
 
 ```text
 笔记树 240px（可拖 180–460）│ 笔记多标签页（≥2 篇打开时出现，30px；横向滚动）
