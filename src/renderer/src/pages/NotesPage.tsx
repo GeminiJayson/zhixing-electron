@@ -1457,6 +1457,13 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                   ['verified', '可用'],
                   ['draft', '待确认'],
                   ['noSource', '无来源'],
+                  /*
+                    成熟度三个数字里的「未被引用」：有来源、却没人引用它。
+                    放在筛选条里而不是做成独立仪表盘 —— 这三个数的价值在于
+                    "提醒你去处理"，提醒要出现在你本来就待着的地方
+                    （见 docs/specs/phase3-research.md §2.3）。
+                  */
+                  ['unused', '未被引用'],
                   ['archived', '归档'],
                 ] as const
               ).map(([key, label]) => (
