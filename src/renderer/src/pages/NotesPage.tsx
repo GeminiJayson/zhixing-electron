@@ -30,6 +30,7 @@ import { NoteHistory } from '../components/NoteHistory'
 import { NoteLinksPanel } from '../components/NoteLinksPanel'
 import { NotePicker } from '../components/NotePicker'
 import { dropLinkLine, lacksSource } from '../lib/note-props'
+import { useNoteAudit } from '../lib/use-note-audit'
 import { useNoteProps } from '../lib/use-note-props'
 import type { MarkdownEditorHandle } from '../components/MarkdownEditor'
 import { NOTE_FORMATS, NoteTree, noteIcon, type NoteFormat } from '../components/NoteTree'
@@ -272,11 +273,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   const [replaceText, setReplaceText] = useState('')
   /** CodeMirror 实例：查找定位要走它的 selection API */
   const viewRef = useRef<EditorView | null>(null)
-  /** 失效链接的原始行（面板要按它给出「删掉这一行」的动作） */
-  const [brokenRows, setBrokenRows] = useState<
-    { src_note_id: number; src_title: string; dst_title: string }[]
-  >([])
-  const [panelItems, setPanelItems] = useState<{ key: string; label: string; id: number }[]>([])
+  /* 链接体检的数据（失效链接行 + 浮层条目）收在 useNoteAudit 里，见下方调用 */
   const timer = useRef<number | null>(null)
   /** 「移动到文件夹…」目标菜单 */
   const [moveMenu, setMoveMenu] = useState<{ noteId: number; x: number; y: number } | null>(null)
@@ -1359,76 +1356,20 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
    * 链接体检：孤儿笔记 / 失效链接。
    * 入口已挪到笔记树（整库视角的操作），结果仍用同一个浮层列出。
    */
+  const {
+    brokenRows,
+    panelItems,
+    runAudit,
+    dropBrokenLink,
+  } = useNoteAudit({ onNotice, confirm: dialog.confirm, onClose: () => setPanel(null) })
+
   const handleLinkAudit = async (
     kind: 'orphan' | 'broken' | 'relink',
     anchor: { x: number; y: number }
   ): Promise<void> => {
-    /*
-      relink 不是"列出来看"，它直接跑修复。
-      这类链接（标题能解析到、dst_note_id 却是空）在 brokenLinks 里不算失效，
-      但图谱的边与反链查询都按 id 走 —— 不修就永远看不见它。
-    */
-    if (kind === 'relink') {
-      const n = await window.zhixing.db.relinkAllNotes()
-      onNotice(n > 0 ? '已修复 ' + n + ' 条未绑定的链接' : '没有需要修复的链接')
-      return
-    }
-    if (kind === 'orphan') {
-      const rows = await window.zhixing.db.orphanNotes()
-      setPanelItems(rows.map((n) => ({ key: `o-${n.id}`, label: n.title, id: n.id })))
-    } else {
-      const rows = await window.zhixing.db.brokenLinks()
-      /*
-        每条失效链接给两个动作，而不只是"跳过去"。
-        
-        跳过去只能让人自己找到那一行再手删；而失效链接的成因是
-        `[[标题]]` 指向的笔记不存在 —— 要么补建那篇，要么删掉这一行。
-        这里先把"删掉这一行"给出来（改的是来源笔记的正文，所以要点确认）。
-      */
-      const items: { key: string; label: string; id: number; act: 'open' | 'drop'; title?: string }[] = []
-      for (const [i, b] of rows.entries()) {
-        items.push({
-          key: `b-${i}`,
-          label: `${b.src_title} → [[${b.dst_title}]]`,
-          id: b.src_note_id,
-          act: 'open',
-        })
-      }
-      setBrokenRows(rows)
-      setPanelItems(items)
-      setPanel({ kind, x: anchor.x, y: anchor.y })
-      return
-    }
-    setPanel({ kind, x: anchor.x, y: anchor.y })
-  }
-
-  /**
-   * 删掉一条失效链接：从**来源笔记的正文**里去掉那行 [[标题]]。
-   *
-   * 失效链接 = 正文里写着 [[某标题]] 但那篇笔记不存在。处理方式要么补建那篇、
-   * 要么删掉这一行 —— 这里给后者。改的是别人的正文，所以先确认。
-   */
-  const dropBrokenLink = async (b: {
-    src_note_id: number
-    src_title: string
-    dst_title: string
-  }): Promise<void> => {
-    const ok = await dialog.confirm({
-      title: '删掉这条失效链接',
-      message:
-        '「' + b.src_title + '」的正文里写着 [[' + b.dst_title + ']]，但这篇笔记不存在。\n' +
-        '删掉会改「' + b.src_title + '」的正文。',
-      confirmText: '删掉这一行',
-      danger: true,
-    })
-    if (!ok) return
-    const src = await window.zhixing.db.note(b.src_note_id)
-    if (!src) return
-    const next = dropLinkLine(src.content_md ?? '', b.dst_title)
-    await window.zhixing.db.saveNote(b.src_note_id, { content_md: next })
-    setPanel(null)
-    setBrokenRows((prev) => prev.filter((r) => !(r.src_note_id === b.src_note_id && r.dst_title === b.dst_title)))
-    onNotice('已从「' + b.src_title + '」里删掉那条链接')
+    await runAudit(kind)
+    // relink 是直接修复、不产生清单，所以不展开浮层
+    if (kind !== 'relink') setPanel({ kind, x: anchor.x, y: anchor.y })
   }
 
   /**
