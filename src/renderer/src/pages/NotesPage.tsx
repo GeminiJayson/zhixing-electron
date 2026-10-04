@@ -29,12 +29,8 @@ const XlsxGrid = lazy(() => import('../components/XlsxGrid'))
 import { NoteHistory } from '../components/NoteHistory'
 import { NoteLinksPanel } from '../components/NoteLinksPanel'
 import { NotePicker } from '../components/NotePicker'
-import {
-  dropLinkLine,
-  lacksSource,
-  parsePropsText,
-  propsToText,
-} from '../lib/note-props'
+import { dropLinkLine, lacksSource } from '../lib/note-props'
+import { useNoteProps } from '../lib/use-note-props'
 import type { MarkdownEditorHandle } from '../components/MarkdownEditor'
 import { NOTE_FORMATS, NoteTree, noteIcon, type NoteFormat } from '../components/NoteTree'
 
@@ -321,55 +317,12 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   /** 右键选中的那一段（等待选任务后建立关联） */
   const [blockDraft, setBlockDraft] = useState<{ text: string; blockKey: string } | null>(null)
 
-  /** 笔记属性（每行一条 key: value），落库为 JSON 对象 */
-  const [propDraft, setPropDraft] = useState('')
-  /** 信息区底部新增行用：属性填「键: 值」，引用填标题 */
-  const [propNew, setPropNew] = useState('')
   /** 正向引用的笔记选择器锚点（null = 未打开） */
   const [linkPick, setLinkPick] = useState<DOMRect | null>(null)
   /** 正文里输入 [[ 的位置（null = 没在补全） */
   const [linkTrigger, setLinkTrigger] = useState<{ from: number; to: number; query: string } | null>(null)
   /** Markdown 编辑器的 view，补全选中后要用它替换那半截 [[ */
   const mdViewRef = useRef<MarkdownEditorHandle | null>(null)
-
-  /**
-   * 属性列表。**propDraft 仍是唯一真相** —— 这里是它的只读视图。
-   * 信息区改成胶囊展示后需要"一条一条"的形态，但保存路径没变：
-   * 仍把整段文本解析成 JSON 存进 props。少一个数据源，就少一处不一致。
-   */
-  const propItems = propDraft
-    .split('\n')
-    .map((line) => {
-      const i = line.indexOf(':')
-      if (i <= 0) return null
-      const k = line.slice(0, i).trim()
-      if (!k) return null
-      return { key: k, value: line.slice(i + 1).trim() }
-    })
-    .filter((x): x is { key: string; value: string } => x !== null)
-
-  /** 改属性都落到 propDraft 并立刻保存 —— 不让用户改完还得再点一次保存 */
-  const writeProps = async (lines: string[]): Promise<void> => {
-    const text = lines.join('\n')
-    setPropDraft(text)
-    if (selectedId == null) return
-    await window.zhixing.db.saveNote(selectedId, { props: parsePropsText(text) })
-    await load()
-  }
-
-  const addProp = (): void => {
-    const raw = propNew.trim()
-    if (!raw) return
-    // 允许只写键（"来源"）不写值 —— 先把位置占下来也是常见用法
-    const line = raw.includes(':') ? raw : raw + ': '
-    void writeProps(propItems.map((p) => p.key + ': ' + p.value).concat(line)).then(() =>
-      setPropNew('')
-    )
-  }
-
-  const removeProp = (key: string): void => {
-    void writeProps(propItems.filter((p) => p.key !== key).map((p) => p.key + ': ' + p.value))
-  }
 
   const handleRemoveOutLink = (l: { dst_title: string }): void => {
     if (!current) return
@@ -451,7 +404,6 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
 
   // 切笔记时把属性铺进编辑框
   useEffect(() => {
-    setPropDraft(propsToText(current?.props))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.id, current?.props])
   const officeTimer = useRef<number | null>(null)
@@ -1352,8 +1304,16 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     await window.zhixing.db.setTagColor(id, color)
   }
 
-  /** 属性条数：信息条收起时也要能看到「有几条」，不然用户不知道点开有什么 */
-  const propCount = propDraft.split('\n').filter((l) => l.trim()).length
+  /*
+    属性一组的状态与操作收在 hook 里（草稿文本是唯一真相，增删都走"改草稿 → 立刻保存"）。
+    放在这里而不是组件开头：它要用到 load，而 load 是后面才定义的 const。
+  */
+  const { propItems, propCount, propNew, setPropNew, addProp, removeProp } = useNoteProps({
+    noteId: selectedId,
+    rawProps: current?.props,
+    onSaved: load,
+    onNotice,
+  })
 
   /**
    * 笔记多标签切换：正文区补一次极轻的淡入（opacity 0→1，--dur-fast / --ease-enter）。
