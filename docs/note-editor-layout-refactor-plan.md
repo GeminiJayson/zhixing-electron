@@ -1,4 +1,8 @@
-# 笔记页编辑区布局重构 · 方案 v2（上游调研版）
+# 笔记页编辑区布局重构 · 方案 v2
+
+> **状态：已实施。** 方案原文保留不动。
+> 落地证据：信息区做成独立组件 `components/NoteLinksPanel.tsx`（属性 / 反向链接 / 正向引用 / 归属 四栏，
+> 默认收起成一行计数），页面侧由 `NotesPage.tsx` 传入数据与回调。
 
 > **调研方式**：先补全 `ui-ux-pro-max` 上游工作流（数据 + 检索脚本），用它检索出 14 条与该任务相关的规则，再对照本仓库实测数据出方案。
 > **上游安装状态**：技能目录已装 27 个文件（SKILL.md、data/*.csv、scripts/*.py 与 Node 移植版 search.mjs）。本机没有 Python 3，因此配了 `scripts/search.mjs`（移植 BM25 检索路径）；`--design-system` 未移植。

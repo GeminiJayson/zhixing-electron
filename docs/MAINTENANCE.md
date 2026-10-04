@@ -25,6 +25,7 @@
 | `docs/research/*.md` | **调研**。同类产品对比、技术选型依据 |
 | `docs/release-notes-v*.md` | **每个版本的发布说明** |
 | `docs/windows-build.md` | Windows 构建与打包 |
+| `docs/motion-visual-demo.html` | **动效与视觉升级的对照演示页**（A1 失效令牌 / B1–B8 各处动效 / C1–C2 卡片物理）。浏览器直接打开看效果，是 `motion-visual-upgrade-plan.md` 的可视化产物 |
 
 ### Agent 用
 

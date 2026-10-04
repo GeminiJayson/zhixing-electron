@@ -1,4 +1,8 @@
-# Electron 版优化建议（待批准）
+# Electron 版优化建议
+
+> **状态：已实施。** 方案原文保留不动。
+> 落地证据（抽查）：主进程拆成 `widget.ts` / `window.ts` / `tray.ts` / `hotkey.ts`；
+> 笔记页拆出 `lib/use-note-props.ts`、`lib/use-note-audit.ts` 等模块。
 
 > 本文档只记录**改进想法**。
 > 本文档中的项目**未经批准不实施**。
