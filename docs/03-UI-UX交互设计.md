@@ -1,4 +1,4 @@
-```text
+`text
 ┌──────────────────────────────────────────────────────────────┐
 │ TitleBar（44px，drag-region）  标题 · 签名 ·(主题/最小化/最大化/关闭) │
 ├───────────┬──────────────────────────────────────────────────┤
@@ -11,13 +11,13 @@
 叠加层：CapturePanel / CommandPalette / TaskEditor / Dialog（--z-modal）
         PomodoroBar、InfoBar（--z-float）
         ReminderPopup（--z-reminder）、Toast（--z-toast）
-```
-```text
+`
+`text
 [笔记树 ntree]  |  [notes-main / editor]              |  [links 面板]
 文件夹 + 笔记 |  editor__bar（标题输入 + 动作按钮）   |  反向链接 · N
 新建/格式下拉 |  find-bar（Ctrl+F，role=search）      |  引用（正向）· N
               |  正文区（编辑器 / 预览 / Office / 链接） |  失效链接
-```
+`
 # 03 · UI/UX 交互设计（Electron 实现）
 
 > **文档对象**：知行 ZhiXing 的 Electron 重构实现（拆分后仓库 `zhixing-electron`）。
@@ -28,11 +28,11 @@
 
 ## 1. 设计原则与真源
 
-1. **唯一真源**：`src/renderer/src/styles/tokens.css` 是设计的**唯一真源**（`tokens.css:1-5`）。组件样式一律引用语义变量，**禁止写死色值与圆角**。
+1. **唯一真源**：`src/renderer/src/styles/tokens.css` 是设计的**唯一真源**（`tokens.css`）。组件样式一律引用语义变量，**禁止写死色值与圆角**。
 2. **无 UI 框架**：不引组件库，全部自绘 CSS；好处是体积、可控性，代价是每个控件的状态要自己写全。
 3. **语义优先**：变量名表达用途（`--fg-secondary`、`--bg-layer`、`--z-modal`），不表达具体颜色值。
-4. **交互状态统一收口**：按压/禁用/焦点环在 `global.css` 一处定义（`global.css:33-63`），组件不必各写一遍。
-5. **动效可降级**：所有时长走令牌，系统或用户关闭动效时全量归零（`tokens.css:151-173`）。
+4. **交互状态统一收口**：按压/禁用/焦点环在 `global.css` 一处定义（`global.css`），组件不必各写一遍。
+5. **动效可降级**：所有时长走令牌，系统或用户关闭动效时全量归零（`tokens.css`）。
 
 ---
 
@@ -40,7 +40,7 @@
 
 ### 2.1 色彩：语义色浅/深两套
 
-| 令牌 | 浅色（`:root`，`:7-118`） | 深色（`:root[data-theme='dark']`，`:120-149`） | 用途 |
+| 令牌 | 浅色（`:root`，） | 深色（`:root[data-theme='dark']`，） | 用途 |
 | --- | --- | --- | --- |
 | `--bg-canvas` | `#f3f3f3` | `#1f1f1f` | 窗口底（实色，保证「看到的即真实」） |
 | `--bg-layer` | `rgb(255 255 255 / 90%)` | `rgb(43 43 43 / 85%)` | 卡片/浮层底 |
@@ -60,17 +60,17 @@
 | `--graph-edge` | `color-mix(fg 26%)` | `#444444` | 图谱连线「隐没在背景里」 |
 | `--overlay` | `rgb(0 0 0 / 32%)` | `rgb(0 0 0 / 55%)` | 模态遮罩 |
 
-`color-scheme` 也随主题声明（`tokens.css:10`、`:121`）：不声明时「Windows 深色系统 + 应用浅色主题」会让输入框变深底深字。
+`color-scheme` 也随主题声明（`tokens.css`、）：不声明时「Windows 深色系统 + 应用浅色主题」会让输入框变深底深字。
 
 ### 2.2 14 套主题包与强调色正交
 
-主题包是**数据驱动的 token 覆盖集**（`src/shared/theme-packs.ts:30-87`），每个包含 light/dark 两套共 15 个语义色（`ThemeColors`，`:7-23`）。
+主题包是**数据驱动的 token 覆盖集**（`src/shared/theme-packs.ts`），每个包含 light/dark 两套共 15 个语义色（`ThemeColors`，）。
 
-包名（14，`theme-packs.ts:89`）：冰川蓝、墨黑、奶咖棕、暖沙、暮色、柠檬黄、樱花粉、海盐蓝、莓果粉、薄荷绿、薰衣草紫、蜜桃橘、青竹、香芋紫。
+包名（14，`theme-packs.ts`）：冰川蓝、墨黑、奶咖棕、暖沙、暮色、柠檬黄、樱花粉、海盐蓝、莓果粉、薄荷绿、薰衣草紫、蜜桃橘、青竹、香芋紫。
 
-- **强调色与主题包正交**（`theme.ts:37-40`）：换包不动用户选的强调色；设置页提供 8 色（`SettingsPage.tsx:19`）。
-- 默认主题包是**青竹**（`src/shared/settings.ts:75`、`:117`）；`theme-packs.ts:91` 的 `DEFAULT_THEME_PACK = '墨黑'` 只在包名**无法解析**时兜底（`resolveThemePack`，`:93-95`），两者不冲突。
-- 主题包 token → CSS 变量的映射集中在 `TOKEN_VARS`（`theme.ts:19-35`），新增主题包只需加数据、不必改代码。
+- **强调色与主题包正交**（`theme.ts`）：换包不动用户选的强调色；设置页提供 8 色（`SettingsPage.tsx`）。
+- 默认主题包是**青竹**（`src/shared/settings.ts`、）；`theme-packs.ts` 的 `DEFAULT_THEME_PACK = '墨黑'` 只在包名**无法解析**时兜底（`resolveThemePack`，），两者不冲突。
+- 主题包 token → CSS 变量的映射集中在 `TOKEN_VARS`（`theme.ts`），新增主题包只需加数据、不必改代码。
 - **玻璃拟态**（2026-09-27，实验档）是独立于主题包的开关（设置项 `glass_enabled`，默认开）：
   它只决定"底色怎么画"（半透明 + 背景模糊），不改任何语义色，因此与 14 套包、8 色强调色、明暗全部正交。
   关掉即 `html[data-glass='off']` → `--glass-filter: none`（见 §2.10 与 §11.2）。
@@ -79,17 +79,17 @@
 
 问题：主题包的文字色是按观感调的柔和色，对 `canvas`/`layer` 的对比度大量落在 2.4–4.5 之间（实测 168 组里 74 组不达标，辅助文字最低 2.36:1）。
 
-做法（`theme.ts:49-68`）：应用主题时按统一下限做**运行时校正**，而不是手改 168 个色值。
+做法（`theme.ts`）：应用主题时按统一下限做**运行时校正**，而不是手改 168 个色值。
 
 | 目标 | 下限 | 证据 |
 | --- | ---: | --- |
-| 正文 `--fg-primary` | 4.5:1 | `theme.ts:53` |
-| 次要 `--fg-secondary` | 4.5:1 | `theme.ts:54` |
-| 辅助 `--fg-tertiary` | 4.0:1 | `theme.ts:55` |
-| 强调色**当文字**（`--accent-text`） | 4.5:1（对 canvas/layer/accent-soft 三者最差者） | `theme.ts:65-68` |
-| 非文本图形（边框/指示条/图标） | 3:1（约定，见 `tokens.css:88` 注释） | `tokens.css:88` |
+| 正文 `--fg-primary` | 4.5:1 | `theme.ts` |
+| 次要 `--fg-secondary` | 4.5:1 | `theme.ts` |
+| 辅助 `--fg-tertiary` | 4.0:1 | `theme.ts` |
+| 强调色**当文字**（`--accent-text`） | 4.5:1（对 canvas/layer/accent-soft 三者最差者） | `theme.ts` |
+| 非文本图形（边框/指示条/图标） | 3:1（约定，见 `tokens.css` 注释） | `tokens.css` |
 
-校正算法在 `src/shared/color.ts:70-81`：`ensureTextContrast(fg, backgrounds, minRatio)` 取背景中**最差**的一组作为约束，若已达标原样返回；否则沿单一方向混向黑/白（步长 0.05）直到达标，**保留色相**。
+校正算法在 `src/shared/color.ts`：`ensureTextContrast(fg, backgrounds, minRatio)` 取背景中**最差**的一组作为约束，若已达标原样返回；否则沿单一方向混向黑/白（步长 0.05）直到达标，**保留色相**。
 
 ### 2.4 形状（圆角/边框/焦点）
 
@@ -134,7 +134,7 @@
 | `--row-h` | 40px | **列表行**：任务行 / 笔记树行 / 四象限行 / 设置行 —— 设置页「行高」(24–72) |
 | `--titlebar-h` / `--nav-w` / `--nav-w-collapsed` | 44 / 220 / 48px | 标题栏与侧栏固定尺寸 |
 
-运行时覆盖只发生在**两处**映射（`theme.ts:176-178`）：`--control-h` ← `control_height`、`--row-h` ← `task_row_height`；`--control-h-sm` 是 calc 派生，跟着控件高度一起缩放。**此前的 `font_size + 1.5` / `task_row_height + 10` 补偿偏移已取消**（会与设置页 SpinBox 的真实值对不上）；`--hit-min` 已删除，其职责由 `--control-h` 接管（无障碍最小目标的 24px 下限由设置区间保证）。
+运行时覆盖只发生在**两处**映射（`theme.ts`）：`--control-h` ← `control_height`、`--row-h` ← `task_row_height`；`--control-h-sm` 是 calc 派生，跟着控件高度一起缩放。**此前的 `font_size + 1.5` / `task_row_height + 10` 补偿偏移已取消**（会与设置页 SpinBox 的真实值对不上）；`--hit-min` 已删除，其职责由 `--control-h` 接管（无障碍最小目标的 24px 下限由设置区间保证）。
 
 **边界**（`npm run check:ctlheight` 会拦下违规）：
 
@@ -152,7 +152,7 @@
 | `--z-reminder` | 80 | 系统级提醒弹窗 |
 | `--z-toast` | 90 | 全局提示 |
 
-（`tokens.css:80-87`；注释记录了修复前的真实事故：「页面级浮条 68/70 反而压在全屏模态 60 之上」，即模态打开时浮条会亮在遮罩上面。）
+（`tokens.css`；注释记录了修复前的真实事故：「页面级浮条 68/70 反而压在全屏模态 60 之上」，即模态打开时浮条会亮在遮罩上面。）
 
 ### 2.9 动效：7 档时长 + 5 条缓动
 
@@ -185,14 +185,14 @@
 
 ### 2.10 阴影四档与遮罩
 
-| 令牌 | 浅色 | 深色（`:141-144`） |
+| 令牌 | 浅色 | 深色 |
 | --- | --- | --- |
 | `--shadow-sm` | `0 1px 3px rgb(0 0 0 / 12%)` | `28%` |
 | `--shadow-md` | `0 8px 24px rgb(0 0 0 / 20%)` | `44%` |
 | `--shadow-lg` | `0 12px 32px rgb(0 0 0 / 24%)` | `50%` |
 | `--shadow-xl` | `0 24px 64px rgb(0 0 0 / 28%)` | `56%` |
 
-深色模式必须加深（同样的黑色透明度在深底上几乎不可见，`tokens.css:140`）。遮罩见 §2.1 的 `--overlay`。
+深色模式必须加深（同样的黑色透明度在深底上几乎不可见，`tokens.css`）。遮罩见 §2.1 的 `--overlay`。
 
 **内高光 `--edge-light`**（2026-09-27 新增）：贴在容器顶边的 1px 亮线，让"面"从画布上浮起来。
 浅色 `inset 0 1px 0 rgb(255 255 255 / 55%)`，深色必须降到 `5%`（同样的 55% 在深底上是一条刺眼的白边）。
@@ -277,9 +277,9 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 判定跨过阈值时只 setState 一次（记 ref），滚动事件本身是 passive 的。
 
 
-- 窗口：无边框（`frame: false`）+ `titleBarStyle: 'hiddenInset'`（`src/main/index.ts:322-338`）；初始 1280×820，最小 1040×640。
-- 拖拽区靠 `-webkit-app-region`：`.drag-region` / `.no-drag`（`global.css:83-89`）；标题栏内的按钮都包在 `.no-drag`（`TitleBar.tsx:20`）。
-- `html/body/#root` 100% 高、`overflow: hidden`（`global.css:9-15`）；页面内部滚动容器各自声明 `overscroll-behavior: contain`，避免子卡片滚到尽头带动父容器（`global.css:124-134`）。
+- 窗口：无边框（`frame: false`）+ `titleBarStyle: 'hiddenInset'`（`src/main/index.ts`）；初始 1280×820，最小 1040×640。
+- 拖拽区靠 `-webkit-app-region`：`.drag-region` / `.no-drag`（`global.css`）；标题栏内的按钮都包在 `.no-drag`（`TitleBar.tsx`）。
+- `html/body/#root` 100% 高、`overflow: hidden`（`global.css`）；页面内部滚动容器各自声明 `overscroll-behavior: contain`，避免子卡片滚到尽头带动父容器（`global.css`）。
 
 ---
 
@@ -315,47 +315,47 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 
 ## 4. 任务页四个视图（`TasksPage.tsx`）
 
-视图切换是一个 `role="group"` 的分段控件（`.seg`），四项：**列表 / 四象限 / 日历 / 看板**（`TasksPage.tsx:26-33`、`:499-506`），按钮用 `aria-pressed` 表达选中。
+视图切换是一个 `role="group"` 的分段控件（`.seg`），四项：**列表 / 四象限 / 日历 / 看板**（`TasksPage.tsx`、），按钮用 `aria-pressed` 表达选中。
 
 ### 4.1 列表视图（默认）
 
-- 树形缩进 + 折叠；行高由 `--row-h` 决定（`TasksPage.tsx:65-71`）。
-- **虚拟滚动**：`VirtualList` 固定行高、按 `count × rowHeight` 绝对定位，`overscan = 8`，容器高度用 `ResizeObserver` 实测（`components/VirtualList.tsx:21-65`）。
-- 行内容（`components/TaskRow.tsx`）：勾选框（`aria-label` 随状态变化，`:101`）→ 优先级色点（`aria-label`/`title` 给出文字等级，`:109`）→ 标题 → **胶囊容器 `.trow__chips`**（循环 / `🔥N` 连续 / 日期区间 / 标签 `:157-170` / `⇄N` 笔记数 `:171`，逾期区间转 danger 色）→ **行内动作组 `.trow__actions`**（`:174-197`，开始专注 / 加子任务 / 编辑 / 删除）。
+- 树形缩进 + 折叠；行高由 `--row-h` 决定（`TasksPage.tsx`）。
+- **虚拟滚动**：`VirtualList` 固定行高、按 `count × rowHeight` 绝对定位，`overscan = 8`，容器高度用 `ResizeObserver` 实测（`components/VirtualList.tsx`）。
+- 行内容（`components/TaskRow.tsx`）：勾选框（`aria-label` 随状态变化，）→ 优先级色点（`aria-label`/`title` 给出文字等级，）→ 标题 → **胶囊容器 `.trow__chips`**（循环 / `🔥N` 连续 / 日期区间 / 标签  / `⇄N` 笔记数 ，逾期区间转 danger 色）→ **行内动作组 `.trow__actions`**（，开始专注 / 加子任务 / 编辑 / 删除）。
 - 动作组**不是浮层**：未悬浮时收拢为 0 宽 + 透明且不接收指针事件，悬浮（或选中）时展开为内容宽度（实测 110px），胶囊容器作为普通 flex 兄弟项随之被推到它左侧 —— 即「悬浮时胶囊移到按钮组左边」。按钮与胶囊同款：20px 高、`0 6px` 内边距、`--radius-sm` 圆角、`--fg-secondary` 文字色。
-- 添加行计入行数，否则虚拟列表的绝对定位会错位（`TasksPage.tsx:146` 注释）。
+- 添加行计入行数，否则虚拟列表的绝对定位会错位（`TasksPage.tsx` 注释）。
 
 ### 4.2 四象限
 
-- 格子：重要且紧急 / 重要不紧急 / 紧急不重要 / 不重要不紧急（`QuadrantBoard.tsx:8-13`）。
-- 归格规则：`important = isImportant(priority)`，`urgent = due_date !== null && due_date <= today`（`:65-72`）；**只有根任务归格**，父行可展开未完成的直接子任务，子任务自身优先级/日期不参与归格（`:42-45` 注释）。
-- 拖拽换格写入 `priority + due_date` 组合（`:16-30`）。
+- 格子：重要且紧急 / 重要不紧急 / 紧急不重要 / 不重要不紧急（`QuadrantBoard.tsx`）。
+- 归格规则：`important = isImportant(priority)`，`urgent = due_date !== null && due_date <= today`；**只有根任务归格**，父行可展开未完成的直接子任务，子任务自身优先级/日期不参与归格（ 注释）。
+- 拖拽换格写入 `priority + due_date` 组合。
 
 ### 4.3 日历
 
-- 6×7 月份网格、**周一为第一列**（与 Qt `QCalendarWidget` 周首一致，`CalendarBoard.tsx:20-33`）。
-- 单元格最多 3 个任务胶囊，超出显示 `+N`（`:16`、`:156-158`）。
-- 拖拽胶囊到日期格即改期（`:145-151`）。
-- 右侧固定「当日任务」栏（`:166-191`）。
-- 已知口径差异：只看 `due_date`、丢弃无日期任务、不展开 `start_date`、恒排除已完成（`:49-58`），因此设置项 `calendar_show_done` 在 UI 上无效（详见 `01` R-T-16）。
+- 6×7 月份网格、**周一为第一列**（与 Qt `QCalendarWidget` 周首一致，`CalendarBoard.tsx`）。
+- 单元格最多 3 个任务胶囊，超出显示 `+N`（、）。
+- 拖拽胶囊到日期格即改期。
+- 右侧固定「当日任务」栏。
+- 已知口径差异：只看 `due_date`、丢弃无日期任务、不展开 `start_date`、恒排除已完成，因此设置项 `calendar_show_done` 在 UI 上无效（详见 `01` R-T-16）。
 
 ### 4.4 看板
 
-- 列 = 状态（`STATUS_CHOICES`），卡片 = **根任务**（列头计数也只算根任务，`KanbanBoard.tsx:19-23` 注释）。
-- 拖卡片到另一列改状态（`:86-99`）；每列底部有「+ 添加」直接在该状态建任务（`:109-111`）。
-- 展开的父任务把未完成子任务以缩进卡片列在下方，**不做状态级联**（`:21-22`、`:73`）。
+- 列 = 状态（`STATUS_CHOICES`），卡片 = **根任务**（列头计数也只算根任务，`KanbanBoard.tsx` 注释）。
+- 拖卡片到另一列改状态；每列底部有「+ 添加」直接在该状态建任务。
+- 展开的父任务把未完成子任务以缩进卡片列在下方，**不做状态级联**（、）。
 
 ### 4.5 工具栏与共享交互
 
 | 交互 | 位置 | 说明 |
 | --- | --- | --- |
-| 按清单筛选 | `TasksPage.tsx:516-532` | 「全部清单 / 收件箱（未归属）/ 各清单」 |
-| 新建清单 | `:533-544` | 应用内 `dialog.prompt`，非原生弹框 |
-| 当前视图过滤 | `:545-551` | 本地过滤：自身或任一后代命中即保留（`:37-46`） |
-| 多选与批量 | `:552-561` | Ctrl/Cmd 切换、Shift 选范围；批量完成/移动/改期 |
-| 速览侧栏 | `:562-564`、`:637-706` | `.inspector` 常驻可切换 |
-| 新建任务 | `:565-573` | 行内添加行 |
-| 撤销条 | `App.tsx:438-448` | 6s 自动消失 + Ctrl+Z |
+| 按清单筛选 | `TasksPage.tsx` | 「全部清单 / 收件箱（未归属）/ 各清单」 |
+| 新建清单 |  | 应用内 `dialog.prompt`，非原生弹框 |
+| 当前视图过滤 |  | 本地过滤：自身或任一后代命中即保留 |
+| 多选与批量 |  | Ctrl/Cmd 切换、Shift 选范围；批量完成/移动/改期 |
+| 速览侧栏 | 、 | `.inspector` 常驻可切换 |
+| 新建任务 |  | 行内添加行 |
+| 撤销条 | `App.tsx` | 6s 自动消失 + Ctrl+Z |
 
 ---
 
@@ -363,11 +363,11 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 
 ### 5.1 侧栏（`components/Sidebar.tsx`）
 
-- 8 项导航 + 1 个折叠按钮；分区：`top`（7 项）+ `bottom`（设置）——`nav.ts:34-43`。
-- 结构标注为 `nav aria-label="主导航"`，当前项 `aria-current="page"`（`Sidebar.tsx:24`、`:39`）。
-- 收件箱徽标只在未折叠且计数 > 0 时渲染（`:31-33`）。
-- 折叠态 48px，只留图标并以 `title` 补文字（`:25`）；折叠仍保留 `aria-label`（`:46`）。
-- 图标经 `lib/icons.tsx` 由 morphicons 渲染（形状数据来自 lucide 数据包），20px / stroke 2（`:28`）。
+- 8 项导航 + 1 个折叠按钮；分区：`top`（7 项）+ `bottom`（设置）——`nav.ts`。
+- 结构标注为 `nav aria-label="主导航"`，当前项 `aria-current="page"`（`Sidebar.tsx`、）。
+- 收件箱徽标只在未折叠且计数 > 0 时渲染。
+- 折叠态 48px，只留图标并以 `title` 补文字；折叠仍保留 `aria-label`。
+- 图标经 `lib/icons.tsx` 由 morphicons 渲染（形状数据来自 lucide 数据包），20px / stroke 2。
 
 ### 5.3 页面内的三处侧栏收放（2026-09-26）
 
@@ -385,10 +385,10 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 
 ### 5.2 标题栏（`components/TitleBar.tsx`）
 
-- 左侧：macOS 红绿灯占位（`isMac` 时渲染 `titlebar__traffic`，`:11`、`:17`）。
-- 中间：`知行 ZhiXing · <当前页名>`（i18n 取词，`App.tsx:355`）；右侧签名位来自 `settings.signature`（默认「知行合一」，`settings.ts:98`）。
-- 右侧动作：明暗切换（图标与 `aria-label` 随当前主题变化，`:21-28`）；非 macOS 时追加最小化/最大化/关闭（`:29-53`），关闭按钮为危险色（`:46`）。
-- 键盘折叠侧栏：Ctrl/Cmd+B（`App.tsx:288-292`）。
+- 左侧：macOS 红绿灯占位（`isMac` 时渲染 `titlebar__traffic`，）。
+- 中间：`知行 ZhiXing · <当前页名>`（i18n 取词，`App.tsx`）；右侧签名位来自 `settings.signature`（默认「知行合一」，`settings.ts`）。
+- 右侧动作：明暗切换（图标与 `aria-label` 随当前主题变化，）；非 macOS 时追加最小化/最大化/关闭，关闭按钮为危险色。
+- 键盘折叠侧栏：Ctrl/Cmd+B（`App.tsx`）。
 
 ---
 
@@ -398,21 +398,21 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 
 | 能力 | 行为 | 证据 |
 | --- | --- | --- |
-| 尺寸与下限 | 290×380，最小 200×160 | `src/main/index.ts:47-49` |
-| 窗口属性 | 无边框、透明（显式 `backgroundColor: '#00000000'`）、置顶 `floating`、不进任务栏、可缩放、无阴影 | `:88-115` |
-| 不透明度 | `widget_opacity / 100`，钳在 0.3–1.0 | `:86`、`:192-194` |
-| 几何持久化 | 存 `settings.ui_state.widget_geometry`，配置损坏则回退默认尺寸 | `:51-72` |
-| 贴边悬浮球 | 靠近屏幕左右边缘 8px 内收成悬浮球（默认球体 96px、可调 88~160），竖直对齐原窗口中心后钳进工作区；展开按上次宽高还原，且不污染持久化的展开几何 | `src/main/index.ts:376-413` |
-| 球体拖动 | 按住球拖动，松手吸附最近边缘（水平吸平、竖直只钳进工作区）。位移由主进程按屏幕光标重算（与边缘缩放同款）；**不用 `-webkit-app-region: drag`**，否则球上的点击会被一并吞掉 | `:452-477` |
-| 球体缩放 | 滚轮步进 8px、右键「悬浮球大小」三档；球体整比例缩放（bloub 的 viewBox 自己缩放，不再需要按球径调眼睛倍率） | `:427-450` |
+| 尺寸与下限 | 290×380，最小 200×160 | `src/main/index.ts` |
+| 窗口属性 | 无边框、透明（显式 `backgroundColor: '#00000000'`）、置顶 `floating`、不进任务栏、可缩放、无阴影 |  |
+| 不透明度 | `widget_opacity / 100`，钳在 0.3–1.0 | 、 |
+| 几何持久化 | 存 `settings.ui_state.widget_geometry`，配置损坏则回退默认尺寸 |  |
+| 贴边悬浮球 | 靠近屏幕左右边缘 8px 内收成悬浮球（默认球体 96px、可调 88~160），竖直对齐原窗口中心后钳进工作区；展开按上次宽高还原，且不污染持久化的展开几何 | `src/main/index.ts` |
+| 球体拖动 | 按住球拖动，松手吸附最近边缘（水平吸平、竖直只钳进工作区）。位移由主进程按屏幕光标重算（与边缘缩放同款）；**不用 `-webkit-app-region: drag`**，否则球上的点击会被一并吞掉 |  |
+| 球体缩放 | 滚轮步进 8px、右键「悬浮球大小」三档；球体整比例缩放（bloub 的 viewBox 自己缩放，不再需要按球径调眼睛倍率） |  |
 | 悬浮球表情 | bloub 引擎（`vendor/bloub/`，MIT）：11 个状态的随机池（刻意避开 `idle` / `sleep` / `swirl`），2.6~5.8s 一拍、停留 1.4~2.6s 回待机；指针注视走 `setLook`；150s 无交互打盹（`sleep`），互动播 `alert` 唤醒 | `WidgetBall.tsx`、`BloubAvatar.tsx` |
-| 展开 / 收起 | 点球（先笑一下再展开）/ 双击 / 右键「展开浮窗」→ 浮窗朝**球所在侧的反方向**展开（球在左就向右）；浮窗底部「隐藏」= **收起成球**并落回浮窗最近侧，彻底隐藏用右键「隐藏浮窗」 | `:479-517`、`:376-413` |
+| 展开 / 收起 | 点球（先笑一下再展开）/ 双击 / 右键「展开浮窗」→ 浮窗朝**球所在侧的反方向**展开（球在左就向右）；浮窗底部「隐藏」= **收起成球**并落回浮窗最近侧，彻底隐藏用右键「隐藏浮窗」 | 、 |
 | 右键菜单 | 今日视图 / 贴边停靠·展开浮窗（按形态二选一）/ 悬浮球大小（仅球形态）/ 隐藏浮窗 | `src/main/index.ts` 浮窗 IPC 段 |
-| 鼠标穿透 | `setIgnoreMouseEvents(enabled, { forward: true })` | `:196-199` |
-| 内容 | 顶部快速输入（回车即建）+ 今日待办（含子树）+ 底部「打开主程序 / 隐藏」 | `WidgetApp.tsx:138-178` |
-| 数据同步 | 5s 轮询重查今日任务（**球形态暂停**，展开时补拉一次）；`settings` 域广播触发外观重铺 | `WidgetApp.tsx:24-29`、`:53-68` |
+| 鼠标穿透 | `setIgnoreMouseEvents(enabled, { forward: true })` |  |
+| 内容 | 顶部快速输入（回车即建）+ 今日待办（含子树）+ 底部「打开主程序 / 隐藏」 | `WidgetApp.tsx` |
+| 数据同步 | 5s 轮询重查今日任务（**球形态暂停**，展开时补拉一次）；`settings` 域广播触发外观重铺 | `WidgetApp.tsx`、 |
 
-**降级说明**：浮窗内的优先级（`:106`）、标签（`:107`）、更多操作（`:108`）、编辑（`:122`）只提示「请到主窗口」，删除用原生 `confirm` 且无撤销（`:124`）。边缘缩放未实现（`01` R-S-07）。
+**降级说明**：浮窗内的优先级、标签、更多操作、编辑只提示「请到主窗口」，删除用原生 `confirm` 且无撤销。边缘缩放未实现（`01` R-S-07）。
 
 ### 6.1b 番茄钟（第三个独立小窗，`?pomodoro=1`，2026-09-27）
 
@@ -434,19 +434,19 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 
 ### 6.2 系统托盘
 
-- 菜单 5 项：显示主窗口 / 快速添加任务 / 划词捕获 / 显示·隐藏浮窗 /（分隔）退出（`src/main/index.ts:288-302`）。
-- tooltip 动态显示「今天待办 N」，并在任何写操作后刷新（`:271-279`、`:442`）。
-- 单击托盘图标 = 显示主窗口（`:303`）；macOS 用模板图（`:285`）。
+- 菜单 5 项：显示主窗口 / 快速添加任务 / 划词捕获 / 显示·隐藏浮窗 /（分隔）退出（`src/main/index.ts`）。
+- tooltip 动态显示「今天待办 N」，并在任何写操作后刷新（、）。
+- 单击托盘图标 = 显示主窗口；macOS 用模板图。
 
 ---
 
 ## 7. 命令面板（`components/CommandPalette.tsx`）
 
-- 打开：Ctrl/Cmd+K（`App.tsx:271-275`）；打开时清空查询、聚焦输入框（`:53-59`）。
+- 打开：Ctrl/Cmd+K（`App.tsx`）；打开时清空查询、聚焦输入框。
 - 检索：输入后 **120ms 防抖** call `db.globalSearch`（跨类型一次返回；支持 `task:`/`note:`/`flash:`/`tag:` 前缀与 `due:`/`status:`/`priority:`/`folder:` 过滤，`Search` 分档 20/8/6）。
-- 结果结构：先「新建任务」动作 → 页面跳转命令 → 四类命中（任务/笔记/闪念/标签），每组有图标；总计最多 30 项（`:144`）。
-- 键盘：↑/↓ 移动、Enter 执行、Esc 关闭（`:175-189`）；鼠标悬停同步高亮（`:201`）。
-- 语义：`role="dialog"` + `aria-modal` + `role="listbox"` + `role="option"` + `aria-selected`（`:158`、`:161`、`:192`、`:198-199`）。
+- 结果结构：先「新建任务」动作 → 页面跳转命令 → 四类命中（任务/笔记/闪念/标签），每组有图标；总计最多 30 项。
+- 键盘：↑/↓ 移动、Enter 执行、Esc 关闭；鼠标悬停同步高亮。
+- 语义：`role="dialog"` + `aria-modal` + `role="listbox"` + `role="option"` + `aria-selected`（，）。
 - 命令集：导航 + 新建任务 + **开始专注**（`start-pomodoro`，2026-09-27 接上，走独立小窗）+ 备份等；
   MRU 已实现（`zhixing.cmd.mru`，最近用过的命令排前面）。
 
@@ -456,7 +456,7 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 
 ### 8.1 布局：一张笔记纸 + 一条信息条（`NotesPage.tsx`，2026-09 重排）
 
-```text
+`text
 笔记树 240px（可拖 180–460）│ 笔记多标签页（≥2 篇打开时出现，30px；横向滚动）
                             │ 笔记纸（编辑区唯一的卡片，占满编辑区）
                             │   ├─ 标题行：标题 · 保存状态胶囊 · 标签胶囊 · 归属胶囊
@@ -465,7 +465,7 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
                             │   └─ 正文：Markdown / 富文本 / Word / Excel / 链接 / 预览（一律无内层边框）
                             ↑ 以上三块铺满纸面，共用同一条左边缘
                                      信息条（默认收起，34px；全宽，与纸同宽）
-```
+`
 
 - **分隔条与工作流同一套（2026-09-26）**：笔记树右缘那条分隔条（`.ntree__resizer`）改成工作流模板树分隔条（`.wf-splitter`）的规格 —— **12px 命中区 + 伪元素画的 2px 细线**（平时 `--border`，hover / 聚焦 / 拖拽中变 `--accent`），可聚焦（`tabIndex=0`，`role="separator"` + `aria-orientation` + `aria-valuenow/min/max`），← → 各 16px、Home 复位；宽度默认 240（180–460）并落 localStorage（`notes.treeWidth`）。此前是 7px 的透明块、悬停才整条泛蓝（`color-mix` 45%）、没有键盘入口，ARIA 只有 role 与 label —— 拖拽手感与可访问性都弱一档。拖拽期间根元素挂 `.ntree.is-resizing`（细线变强调色、整块禁止选中文本），与工作流的 `.wf-wrap.is-resizing` 是同一件事。两页侧栏的宽度规格（默认 / 上下界 / 键盘步长）现在取同一组数：改一边要同时改另一边。回归：`notesheetcheck` 两条断言。
 - **笔记多标签页（2026-09-26）**：打开过的笔记以 tab 留在编辑区顶部一条 30px 的横条里（**≥2 篇才渲染** —— 只有一篇时不占位）。树上单击 = 新开一枚（已打开则只激活、不重复开）；上限 12，到顶挤掉最久未使用的。关掉当前那枚按「**右邻 → 左邻 → 空态**」接上，× 按钮与中键点击都能关。**装不下时**（内容宽 > 可视宽）右端固定出现一个「选择」入口（`⌄ N`），点开列出全部已打开的笔记、当前那枚带勾 —— 横向滚动是个不可见的手势，被推出视口的那几篇不能等于没有入口。切换前先 `flushPending()` 落盘，所以切走再回来内容不丢。列表与激活项存 localStorage（`zhixing.noteTabs`）—— 切页会卸载整个笔记页、重启更不用说，恢复全靠它；全屏编辑（zen）时整条让位。**正文状态仍只有一份**（方案里的路线 1）：切 tab 复用 `selectNote()` 重新读库，代价是滚动位置不记忆（切回来滚到顶部），要消除需给每枚 tab 分桶独立草稿。设计与拍板见 `docs/note-tabs-plan.md`，回归 `scripts/notetabcheck.mjs`（18 项）。
@@ -489,21 +489,21 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 - **窄窗口换形态**：判据是编辑区**自身**宽度（`ResizeObserver` 量 `.notes-main`）而不是窗口宽度，阈值 660px。低于阈值时展开态改为覆盖式抽屉 `.links--drawer`（`position: fixed` + `.links__scrim` 遮罩），不挤压正文 —— 1024 窗口下编辑区只剩约 480px，并排会把提示文案折成两行。
 - **全屏编辑**：工具栏「全屏」把状态提到 App（`.app--zen`），页面头、笔记树、左侧主导航一起让位，**标题栏保留**（窗口按钮还在上面）；Esc 退出，离开笔记页自动复位。样式见 `notes.css` 的 `.page--zen` / `.notes-main--zen`。
 - **链接体检入口在树上**：「孤儿笔记 / 失效链接」查的是整库链接健康度，不属于「这一篇怎么编辑」，2026-09 从单篇笔记工具栏移到笔记树工具行（`.ntree__topbar` 的「链接体检」）。单篇工具栏因此从 8 个控件降到 6 个，1280 窗口下不再发生折叠。
-- 信息区可整体开关（`linksOpen`，默认开）；滚动容器均在 `global.css:126-134` 的 `overscroll-behavior: contain` 名单内。
+- 信息区可整体开关（`linksOpen`，默认开）；滚动容器均在 `global.css` 的 `overscroll-behavior: contain` 名单内。
 - 回归：`node scripts/notesheetcheck.mjs`（43 项，含卡片收敛、铺满对齐、标题行四合一与保存状态两态、工具栏到正文首行 ≤14px、操作组落在工具栏左端与宽窄两态、富文本与 Word 操作组并入格式条、Word 写回走胶囊且不弹提示（编辑→未保存 / 写回→已保存 / 无 toast）、正文无焦点框、点正文空白可聚焦（Markdown / 富文本各一条）、工具栏无边框、数据形态全宽、信息条两态、抽屉形态、全屏、树上入口）。
 
 ### 8.2 CodeMirror 6 编辑器（`components/MarkdownEditor.tsx`）
 
-- 扩展：`history`、`drawSelection`、`highlightActiveLine`、`closeBrackets`、`markdown()`、`syntaxHighlighting(mdHighlight)`、`[[` 补全、placeholder、行宽换行、`completionKeymap + defaultKeymap + historyKeymap + indentWithTab`（`:105-120`）。
-- 高亮配色**全部取自设计令牌**（`:27-37`）：标题用 `--accent`、行内代码用 `--accent-solid`、引用用 `--fg-secondary`。
-- 编辑区主题：字体走 `--font-ui`、行高 1.75、内边距纵向 `--space-4`（横向 0，交给书写列）、活动行 `--bg-hover`、选区 `--accent-soft`、光标 `--accent`、补全浮层 `--bg-layer-solid` + `--radius-md`（`:39-62`）。
-- `[[` 补全按前缀过滤标题，最多 20 项（`:83-99`）。
-- 外部改正文（切笔记、回滚版本）时替换文档且不触发 onChange 回环（`:133-140`）。
+- 扩展：`history`、`drawSelection`、`highlightActiveLine`、`closeBrackets`、`markdown()`、`syntaxHighlighting(mdHighlight)`、`[[` 补全、placeholder、行宽换行、`completionKeymap + defaultKeymap + historyKeymap + indentWithTab`。
+- 高亮配色**全部取自设计令牌**：标题用 `--accent`、行内代码用 `--accent-solid`、引用用 `--fg-secondary`。
+- 编辑区主题：字体走 `--font-ui`、行高 1.75、内边距纵向 `--space-4`（横向 0，交给书写列）、活动行 `--bg-hover`、选区 `--accent-soft`、光标 `--accent`、补全浮层 `--bg-layer-solid` + `--radius-md`。
+- `[[` 补全按前缀过滤标题，最多 20 项。
+- 外部改正文（切笔记、回滚版本）时替换文档且不触发 onChange 回环。
 
 ### 8.3 保存与查找
 
-- 自动保存**防抖**；切换笔记前先 `flushPending`（8 处入口都走 `selectNote`，`NotesPage.tsx:140-163`）；Ctrl/Cmd+S 立即保存（`:165-184`）。
-- 查找栏 `role="search"`（`:501`）：Enter 找下一个、Esc 关闭；按钮只有「下一个 / 全部替换 / 关闭」（`:520-528`）——无单处替换、无全部命中高亮。
+- 自动保存**防抖**；切换笔记前先 `flushPending`（8 处入口都走 `selectNote`，`NotesPage.tsx`）；Ctrl/Cmd+S 立即保存。
+- 查找栏 `role="search"`：Enter 找下一个、Esc 关闭；按钮只有「下一个 / 全部替换 / 关闭」——无单处替换、无全部命中高亮。
 - **残留风险**：无 `beforeunload`/关窗钩子，直接关窗会丢掉防抖窗口内的编辑（`01` R-N-20）。
 
 ### 8.4 正文区的四种形态
@@ -524,18 +524,18 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 
 ### 9.1 应用内对话框（`components/Dialogs.tsx`）
 
-存在理由写在文件头（`:3-9`）：Electron **不实现** `window.prompt`——调用不报错、永远返回 `null`，于是新建标签/文件夹/工作流、重命名在打包版里会静默失败。
+存在理由写在文件头：Electron **不实现** `window.prompt`——调用不报错、永远返回 `null`，于是新建标签/文件夹/工作流、重命名在打包版里会静默失败。
 
 | 规范 | 实现 |
 | --- | --- |
 | API | `dialog.prompt({title,label,defaultValue,placeholder,confirmText})` / `dialog.confirm(options 或 string)` |
-| 队列 | 用数组 + ref 承载，并存请求不会互相覆盖（`:43-57`） |
-| 结算时机 | 先更新界面再 `resolve`（`:59-67` 注释记录了「resolve 写进 setState updater 导致 await 后代码永不执行」的真实 bug） |
-| 焦点 | 打开后 30ms 选中输入框内容（`:83-88`） |
-| 键盘 | Enter 确认、Escape 取消（`:118-121`） |
-| 遮罩 | 点击遮罩 = 取消（`:99`）；对话框本体阻止冒泡（`:104`） |
-| 语义 | `role="dialog"` + `aria-modal="true"`（`:102-103`） |
-| 危险动作 | `danger: true` → 确认按钮转危险色（`:94`、`:134-138`） |
+| 队列 | 用数组 + ref 承载，并存请求不会互相覆盖 |
+| 结算时机 | 先更新界面再 `resolve`（ 注释记录了「resolve 写进 setState updater 导致 await 后代码永不执行」的真实 bug） |
+| 焦点 | 打开后 30ms 选中输入框内容 |
+| 键盘 | Enter 确认、Escape 取消 |
+| 遮罩 | 点击遮罩 = 取消；对话框本体阻止冒泡 |
+| 语义 | `role="dialog"` + `aria-modal="true"` |
+| 危险动作 | `danger: true` → 确认按钮转危险色（、） |
 
 **缺口（本轮实测）**：`window.confirm` 仍有 **15 处**未迁移（TasksPage 2、InboxPage 2、WidgetApp 1、NotesPage 1、SettingsPage 2、WorkflowPage 3、TodayPage 1、RecycleBin 2、TagManager 1），会弹原生框、与自绘界面风格割裂；应用内 `dialog.prompt/confirm` 调用点 10 处。
 
@@ -543,11 +543,11 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 
 | 组件 | 层级 / 语义 | 行为 | 证据 |
 | --- | --- | --- | --- |
-| `Toast` | `--z-toast`，`role="status" aria-live="polite"` | 单一文案，2600ms 自动消失 | `components/Toast.tsx:4`、`App.tsx:344-347` |
-| 撤销条 InfoBar | `--z-float`，`role="status"` | 6s 自动消失；「撤销」按钮 + Ctrl+Z；删除类撤销走回收站 restore | `App.tsx:438-448`、`:249-261` |
-| `ReminderPopup` | `--z-reminder`，`role="alertdialog"` | 30s 轮询；正文含提醒时刻与截止；动作：稍后 5/15/30 分、查看、知道了 | `components/ReminderPopup.tsx:24`、`:47-79` |
+| `Toast` | `--z-toast`，`role="status" aria-live="polite"` | 单一文案，2600ms 自动消失 | `components/Toast.tsx`、`App.tsx` |
+| 撤销条 InfoBar | `--z-float`，`role="status"` | 6s 自动消失；「撤销」按钮 + Ctrl+Z；删除类撤销走回收站 restore | `App.tsx`、 |
+| `ReminderPopup` | `--z-reminder`，`role="alertdialog"` | 30s 轮询；正文含提醒时刻与截止；动作：稍后 5/15/30 分、查看、知道了 | `components/ReminderPopup.tsx`、 |
 
-`PomodoroBar`（`--z-float`，`role="status"`）显示阶段、`mm:ss`、任务名、进度条、暂停/继续、结束；休息阶段换成 `pomo--break` 皮肤（`PomodoroBar.tsx:82-92`）。
+`PomodoroBar`（`--z-float`，`role="status"`）显示阶段、`mm:ss`、任务名、进度条、暂停/继续、结束；休息阶段换成 `pomo--break` 皮肤（`PomodoroBar.tsx`）。
 
 ### 9.2b 弹出菜单同构：状态 / 优先级 / 标签（2026-09-27 收口）
 
@@ -570,7 +570,7 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 ### 9.3 模态与浮层规范
 
 - 遮罩统一 `.modal-mask` + `--overlay`，弹层用 `--shadow-lg`/`--shadow-xl` + `--radius-lg`/`--radius-xl`。
-- 模态内的输入用 `.field`；`.field:focus-visible` 关掉全局焦点环，改由边框变色表达，避免两层焦点效果（`global.css:60-63`）。
+- 模态内的输入用 `.field`；`.field:focus-visible` 关掉全局焦点环，改由边框变色表达，避免两层焦点效果（`global.css`）。
 - 速览面板（`.inspector`）、图谱侧栏（`.graph-side`）、工作流侧栏（`.wf-side`）都用 `<aside aria-label>` 标注。
 
 ---
@@ -579,15 +579,15 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 
 | 项目 | 规定 | 证据 |
 | --- | --- | --- |
-| 焦点环 | **永远可见、不可删**；`:focus-visible` 用 `--focus-w` + `--focus-ring`，`outline-offset: 1px` | `global.css:53-58` |
-| 输入焦点 | 输入/下拉改用边框变色，避免双重焦点环 | `global.css:60-63` |
-| 文字对比度 | 正文/次要 ≥4.5:1、辅助 ≥4.0:1；应用主题时**运行时校正** | `theme.ts:49-68`、`color.ts:70-81` |
-| 非文本对比 | 边框/指示条/图标对相邻底 ≥3:1（约定） | `tokens.css:88` 注释 |
-| 对比度实测 | `scripts/contrast-audit.mjs` 对 14 主题包 × 双模式逐组测 WCAG 相对亮度（报告 168 组） | `package.json:20` |
-| 键盘可达 | Ctrl+K/N/Shift+N/B/E/F/,/Tab/1..6/Z；输入框/文本域/contentEditable 内不劫持 | `App.tsx:264-342` |
+| 焦点环 | **永远可见、不可删**；`:focus-visible` 用 `--focus-w` + `--focus-ring`，`outline-offset: 1px` | `global.css` |
+| 输入焦点 | 输入/下拉改用边框变色，避免双重焦点环 | `global.css` |
+| 文字对比度 | 正文/次要 ≥4.5:1、辅助 ≥4.0:1；应用主题时**运行时校正** | `theme.ts`、`color.ts` |
+| 非文本对比 | 边框/指示条/图标对相邻底 ≥3:1（约定） | `tokens.css` 注释 |
+| 对比度实测 | `scripts/contrast-audit.mjs` 对 14 主题包 × 双模式逐组测 WCAG 相对亮度（报告 168 组） | `package.json` |
+| 键盘可达 | Ctrl+K/N/Shift+N/B/E/F/,/Tab/1..6/Z；输入框/文本域/contentEditable 内不劫持 | `App.tsx` |
 | 语义标注 | `nav aria-label`、`aria-current`、`role="group"` + `aria-pressed`、`role="dialog" aria-modal`、`role="listbox"`/`option`、`role="search"`、`role="status"`、`role="alertdialog"`、`aria-label` 于图标按钮 | 见 §3–§9 各条 |
-| 图标按钮 | 一律带 `aria-label`（或 `title`），纯装饰图标 `aria-hidden` | 如 `Sidebar.tsx:46`、`TitleBar.tsx:24`、`CommandPalette.tsx:165` |
-| 减弱动效 | `@media (prefers-reduced-motion: reduce)` 把 7 档时长全归零 | `tokens.css:163-173` |
+| 图标按钮 | 一律带 `aria-label`（或 `title`），纯装饰图标 `aria-hidden` | 如 `Sidebar.tsx`、`TitleBar.tsx`、`CommandPalette.tsx` |
+| 减弱动效 | `@media (prefers-reduced-motion: reduce)` 把 7 档时长全归零 | `tokens.css` |
 
 **未取证**：本轮未做屏幕阅读器实机测试；以上为代码级证据（语义属性与对比度算法），不等价于无障碍验收通过。
 
@@ -599,7 +599,7 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 
 1. **统一时长/缓动**：所有过渡引用 `--dur-*` / `--ease-*`，不允许裸毫秒值 —— 现在由测试守着（§11.6）。
 2. **交互反馈不改变布局**：按压用独立 `translate` 属性下移 1px（而非 `transform`，避免覆盖组件自身 transform，
-   如 `.toast` 的 `translateX(-50%)`），禁用用 `opacity: .45` + `cursor: not-allowed`（`global.css:33-45`）。
+   如 `.toast` 的 `translateX(-50%)`），禁用用 `opacity: .45` + `cursor: not-allowed`（`global.css`）。
    唯一的例外是 §3.0 的"标题区下内边距"，它发生在页面顶部、幅度 4px，不会推动滚动锚点。
 3. **动画属性只用 `transform` / `opacity`**（颜色、`border-color`、`box-shadow` 这类 paint 属性可以用；
    不要动 `width` / `height` / `top` / `left` / `margin`）。既有例外：侧栏宽度过渡、番茄钟进度条的宽度推进。
@@ -607,7 +607,7 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 5. **列表交错有上限**：`calc(var(--i) * var(--dur-stagger))`，最多 8 行参与，且**只给"本次新增的行"**
    —— 滚动进入视口的行永远不播（虚拟列表滚动会不断重挂载，那会变成"滚动到哪都在闪"）。
 6. **悬停聚焦淡化**：与当前悬停对象无关的图元淡到 `opacity: .05`（Obsidian 取值，保留一丝轮廓当上下文），
-   图谱/工作流共用（`global.css:325-335`）。**这个值被 E2E 断言盯着，不许改。**
+   图谱/工作流共用（`global.css`）。**这个值被 E2E 断言盯着，不许改。**
 
 ### 11.2 降级：三档 + 两类
 
@@ -698,17 +698,17 @@ CSS 只能对仍然存在的元素播放动画，而 React 的条件渲染在 fa
 
 | 优先级 | 缺口 | 现状证据 | 影响 |
 | --- | --- | --- | --- |
-| 高 | 完成撤销无 `prev_status` | `App.tsx:257` 盲目 `toggleTask` | 从 done 撤销会落到 todo，不是原状态 |
+| 高 | 完成撤销无 `prev_status` | `App.tsx` 盲目 `toggleTask` | 从 done 撤销会落到 todo，不是原状态 |
 | 高 | 关窗前不落盘 | `NotesPage.tsx` 无关窗钩子 | 防抖窗口内编辑丢失 |
 | 高 | `window.confirm` 15 处未迁移 | 见 §9.1 | 原生框与自绘界面割裂 |
-| 中 | 「移动到清单」无入口 | `preload/index.ts:91-92` 零调用 | 清单体系半可用 |
-| 中 | 闪念转子任务 / 转笔记指定目录无入口 | `preload/index.ts:48-49`、`InboxPage.tsx:86` | 后端能力浪费 |
-| 中 | 无 MRU、命令集少 | `CommandPalette.tsx:81-104` | 高频操作多两步 |
-| 中 | `calendar_show_done` 在日历无效 | `CalendarBoard.tsx:49-58` | 设置项失效 |
-| 中 | 富文本无编辑器、Office 只读 | `NotesPage.tsx:425`、`:482` | 格式体系半可用 |
-| 低 | 边缘缩放、FloatingDock、splash | `src/main/index.ts:149-182`；全仓无 dock/splash | 平台体验细节 |
-| 低 | 换主题不改托盘图标 | `src/main/index.ts:283-285` | 视觉不一致 |
-| 低 | 图谱页未订阅 `flash` 域 | `GraphPage.tsx:119` | 闪念变化不刷新图谱 |
+| 中 | 「移动到清单」无入口 | `preload/index.ts` 零调用 | 清单体系半可用 |
+| 中 | 闪念转子任务 / 转笔记指定目录无入口 | `preload/index.ts`、`InboxPage.tsx` | 后端能力浪费 |
+| 中 | 无 MRU、命令集少 | `CommandPalette.tsx` | 高频操作多两步 |
+| 中 | `calendar_show_done` 在日历无效 | `CalendarBoard.tsx` | 设置项失效 |
+| 中 | 富文本无编辑器、Office 只读 | `NotesPage.tsx`、 | 格式体系半可用 |
+| 低 | 边缘缩放、FloatingDock、splash | `src/main/index.ts`；全仓无 dock/splash | 平台体验细节 |
+| 低 | 换主题不改托盘图标 | `src/main/index.ts` | 视觉不一致 |
+| 低 | 图谱页未订阅 `flash` 域 | `GraphPage.tsx` | 闪念变化不刷新图谱 |
 
 ---
 
@@ -944,9 +944,9 @@ SVG 的 `<text>` 既不换行也不缩放，超出的部分直接画到节点框
 
 **根因**在 `components/RichTextEditor.tsx` 那个"外部 html → 编辑器"的同步 effect，它的第一句是：
 
-```ts
+`ts
 if (!editor || editor.isFocused) return
-```
+`
 
 这个守卫的**本意**是"别在用户打字时把内容顶掉"，但它把**外部真的换了内容**也一起挡了：切换笔记时 React 复用同一个编辑器实例、ProseMirror 的焦点仍在里面，于是新笔记的 HTML（Word 是异步从 `officeDoc` 取回来的）永远进不来。用户"再点一次能恢复"，正是因为那次重建了实例、`isFocused` 归位。
 
