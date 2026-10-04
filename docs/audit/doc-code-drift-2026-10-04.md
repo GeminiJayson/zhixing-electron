@@ -2,6 +2,10 @@
 
 > 范围：`README.md`、`CONTEXT.md`、`docs/01`–`03`、`docs/MAINTENANCE.md` 与 `src/**` 的逐项对照。
 > 方法：**先机械核对**（路径、符号、通道名、数字都能脚本查），**再人工判断语义**。
+>
+> **修复进展（2026-10-04 当日）**：A 项（重复实现）**已全部处理**；C 项（测试盲区）**4 个模块已补齐**；
+> 测试从 **49 文件 / 547 用例**增至 **53 文件 / 630 用例**。B 项（大文件）与 D 项（文档细节）待做。
+> 详见文末「修复记录」，**其中包含对本文一处结论的更正**。
 
 ---
 
@@ -81,7 +85,19 @@
 **但这是静默失效风险**：`shared` 那份的注释写着「**键必须与 `task_note_context` 表里的键逐字一致，
 才能互相定位**」。**任何一处归一化规则改动、忘了同步另一处，段落锚定位就会失效，而且不会报错。**
 
-**建议**：渲染层改从 `@shared/block-fingerprint` 导入，删掉 `renderer/lib/` 那份与它的测试。
+**⚠️ 本文原判有误（已更正）**：初稿写的是「两份独立实现」，实际比对导出后是 ——
+
+| | 导出 |
+| --- | --- |
+| **两份共有** | `sha1Hex`、`blockFingerprint` ← **真重复** |
+| 仅 renderer/lib | `NoteBlock`、`cellKey`、`isCellRef`、`isSheetName`、`listNoteBlocks`（Office 表格的键） |
+| 仅 shared | `normalizeBlockText`、`LineMatch`、`findBestLine`（段落匹配） |
+
+**所以不是整个文件重复，而是两个函数重复。** 已按此修复：`renderer/lib/block-fingerprint.ts`
+**从 `@shared/block-fingerprint` 导入并再导出**那两个函数（185 → 127 行），保留自己的 Office 部分。
+
+**另一处值得记的**：两份的注释**都写着「这是唯一实现」** —— 一份自称唯一实现的同时自己是第二份。
+这类「注释与事实相反」比没有注释更危险：**它让人不去检查。**
 
 **其余重复**：
 
@@ -147,3 +163,50 @@
 2. **数字要现算，不要沿用** —— 本次 6 处数字里 3 处是错的，且**同一份文档里两处口径不一致**。
 3. **改完看渲染，不只看编译** —— 清空反引号对这类错误，`tsc` 与单测**一个都查不出来**。
 4. **大规模替换后必做三项抽查**：命中数对不对、有没有改到字符串字面量或代码块标记、**文档能不能正常渲染**。
+---
+
+## 六、修复记录（2026-10-04 当日完成）
+
+### A. 重复实现 —— 4 组已消除
+
+| 组 | 处理 | 效果 |
+| --- | --- | --- |
+| `sha1Hex` + `blockFingerprint` | `renderer/lib/block-fingerprint.ts` 改为从 `@shared` **导入并再导出** | 185 → 127 行；段落指纹从此**只有一份实现** |
+| `readTokenMs` | **四份**合成 `src/renderer/src/lib/motion-tokens.ts` | 4 个文件各删 7–12 行 |
+| `crc32` | 合成 `src/shared/crc32.ts`（表 + 函数），`db/export.ts` 与 `db/preview.ts` 改为导入 | 两份表（`CRC32_TABLE` / `CRC_TABLE`）合一 |
+| `makeThumb` / `readAsDataUrl` | `RichTextEditor.tsx` 改为从 `lib/rich-media.ts` 导入（调用处显式传 `THUMB_MAX`） | 顺带修掉一处行为差异：组件那份**出错会抛**，lib 那份返回 `''` |
+
+**同名函数从 12 组降到 7 组，剩下 7 组逐条看过，都是合理的**：
+
+- `isAppOwnUrl` —— main 那份是**薄包装**（把 `__dirname` / 环境变量注入给 shared 的纯函数），正确的分层
+- `stamp` —— main 返回 ISO 时间戳，渲染层把 ISO 切成 `HH:MM:SS`，**同名但不同函数**
+- `readBody` / `json` / `onRequest` —— 两个彼此独立的 HTTP server（工作流触发端点 / 保险箱本地服务）
+- `mixHex` —— 一份在 `renderer/src/vendor/bloub`（vendor 代码不动）
+- `pick` —— 通用工具名
+
+### C. 测试盲区 —— 4 个模块已补齐（**新增 83 个用例**）
+
+| 新增测试 | 用例数 | 覆盖的关键契约 |
+| --- | ---: | --- |
+| `src/shared/workflow-trigger.test.ts` | **51** | **坏输入一律退回手动**（interval < 1 分钟会让调度器忙等）；**没有令牌的 HTTP 触发直接丢掉**（否则谁都能启动流程）；`dueByDaily` **只认当前这一分钟、错过不补跑** |
+| `src/shared/knowledge-check.test.ts` | **19** | **第一版的纯文本不能被当成损坏**（返回 null 而非抛异常）；版本号不对不误读；字符串字段类型不对时归零而不是把 `undefined` 漏给 UI |
+| `src/shared/knowledge-templates.test.ts` | **9** | 三类模板**各自挡住最容易漏的那一项**（概念→「它不是什么」、方法论→「什么时候别用」、踩坑→**「排查过程」必须排在「根因」前面**） |
+| `src/shared/events.test.ts` | **12** | 订阅表是 `Set`：**同一函数订阅两次只收一次**；`emit` 遍历快照，**回调里退订不影响本轮** |
+
+**其中一条测试是我自己写错的**：初稿断言「同一函数订阅两次收两次」，跑出来 1 次 ——
+**是我对代码的理解错了，不是代码错了**（`listeners` 是 `Set`）。已把该用例改成记录真实契约。
+
+### 顺带发现并修掉的一处行为差异
+
+`RichTextEditor` 自己那份 `makeThumb` **没有 try/catch**（出错会抛），而 `lib/rich-media.ts` 那份
+**catch 后返回空串**。合并后走的是后者 —— **这是行为变化，方向是变安全**（调用方本来就按字符串处理）。
+
+---
+
+## 七、还没做的
+
+| 项 | 说明 |
+| --- | --- |
+| **B. 大文件** | `NotesPage.tsx` 2335 / `WorkflowPage.tsx` 2036 / `db/workflow.ts` 1928 / `TasksPage.tsx` 1829 / `SettingsPage.tsx` 1713 —— **五个都在 1700 行以上，未拆** |
+| **D. `docs/03` 两块预览图归位** | 它们在标题之后、`§1` 之前，本该在 `§3 布局框架` 与 `§8.1`。**移动时反复破坏结构，停在安全状态** |
+| **`db/` 的 31 个文件无单测** | `better-sqlite3` 是 Electron ABI，vitest 加载不了。**基础设施限制**，要解得换测试运行器或做 ABI 双份 |
