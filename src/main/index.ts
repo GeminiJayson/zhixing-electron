@@ -46,6 +46,7 @@ import {
   testAiConnection,
 } from './ai'
 import { PRESET_ACCENTS, hexToRgb, nearestAccent } from './accent'
+import { createTrayModule } from './tray'
 import { createWidgetModule } from './widget'
 import {
   BALL_MARGIN,
@@ -235,69 +236,6 @@ function registerHotkeys(): Record<string, string> {
   return { ...hotkeyStatus }
 }
 
-/**
- * 托盘提示显示今日待办数。
- * 此前 tooltip 是固定文案，少了一处「不打开应用也能看到今天还剩多少」的提醒。
- */
-function updateTrayTooltip(): void {
-  if (!tray || tray.isDestroyed()) return
-  try {
-    const n = listTodayTasks().roots.length
-    tray.setToolTip(`知行 ZhiXing · 今天待办 ${n}`)
-  } catch {
-    tray.setToolTip('知行 ZhiXing')
-  }
-}
-
-/** 当前强调色对应的图标 key（文件名里的小写 6 位 hex） */
-function accentIconKey(): string {
-  try {
-    return nearestAccent(currentSettings().accent_color || '#0D9488').replace('#', '').toLowerCase()
-  } catch {
-    return '0d9488'
-  }
-}
-
-/** 主题图标路径；文件缺失时由调用方退回打包图标，绝不让图标空掉 */
-function themeIconPath(kind: 'app' | 'tray'): string {
-  return join(__dirname, '../../resources/theme-icons/' + kind + '-' + accentIconKey() + '.png')
-}
-
-/**
- * 托盘图标：直接读当前强调色对应的那份 PNG（构建期烘好，见上面 PRESET_ACCENTS 的注释）。
- * 任何一步失败都要退回**打包图标**——绝不出现「托盘图标消失」这种更糟的回退。
- */
-function buildTrayImage(): Electron.NativeImage {
-  // macOS 仍然用模板图：菜单栏会按明暗自动反色，彩色图标在菜单栏里反而是异类
-  if (process.platform === 'darwin') {
-    const base = nativeImage.createFromPath(join(__dirname, '../../resources/trayTemplate.png'))
-    if (!base.isEmpty()) base.setTemplateImage(true)
-    return base
-  }
-  const img = nativeImage.createFromPath(themeIconPath('tray'))
-  if (!img.isEmpty()) return img
-  return nativeImage.createFromPath(join(__dirname, '../../resources/icon-256.png'))
-}
-
-/**
- * 强调色变化后重建图标：**窗口图标与托盘图标一起换**。
- *
- * 原本这里只换托盘（按主题包的 fg2 单色重着色）；现在两者都跟随强调色 ——
- * 窗口图标决定任务栏上显示什么，用户换强调色时它也该跟着变。
- */
-function refreshTrayIcon(): void {
-  const key = accentIconKey()
-  if (key === lastAccentKey) return
-  lastAccentKey = key
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    const appIcon = nativeImage.createFromPath(themeIconPath('app'))
-    if (!appIcon.isEmpty()) mainWindow.setIcon(appIcon)
-  }
-  if (!tray || tray.isDestroyed()) return
-  const img = buildTrayImage()
-  if (!img.isEmpty()) tray.setImage(img)
-}
-
 /*
   悬浮球 / 浮窗模块。状态在它自己的闭包里 —— 这里只拿到一组函数与几个只读访问器。
   依赖用注入而不是 import：那些函数定义在本文件里、又反过来要用 widget，
@@ -316,40 +254,19 @@ const widget = createWidgetModule({
   currentSettings,
 })
 
-/**
- * 系统托盘菜单：动作集为
- * quick-capture / new-note / flash-inbox / capture / select-quick / widget。
- */
-function createTray(): void {
-  const image = buildTrayImage()
-  if (image.isEmpty()) return
-  lastAccentKey = accentIconKey()
-  tray = new Tray(image)
-  updateTrayTooltip()
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: '显示主窗口', click: () => showMain() },
-      { label: '快速添加任务', click: () => void dispatchHotkeyAction('quick-capture') },
-      { label: '新建笔记', click: () => sendAction('new-note') },
-      { label: '记闪念', click: () => sendAction('flash-inbox') },
-      { label: '快速笔记', click: () => void dispatchHotkeyAction('quick-note') },
-      { label: '划词捕获', click: () => void dispatchHotkeyAction('capture') },
-      // 与热键同一条静默路径：不进捕获窗，直接入闪念
-      { label: '选中入闪念', click: () => void dispatchHotkeyAction('flash-quick') },
-      { label: '读取选中并速记', click: () => sendAction('select-quick') },
-      { label: '显示/隐藏浮窗', click: () => widget.toggleWidget() },
-      { type: 'separator' },
-      {
-        label: '退出',
-        click: () => {
-          app.quit()
-        },
-      },
-    ])
-  )
-  tray.on('click', () => showMain())
-}
 
+/* 系统托盘模块。依赖 widget.toggleWidget（菜单里的「显示/隐藏浮窗」），
+   所以排在 widget 之后。段内那两个图标函数（accentIconKey / themeIconPath）
+   也搬过去了 —— 窗口图标要用 themeIconPath，这里通过 appIconPath 拿。 */
+const trayMod = createTrayModule({
+  currentSettings,
+  listTodayTasks,
+  showMain,
+  sendAction,
+  dispatchHotkeyAction,
+  toggleWidget: () => widget.toggleWidget(),
+  getMainWindow: () => mainWindow,
+})
 /**
  * 只用标准菜单（App / 编辑 / 窗口），**不挂 viewMenu**：
  * Electron 默认菜单带 View→Zoom，页面缩放会按 origin 存进 profile，
@@ -478,8 +395,8 @@ function createWindow(): BrowserWindow {
      * 截图对比确认：初始亮色与"亮→暗→亮"之后都有这圈边，说明它不是切换造成的。
      */
     hasShadow: false,
-    // 窗口图标 = 任务栏图标：跟随当前强调色（换色时由 refreshTrayIcon 调 setIcon）
-    icon: themeIconPath('app'),
+    // 窗口图标 = 任务栏图标：跟随当前强调色（换色时由 trayMod.refreshTrayIcon 调 setIcon）
+    icon: trayMod.appIconPath('app'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,
@@ -1644,12 +1561,12 @@ app.whenReady().then(() => {
     console.error('[backup] 启动备份失败', err)
   }
   registerHotkeys()
-  createTray()
+  trayMod.createTray()
   // 任何写操作后刷新托盘标题（今日待办数）；主题/主题包改动会走同一条链路，
-  // refreshTrayIcon 内部按最后一次配色去重，因此不会每次勾选任务都重着色。
+  // trayMod.refreshTrayIcon 内部按最后一次配色去重，因此不会每次勾选任务都重着色。
   setDataChangedHook(() => {
-    updateTrayTooltip()
-    refreshTrayIcon()
+    trayMod.updateTrayTooltip()
+    trayMod.refreshTrayIcon()
     // widget_enabled / close_to_widget 改动后浮窗显隐立刻跟着变，不必重启
     widget.syncWidgetVisibility()
   })
@@ -1685,11 +1602,11 @@ app.whenReady().then(() => {
       sender.setBackgroundColor(dark ? '#1F1F1F' : '#F3F3F3')
     }
     // 托盘图标 = 主题派生色，换明暗要重建
-    refreshTrayIcon()
+    trayMod.refreshTrayIcon()
   })
   // 系统明暗变化（theme_mode=system 时）同样要重建托盘图标
   nativeTheme.on('updated', () => {
-    refreshTrayIcon()
+    trayMod.refreshTrayIcon()
     const dark = nativeTheme.shouldUseDarkColors
     // 同上：只碰主窗，透明窗口的底色必须一直是全透明
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -1700,7 +1617,7 @@ app.whenReady().then(() => {
   // 渲染层首屏就绪 → 关闭欢迎页并显示主窗（splash 流程的「完成」信号）
   ipcMain.handle('app:ready', () => revealMain())
   // 托盘图标随主题重建：设置页改主题/主题包后由数据变更钩子触发
-  ipcMain.handle('app:refreshTray', () => refreshTrayIcon())
+  ipcMain.handle('app:refreshTray', () => trayMod.refreshTrayIcon())
 
   // 改键流程：设置页进入捕获态前注销全部热键，避免被系统层吞掉按键；
   // 捕获完成或取消后统一重注册并回传状态。
