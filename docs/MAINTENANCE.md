@@ -50,6 +50,25 @@
 | **设置项新增** | `AGENTS.md` 的分区归属表 + `docs/03` 的设置页章节 |
 | **发版** | `docs/release-notes-v<版本>.md`；`package.json` 的 version |
 
+### 引用代码时**不要写行号**
+
+**这条是实测踩出来的**：`docs/03` 里有 56 处形如 `theme.ts:19-35` 的引用，
+抽查下来**全部失效** ——
+
+| 文档写的 | 实际 |
+| --- | --- |
+| `theme.ts:19-35` 是 `TOKEN_VARS` | 在 **41** 行（偏 22） |
+| `color.ts:70-81` 是 `ensureTextContrast` | 在 **112** 行（偏 42） |
+| `theme.ts:176-178` 是运行时覆盖 | 那里是 `lastThemeKey` |
+
+**行号必然随代码演进失效，而符号名不会。** 所以：
+
+- ✅ **写符号名**：`theme.ts` 的 `TOKEN_VARS`、`color.ts` 的 `ensureTextContrast`
+- ✅ **要指范围时**：用「函数 A 到函数 B 之间」或「`TYPE_MAP` 表」，不写数字
+- ❌ **不写** `theme.ts:19-35`
+
+**文件名可以保留**（它比较稳定，改名时会报错），**但冒号后面的数字不要写。**
+
 ### 容易忘的两处
 
 1. **`README.md` 里的数字全是硬编码** —— 测试数、脚本数、CSS 文件数、`SCHEMA_VERSION`、
