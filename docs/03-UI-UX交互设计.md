@@ -1,3 +1,11 @@
+# 03 · UI/UX 交互设计（Electron 实现）
+
+> **文档对象**：知行 ZhiXing 的 Electron 重构实现（拆分后仓库 `zhixing-electron`）。
+> **路径约定**：代码路径相对 **Electron 项目根**（当前工作区内为 `electron/`）。
+> **事实基准**：`src/renderer/src/styles/`（16 个 CSS）、`src/renderer/src/**` 组件与页面、`src/shared/{color,theme-packs,settings}.ts`。
+
+---
+
 ```text
 ┌──────────────────────────────────────────────────────────────┐
 │ TitleBar（44px，drag-region）  标题 · 签名 ·(主题/最小化/最大化/关闭) │
@@ -12,19 +20,13 @@
         InfoBar（--z-float）
         ReminderPopup（--z-reminder）、Toast（--z-toast）
 ```
+
 ```text
 [笔记树 ntree]  |  [notes-main / editor]              |  [links 面板]
 文件夹 + 笔记 |  editor__bar（标题输入 + 动作按钮）   |  反向链接 · N
 新建/格式下拉 |  find-bar（Ctrl+F，role=search）      |  引用（正向）· N
               |  正文区（编辑器 / 预览 / Office / 链接） |  失效链接
 ```
-# 03 · UI/UX 交互设计（Electron 实现）
-
-> **文档对象**：知行 ZhiXing 的 Electron 重构实现（拆分后仓库 `zhixing-electron`）。
-> **路径约定**：代码路径相对 **Electron 项目根**（当前工作区内为 `electron/`）。
-> **事实基准**：`src/renderer/src/styles/`（11 个 CSS）、`src/renderer/src/**` 组件与页面、`src/shared/{color,theme-packs,settings}.ts`。
-
----
 
 ## 1. 设计原则与真源
 
