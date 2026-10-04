@@ -60,6 +60,13 @@ export interface KnowledgeRow {
   updated_at: string | null
   /** 是否有"来源"（derived_from 引用）。筛选条上「无来源」那一档用它 */
   has_source: number
+  /**
+   * 有多少条知识引用了它（别人把它当来源）。
+   *
+   * **0 意味着"提炼了却没人用"** —— 这是成熟度三个数字里的「未被引用」。
+   * 与 has_source 同构：也把列带回来让界面自己算，不为每种组合写 COUNT 查询。
+   */
+  ref_count: number
 }
 
 /**
@@ -69,7 +76,7 @@ export interface KnowledgeRow {
  * 'noSource' 也是独立一档 —— 它是"缺来源"这件事本身，与是否已核对无关
  *（知识类条目没有来源就永远核对不了，所以这一档是最该被看见的待办）。
  */
-export type KnowledgeStatus = 'draft' | 'verified' | 'all' | 'archived' | 'noSource'
+export type KnowledgeStatus = 'draft' | 'verified' | 'all' | 'archived' | 'noSource' | 'unused'
 
 function ensureKind(v: unknown): KnowledgeKind {
   return isKnowledgeKind(v) ? v : 'note'
@@ -114,6 +121,15 @@ export function listKnowledge(filter: KnowledgeFilter = {}): KnowledgeRow[] {
     )
   }
 
+  if (status === 'unused') {
+    // 有来源（是被提炼出来的），但没人引用它 —— "提炼了却没人用"
+    where.push(
+      "n.kind != 'note' AND n.kind != 'project' AND " +
+        "EXISTS(SELECT 1 FROM note_link l WHERE l.src_note_id = n.id AND l.link_kind = 'derived_from') AND " +
+        "NOT EXISTS(SELECT 1 FROM note_link l2 WHERE l2.dst_note_id = n.id AND l2.link_kind = 'derived_from')"
+    )
+  }
+
   if (status === 'archived') {
     where.push('n.archived_at IS NOT NULL')
   } else if (!filter.includeArchived) {
@@ -125,12 +141,15 @@ export function listKnowledge(filter: KnowledgeFilter = {}): KnowledgeRow[] {
     .prepare(
       /*
         has_source：这条有没有"来源"（derived_from 引用）。
-        筛选条上「无来源」那一档要它，而每一档都要显示计数 ——
-        与其为每种组合各写一个 COUNT 查询，不如把这一列带回来让界面自己算：
+        ref_count：有多少条知识引用了它 —— 0 就是「提炼了却没人用」。
+
+        筛选条上「无来源」「未被引用」两档要它们，而每一档都要显示计数 ——
+        与其为每种组合各写一个 COUNT 查询，不如把这两列带回来让界面自己算：
         条数本来就在几百这个量级，一次取回比多打几轮 IPC 划算，也不用维护两套口径。
       */
       'SELECT n.id, n.title, n.kind, n.verified_at, n.archived_at, n.verify_note, n.updated_at, ' +
-        "EXISTS(SELECT 1 FROM note_link l WHERE l.src_note_id = n.id AND l.link_kind = 'derived_from') AS has_source " +
+        "EXISTS(SELECT 1 FROM note_link l WHERE l.src_note_id = n.id AND l.link_kind = 'derived_from') AS has_source, " +
+        "(SELECT COUNT(*) FROM note_link l2 WHERE l2.dst_note_id = n.id AND l2.link_kind = 'derived_from') AS ref_count " +
         'FROM note n WHERE ' +
         where.join(' AND ') +
         ' ORDER BY n.updated_at DESC, n.id DESC LIMIT ?'

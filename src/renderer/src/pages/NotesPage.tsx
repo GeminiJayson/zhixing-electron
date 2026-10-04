@@ -201,10 +201,15 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
    */
   const [treeQuery, setTreeQuery] = useState('')
   const [kindFilter, setKindFilter] = useState<string>('all')
-  const [statusFilter, setStatusFilter] = useState<'all' | 'verified' | 'draft' | 'archived' | 'noSource'>('all')
+  const [statusFilter, setStatusFilter] = useState<
+    'all' | 'verified' | 'draft' | 'archived' | 'noSource' | 'unused'
+  >('all')
   /** id → { kind, verified }，由主进程按"全部状态含归档"一次取回 */
   const [metaById, setMetaById] = useState<
-    Record<number, { kind: string; verified: boolean; archived: boolean; hasSource: boolean }>
+    Record<
+    number,
+    { kind: string; verified: boolean; archived: boolean; hasSource: boolean; refCount: number }
+  >
   >({})
 
   /**
@@ -219,13 +224,20 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     if (!rows) return
     const map: Record<
       number,
-      { kind: string; verified: boolean; archived: boolean; hasSource: boolean }
+      {
+        kind: string
+        verified: boolean
+        archived: boolean
+        hasSource: boolean
+        refCount: number
+      }
     > = {}
     for (const r of rows) map[r.id] = {
       kind: r.kind,
       verified: !!r.verified_at,
       archived: !!r.archived_at,
       hasSource: !!r.has_source,
+      refCount: r.ref_count ?? 0,
     }
     setMetaById(map)
   }, [])
@@ -1290,6 +1302,13 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
       if (statusFilter === 'verified' && !m.verified) return false
       if (statusFilter === 'draft' && m.verified) return false
       if (statusFilter === 'noSource' && !lacksSource(m)) return false
+      // 「未被引用」：有来源却没人引用它（kind 排除非知识类的 note/project）
+      if (
+        statusFilter === 'unused' &&
+        (m.kind === 'note' || m.kind === 'project' || !m.hasSource || m.refCount > 0)
+      ) {
+        return false
+      }
       return true
           })
 
@@ -1324,7 +1343,15 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
       const m = metaById[n.id]
       return !m || kindFilter === 'all' || m.kind === kindFilter
     })
-    const count = (pred: (m: { kind: string; verified: boolean; archived: boolean; hasSource: boolean }) => boolean): number =>
+    const count = (
+    pred: (m: {
+      kind: string
+      verified: boolean
+      archived: boolean
+      hasSource: boolean
+      refCount: number
+    }) => boolean
+  ): number =>
       inKind.filter((n) => {
         const m = metaById[n.id]
         return m ? pred(m) : false
@@ -1335,6 +1362,18 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
       draft: count((m) => !m.verified && !m.archived),
       archived: count((m) => m.archived),
       noSource: count((m) => lacksSource(m) && !m.archived),
+      /*
+        「未被引用」：有来源（是被提炼出来的），却没有别的东西引用它。
+        kind 排除 note/project —— 它们不是知识类，谈不上"被引用"。
+      */
+      unused: count(
+        (m) =>
+          m.kind !== 'note' &&
+          m.kind !== 'project' &&
+          m.hasSource &&
+          m.refCount === 0 &&
+          !m.archived
+      ),
     }
   }, [notes, metaById, kindFilter])
 
