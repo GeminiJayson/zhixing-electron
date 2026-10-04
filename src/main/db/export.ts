@@ -8,6 +8,7 @@ import { quietFailure } from '../../shared/quiet-failure'
 import { deflateRawSync } from 'node:zlib'
 import { conn } from './connection'
 import { autoBackup } from './backup'
+import { crc32 } from '../../shared/crc32'
 
 // ---------------------------------------------------------------- 导出
 
@@ -137,26 +138,6 @@ export function buildNotesExport(): { id: number; folder: string; name: string; 
 }
 
 // ---------------------------------------------------------------- 极简 ZIP 写入
-
-/**
- * CRC-32（IEEE 802.3），ZIP 条目校验用。
- * 自己实现而不是用 node:zlib.crc32：后者在 Node 20.15 才加入，Electron 运行时不一定有。
- */
-const CRC32_TABLE: Uint32Array = (() => {
-  const t = new Uint32Array(256)
-  for (let n = 0; n < 256; n++) {
-    let c = n
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
-    t[n] = c >>> 0
-  }
-  return t
-})()
-
-function crc32(buf: Buffer): number {
-  let c = 0xffffffff
-  for (let i = 0; i < buf.length; i++) c = (c >>> 8) ^ CRC32_TABLE[(c ^ buf[i]) & 0xff]
-  return (c ^ 0xffffffff) >>> 0
-}
 
 /** ZIP 条目的 DOS 时间/日期（本地时区），默认取「当前时间」。 */
 function dosDateTime(d: Date): { time: number; date: number } {

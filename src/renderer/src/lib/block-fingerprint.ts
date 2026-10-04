@@ -7,77 +7,18 @@
  *
  * 原先这段只活在 MarkdownEditor 里，于是只有 markdown 笔记能算键；
  * 任务编辑器那边只好让用户**手填这个键** —— 而键是内部标识符，用户无从得知，
- * 这就是"不知道怎么关联笔记段落"的根源。搬到这里之后双方用同一份实现。
+ * 这就是"不知道怎么关联笔记段落"的根源。这一份只保留 Office 表格相关的键；
+ * 段落指纹本身在 @shared，与主进程共用同一份。
  */
 
-/** 纯 JS SHA-1（不依赖 node:crypto，渲染层可用）。 */
-export function sha1Hex(input: string): string {
-  const utf8 = Array.from(new TextEncoder().encode(input))
-  const ml = utf8.length
-  const withOne = utf8.concat(0x80)
-  while (withOne.length % 64 !== 56) withOne.push(0)
-  const hi = Math.floor((ml * 8) / 0x100000000)
-  const lo = (ml * 8) >>> 0
-  withOne.push((hi >>> 24) & 0xff, (hi >>> 16) & 0xff, (hi >>> 8) & 0xff, hi & 0xff)
-  withOne.push((lo >>> 24) & 0xff, (lo >>> 16) & 0xff, (lo >>> 8) & 0xff, lo & 0xff)
-  let h0 = 0x67452301
-  let h1 = 0xefcdab89
-  let h2 = 0x98badcfe
-  let h3 = 0x10325476
-  let h4 = 0xc3d2e1f0
-  const rol = (n: number, s: number): number => ((n << s) | (n >>> (32 - s))) >>> 0
-  for (let i = 0; i < withOne.length; i += 64) {
-    const w = new Array<number>(80)
-    for (let j = 0; j < 16; j++) {
-      w[j] =
-        (withOne[i + j * 4] << 24) |
-        (withOne[i + j * 4 + 1] << 16) |
-        (withOne[i + j * 4 + 2] << 8) |
-        withOne[i + j * 4 + 3]
-    }
-    for (let j = 16; j < 80; j++) w[j] = rol(w[j - 3] ^ w[j - 8] ^ w[j - 14] ^ w[j - 16], 1)
-    let [a, b, c, d, e] = [h0, h1, h2, h3, h4]
-    for (let j = 0; j < 80; j++) {
-      let f: number
-      let k: number
-      if (j < 20) {
-        f = (b & c) | (~b & d)
-        k = 0x5a827999
-      } else if (j < 40) {
-        f = b ^ c ^ d
-        k = 0x6ed9eba1
-      } else if (j < 60) {
-        f = (b & c) | (b & d) | (c & d)
-        k = 0x8f1bbcdc
-      } else {
-        f = b ^ c ^ d
-        k = 0xca62c1d6
-      }
-      const tmp = (rol(a, 5) + (f >>> 0) + e + k + (w[j] >>> 0)) >>> 0
-      e = d
-      d = c
-      c = rol(b, 30)
-      b = a
-      a = tmp
-    }
-    h0 = (h0 + a) >>> 0
-    h1 = (h1 + b) >>> 0
-    h2 = (h2 + c) >>> 0
-    h3 = (h3 + d) >>> 0
-    h4 = (h4 + e) >>> 0
-  }
-  return [h0, h1, h2, h3, h4].map((n) => n.toString(16).padStart(8, '0')).join('')
-}
+// sha1Hex 与 blockFingerprint 的**唯一实现**在 @shared/block-fingerprint。
+//
+// 这里原先各写了一份。两份今天逐字相同，但注释里都写着「定位靠它逐字一致，
+// 所以规范化规则不能各写一份」—— 一份自称唯一实现的同时自己是第二份，
+// 就是改一处忘另一处、段落锚定位静默失效的入口。
+import { blockFingerprint, sha1Hex } from '@shared/block-fingerprint'
 
-/**
- * 段落定位键：空白折叠 + 去首尾 + 小写后取 sha1 前 12 位，前缀 `fp:`。
- * 定位靠它逐字一致，所以规范化规则不能各写一份 —— 这是唯一实现。
- */
-export function blockFingerprint(text: string, length = 12): string {
-  const norm = text.replace(/\s+/g, ' ').trim().toLowerCase()
-  if (!norm) return ''
-  return 'fp:' + sha1Hex(norm).slice(0, length)
-}
+export { blockFingerprint, sha1Hex }
 
 export interface NoteBlock {
   /** 段落定位键（可能为空：纯空白段不参与关联） */

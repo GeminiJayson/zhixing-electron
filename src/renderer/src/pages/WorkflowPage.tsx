@@ -73,6 +73,7 @@ import {
   type WorkflowRankDir,
 } from '../lib/workflow-layout'
 import { quietFailure } from '@shared/quiet-failure'
+import { readTokenMs } from '../lib/motion-tokens'
 
 interface Props {
   onNotice: (message: string) => void
@@ -157,13 +158,6 @@ const SIDE_MAX = 460
 const SIDE_KEY_STEP = 16
 /** 布局飞位的位移下限（画布用户单位）：小于它的抖动不值得飞一程 */
 const FLY_MIN_SHIFT = 0.5
-
-/** 读一个时长令牌的毫秒数（--dur-panel）。读不到按 0 处理 = 直接落位。 */
-function readTokenMs(name: string): number {
-  const raw = getComputedStyle(document.documentElement).getPropertyValue(name)
-  const n = Number.parseFloat(raw)
-  return Number.isFinite(n) ? n : 0
-}
 
 /**
  * 一个节点的出线端口 —— 画布上每个节点都能**主动**拉一条线到别的节点，

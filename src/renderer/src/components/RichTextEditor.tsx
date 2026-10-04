@@ -12,6 +12,7 @@ import { attachmentUrl } from '@shared/attachment-url'
 import { CodeBlockLanguage } from './CodeBlockLanguage'
 import { RichTextToolbar } from './RichTextToolbar'
 import { useDialog } from './Dialogs'
+import { makeThumb, readAsDataUrl } from '@renderer/lib/rich-media'
 
 interface RichProps {
   html: string
@@ -52,30 +53,6 @@ const ImageWithAttach = Image.extend({
     }
   },
 })
-
-/** 生成缩略图的 data URI。createImageBitmap 比 <img> + onload 稳，也不占用 DOM。 */
-async function makeThumb(source: ImageBitmapSource, max = THUMB_MAX): Promise<string> {
-  const bitmap = await createImageBitmap(source)
-  const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height))
-  const w = Math.max(1, Math.round(bitmap.width * scale))
-  const h = Math.max(1, Math.round(bitmap.height * scale))
-  const canvas = document.createElement('canvas')
-  canvas.width = w
-  canvas.height = h
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return ''
-  ctx.drawImage(bitmap, 0, 0, w, h)
-  bitmap.close()
-  return canvas.toDataURL('image/jpeg', 0.82)
-}
-
-function readAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result ?? ''))
-    reader.readAsDataURL(file)
-  })
-}
 
 /** 载入一张已经存在于正文里的图片（data URI / 附件地址都行）。失败返回 null。 */
 function loadImage(src: string): Promise<HTMLImageElement | null> {
@@ -275,7 +252,7 @@ export function RichTextEditor({
         const im = await loadImage(src)
         if (!im || !im.naturalWidth) continue
         if (Math.max(im.naturalWidth, im.naturalHeight) <= THUMB_MAX) continue
-        const thumb = await makeThumb(im)
+        const thumb = await makeThumb(im, THUMB_MAX)
         if (thumb) jobs.push({ src, thumb })
       }
       if (!alive || jobs.length === 0) return
@@ -397,7 +374,7 @@ export function RichTextEditor({
       // 原先是循环里逐张读 + 逐张 IPC：第 N 张失败时前 N-1 张已经落盘落库了。
       const prepared: { file: File; full: string; thumb: string }[] = []
       for (const file of files) {
-        const [full, thumb] = await Promise.all([readAsDataUrl(file), makeThumb(file)])
+        const [full, thumb] = await Promise.all([readAsDataUrl(file), makeThumb(file, THUMB_MAX)])
         prepared.push({ file, full, thumb })
       }
       const id = noteIdRef.current

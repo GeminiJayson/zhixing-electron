@@ -8,6 +8,7 @@ import { PriorityMenu } from '../components/PriorityMenu'
 import { StatusMenu } from '../components/StatusMenu'
 import { TaskRow } from '../components/TaskRow'
 import { TaskEditor } from '../components/TaskEditor'
+import { readTokenMs } from '../lib/motion-tokens'
 
 interface Props {
   overview: Overview | null
@@ -18,14 +19,6 @@ interface Props {
 }
 
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
-
-/** 读一个时长令牌的毫秒数（如 --dur-slow）。读不到按 0 处理 = 直接切换。
- *  时长只认 --dur-*：动效关闭 / 系统减动效时它们本身就是 0ms，降级于是自动生效。 */
-function readTokenMs(name: string): number {
-  const raw = getComputedStyle(document.documentElement).getPropertyValue(name)
-  const n = Number.parseFloat(raw)
-  return Number.isFinite(n) ? n : 0
-}
 
 /** 把 --ease-panel 解成 0→1 的进度函数：与 CSS 那条贝塞尔同源（解不开就退化成线性）。 */
 function readPanelEase(): (p: number) => number {

@@ -55,6 +55,7 @@ import { Toolbar } from '../components/Toolbar'
 import { VaultPage } from './VaultPage'
 import { PopMenu } from '../components/PopMenu'
 import { TagMenu } from '../components/TagMenu'
+import { readTokenMs } from '../lib/motion-tokens'
 
 interface Props {
   onNotice: (message: string) => void
@@ -68,18 +69,6 @@ interface Props {
 
 /** 自动保存防抖：输入停顿后落库。 */
 const AUTOSAVE_MS = 800
-
-/**
- * 覆盖式抽屉的退场窗口，与 notes.css 里 .links--drawer.is-leaving 那条
- * 动效非 full 档时它同步卸载，不会白等这一下。
- */
-
-/** 读一个时长令牌的毫秒数（--dur-fast）。读不到按 0 处理 = 直接切换。 */
-function readTokenMs(name: string): number {
-  const raw = getComputedStyle(document.documentElement).getPropertyValue(name)
-  const n = Number.parseFloat(raw)
-  return Number.isFinite(n) ? n : 0
-}
 
 /** 笔记多标签页：上限。到顶时最久未使用的那个被挤出去（见 docs/note-tabs-plan.md）。 */
 const TAB_MAX = 12

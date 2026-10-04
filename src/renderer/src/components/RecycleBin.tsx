@@ -3,6 +3,7 @@ import { RotateCcw, Trash2 } from '@renderer/lib/icons'
 import { parseSettings } from '@shared/settings'
 import { isMotionFull } from '../lib/presence'
 import { useDialog } from './Dialogs'
+import { readTokenMs } from '@renderer/lib/motion-tokens'
 
 interface Props {
   onNotice: (message: string) => void
@@ -11,13 +12,6 @@ interface Props {
 }
 
 type Kind = 'task' | 'note' | 'flash'
-
-/** 读一个时长令牌的毫秒数（--dur-fast）。读不到按 0 = 不退场，直接落库刷新。 */
-function readTokenMs(name: string): number {
-  const raw = getComputedStyle(document.documentElement).getPropertyValue(name)
-  const n = Number.parseFloat(raw)
-  return Number.isFinite(n) ? n : 0
-}
 
 const TABS: { key: Kind; label: string }[] = [
   { key: 'task', label: '任务' },
