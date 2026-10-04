@@ -114,3 +114,53 @@ npm run release         # 构建 → 打包 → 源码归档 → 对齐标签 �
 
 出包前先把 `package.json` 的 version 改掉（`npm version <x.y.z> --no-git-tag-version`）：
 产物文件名带版本号，沿用旧版本号会让用户下到旧包。
+## 受限 / 无交互会话里打 NSIS 包（两处补丁）
+
+**普通桌面会话不需要看这一节** —— 直接 `npm run dist:win` 即可。
+
+在自动化环境（没有交互桌面、进程受限）里打包时，**NSIS 目标**会连续以两种不同方式失败。
+两次都表现为「打包中止」，但原因完全不同 —— **portable 目标两次都不受影响**，
+所以现象看起来像「只有安装包打不出来」。
+
+### 现象 ①：ERR_ELECTRON_BUILDER_CANNOT_EXECUTE，退出码 null
+
+electron-builder 生成卸载程序时，要先编译一个中间安装器、再**执行它**得到 `uninstaller.exe`。
+
+那次执行走 builder-util 的 `exec`（默认 `stdio: 'pipe'`），而受限会话**禁止带管道 stdio 的子进程**（EPERM）。
+
+**注意报错里的 `Exit code: null`** —— 不是非零退出码，是**进程根本没起来**。
+很容易误读成「安装器自己失败了」，从而去查安装器（我是这么绕了一大圈的）。
+
+改法：让那次执行不捕获输出。文件 `node_modules/app-builder-lib/out/vm/WineVm.js`，
+把 `process.platform === "win32"` 分支里的 `exec(target, appArgs, options)`
+换成用 `spawn(target, appArgs, { stdio: 'inherit' })`。
+
+### 现象 ②：弹出对话框 "Error writing temporary file. Make sure your temp folder is valid."
+
+修好 ① 之后安装器真的跑起来了，但**弹出一个错误对话框**然后以退出码 2 中止。
+
+NSIS 启动时要把插件解压到 `%TEMP%\$PLUGINSDIR`。**宿主 shell 里 %TEMP% 是可写的**
+（可以直接建文件验证），但**子进程继承到的那个上下文不行** —— 所以只看 shell 会误判成"temp 没问题"。
+
+改法：在上面那处 `spawn` 里显式指定 temp ——
+
+```js
+const tmpDir = path.join(process.cwd(), '.build-tmp')
+fs.mkdirSync(tmpDir, { recursive: true })
+spawn(target, appArgs, { stdio: 'inherit', env: { ...process.env, TEMP: tmpDir, TMP: tmpDir } })
+```
+
+`.build-tmp/` 已在 `.gitignore` 里。
+
+### 顺带：中间安装器加 /S
+
+`node_modules/app-builder-lib/out/targets/nsis/NsisTarget.js` 里那次调用可以补上 `/S`
+（静默），在无交互会话里更稳：`wineVm.exec(installerPath, ['/S'], { env: { __COMPAT_LAYER: 'RunAsInvoker' } })`。
+
+### 排查时不要做的事
+
+- **不要改动 electron-builder 的 NSIS 模板**（`templates/nsis/**`）。我试过用 `nsis.script`
+  指向自带模板来"跳过执行那一步"，结果连着踩了三个坑：`UNINSTALLER_OUT_FILE` 未定义 →
+  主包没有 `Uninstall` 段 → 宏里 `Var /GLOBAL` 重复声明。**问题不在模板，在进程执行环境。**
+- **不要只信日志里的第一个错误**。①的 `Exit code: null` 和 ②的弹框是两回事，
+  而②的弹框文字**日志里根本没有** —— 是人在屏幕上看来的。

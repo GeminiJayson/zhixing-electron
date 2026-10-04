@@ -42,3 +42,5 @@ dist-portable/
 # dist-nsis/ 下 180MB 的 exe 一起提交，被 GitHub 拒收（单文件上限 100MB）。
 dist-*/
 
+
+.build-tmp/
