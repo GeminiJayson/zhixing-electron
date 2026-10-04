@@ -33,6 +33,7 @@ import { useNoteAudit } from '../lib/use-note-audit'
 import { useNoteLinks } from '../lib/use-note-links'
 import { useNoteAi } from '../lib/use-note-ai'
 import { useNoteTags } from '../lib/use-note-tags'
+import { useNoteTree } from '../lib/use-note-tree'
 import { useNoteProps } from '../lib/use-note-props'
 import type { MarkdownEditorHandle } from '../components/MarkdownEditor'
 import { NOTE_FORMATS, NoteTree, noteIcon, type NoteFormat } from '../components/NoteTree'
@@ -953,86 +954,30 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     setTaskPick({ x, y, items })
   }
 
-  /** 移动到文件夹。 */
-  const handleMoveNote = async (noteId: number, folderId: number | null): Promise<void> => {
-    const saved = await window.zhixing.db.saveNote(noteId, { folder_id: folderId })
-    const name = folderId == null ? '全部笔记' : folders.find((f) => f.id === folderId)?.name ?? ''
-    onNotice(saved ? `已把笔记移入「${name}」` : '移动失败')
-    /**
-     * 必须显式更新 current。
-     *
-     * load() 只刷新 notes 与 folders 两张列表，**不动 current** ——
-     * 而信息区「归属」栏读的是 current.folder_id。于是移动之后笔记树里
-     * 那篇已经换了位置、信息区却还显示旧文件夹。
-     */
-    if (saved) setCurrent(saved)
-    await load()
-  }
 
-  const handleCreateFolder = async (parentId: number | null): Promise<void> => {
-    const name = await dialog.prompt({ title: '新建文件夹', label: '文件夹名称' })
-    if (!name?.trim()) return
-    await window.zhixing.db.createNoteFolder(name, parentId)
-    await load()
-  }
-
-  /** 重命名文件夹。 */
-  const handleRenameFolder = async (id: number, currentName: string): Promise<void> => {
-    const name = await dialog.prompt({ title: '重命名文件夹', label: '文件夹名称', defaultValue: currentName })
-    if (!name?.trim()) return
-    await window.zhixing.db.renameNoteFolder(id, name.trim())
-    await load()
-    onNotice('已重命名文件夹')
-  }
-
-  /** 删除文件夹。 */
-  const handleDeleteFolder = async (id: number): Promise<void> => {
-    const ok = await dialog.confirm({
-      title: '删除文件夹',
-      message: '删除后文件夹内的笔记会移到「全部笔记」，不会删除笔记。确认删除？',
-      danger: true,
-      confirmText: '删除',
-    })
-    if (!ok) return
-    await window.zhixing.db.deleteNoteFolder(id)
-    await load()
-    onNotice('已删除文件夹（笔记已移回全部笔记）')
-  }
-
-  /** 移动文件夹到新父级。 */
-  const handleMoveFolder = async (id: number, parentId: number | null): Promise<void> => {
-    const res = await window.zhixing.db.moveNoteFolder(id, parentId)
-    if (!res) {
-      onNotice('不能把文件夹移动到它自己或它的子文件夹下')
-      return
-    }
-    await load()
-    onNotice('已移动文件夹')
-  }
-
-  const handleTogglePin = async (id: number, pinned: boolean): Promise<void> => {
-    await window.zhixing.db.saveNote(id, { pinned })
-    await load()
-  }
-
-  const handleDelete = async (id: number): Promise<void> => {
-    const note = notes.find((n) => n.id === id)
-    if (!note) return
-    const confirmed = await dialog.confirm({
-      title: '删除笔记',
-      message: `删除笔记「${note.title}」？\n软删除，可在回收站恢复。`,
-      icon: <Trash2 size={15} />,
-      danger: true,
-      confirmText: '删除',
-    })
-    if (!confirmed) return
-    await window.zhixing.db.deleteNote(id)
-    // 删掉的笔记不该在 tab 里留一个死标签：关掉它，并激活右邻。
-    // flush=false —— 这篇已经从库里没了，落盘会写一篇本不该存在的笔记。
-    await dropTab(id, false)
-    await load()
-    onNotice('已删除（可在回收站恢复）')
-  }
+  /*
+    笔记树的结构操作（文件夹增删改移、笔记移动/置顶/删除）收在 hook 里。
+    它们只碰 folder_id / pinned / deleted_at 三样元数据，与正文编辑无关。
+  */
+  const {
+    moveNote: handleMoveNote,
+    createFolder: handleCreateFolder,
+    renameFolder: handleRenameFolder,
+    deleteFolder: handleDeleteFolder,
+    moveFolder: handleMoveFolder,
+    togglePin: handleTogglePin,
+    deleteNote: handleDelete,
+  } = useNoteTree({
+    notes,
+    folders,
+    onNotice,
+    prompt: dialog.prompt,
+    confirm: dialog.confirm,
+    onReload: load,
+    setCurrent,
+    dropTab,
+    icon: <Trash2 size={15} />,
+  })
 
   /** 选文转任务：建任务、备注带回源引用，blockKey 非空时落段落锚。 */
   const handleCreateTaskFromSelection = async (text: string, blockKey: string | null): Promise<void> => {
