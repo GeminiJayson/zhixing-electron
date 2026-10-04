@@ -46,6 +46,7 @@ import {
   testAiConnection,
 } from './ai'
 import { PRESET_ACCENTS, hexToRgb, nearestAccent } from './accent'
+import { createHotkeyModule } from './hotkey'
 import { createTrayModule } from './tray'
 import { createWidgetModule } from './widget'
 import {
@@ -174,68 +175,6 @@ async function dispatchHotkeyAction(action: string): Promise<void> {
   sendAction(action)
 }
 
-/**
- * 热键注册状态：settings 键 → 中文状态串，
- * 设置页据此显示「已注册 / 冲突降级」。
- */
-const hotkeyStatus: Record<string, string> = {}
-
-/** 热键设置键 → 动作名。 */
-const HOTKEY_BINDINGS: { setting: string; action: string }[] = [
-  { setting: 'capture_hotkey', action: 'capture' },
-  { setting: 'select_quick_hotkey', action: 'select-quick' },
-  { setting: 'quick_capture_hotkey', action: 'quick-capture' },
-  { setting: 'flash_quick_hotkey', action: 'flash-quick' },
-  { setting: 'quick_note_hotkey', action: 'quick-note' },
-  { setting: 'widget_hotkey', action: 'toggle-widget' },
-]
-
-/**
- * 全局热键：键名从 settings 表读，
- * ctrl+alt+n 这种写法由 toAccelerator 转成 Electron Accelerator。
- *
- * 每次注册都刷新 hotkeyStatus：Electron 的 globalShortcut.register 在组合键被
- * 别的程序占用时返回 false（而不是抛错），此前这里没接收返回值，于是「改键后
- * 完全没反应」既无提示也无降级说明。
- */
-function registerHotkeys(): Record<string, string> {
-  globalShortcut.unregisterAll()
-  const s = currentSettings()
-  for (const { setting, action } of HOTKEY_BINDINGS) {
-    const raw = String((s as unknown as Record<string, string>)[setting] ?? '')
-    if (!raw) {
-      delete hotkeyStatus[setting]
-      continue
-    }
-    const accel = toAccelerator(raw)
-    if (!accel) {
-      hotkeyStatus[setting] = '键名无效（未注册）'
-      continue
-    }
-    let ok = false
-    try {
-      ok = globalShortcut.register(accel, () => {
-        // 浮窗显隐是主进程侧动作，不需要绕到渲染进程
-        if (action === 'toggle-widget') widget.toggleWidget()
-        else void dispatchHotkeyAction(action)
-      })
-    } catch (err) {
-      console.error('[hotkey] 注册失败', accel, err)
-      ok = false
-    }
-    // 文案要说清「这个组合用不了」：说成「已降级为托盘菜单」会让人以为热键还生效，
-    // 于是改完键按下去没反应也不知道为什么（用户报的就是这个现象）
-    hotkeyStatus[setting] = ok ? '✓ 已注册' : '✗ 未注册：组合已被别的程序占用'
-  }
-  // 开机自启
-  try {
-    app.setLoginItemSettings({ openAtLogin: s.autostart_enabled })
-  } catch (err) {
-    console.error('[autostart] 设置失败', err)
-  }
-  return { ...hotkeyStatus }
-}
-
 /*
   悬浮球 / 浮窗模块。状态在它自己的闭包里 —— 这里只拿到一组函数与几个只读访问器。
   依赖用注入而不是 import：那些函数定义在本文件里、又反过来要用 widget，
@@ -267,7 +206,18 @@ const trayMod = createTrayModule({
   toggleWidget: () => widget.toggleWidget(),
   getMainWindow: () => mainWindow,
 })
-/**
+
+
+/* 全局热键模块。依赖 widget.toggleWidget 与两个窗口开启函数，所以排在它们之后。 */
+const hotkeyMod = createHotkeyModule({
+  currentSettings,
+  addFlash,
+  readSelectedText,
+  sendAction,
+  toggleWidget: () => widget.toggleWidget(),
+  openQuickNoteWindow,
+  openCaptureWindow,
+})/**
  * 只用标准菜单（App / 编辑 / 窗口），**不挂 viewMenu**：
  * Electron 默认菜单带 View→Zoom，页面缩放会按 origin 存进 profile，
  * 一旦误触就整屏变大且重启不恢复——桌面应用不该有这种状态。
@@ -1560,7 +1510,7 @@ app.whenReady().then(() => {
   } catch (err) {
     console.error('[backup] 启动备份失败', err)
   }
-  registerHotkeys()
+  hotkeyMod.registerHotkeys()
   trayMod.createTray()
   // 任何写操作后刷新托盘标题（今日待办数）；主题/主题包改动会走同一条链路，
   // trayMod.refreshTrayIcon 内部按最后一次配色去重，因此不会每次勾选任务都重着色。
@@ -1621,11 +1571,11 @@ app.whenReady().then(() => {
 
   // 改键流程：设置页进入捕获态前注销全部热键，避免被系统层吞掉按键；
   // 捕获完成或取消后统一重注册并回传状态。
-  ipcMain.handle('app:hotkeyStatus', () => ({ ...hotkeyStatus }))
+  ipcMain.handle('app:hotkeyMod.getHotkeyStatus()', () => ({ ...hotkeyMod.getHotkeyStatus() }))
   ipcMain.handle('app:suspendHotkeys', () => {
     globalShortcut.unregisterAll()
   })
-  ipcMain.handle('app:rebindHotkeys', () => registerHotkeys())
+  ipcMain.handle('app:rebindHotkeys', () => hotkeyMod.registerHotkeys())
   /**
    * 应用内触发一次全局动作（例如「选中入闪念」）。
    *
