@@ -32,6 +32,7 @@ import { NotePicker } from '../components/NotePicker'
 import { lacksSource } from '../lib/note-props'
 import { useNoteAudit } from '../lib/use-note-audit'
 import { useNoteLinks } from '../lib/use-note-links'
+import { useNoteTags } from '../lib/use-note-tags'
 import { useNoteProps } from '../lib/use-note-props'
 import type { MarkdownEditorHandle } from '../components/MarkdownEditor'
 import { NOTE_FORMATS, NoteTree, noteIcon, type NoteFormat } from '../components/NoteTree'
@@ -62,8 +63,7 @@ interface Props {
   onZenChange?: (zen: boolean) => void
 }
 
-/** 笔记标签（与任务共用同一张 tag 表，颜色因此全局一致）。 */
-type NoteTag = { id: number; name: string; color: string }
+
 
 /** 自动保存防抖：输入停顿后落库。 */
 const AUTOSAVE_MS = 800
@@ -285,9 +285,21 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   const [historyId, setHistoryId] = useState<number | null>(null)
   const [ctxMenu, setCtxMenu] = useState<{ id: number; x: number; y: number } | null>(null)
   /** 全部标签（任务与笔记共用一套）：标签弹层用它列候选 */
-  const [allTags, setAllTags] = useState<NoteTag[]>([])
+  /*
+    标签一组收在 hook 里。笔记标签与任务标签共用同一张 tag 表 —— 颜色因此全局一致，
+    改色后要重新走 loadNoteTags 对齐两份状态。
+  */
+  const {
+    allTags,
+    tagsOf,
+    currentTags,
+    loadNoteTags,
+    toggleTag: handleToggleNoteTag,
+    createTag: handleCreateNoteTag,
+    setTagColor: handleSetTagColor,
+  } = useNoteTags({ current, onNotice, prompt: dialog.prompt })
   /** 每篇笔记的标签：左侧树与编辑器都从这里取胶囊 */
-  const [tagsOf, setTagsOf] = useState<Map<number, NoteTag[]>>(new Map())
+
   /** 标签弹层的锚点（点胶囊或「加标签」时打开） */
   const [tagMenu, setTagMenu] = useState<{ x: number; y: number } | null>(null)
   const [templateMenu, setTemplateMenu] = useState<{ x: number; y: number } | null>(null)
@@ -392,23 +404,6 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
 
   const isOffice = current?.format === 'word' || current?.format === 'excel'
 
-  /**
-   * 标签：一次取「全部标签 + 每篇笔记挂的标签」。
-   *
-   * 颜色写在共用的 tag 表里，所以这里读到的色值同时决定任务页胶囊与笔记胶囊的颜色；
-   * 改色之后也是重新走这个函数对齐两份状态。
-   */
-  const loadNoteTags = useCallback(async (): Promise<void> => {
-    const [tg, nt] = await Promise.all([window.zhixing.db.tags(), window.zhixing.db.noteTags()])
-    setAllTags(tg)
-    const map = new Map<number, NoteTag[]>()
-    for (const r of nt) {
-      const list = map.get(r.note_id) ?? []
-      list.push({ id: r.id, name: r.name, color: r.color })
-      map.set(r.note_id, list)
-    }
-    setTagsOf(map)
-  }, [])
 
   const load = useCallback(async () => {
     /**
@@ -1225,57 +1220,12 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     []
   )
 
-  /** 当前笔记的标签胶囊 */
-  const currentTags = useMemo(
-    () => (current ? tagsOf.get(current.id) ?? [] : []),
-    [current, tagsOf]
-  )
 
   const openTagMenu = (e: ReactMouseEvent): void => {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
     setTagMenu({ x: r.left, y: r.bottom + 4 })
   }
 
-  /**
-   * 笔记标签与任务标签共用一套：覆盖式写回（清空后重插），标签不存在时按名新建，
-   * 与任务侧 handleToggleTag 同一套语义 —— 于是「标签管理」里的重命名 / 合并 / 删除
-   * 自动同时作用于任务与笔记。
-   */
-  const handleToggleNoteTag = async (tag: NoteTag): Promise<void> => {
-    if (!current) return
-    const cur = (tagsOf.get(current.id) ?? []).map((x) => x.name)
-    const next = cur.includes(tag.name) ? cur.filter((n) => n !== tag.name) : [...cur, tag.name]
-    await window.zhixing.db.setNoteTags(current.id, next)
-    await loadNoteTags()
-  }
-
-  const handleCreateNoteTag = async (): Promise<void> => {
-    if (!current) return
-    const name = await dialog.prompt({ title: '新建标签', label: '标签名称（可逗号分隔多个）' })
-    if (!name?.trim()) return
-    const added = name
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean)
-    if (added.length === 0) return
-    const cur = (tagsOf.get(current.id) ?? []).map((x) => x.name)
-    await window.zhixing.db.setNoteTags(current.id, [...cur, ...added])
-    await loadNoteTags()
-    onNotice('已添加标签')
-  }
-
-  /** 改标签颜色：取色器拖动会连续触发，所以先乐观更新本地两份状态，再把色值写库 */
-  const handleSetTagColor = async (id: number, color: string): Promise<void> => {
-    setAllTags((prev) => prev.map((x) => (x.id === id ? { ...x, color } : x)))
-    setTagsOf((prev) => {
-      const next = new Map<number, NoteTag[]>()
-      for (const [k, list] of prev) {
-        next.set(k, list.map((x) => (x.id === id ? { ...x, color } : x)))
-      }
-      return next
-    })
-    await window.zhixing.db.setTagColor(id, color)
-  }
 
   /*
     属性一组的状态与操作收在 hook 里（草稿文本是唯一真相，增删都走"改草稿 → 立刻保存"）。
