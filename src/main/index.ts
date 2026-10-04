@@ -45,6 +45,7 @@ import {
   setAiLibraryNotifier,
   testAiConnection,
 } from './ai'
+import { PRESET_ACCENTS, hexToRgb, nearestAccent } from './accent'
 import { setConditionAsker } from './db/workflow'
 import { importAttachment, importAttachmentData, importAttachmentDataBatch } from './db/attachments'
 import { syncExternalTasks, taskSyncStatus } from './task-sync'
@@ -822,47 +823,8 @@ function updateTrayTooltip(): void {
   }
 }
 
-/**
- * 图标的强调色跟随（2026-09-27）。
- *
- * 图标按「预设强调色」在**构建期**烘好（scripts/gen-app-icons.cjs：8 色 × 应用/托盘两形态）。
- * Windows 的窗口图标与托盘图标都能在运行时 setIcon / setImage，但换色意味着重新光栅化 SVG，
- * 而主进程里没有渲染器 —— 与其在运行时背一个渲染器，不如把 8 个预设色都烘出来按需取文件。
- * 设置页的自定义强调色取**最接近的预设**兜底（图标是 256px 的位图，色差在视觉上几乎看不出来）。
- */
-const PRESET_ACCENTS = [
-  '#0D9488',
-  '#2563EB',
-  '#7C3AED',
-  '#DB2777',
-  '#EA580C',
-  '#16A34A',
-  '#D97706',
-  '#0891B2',
-]
 
-function hexToRgb(hex: string): [number, number, number] {
-  const h = hex.replace('#', '')
-  const f = h.length === 3 ? h.split('').map((c) => c + c).join('') : h
-  return [parseInt(f.slice(0, 2), 16), parseInt(f.slice(2, 4), 16), parseInt(f.slice(4, 6), 16)]
-}
 
-function nearestAccent(hex: string): string {
-  const raw = (hex || '').trim()
-  if (!/^#?[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(raw)) return PRESET_ACCENTS[0]
-  const [r, g, b] = hexToRgb(raw)
-  let best = PRESET_ACCENTS[0]
-  let bestD = Number.POSITIVE_INFINITY
-  for (const cand of PRESET_ACCENTS) {
-    const [cr, cg, cb] = hexToRgb(cand)
-    const d = (r - cr) ** 2 + (g - cg) ** 2 + (b - cb) ** 2
-    if (d < bestD) {
-      bestD = d
-      best = cand
-    }
-  }
-  return best
-}
 
 /** 当前强调色对应的图标 key（文件名里的小写 6 位 hex） */
 function accentIconKey(): string {
