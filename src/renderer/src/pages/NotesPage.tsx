@@ -18,7 +18,7 @@ import {
 } from '@renderer/lib/icons'
 import { subscribeDomain } from '@shared/events'
 import { useDialog } from '../components/Dialogs'
-import type { Backlink, Note, NoteFolder, NoteLink } from '@shared/types'
+import type { Note, NoteFolder } from '@shared/types'
 import type { AiLibraryProgress } from '@shared/ai-note'
 import { parseLinkItems, type NoteLinkItem } from '@shared/note-links'
 import { MarkdownEditor, RichTextEditor, blockFingerprint, locateBlockInView } from '../components/MarkdownEditor'
@@ -29,8 +29,9 @@ const XlsxGrid = lazy(() => import('../components/XlsxGrid'))
 import { NoteHistory } from '../components/NoteHistory'
 import { NoteLinksPanel } from '../components/NoteLinksPanel'
 import { NotePicker } from '../components/NotePicker'
-import { dropLinkLine, lacksSource } from '../lib/note-props'
+import { lacksSource } from '../lib/note-props'
 import { useNoteAudit } from '../lib/use-note-audit'
+import { useNoteLinks } from '../lib/use-note-links'
 import { useNoteProps } from '../lib/use-note-props'
 import type { MarkdownEditorHandle } from '../components/MarkdownEditor'
 import { NOTE_FORMATS, NoteTree, noteIcon, type NoteFormat } from '../components/NoteTree'
@@ -139,8 +140,33 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [preview, setPreview] = useState(false)
-  const [backlinks, setBacklinks] = useState<Backlink[]>([])
-  const [outLinks, setOutLinks] = useState<NoteLink[]>([])
+  /** 指向后面的 load；hook 里保存后要重查，但 load 的定义在它之后 */
+  const loadRef = useRef<() => Promise<void>>(async () => {})
+
+  /*
+    链接关系一组收在 hook 里。它和属性那组的区别是跨了两处数据：
+    正向引用/反向链接都是正文里的 [[标题]]（删反链改的是**对方那篇**），
+    归属任务才是真正的关系记录。三者总是同时装载、同时因一次保存而作废。
+  */
+  const {
+    backlinks,
+    outLinks,
+    attachedTasks,
+    loadLinks,
+    reloadOutLinks,
+    reloadBacklinks,
+    reloadAttachedTasks,
+    clearLinks,
+    removeOutLink: handleRemoveOutLink,
+    removeBacklink: handleRemoveBacklink,
+    detachTask: handleDetachTask,
+  } = useNoteLinks({
+    current,
+    // load 定义在后面（useCallback），这里先用 ref 兜住，定义完立刻接上
+    onReload: () => loadRef.current(),
+    onNotice,
+    confirm: dialog.confirm,
+  })
   const [linksOpen, setLinksOpen] = useState(true)
   /**
    * 信息区（属性 / 反向链接 / 引用 / 归属）默认**收起**成一行计数。
@@ -287,7 +313,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     items: { id: number; title: string; listName: string; groupName: string }[]
   } | null>(null)
   /** 引用了这篇的任务（链接面板「反向链接」栏）。任务用 [[标题]] 引用笔记，属引用关系 */
-  const [attachedTasks, setAttachedTasks] = useState<{ id: number; title: string }[]>([])
+
   /** Word/Excel 可编辑内容 */
   const [officeEdit, setOfficeEdit] = useState<{ kind: string; html: string; rows: string[][]; message: string } | null>(null)
   const [excelRows, setExcelRows] = useState<string[][]>([])
@@ -321,15 +347,6 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   /** Markdown 编辑器的 view，补全选中后要用它替换那半截 [[ */
   const mdViewRef = useRef<MarkdownEditorHandle | null>(null)
 
-  const handleRemoveOutLink = (l: { dst_title: string }): void => {
-    if (!current) return
-    const next = dropLinkLine(current.content_md ?? '', l.dst_title)
-    void window.zhixing.db.saveNote(current.id, { content_md: next }).then(async () => {
-      await load()
-      onNotice('已删除引用')
-    })
-  }
-
   /**
    * 反向链接：**改的是对方那篇笔记的正文**。
    *
@@ -337,30 +354,6 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
    * 所以删它只能去改对方的内容 —— 这也是为什么要先确认：
    * 它在动一篇用户当前没在看的笔记。
    */
-  const handleRemoveBacklink = async (b: {
-    src_note_id: number
-    src_title: string
-  }): Promise<void> => {
-    if (!current) return
-    const ok = await dialog.confirm({
-      title: '删除反向链接',
-      message:
-        '「' +
-        b.src_title +
-        '」的正文里写着指向这篇的 [[' +
-        (current.title ?? '') +
-        ']]。删掉会改的是那一篇，不是这一篇。',
-      confirmText: '删掉那条链接',
-      danger: true,
-    })
-    if (!ok) return
-    const src = await window.zhixing.db.note(b.src_note_id)
-    if (!src) return
-    const next = dropLinkLine(src.content_md ?? '', current.title ?? '')
-    await window.zhixing.db.saveNote(b.src_note_id, { content_md: next })
-    await load()
-    onNotice('已从「' + b.src_title + '」里删掉那条链接')
-  }
 
   /**
    * 把文件夹按层级展开成「父在前、子紧随」的序列，并带上深度。
@@ -389,14 +382,6 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   /** 归属栏：点任务胶囊跳到那个任务 */
   const handleOpenTask = (id: number): void => {
     window.dispatchEvent(new CustomEvent('zhixing:open-task', { detail: { id } }))
-  }
-
-  const handleDetachTask = (taskId: number): void => {
-    if (!current) return
-    void window.zhixing.db.unlinkTaskNote(taskId, current.id).then(async () => {
-      await load()
-      onNotice('已解除关联')
-    })
   }
 
   // 切笔记时把属性铺进编辑框
@@ -467,20 +452,14 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
       setCurrent(null)
       setTitle('')
       setContent('')
-      setBacklinks([])
-      setOutLinks([])
-      setAttachedTasks([])
+      clearLinks()
       setDirty(false)
       return
     }
     let alive = true
     void (async () => {
-      const [note, back, out, attached] = await Promise.all([
-        window.zhixing.db.note(selectedId),
-        window.zhixing.db.backlinks(selectedId),
-        window.zhixing.db.outLinks(selectedId),
-        window.zhixing.db.noteLinkedTasks(selectedId),
-      ])
+      const note = await window.zhixing.db.note(selectedId)
+      void loadLinks(selectedId)
       if (!alive || !note) return
       setCurrent(note)
       setTitle(note.title)
@@ -495,9 +474,6 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
       window.setTimeout(() => {
         editorReadyRef.current = true
       }, 0)
-      setBacklinks(back)
-      setOutLinks(out)
-      setAttachedTasks(attached)
       setDirty(false)
     })()
     return () => {
@@ -533,8 +509,8 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   useEffect(() => {
     if (selectedId == null) return
     return subscribeDomain(['note'], () => {
-      void window.zhixing.db.backlinks(selectedId).then(setBacklinks)
-      void window.zhixing.db.noteLinkedTasks(selectedId).then(setAttachedTasks)
+      void reloadBacklinks(selectedId)
+      void reloadAttachedTasks(selectedId)
       // 标签是 note 域的数据（note_tag）：别的页面改了标签颜色 / 关联，这里要跟着换
       void loadNoteTags()
     })
@@ -836,7 +812,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
       e.preventDefault()
       if (!current) return
       void persist(current.id, { title, content_md: content }).then(async () => {
-        setOutLinks(await window.zhixing.db.outLinks(current.id))
+        reloadOutLinks(current.id)
         onNotice('已保存')
       })
     }
@@ -851,7 +827,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     const id = current.id
     timer.current = window.setTimeout(() => {
       void persist(id, { title, content_md: content }).then(async () => {
-        setOutLinks(await window.zhixing.db.outLinks(id))
+        reloadOutLinks(id)
       })
     }, AUTOSAVE_MS)
     return () => {
@@ -997,7 +973,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     if (dst == null) return
     onNotice(`已创建并绑定「${linkTitle}」`)
     await load()
-    setOutLinks(await window.zhixing.db.outLinks(selectedId))
+    reloadOutLinks(selectedId)
     await selectNote(dst)
   }
 
@@ -1023,7 +999,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                 ? '不能链接到笔记自身'
                 : '目标不可用（不存在或已删除）'
     onNotice(msg)
-    setOutLinks(await window.zhixing.db.outLinks(selectedId))
+    reloadOutLinks(selectedId)
   }
 
   /** 关联到任务。这是**引用**关系，不是归属 —— 见 docs/specs/ownership-vs-reference.md */
@@ -1031,7 +1007,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     if (selectedId == null) return
     const added = await window.zhixing.db.linkTaskNote(taskId, selectedId)
     onNotice(added ? `已把本笔记关联到任务「${taskTitle}」` : `本笔记已关联任务「${taskTitle}」，未重复归属`)
-    setAttachedTasks(await window.zhixing.db.noteLinkedTasks(selectedId))
+    reloadAttachedTasks(selectedId)
   }
 
   /**
@@ -2389,14 +2365,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                  * 于是刚加的引用要等切一次笔记才出现。这与「移动到文件夹后
                  * 归属栏不更新」是同一个根因：load() 不碰派生状态。
                  */
-                const [out, back, attached] = await Promise.all([
-                  window.zhixing.db.outLinks(current.id),
-                  window.zhixing.db.backlinks(current.id),
-                  window.zhixing.db.noteLinkedTasks(current.id),
-                ])
-                setOutLinks(out)
-                setBacklinks(back)
-                setAttachedTasks(attached)
+                void loadLinks(current.id)
                 setContent(body + '\n\n[[' + target.title + ']]\n')
                 baselineRef.current = body + '\n\n[[' + target.title + ']]\n'
                 setDirty(false)
