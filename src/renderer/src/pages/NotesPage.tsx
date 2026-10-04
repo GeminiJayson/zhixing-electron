@@ -32,6 +32,12 @@ import { isMotionFull } from '../lib/presence'
 const XlsxGrid = lazy(() => import('../components/XlsxGrid'))
 import { NoteHistory } from '../components/NoteHistory'
 import { NotePicker } from '../components/NotePicker'
+import {
+  dropLinkLine,
+  lacksSource,
+  parsePropsText,
+  propsToText,
+} from '../lib/note-props'
 import type { MarkdownEditorHandle } from '../components/MarkdownEditor'
 import { NOTE_FORMATS, NoteTree, noteIcon, type NoteFormat } from '../components/NoteTree'
 
@@ -329,30 +335,6 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   /** Markdown 编辑器的 view，补全选中后要用它替换那半截 [[ */
   const mdViewRef = useRef<MarkdownEditorHandle | null>(null)
 
-  const propsToText = (raw?: string | null): string => {
-    if (!raw) return ''
-    try {
-      const obj = JSON.parse(raw) as Record<string, unknown>
-      return Object.entries(obj)
-        .map(([k, v]) => k + ': ' + String(v))
-        .join('\n')
-    } catch {
-      return ''
-    }
-  }
-
-  const parsePropsText = (text: string): string => {
-    const obj: Record<string, string> = {}
-    for (const line of text.split('\n')) {
-      const i = line.indexOf(':')
-      if (i <= 0) continue
-      const k = line.slice(0, i).trim()
-      const v = line.slice(i + 1).trim()
-      if (k) obj[k] = v
-    }
-    return JSON.stringify(obj)
-  }
-
   /**
    * 属性列表。**propDraft 仍是唯一真相** —— 这里是它的只读视图。
    * 信息区改成胶囊展示后需要"一条一条"的形态，但保存路径没变：
@@ -391,16 +373,6 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   const removeProp = (key: string): void => {
     void writeProps(propItems.filter((p) => p.key !== key).map((p) => p.key + ': ' + p.value))
   }
-
-  /**
-   * 从正文里删掉那一行 [[标题]]。
-   * 用整行字符串比较而不是正则：标题里可能有正则元字符，转义漏一个就会误删别的行。
-   */
-  const dropLinkLine = (contentMd: string, title: string): string =>
-    contentMd
-      .split('\n')
-      .filter((line) => line.trim() !== '[[' + title + ']]')
-      .join('\n')
 
   const handleRemoveOutLink = (l: { dst_title: string }): void => {
     if (!current) return
@@ -1609,10 +1581,6 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
    * 把它们算进「无来源」会让这个数字等于全部笔记（实测 32/32），指标就失去意义了。
    * 口径与主进程 knowledgeHealth 一致。
    */
-  const NEEDS_SOURCE = new Set(['concept', 'summary', 'synthesis', 'method', 'output', 'pitfall'])
-  const lacksSource = (m: { kind: string; hasSource: boolean }): boolean =>
-    NEEDS_SOURCE.has(m.kind) && !m.hasSource
-
   const visibleNotes = useMemo(() => {
     if (kindFilter === 'all' && statusFilter === 'all') return notes
     return notes.filter((n) => {
