@@ -352,11 +352,11 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 | 交互 | 位置 | 说明 |
 | --- | --- | --- |
 | 按清单筛选 | `TasksPage.tsx` | 「全部清单 / 收件箱（未归属）/ 各清单」 |
-| 新建清单 |  | 应用内 `dialog.prompt`，非原生弹框 |
-| 当前视图过滤 |  | 本地过滤：自身或任一后代命中即保留 |
-| 多选与批量 |  | Ctrl/Cmd 切换、Shift 选范围；批量完成/移动/改期 |
+| 新建清单 | `TasksPage.tsx` | 应用内 `dialog.prompt`，非原生弹框 |
+| 当前视图过滤 | `TasksPage.tsx` | 本地过滤：自身或任一后代命中即保留 |
+| 多选与批量 | `TasksPage.tsx` | Ctrl/Cmd 切换、Shift 选范围；批量完成/移动/改期 |
 | 速览侧栏 | 、 | `.inspector` 常驻可切换 |
-| 新建任务 |  | 行内添加行 |
+| 新建任务 | `TasksPage.tsx` | 行内添加行 |
 | 撤销条 | `App.tsx` | 6s 自动消失 + Ctrl+Z |
 
 ---
@@ -401,16 +401,16 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 | 能力 | 行为 | 证据 |
 | --- | --- | --- |
 | 尺寸与下限 | 290×380，最小 200×160 | `src/main/index.ts` |
-| 窗口属性 | 无边框、透明（显式 `backgroundColor: '#00000000'`）、置顶 `floating`、不进任务栏、可缩放、无阴影 |  |
+| 窗口属性 | 无边框、透明（显式 `backgroundColor: '#00000000'`）、置顶 `floating`、不进任务栏、可缩放、无阴影 | `src/main/widget.ts` |
 | 不透明度 | `widget_opacity / 100`，钳在 0.3–1.0 | 、 |
-| 几何持久化 | 存 `settings.ui_state.widget_geometry`，配置损坏则回退默认尺寸 |  |
+| 几何持久化 | 存 `settings.ui_state.widget_geometry`，配置损坏则回退默认尺寸 | `src/main/widget-geometry.ts` |
 | 贴边悬浮球 | 靠近屏幕左右边缘 8px 内收成悬浮球（默认球体 96px、可调 88~160），竖直对齐原窗口中心后钳进工作区；展开按上次宽高还原，且不污染持久化的展开几何 | `src/main/index.ts` |
-| 球体拖动 | 按住球拖动，松手吸附最近边缘（水平吸平、竖直只钳进工作区）。位移由主进程按屏幕光标重算（与边缘缩放同款）；**不用 `-webkit-app-region: drag`**，否则球上的点击会被一并吞掉 |  |
-| 球体缩放 | 滚轮步进 8px、右键「悬浮球大小」三档；球体整比例缩放（bloub 的 viewBox 自己缩放，不再需要按球径调眼睛倍率） |  |
+| 球体拖动 | 按住球拖动，松手吸附最近边缘（水平吸平、竖直只钳进工作区）。位移由主进程按屏幕光标重算（与边缘缩放同款）；**不用 `-webkit-app-region: drag`**，否则球上的点击会被一并吞掉 | `widget.ts` 的 `ballDragStart` / `ballDragTo` / `ballDragEnd` |
+| 球体缩放 | 滚轮步进 8px、右键「悬浮球大小」三档；球体整比例缩放（bloub 的 viewBox 自己缩放，不再需要按球径调眼睛倍率） | `widget.ts` 的 `setBallSize` |
 | 悬浮球表情 | bloub 引擎（`vendor/bloub/`，MIT）：11 个状态的随机池（刻意避开 `idle` / `sleep` / `swirl`），2.6~5.8s 一拍、停留 1.4~2.6s 回待机；指针注视走 `setLook`；150s 无交互打盹（`sleep`），互动播 `alert` 唤醒 | `WidgetBall.tsx`、`BloubAvatar.tsx` |
 | 展开 / 收起 | 点球（先笑一下再展开）/ 双击 / 右键「展开浮窗」→ 浮窗朝**球所在侧的反方向**展开（球在左就向右）；浮窗底部「隐藏」= **收起成球**并落回浮窗最近侧，彻底隐藏用右键「隐藏浮窗」 | 、 |
 | 右键菜单 | 今日视图 / 贴边停靠·展开浮窗（按形态二选一）/ 悬浮球大小（仅球形态）/ 隐藏浮窗 | `src/main/index.ts` 浮窗 IPC 段 |
-| 鼠标穿透 | `setIgnoreMouseEvents(enabled, { forward: true })` |  |
+| 鼠标穿透 | `setIgnoreMouseEvents(enabled, { forward: true })` | `widget.ts` 的 `applyWidgetClickThrough` |
 | 内容 | 顶部快速输入（回车即建）+ 今日待办（含子树）+ 底部「打开主程序 / 隐藏」 | `WidgetApp.tsx` |
 | 数据同步 | 5s 轮询重查今日任务（**球形态暂停**，展开时补拉一次）；`settings` 域广播触发外观重铺 | `WidgetApp.tsx`、 |
 
@@ -515,8 +515,8 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 | `format === 'link'` | 链接表格（可编辑的多链接列表）；条数走标题行胶囊，动作是工具栏最右端的「添加链接」 | `NotesPage.tsx` 的 `.editor__link` 分支 |
 | word / excel | **可编辑**：Word 走 `RichTextEditor` 并自动写回 `.docx`，Excel 走 `XlsxGrid` 自动写回 `.xlsx` | `.editor__office` 分支 |
 | 预览开（markdown / richtext） | `MarkdownView`（`[[` 可点，悬空可一键新建） | `.editor__preview` 分支 |
-| 预览关 + markdown | `MarkdownEditor`（CodeMirror 6） | |
-| 预览关 + richtext | `RichTextEditor`（tiptap） | |
+| 预览关 + markdown | `MarkdownEditor`（CodeMirror 6） | `components/MarkdownEditor.tsx` |
+| 预览关 + richtext | `RichTextEditor`（tiptap） | `components/RichTextEditor.tsx` |
 
 **Office 写回的自愈（2026-09-26）**：Word/Excel 笔记的 `content_md` 按约定存文件路径，但库里确实有存成正文的数据（示例笔记，或者建笔记时把正文填进了「已有文件路径」那一栏）。读取端 `officeDocNote` 一直知道这种情况该提示「文件尚未创建，保存时会新建」，写入端却把它当路径一路走到 `mkdir` —— 报出来的是 `ENOENT … mkdir '…整段正文….docx'`，用户既看不懂也没法处理。现在两端一致：`saveWordNote` / `saveExcelNote` 先用 `looksLikeLocalPath` 判断，不是路径就地补一个空白文件、把新路径登记回笔记再写回；自愈只发生一次（`getNote` 每次重新读库），不会每存一次就多建一个文件。`onMissingPath` 的父目录计算也改用 `lastIndexOf` —— 原先的正则在**没有分隔符**时会把整串当成目录去建。
 

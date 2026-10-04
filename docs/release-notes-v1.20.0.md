@@ -71,7 +71,7 @@
 ### 开发侧
 
 - **接上 CI**：`ci.yml`（ubuntu，静态 + 单测）、`e2e.yml`（windows-latest，跑 5 个 check）
-- **`src/main/index.ts` 从 2445 行拆到 1320 行**：widget / window / tray / hotkey 四个模块
+- **`src/main/index.ts` 从 2496 行拆到 1579 行**（-917，-37%）：widget / window / tray / hotkey 四个模块
 - **保险箱三项遗留收口**：剪贴板清除与自动锁定的判据抽成纯函数 + 9 个用例；
   导入含保险箱数据的库现在会明确报错（而不是静默失败）
 - 单元测试 415 → 547
