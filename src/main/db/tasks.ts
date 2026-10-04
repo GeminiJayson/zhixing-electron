@@ -109,13 +109,9 @@ export function listLinkedNotes(taskId: number): Note[] {
   return conn()
     .prepare(
       'SELECT n.* FROM note n JOIN task_note_link l ON l.note_id = n.id ' +
-        'WHERE l.task_id = ? AND n.deleted_at IS NULL ' +
-        'UNION ' +
-        'SELECT n.* FROM note n JOIN task_note_ref r ON r.note_id = n.id ' +
-        'WHERE r.task_id = ? AND n.deleted_at IS NULL ' +
-        'ORDER BY title'
+        'WHERE l.task_id = ? AND n.deleted_at IS NULL ORDER BY n.title'
     )
-    .all(taskId, taskId) as Note[]
+    .all(taskId) as Note[]
 }
 
 export function noteCountMap(): { task_id: number; c: number }[] {

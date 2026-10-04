@@ -219,4 +219,21 @@ export const MIGRATIONS: Record<number, (c: Database.Database) => void> = {
     addColumn(c, "flash", "content_format", "content_format VARCHAR DEFAULT 'text'")
     c.exec("UPDATE flash SET content_format = 'text' WHERE content_format IS NULL OR content_format = ''")
   },
+  18: (c) => {
+    // V18：把 task_note_ref 并进 task_note_link。
+    //
+    // 两张表的列几乎一样（都是 task_id + note_id），只是历史语义标签不同：
+    // 图谱那边把前者叫「归属」、后者叫「引用」，而按
+    // docs/specs/ownership-vs-reference.md 的定义，任务对笔记的关联**都是引用**。
+    // 两处各写各的，导致同一对 (task, note) 可能在两张表里各存一份，
+    // 读的时候要用 UNION 去重（listLinkedNotes 就是这么绕过去的）。
+    //
+    // 这里把 ref 的数据并进 link，并用 source 记下它来自图谱拉边。
+    // uq_task_note 唯一约束 + INSERT OR IGNORE 保证重复执行安全。
+    c.exec(
+      "INSERT OR IGNORE INTO task_note_link (task_id, note_id, source, created_at) " +
+        "SELECT task_id, note_id, 'manual', created_at FROM task_note_ref"
+    )
+    // 表保留不删：旧版本的导出文件里还有它，import 时要能落库。
+  },
 }

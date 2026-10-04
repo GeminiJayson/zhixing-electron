@@ -8,8 +8,9 @@
  * v15 加了密码保险箱的 vault_meta / vault_entry；
  * v16 给 note 加了知识库需要的 kind / verified_at / archived_at / verify_note；
  * v17 给 flash 加了 content_format（网页剪藏保留原格式时存 HTML）。
+ * v18 把 task_note_ref 的数据并入 task_note_link（见 migrate.ts 的说明）。
  */
-export const SCHEMA_VERSION = 17
+export const SCHEMA_VERSION = 18
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS attachment (

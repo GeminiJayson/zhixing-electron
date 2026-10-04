@@ -296,17 +296,12 @@ export function buildGraph(query: GraphQuery = {}): GraphPayload {
         edges.push([graphNodeId('task', l.task_id), l.note_id])
       }
     }
-    // task_note_ref 引用边与归属并存。同一对同时存在两种关系时按「引用」呈现
-    // （虚线优先），归属语义仍留在 task_note_link 数据层，避免同一条边叠画两次。
-    const refs = c
-      .prepare('SELECT task_id, note_id FROM task_note_ref')
-      .all() as { task_id: number; note_id: number }[]
-    for (const l of refs) {
-      if (!taskIds.has(l.task_id) || !allowed.has(l.note_id)) continue
-      const edge: [number, number] = [graphNodeId('task', l.task_id), l.note_id]
-      if (!edges.some(([s, d]) => s === edge[0] && d === edge[1])) edges.push(edge)
-      presetKinds[edge[0] + ',' + edge[1]] = 'reference'
-    }
+    /*
+      这里原先还读一遍 task_note_ref 画「引用」边（与 task_note_link 的「归属」边并存，
+      同一对靠 some() 去重、并把 presetKinds 标成 reference）。两张表在 V18 已合并 ——
+      任务对笔记的关联本质都是引用，分两张表只是历史语义标签不同。
+      上面读 task_note_link 的那段循环现在覆盖了全部关系。
+    */
 
     // 段落锚子节点——任务引用笔记内某段（task_note_context）时，
     // 在笔记下挂一个小锚点（引用虚线），锚点带定位键，图谱侧可跳转到该段。
@@ -667,7 +662,13 @@ export function graphPreview(node: GraphNodePayload): string {
 
 // ---------------------------------------------------------------- 图谱写入（拖拽连线）
 
-/** 任务↔笔记是唯一「两种关系皆可」的组合：归属走 task_note_link，引用走 task_note_ref。 */
+/**
+ * 任务↔笔记可以任意连线。
+ *
+ * 早先这里写的是「归属走 task_note_link，引用走 task_note_ref」—— 那是把同一种关系
+ * 按来源拆成了两张表。按 docs/specs/ownership-vs-reference.md，任务对笔记的关联
+ * **都是引用**，V18 已合并。
+ */
 export const EDGE_EITHER = 'either'
 
 /**
@@ -786,8 +787,10 @@ export function linkNotes(srcId: number, dstId: number): boolean {
 export function linkTaskNoteRef(taskId: number, noteId: number): boolean {
   if (!taskId || !noteId || taskId <= 0 || noteId <= 0) return false
   conn()
-    .prepare('INSERT OR IGNORE INTO task_note_ref (task_id, note_id) VALUES (?, ?)')
-    .run(taskId, noteId)
+    .prepare(
+      "INSERT OR IGNORE INTO task_note_link (task_id, note_id, source, created_at) VALUES (?, ?, 'manual', ?)"
+    )
+    .run(taskId, noteId, new Date().toISOString())
   return true
 }
 
@@ -795,7 +798,7 @@ export function linkTaskNoteRef(taskId: number, noteId: number): boolean {
 export function unlinkTaskNoteRef(taskId: number, noteId: number): boolean {
   return (
     conn()
-      .prepare('DELETE FROM task_note_ref WHERE task_id = ? AND note_id = ?')
+      .prepare('DELETE FROM task_note_link WHERE task_id = ? AND note_id = ?')
       .run(taskId, noteId).changes > 0
   )
 }
