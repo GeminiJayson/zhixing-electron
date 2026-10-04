@@ -32,6 +32,7 @@ import { NotePicker } from '../components/NotePicker'
 import { lacksSource } from '../lib/note-props'
 import { useNoteAudit } from '../lib/use-note-audit'
 import { useNoteLinks } from '../lib/use-note-links'
+import { useNoteAi } from '../lib/use-note-ai'
 import { useNoteTags } from '../lib/use-note-tags'
 import { useNoteProps } from '../lib/use-note-props'
 import type { MarkdownEditorHandle } from '../components/MarkdownEditor'
@@ -329,10 +330,6 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   /** Word/Excel 可编辑内容 */
   const [officeEdit, setOfficeEdit] = useState<{ kind: string; html: string; rows: string[][]; message: string } | null>(null)
   const [excelRows, setExcelRows] = useState<string[][]>([])
-  /** AI 整理进行中（请求可能跑几十秒，期间按钮要禁用并给出文案） */
-  const [aiBusy, setAiBusy] = useState(false)
-  /** 整库整理任务：非空表示正在跑（进度由主进程推送） */
-  const [libJob, setLibJob] = useState<AiLibraryProgress | null>(null)
   /**
    * 链接笔记的编辑草稿。为什么要单独存一份：序列化会丢掉 target 还没填的空行，
    * 直接以 content 为唯一真相的话，「添加链接」后那一行会立刻消失。
@@ -541,28 +538,6 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     await persist(current.id, { title, content_md: content })
   }, [current, dirty, persist, title, content])
 
-  // 整库整理的进度订阅：主进程逐篇推进时会推过来，最后一帧 running=false 用于收尾
-  useEffect(() => {
-    let alive = true
-    void window.zhixing.ai.libraryProgress().then((p) => {
-      if (alive && p?.running) setLibJob(p)
-    })
-    const off = window.zhixing.ai.onLibraryProgress((p) => {
-      setLibJob(p.running ? p : null)
-      if (!p.running) {
-        onNotice(
-          `整库整理结束：成功 ${p.ok} 篇${p.failed ? `，失败 ${p.failed} 篇` : ''}${
-            p.skipped ? `，跳过 ${p.skipped} 篇` : ''
-          }`
-        )
-        void load()
-      }
-    })
-    return () => {
-      alive = false
-      off()
-    }
-  }, [load, onNotice])
 
   /** 拖动链接表格的分界：按可用宽度（减去操作列与分界列）换算比例 */
   const startColumnResize = (e: ReactPointerEvent<HTMLSpanElement>): void => {
@@ -632,76 +607,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     onNotice(res.message)
   }
 
-  const handleLibraryOrganize = async (): Promise<void> => {
-    if (libJob) {
-      // 取消现在会回一句人话：没在跑时说「当前没有正在运行的整库整理」，
-      // 而不是把 false 静默吞掉
-      const res = await window.zhixing.ai.cancelLibrary()
-      onNotice(res.message)
-      return
-    }
-    const all = await window.zhixing.db.notes()
-    if (!all.length) {
-      onNotice('笔记库还是空的')
-      return
-    }
-    const confirmed = await dialog.confirm({
-      title: '整理全库',
-      message:
-        `将逐篇把 ${all.length} 篇笔记交给大模型整理，并直接改写原笔记。\n\n` +
-        '· Markdown/富文本：重排正文；Word/Excel：只归类；链接笔记：分配每条链接的去向\n' +
-        '· 每篇都会先过审计，不通过就不写库\n' +
-        '· 正文变更前会留一份版本快照，可在笔记历史里回滚\n' +
-        '· 篇数多时要跑一阵，随时可以停止',
-      icon: <Sparkles size={15} />,
-      tone: 'warning',
-      confirmText: '开始整理',
-    })
-    if (!confirmed) return
-    const res = await window.zhixing.ai.organizeLibrary()
-    if (!res.ok) onNotice(res.message)
-    else if (res.failedTitles.length) {
-      onNotice(`${res.message}；失败：${res.failedTitles.join('、')}`)
-    }
-  }
 
-  /**
-   * AI 整理当前笔记：先把未落盘的编辑冲出去（否则整理的是旧内容），
-   * 再交给主进程「取出 → 占位 → 请求 → 审计 → 归类 → 入库」。
-   * 成功后才重载本地视图；失败时原笔记一个字节都没动。
-   */
-  const handleAiOrganize = async (): Promise<void> => {
-    if (!current || aiBusy) return
-    await flushPending()
-    setAiBusy(true)
-    try {
-      const res = await window.zhixing.ai.organizeNote(current.id)
-      if (!res.ok) {
-        const errors = (res.issues ?? [])
-          .filter((i) => i.level === 'error')
-          .slice(0, 2)
-          .map((i) => i.message)
-          .join('；')
-        onNotice(errors ? `${res.message}：${errors}` : res.message)
-        return
-      }
-      const parts = ['AI 已整理并保存']
-      if (res.summary) parts.push(res.summary)
-      if (res.folderPath) {
-        parts.push(
-          res.createdFolders?.length ? `新建并归入「${res.folderPath}」` : `归入「${res.folderPath}」`
-        )
-      }
-      const warns = (res.issues ?? []).filter((i) => i.level === 'warn').length
-      if (warns) parts.push(`${warns} 条提醒`)
-      onNotice(parts.join('｜'))
-      setReloadToken((n) => n + 1)
-      // 可能新建了文件夹，笔记树要重新拉一遍
-      await load()
-    } finally {
-      setAiBusy(false)
-    }
-  }
 
   /**
    * 所有「打开笔记」的入口都走这里（笔记树、`[[标题]]`、反链 / 出链、命令面板、
@@ -1297,6 +1203,26 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     // relink 是直接修复、不产生清单，所以不展开浮层
     if (kind !== 'relink') setPanel({ kind, x: anchor.x, y: anchor.y })
   }
+
+  /*
+    AI 整理两条路（当前笔记 / 整个库）收在 hook 里。它们共享"忙碌/进度"两种状态 ——
+    整库的进度是主进程推过来的，所以 hook 里要订阅而不只是等返回值。
+    放在这里是因为它要用到 load 与 flushPending，两者都是后面才定义的。
+  */
+  const {
+    aiBusy,
+    libJob,
+    organizeNote: handleAiOrganize,
+    organizeLibrary: handleLibraryOrganize,
+  } = useNoteAi({
+    current,
+    onNotice,
+    confirm: dialog.confirm,
+    flushPending,
+    onReload: load,
+    bumpReload: () => setReloadToken((n) => n + 1),
+    icon: <Sparkles size={15} />,
+  })
 
   /**
    * 标题栏胶囊的状态：库内改动与 Word/Excel 的文件写回，任一没落地都算「未保存」。
