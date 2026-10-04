@@ -46,6 +46,16 @@ import {
   testAiConnection,
 } from './ai'
 import { PRESET_ACCENTS, hexToRgb, nearestAccent } from './accent'
+import {
+  BALL_MARGIN,
+  BALL_SIZE_DEFAULT,
+  BALL_SIZE_MAX,
+  BALL_SIZE_MIN,
+  BALL_WIN_MIN,
+  DOCK_EDGE,
+  ballWindowPx,
+  clampBallSize,
+} from './widget-geometry'
 import { setConditionAsker } from './db/workflow'
 import { importAttachment, importAttachmentData, importAttachmentDataBatch } from './db/attachments'
 import { syncExternalTasks, taskSyncStatus } from './task-sync'
@@ -107,24 +117,7 @@ let widgetResize: {
   startCursor: { x: number; y: number }
   start: { x: number; y: number; width: number; height: number }
 } | null = null
-/** 悬浮球：球体边长下限（88px 起表情才清晰）/ 上限 / 默认值 / 窗口四周留白 */
-const BALL_SIZE_MIN = 88
-const BALL_SIZE_MAX = 160
-const BALL_SIZE_DEFAULT = 96
-const BALL_MARGIN = 8
-/** 贴边吸附阈值：球（或浮窗）边缘贴进工作区 8px 内即吸附 / 收成球 */
-const DOCK_EDGE = 8
-/** 球体边长 → 窗口边长（四周留 BALL_MARGIN：放 hover 放大与投影） */
-const ballWindowPx = (size: number): number => size + BALL_MARGIN * 2
-/** 钳住球体边长：下限 88px，再小表情就看不清了 */
-const clampBallSize = (size: number): number =>
-  Math.round(Math.max(BALL_SIZE_MIN, Math.min(BALL_SIZE_MAX, size || BALL_SIZE_DEFAULT)))
-/**
- * 球形态窗口的最小边长（按最小球体算）。
- * **固定不变**：最小尺寸一变，平台会异步重排窗口（保持左上角），把紧随其后的 setBounds
- * 位置参数盖掉 —— 症状就是「球变大了、位置却没动」。所以缩放时不去动最小尺寸。
- */
-const BALL_WIN_MIN = BALL_SIZE_MIN + BALL_MARGIN * 2
+
 /**
  * 展开后距屏幕边缘的留白。必须大于 DOCK_EDGE —— 展开走的 setBounds 同样会触发
  * `moved`，留白不够会被立刻重新判定为贴边，刚展开又收回去。
@@ -823,9 +816,6 @@ function updateTrayTooltip(): void {
   }
 }
 
-
-
-
 /** 当前强调色对应的图标 key（文件名里的小写 6 位 hex） */
 function accentIconKey(): string {
   try {
@@ -1240,14 +1230,12 @@ function openCaptureWindow(mode: 'quick' | 'capture', seed: { text: string; html
   }
 }
 
-
 // ---------------------------------------------------------------- 快速笔记浮窗
 
 let quickNoteWindow: BrowserWindow | null = null
 let quickNoteShowOnce: (() => void) | null = null
 /** 拖拽改尺寸的起始矩形（主进程持有，见 quicknote:resizeStart 的注释） */
 let quickNoteResizeFrom: Electron.Rectangle | null = null
-
 
 /**
  * 快速笔记浮窗（形态 C）。
