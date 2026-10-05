@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { WorkflowCanvasG6, type WorkflowCanvasNode } from '../components/WorkflowCanvasG6'
-import { branchAnchors, nodePort } from '../lib/workflow-anchors'
-import { COND_TEXT_W, NODE_W, NODE_H, NODE_TEXT_W } from '../lib/workflow-node-box'
+import { NODE_W, NODE_H } from '../lib/workflow-node-box'
 import {
   ArrowDown,
   ArrowUp,
@@ -22,10 +21,8 @@ import {
   Plus,
   RotateCcw,
   Square,
-  TerminalSquare,
   Timer,
   Trash2,
-  X,
 } from '@renderer/lib/icons'
 import type {
   Note,
@@ -41,15 +38,10 @@ import { CONDITION_KIND, describeCondition, serializeCondition } from '@shared/w
 import {
   TASK_KIND,
   actionKindLabel,
-  isAutoActionKind,
-  normalizeActionKind,
-  scriptRuntimeLabel,
 } from '@shared/workflow-action'
 import {
-  BRANCH_SLOTS,
   branchSlotLabel,
   branchTarget,
-  fallthroughTarget,
   withBranchTarget,
   type BranchSlot,
 } from '@shared/workflow-branch'
@@ -61,9 +53,7 @@ import { WorkflowConditionDialog } from '../components/WorkflowConditionDialog'
 import { useDialog } from '../components/Dialogs'
 import { usePanZoom } from '../lib/usePanZoom'
 import { isMotionFull } from '../lib/presence'
-import { SIDE_NORMAL, edgePathMidpoint, edgePointFrom, orthogonalPath } from '../lib/edge-path'
 import {
-  directedAnchors,
   layoutBounds,
   layoutWorkflow,
   type WorkflowRankDir,
@@ -74,65 +64,6 @@ import { readTokenMs } from '../lib/motion-tokens'
 interface Props {
   onNotice: (message: string) => void
   onChanged: () => Promise<void>
-}
-
-
-/**
- * 节点详情浮卡是否启用。
- *
- * 2026-09-29 用户要求移除：「选中节点的悬浮显示也不需要」。
- * 这里用常量关掉而不是直接删代码，是因为浮卡里攒了不少**只有它显示过**的信息
- * （条件节点的满足/不满足目标、命令与期望退出码、SOP 绑定、执行动作按钮），
- * 真要恢复时不必去 git 里翻。想彻底删掉的话，把整块 SHOW_NODE_CARD 条件渲染干掉即可。
- *
- * 注意别写成 false && … 的字面量条件：那会让 TypeScript 的控制流分析错乱，
- * 块内 if (!node || !p) return null 之后的收窄失效，报一串「可能为 undefined」。
- */
-const SHOW_NODE_CARD = false
-
-/** 执行日志的分类标签随执行记录一起搬到了 components/WorkflowRunDialog.tsx */
-
-/** 时间轴与它的时刻格式化都随执行记录搬到了 components/WorkflowRunDialog.tsx */
-/** 节点内文字左右各留 10px，再留 2px 余量给抗锯齿 */
-/**
- * 条件节点的可用文字宽度要**再收一档**：它画在菱形里，而菱形中间最宽处才有整框宽度，
- * 上下两侧迅速收窄 —— 按整框宽度排的文字会在四个斜边处顶出去（用户报的就是这个）。
- * 取 0.6 是让文字只落在菱形的"腰部"。
- */
-
-/**
- * 节点内文字的排版：SVG 的 <text> **既不会自动换行也不会自动缩小**，超出的部分会直接画到
- * 节点框外。旧写法按「字符数 > 10」截断，而一个汉字的宽度约等于两个西文字母 ——
- * 10 个汉字加一个全角标点就能顶出框外（用户看到的就是这个）。
- *
- * 现在按**像素宽度**算：先试着用 12px，放不下就逐档降到 10px，还放不下才截断加省略号。
- * 估算系数保守一点（汉字 1.02、其余 0.56），宁可早一点省略号也不要溢出。
- */
-const charWidth = (ch: string): number => (/[\u1100-\u9fff\uff00-\uffef\u3000-\u303f]/.test(ch) ? 1.02 : 0.56)
-const textWidth = (text: string, size: number): number =>
-  [...text].reduce((w, ch) => w + charWidth(ch) * size, 0)
-
-/** 返回可直接渲染的文案与字号：长标题先缩字号、再按像素截断 */
-function fitNodeText(
-  raw: string,
-  baseSize: number,
-  minSize: number,
-  maxWidth: number = NODE_TEXT_W
-): { text: string; size: number } {
-  const title = raw ?? ''
-  let size = baseSize
-  while (size > minSize && textWidth(title, size) > maxWidth) size -= 0.5
-  if (textWidth(title, size) <= maxWidth) return { text: title, size }
-  const ellipsis = size * 0.9
-  let out = ''
-  let w = 0
-  for (const ch of title) {
-    const cw = charWidth(ch) * size
-    if (w + cw > maxWidth - ellipsis) break
-    out += ch
-    w += cw
-  }
-  return { text: out + '…', size }
 }
 /** 画布基准坐标系（viewBox 与 panzoom 共用同一套尺寸）。 */
 const CANVAS_W = 900
@@ -299,8 +230,6 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     /** 按下时的坐标：松手时比对用 —— 没真的挪动过就不要写库 */
     from: { x: number; y: number }
   } | null>(null)
-  /** 悬停的分支连线（源步骤 id + 槽位），以及正在改挂的那一条 */
-  const [branchHover, setBranchHover] = useState<{ id: number; slot: BranchSlot } | null>(null)
   /** 鼠标悬浮的步骤：与它相连的连线高亮、其余淡到几乎隐形（与知识图谱同一套交互） */
   /**
    * 节点悬浮预览已按用户要求移除（2026-09-29）。
@@ -434,7 +363,6 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
    * 两者共用同一份数据与同一套业务规则（分支、拖拽、落库都在本文件），**只是画法不同**。
    * 留开关是为了能在真实页面上对照；确认无回归后连同它和整条旧路径一起删。
    */
-  const useG6 = new URLSearchParams(window.location.search).get('wfg6') === '1'
 
   /** G6 画布要的节点（布局字段 + 外观字段）—— 外观那层不塞进 LayoutNode 里。 */
   const g6Nodes: WorkflowCanvasNode[] = useMemo(
@@ -465,30 +393,6 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     [ordered, selected]
   )
 
-  /** 画布上的分支连线：条件节点两条出边各算一条（普通步骤最多一条历史分支）。 */
-  const branchEdges = useMemo(() => {
-    const out: { from: WorkflowNodePayload; slot: BranchSlot; toId: number }[] = []
-    for (const n of ordered) {
-      if (n.branch_node_id) out.push({ from: n, slot: 'true', toId: n.branch_node_id })
-      if (n.branch_false_node_id) out.push({ from: n, slot: 'false', toId: n.branch_false_node_id })
-    }
-    return out
-  }, [ordered])
-
-  const startDrag = (n: WorkflowNodePayload) => (e: React.PointerEvent<SVGGElement>) => {
-    const p = pos.get(n.id)
-    const world = panRef.current?.toWorld(e.clientX, e.clientY)
-    if (!world || !p) return
-    try {
-      ;(e.target as Element).setPointerCapture?.(e.pointerId)
-    } catch {
-      // 同上：捕获失败不能挡住选中与拖动
-    }
-    // 偏移量在世界坐标系里算：画布缩放后，同样的像素位移对应的世界位移不同
-    dragRef.current = { id: n.id, dx: world.x - p.x, dy: world.y - p.y, from: { x: p.x, y: p.y } }
-    setSelected(n.id)
-  }
-
   const onMove = (
     _e: React.PointerEvent<SVGSVGElement>,
     world: { x: number; y: number } | null
@@ -507,17 +411,6 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
       })
       return next
     })
-  }
-
-  /**
-   * 删除分支连线：清空该槽位的目标（满足 / 不满足各一条）。
-   * 顺序连线（相邻步骤的实线）是 order_index 的投影、没有独立实体，所以不在编辑范围。
-   */
-  const removeBranch = async (fromId: number, slot: BranchSlot): Promise<void> => {
-    await window.zhixing.db.setWorkflowBranch(fromId, null, slot)
-    setBranchHover(null)
-    onNotice(`已删除「${branchSlotLabel(slot)}」分支连线`)
-    await refresh()
   }
 
   /** 分支端点改挂：落点用命中检测 —— 拖拽期间指针被画布捕获，节点的 hover 事件不会触发。 */
@@ -784,12 +677,6 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   const groupOf = (id: number): number | null =>
     templateGroups.find((x) => x.id === id)?.group_id ?? null
   const toggleGroup = (id: number): void => toggleGroupRaw(id)
-
-  /** 浮卡里把分支目标 id 翻译成人话（没配 / 已删除都不留一个裸 id）。 */
-  const branchTargetLabel = (id: number | null): string => {
-    if (!id) return '按顺序下一步'
-    return ordered.find((n) => n.id === id)?.title || '（节点已删除）'
-  }
 
   const renderTemplateRow = (t: WorkflowTemplateSummary, depth: number): JSX.Element => (
     <div
@@ -1135,50 +1022,6 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     onNotice('步骤已保存')
   }
 
-  /**
-   * 手动试跑一个节点的动作。
-   * 命令 / 脚本有副作用且**会等待进程退出**（不再像历史 run_command 那样发完即忘），
-   * 所以执行前必须二次确认；失败时把输出尾部一并报出来，方便当场定位。
-   */
-  const runNodeAction = async (n: WorkflowNodePayload): Promise<void> => {
-    const kind = n.action_kind
-    if (!kind || kind === 'none') return
-    if (kind === 'run_command' || isAutoActionKind(kind)) {
-      const desc = await window.zhixing.db.describeWorkflowAction(
-        kind,
-        n.action_value,
-        n.action_expect,
-        n.action_runtime
-      )
-      const wait = isAutoActionKind(kind) ? '\n\n这一步会等进程结束并核对退出码。' : ''
-      const confirmed = await dialog.confirm({
-        title: '在本机执行',
-        message: `即将在本机执行：\n\n${desc}${wait}`,
-        icon: <TerminalSquare size={15} />,
-        danger: true,
-        confirmText: '执行',
-      })
-      if (!confirmed) return
-    }
-    const res = await window.zhixing.db.runWorkflowAction(
-      kind,
-      n.action_value,
-      n.action_expect,
-      n.action_runtime
-    )
-    onNotice(
-      res.ok || !res.output
-        ? res.message
-        : `${res.message}｜输出尾部：${res.output.trim().slice(-160)}`
-    )
-    if (res.ok && kind === 'open_note') {
-      const id = Number(n.action_value)
-      if (Number.isFinite(id) && id > 0) {
-        window.dispatchEvent(new CustomEvent('zhixing:open-note', { detail: id }))
-      }
-    }
-  }
-
   const handleInstantiate = async (): Promise<void> => {
     if (!current) return
     // 把当前启动策略显式传给实例化（不依赖库里的旧值）
@@ -1502,463 +1345,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
             </div>
           )}
 
-          {!useG6 && (
-          <svg
-            ref={pan.svgRef}
-            className="wf-canvas"
-            viewBox={pan.viewBox}
-            style={{ cursor: pan.panning ? 'grabbing' : 'grab' }}
-            onPointerDown={pan.handlers.onPointerDown}
-            onPointerMove={pan.handlers.onPointerMove}
-            onPointerUp={pan.handlers.onPointerUp}
-            onPointerLeave={pan.handlers.onPointerLeave}
-          >
-            {/* 箭头：id 与图谱的分开，避免两页同时挂载时 id 撞车 */}
-            <defs>
-              <marker
-                id="wf-arrow"
-                viewBox="0 0 8 8"
-                refX="7"
-                refY="4"
-                markerWidth="5"
-                markerHeight="5"
-                orient="auto-start-reverse"
-              >
-                <path d="M0,0 L8,4 L0,8 Z" className="edge-arrow" />
-              </marker>
-              <marker
-                id="wf-arrow-on"
-                viewBox="0 0 8 8"
-                refX="7"
-                refY="4"
-                markerWidth="6"
-                markerHeight="6"
-                orient="auto-start-reverse"
-              >
-                <path d="M0,0 L8,4 L0,8 Z" className="edge-arrow edge-arrow--on" />
-              </marker>
-            </defs>
-            {/* 顺序连线：主链上相邻两步之间的实线。
-                条件节点的**出边不在这里画** —— 它的去向由满足 / 不满足两条分支决定，
-                哪条槽位没配才另画一条兜底实线（见下面那块）。 */}
-            {ordered.map((n, i) => {
-              if (n.action_kind === CONDITION_KIND) return null
-              const a = pos.get(n.id)
-              const nxt = ordered[i + 1]
-              const b = nxt ? pos.get(nxt.id) : undefined
-              if (!a || !b) return null
-              const ends = directedAnchors(a, b, NODE_W, NODE_H)
-              return (
-                <g key={`seq-${n.id}`} className="wf-edge-group">
-                  <path
-                    d={orthogonalPath(ends.from, ends.to)}
-                    markerEnd="url(#wf-arrow)"
-                    className="wf-edge"
-                  />
-                </g>
-              )
-            })}
-
-            {/* 条件节点的兜底出边：某条槽位没配分支时，它按顺序走第一个**不是自己分支目标**的节点。
-                两条都配了就完全没有兜底路径，也就不画这条线 —— 于是从条件节点出来的只有
-                满足 / 不满足两条分支虚线，不会再多挂一条「常规顺序」的实线。 */}
-            {ordered.map((n) => {
-              if (n.action_kind !== CONDITION_KIND) return null
-              const a = pos.get(n.id)
-              const target = fallthroughTarget(ordered, n)
-              const b = target ? pos.get(target.id) : undefined
-              if (!a || !b || !target) return null
-              // 哪条槽位没配，就从它自己的端口拉一条点线到兜底目标。
-              // 走端口而不是节点盒的边：端口在菱形尖角、首段水平向外，
-              // 竖直通道落在节点之外 —— 否则「正对下方」的兜底线会从中间节点身上穿过去。
-              const missing: BranchSlot[] = []
-              if (!n.branch_node_id) missing.push('true')
-              if (!n.branch_false_node_id) missing.push('false')
-              return missing.map((slot) => {
-                const ends = branchAnchors(n, a, slot, b)
-                return (
-                  <g key={`fallback-${n.id}-${slot}`} className="wf-edge-group">
-                    <path
-                      d={orthogonalPath(ends.from, ends.to)}
-                      markerEnd="url(#wf-arrow)"
-                      className="wf-edge wf-edge--fallback"
-                    />
-                  </g>
-                )
-              })
-            })}
-
-            {branchEdges.map(({ from, slot, toId }) => {
-              const a = pos.get(from.id)
-              const b = pos.get(toId)
-              if (!a || !b) return null
-              const ends = branchAnchors(from, a, slot, b)
-              const d = orthogonalPath(ends.from, ends.to)
-              // 「热」只由指针停在分支线上决定（拖端点找落点时的反馈），与已移除的节点悬浮无关
-              const hot = branchHover?.id === from.id && branchHover.slot === slot
-              return (
-                <g key={`branch-${from.id}-${slot}`}>
-                  <path
-                    d={d}
-                    markerEnd={hot ? 'url(#wf-arrow-on)' : 'url(#wf-arrow)'}
-                    className={
-                      'wf-edge wf-edge--branch ' +
-                      // 条件节点用满足 / 不满足两色；普通步骤的「跳到」用中性色
-                      (from.action_kind === CONDITION_KIND
-                        ? 'wf-edge--branch-' + slot
-                        : 'wf-edge--branch-jump') +
-                      (hot ? ' wf-edge--on' : '')
-                    }
-                  />
-                  {/* 分支文案不在这里画：它得在所有节点之上，见下面的「分支标签层」 */}
-                  {/* 热区复用图谱那边的透明粗线：1px 的线本身点不到 */}
-                  <path
-                    d={d}
-                    className="graph__edge-hit"
-                    onPointerEnter={() => setBranchHover({ id: from.id, slot })}
-                    onPointerLeave={() =>
-                      setBranchHover((h) => (h?.id === from.id && h.slot === slot ? null : h))
-                    }
-                    onPointerDown={(e) => e.stopPropagation()}
-                  />
-                </g>
-              )
-            })}
-
-            {ordered.map((n, i) => {
-              const p = pos.get(n.id)
-              if (!p) return null
-              const done = instance?.steps.find((s) => s.node_id === n.id)?.done
-              const isCurrent = instance?.current_node_id === n.id
-              return (
-                <g
-                  key={n.id}
-                  data-wf-node={n.id}
-                  transform={`translate(${p.x},${p.y})`}
-                  // 选中态由 selected 决定（见下），悬停不再改变画布 —— 悬浮预览已移除
-                  className={'wf-node' + (n.id === selected ? ' wf-node--on' : '')}
-                  onPointerDown={startDrag(n)}
-                  onDoubleClick={() => openEditNode(n)}
-                  role="button"
-                  aria-label={
-                    n.action_kind === CONDITION_KIND
-                      ? `条件 ${i + 1}：${n.title}（${describeCondition(n.action_value)}）`
-                      : `步骤 ${i + 1}：${n.title}`
-                  }
-                  tabIndex={0}
-                >
-                  {/* 节点内容包一层：hover 抬升的 scale(1.03) 挂在这一层上（见 workflow.css）。
-                      外层 .wf-node 的 transform 是定位属性 translate(x,y) —— wfbranchcheck.mjs
-                      直接读那个 attribute，CSS transform 会整个盖掉它，节点会叠到画布原点 */}
-                  <g className="wf-node__body">
-                    {n.action_kind === CONDITION_KIND ? (
-                      /* 条件节点用菱形（流程图惯例）：它是个「关卡」而不是待办步骤 */
-                      <polygon
-                        points={`${NODE_W / 2},2 ${NODE_W - 2},${NODE_H / 2} ${NODE_W / 2},${NODE_H - 2} 2,${NODE_H / 2}`}
-                        className={
-                          'wf-node__diamond' + (selected === n.id ? ' wf-node__diamond--on' : '')
-                        }
-                      />
-                    ) : (
-                      <rect
-                        width={NODE_W}
-                        height={NODE_H}
-                        rx={8}
-                        className={
-                          'wf-node__box' +
-                          (selected === n.id ? ' wf-node__box--on' : '') +
-                          (done ? ' wf-node__box--done' : '') +
-                          (isCurrent ? ' wf-node__box--current' : '')
-                        }
-                      />
-                    )}
-                    <text
-                      x={n.action_kind === CONDITION_KIND ? NODE_W / 2 : 10}
-                      y={20}
-                      className={
-                        'wf-node__idx' + (n.action_kind === CONDITION_KIND ? ' wf-node__idx--center' : '')
-                      }
-                    >
-                      {n.action_kind === CONDITION_KIND
-                      ? '条件'
-                      : `第 ${i + 1} 步${
-                          actionKindLabel(n.action_kind) === '任务'
-                            ? ''
-                            : ' · ' + actionKindLabel(n.action_kind)
-                        }`}
-                    </text>
-                    {(() => {
-                      // 标题按像素宽度自适应：长标题先缩到 10px，仍放不下才截断（见 fitNodeText）
-                      const isCond = n.action_kind === CONDITION_KIND
-                      const fit = fitNodeText(n.title, 12, 10, isCond ? COND_TEXT_W : NODE_TEXT_W)
-                      return (
-                        <text
-                          x={n.action_kind === CONDITION_KIND ? NODE_W / 2 : 10}
-                          y={40}
-                          fontSize={fit.size}
-                          className={
-                            'wf-node__title' +
-                            (n.action_kind === CONDITION_KIND ? ' wf-node__title--center' : '')
-                          }
-                        >
-                          {/* 子元素 <title> 给的是原生 tooltip：截断后仍能读全 */}
-                          <title>{n.title}</title>
-                          {fit.text}
-                        </text>
-                      )
-                    })()}
-                    {/* 条件内容直接贴在菱形下方：只画一条虚线看不出「什么情况下走它」，
-                        把判据写出来才读得懂；完整文案在悬停提示与详情浮卡里 */}
-                    {n.action_kind === CONDITION_KIND &&
-                      (() => {
-                        const desc = describeCondition(n.action_value)
-                        // 与节点标题同一套：9px 起，放不下先降字号到 8px，仍放不下才按像素截断
-                        const fit = fitNodeText(desc, 9, 8)
-                        return (
-                          <g className="wf-node__cond" transform={`translate(0, ${NODE_H + 5})`}>
-                            <title>{desc}</title>
-                            <rect x={6} width={NODE_W - 12} height={18} rx={6} />
-                            <text x={NODE_W / 2} y={12.5} fontSize={fit.size}>
-                              {fit.text}
-                            </text>
-                          </g>
-                        )
-                      })()}
-                  </g>
-                </g>
-              )
-            })}
-
-            {/* 出线端口：**每个**节点都能主动拉一条线到别的节点，不必先有连线才谈得上改挂。
-                条件节点是菱形左右两个尖角（右 = 满足、左 = 不满足，标签常驻）；
-                普通步骤是右边中点的一个「跳到」口，平时压暗、悬停该节点时才亮。 */}
-            {ordered.map((n) => {
-              const a = pos.get(n.id)
-              if (!a) return null
-              const isCondition = n.action_kind === CONDITION_KIND
-              const ports: { slot: BranchSlot; label: string; hint: string }[] = isCondition
-                ? BRANCH_SLOTS.map((s) => ({
-                    slot: s.value,
-                    label: s.label,
-                    hint: `从这里拖到目标节点，连出「${s.label}」分支`,
-                  }))
-                : [
-                    {
-                      slot: 'true',
-                      label: '跳到',
-                      hint: '从这里拖到目标节点：这一步完成后直接跳到它',
-                    },
-                  ]
-              return (
-                <g key={`ports-${n.id}`} className="wf-ports">
-                  {ports.map(({ slot, label, hint }) => {
-                    const p = nodePort(n, a, slot)
-                    const outward = p.side === 'left' ? -1 : 1
-                    return (
-                      <g
-                        key={slot}
-                        data-wf-port={n.id}
-                        data-wf-slot={slot}
-                        className={'wf-port wf-port--' + (isCondition ? slot : 'jump')}
-                        onPointerDown={(e) => {
-                          e.stopPropagation()
-                          setBranchDrag({ fromId: n.id, slot, x: p.x, y: p.y })
-                        }}
-                      >
-                        <title>{hint}</title>
-                        <circle cx={p.x} cy={p.y} r={5} />
-                        <text
-                          x={p.x + outward * 8}
-                          y={p.y + 3}
-                          className={'wf-port__label wf-port__label--' + (isCondition ? slot : 'jump')}
-                          textAnchor={outward > 0 ? 'start' : 'end'}
-                        >
-                          {label}
-                        </text>
-                      </g>
-                    )
-                  })}
-                </g>
-              )
-            })}
-
-            {/* 分支文案（普通步骤的历史遗留字段）单独一层，画在所有节点之上 ——
-                SVG 后画的在上，跟连线一起画的话标签会被节点盒盖掉。 */}
-            {branchEdges.map(({ from, slot, toId }) => {
-              // 条件分支的「满足 / 不满足」由端口上的常驻标签承担（就写在两个尖角旁）；
-              // 这里只保留普通步骤里历史遗留的条件文案
-              if (from.action_kind === CONDITION_KIND) return null
-              const a = pos.get(from.id)
-              const b = pos.get(toId)
-              if (!a || !b) return null
-              const text = from.condition
-              if (!text) return null
-              // 贴分支起点 30px，而不是边中点：中段可能正好穿过另一个节点
-              const ends = branchAnchors(from, a, slot, b)
-              const mid = edgePointFrom(
-                { x1: ends.from.x, y1: ends.from.y, x2: ends.to.x, y2: ends.to.y },
-                30
-              )
-              return (
-                <text
-                  key={`blabel-${from.id}-${slot}`}
-                  x={mid.x}
-                  y={mid.y}
-                  className={
-                    'wf-edge__label wf-edge__label--' + slot
-                  }
-                >
-                  {text}
-                </text>
-              )
-            })}
-
-            {/* 端点手柄与删除按钮画在节点层之上 —— 手柄就在端点上，放节点下面会被盖住 */}
-            {branchEdges.map(({ from, slot, toId }) => {
-              if (branchHover?.id !== from.id || branchHover.slot !== slot) return null
-              const a = pos.get(from.id)
-              const b = pos.get(toId)
-              if (!a || !b) return null
-              const ends = branchAnchors(from, a, slot, b)
-              const d = orthogonalPath(ends.from, ends.to)
-              // 改挂手柄：贴住折线终点、沿入边法线退 8px ——
-              // 正落在节点边框上会和节点抢指针，拖不动
-              const normal = SIDE_NORMAL[ends.to.side]
-              const hx = ends.to.x + normal.x * 8
-              const hy = ends.to.y + normal.y * 8
-              // 删除按钮压在折线的**弧长中点**上：连线改成正交折线之后，
-              // 「两端点的中点」早就不在线上了，按钮会飘在空白处、点不到也删不掉
-              const mid = edgePathMidpoint(d)
-              return (
-                <g key={`btools-${from.id}-${slot}`}>
-                  <circle
-                    className="edge-handle"
-                    data-wf-handle={from.id}
-                    cx={hx}
-                    cy={hy}
-                    r={5}
-                    onPointerDown={(e) => {
-                      e.stopPropagation()
-                      setBranchDrag({ fromId: from.id, slot, x: hx, y: hy })
-                    }}
-                  />
-                  <g
-                    className="edge-del"
-                    data-wf-del={from.id}
-                    onPointerDown={(e) => {
-                      e.stopPropagation()
-                      void removeBranch(from.id, slot)
-                    }}
-                  >
-                    <circle cx={mid.x} cy={mid.y} r={8} />
-                    <path
-                      d={`M${mid.x - 3.5} ${mid.y - 3.5} L${mid.x + 3.5} ${mid.y + 3.5} M${mid.x + 3.5} ${mid.y - 3.5} L${mid.x - 3.5} ${mid.y + 3.5}`}
-                    />
-                  </g>
-                </g>
-              )
-            })}
-            {branchDrag &&
-              (() => {
-                const n = ordered.find((x) => x.id === branchDrag.fromId)
-                const a = n ? pos.get(n.id) : undefined
-                if (!n || !a) return null
-                // 预览线从真正的出线口出发（条件节点是尖角、普通步骤是右边中点）
-                const p = nodePort(n, a, branchDrag.slot)
-                return (
-                  <line
-                    className="graph__edge-drag"
-                    x1={p.x}
-                    y1={p.y}
-                    x2={branchDrag.x}
-                    y2={branchDrag.y}
-                  />
-                )
-              })()}
-            {/* 节点详情浮卡已按用户要求移除（2026-09-29）。
-                选中仍然保留：工具栏的编辑 / 删除 / 上移 / 下移都按它判断目标，
-                节点本身也有 .wf-node--on 的高亮，所以"选中了哪一个"依然看得见。 */}
-            {SHOW_NODE_CARD &&
-              (() => {
-                const node = ordered.find((x) => x.id === selected)
-                const p = node ? pos.get(node.id) : undefined
-                if (!node || !p) return null
-                const gap = 10
-                // 用当前画布基准而不是写死的常量：布局会撑大基准，常量早就过时了
-                const flipX = p.x + NODE_W + gap + CARD_W > canvasSize.width
-                const flipY = p.y + CARD_H > canvasSize.height
-                const cx = flipX ? Math.max(0, p.x - gap - CARD_W) : p.x + NODE_W + gap
-                const cy = flipY ? Math.max(0, p.y + NODE_H - CARD_H) : p.y
-                const idx = ordered.findIndex((x) => x.id === node.id)
-                return (
-                  <foreignObject x={cx} y={cy} width={CARD_W} height={CARD_H}>
-                    {/* key 挂节点 id：换一步就重挂一次浮卡，让它重播进场动画（内容全是纯展示） */}
-                    <div className="wf-card" key={node.id}>
-                      <header className="wf-card__head">
-                        <span>第 {idx + 1} 步</span>
-                        <button
-                          className="icon-btn"
-                          aria-label="关闭详情"
-                          onClick={() => setSelected(null)}
-                        >
-                          <X size={13} />
-                        </button>
-                      </header>
-                      <strong className="wf-card__title">{node.title}</strong>
-                      {node.detail && <p className="wf-card__detail">{node.detail}</p>}
-                      {node.action_kind === CONDITION_KIND && (
-                        <>
-                          <p className="wf-card__detail">{describeCondition(node.action_value)}</p>
-                          <p className="wf-card__detail">
-                            满足 → {branchTargetLabel(node.branch_node_id)}；不满足 →{' '}
-                            {branchTargetLabel(node.branch_false_node_id)}
-                          </p>
-                        </>
-                      )}
-                      {isAutoActionKind(node.action_kind) && node.action_value && (
-                        <p className="wf-card__detail">
-                          {normalizeActionKind(node.action_kind) === 'script'
-                            ? `脚本（${scriptRuntimeLabel(node.action_runtime)}）`
-                            : '命令'}
-                          ：
-                          {node.action_value.length > 60
-                            ? node.action_value.slice(0, 60).replace(/\n/g, ' ') + '…'
-                            : node.action_value}
-                          {' · 期望退出码 '}
-                          {node.action_expect === '' ? 0 : node.action_expect}
-                        </p>
-                      )}
-                      <div className="wf-card__meta">
-                        {node.action_kind === CONDITION_KIND ? (
-                          <button className="text-btn" onClick={() => void runNodeAction(node)} title="立即求值这个条件（试跑）">
-                            试跑条件
-                          </button>
-                        ) : isAutoActionKind(node.action_kind) ? (
-                          <button
-                            className="text-btn text-btn--danger"
-                            title="等进程退出并核对退出码；只试跑，不影响实例状态"
-                            onClick={() => void runNodeAction(node)}
-                          >
-                            {normalizeActionKind(node.action_kind) === 'script' ? '试跑脚本…' : '试跑命令…'}
-                          </button>
-                        ) : node.action_kind && node.action_kind !== 'none' && node.action_kind !== TASK_KIND ? (
-                          <button className="text-btn" onClick={() => void runNodeAction(node)}>
-                            执行动作
-                          </button>
-                        ) : (
-                          <span className="u-aux">人工任务</span>
-                        )}
-                        <button className="text-btn" onClick={() => openEditNode(node)}>
-                          编辑
-                        </button>
-                      </div>
-                    </div>
-                  </foreignObject>
-                )
-              })()}
-          </svg>
-          )}
-          {useG6 && current && (
+          {current && (
             <WorkflowCanvasG6
               nodes={g6Nodes}
               selectedId={selected}
