@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { WorkflowCanvasG6, type WorkflowCanvasNode } from '../components/WorkflowCanvasG6'
+import {
+  WorkflowCanvasG6,
+  type WorkflowCanvasHandle,
+  type WorkflowCanvasNode,
+} from '../components/WorkflowCanvasG6'
 import { NODE_W, NODE_H } from '../lib/workflow-node-box'
 import {
   ArrowDown,
@@ -448,6 +452,8 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   }
 
   // 画布级平移 / 缩放：拖背景平移、滚轮以光标为中心缩放；非平移时的移动转给节点拖拽
+  const wfRef = useRef<WorkflowCanvasHandle>(null)
+
   const pan = usePanZoom({
     baseW: canvasSize.width,
     baseH: canvasSize.height,
@@ -517,7 +523,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   // 不能直接在 handleAutoLayout 里调 pan.reset()：那时 setCanvasSize 尚未生效，
   // reset 用的是旧基准，视图会缩在角落（实测横向布局后节点全挤在右上角）。
   useEffect(() => {
-    panRef.current?.reset()
+    wfRef.current?.fit()
   }, [canvasSize])
 
   /** 上一帧提交进 DOM 的节点坐标（飞位的起点）与还在跑的补间（同一节点先撤后飞）。 */
@@ -1177,7 +1183,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
       >
         <GitBranch size={13} /> {rankdir === 'TB' ? '纵向' : '横向'}
       </button>,
-      <button key="reset" className="text-btn" onClick={pan.reset}>
+      <button key="reset" className="text-btn" onClick={() => wfRef.current?.fit()}>
         <Maximize2 size={13} /> 重置视图
       </button>,
       <button key="rename" className="text-btn" onClick={() => void handleRenameTemplate()} disabled={!current}>
@@ -1348,6 +1354,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
           {current && (
             <WorkflowCanvasG6
               nodes={g6Nodes}
+              handleRef={wfRef}
               selectedId={selected}
               onSelect={async (id) => {
                 // 待定分支态下，点到的节点就是分支目标
