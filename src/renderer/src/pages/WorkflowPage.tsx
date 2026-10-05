@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { WorkflowCanvasG6, type WorkflowCanvasNode } from '../components/WorkflowCanvasG6'
 import { branchAnchors, nodePort } from '../lib/workflow-anchors'
 import { COND_TEXT_W, NODE_W, NODE_H, NODE_TEXT_W } from '../lib/workflow-node-box'
 import {
@@ -415,6 +416,37 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   const instance = useMemo(
     () => instances.find((i) => i.template_id === current?.id && i.status === 'running') ?? null,
     [instances, current]
+  )
+
+  /**
+   * 画布实现开关（**迁移期临时**）：\`?wfg6=1\` 时用 G6 画布，否则走原来的手写 SVG。
+   *
+   * 两者共用同一份数据与同一套业务规则（分支、拖拽、落库都在本文件），**只是画法不同**。
+   * 留开关是为了能在真实页面上对照；确认无回归后连同它和整条旧路径一起删。
+   */
+  const useG6 = new URLSearchParams(window.location.search).get('wfg6') === '1'
+
+  /** G6 画布要的节点（布局字段 + 外观字段）—— 外观那层不塞进 LayoutNode 里。 */
+  const g6Nodes: WorkflowCanvasNode[] = useMemo(
+    () =>
+      ordered.map((n, i) => ({
+        id: n.id,
+        order_index: n.order_index,
+        branch_node_id: n.branch_node_id,
+        branch_false_node_id: n.branch_false_node_id,
+        view: {
+          title: n.title,
+          badge:
+            n.action_kind === CONDITION_KIND
+              ? '条件'
+              : '第 ' + (i + 1) + ' 步' + (actionKindLabel(n.action_kind) === '任务' ? '' : ' · ' + actionKindLabel(n.action_kind)),
+          isCondition: n.action_kind === CONDITION_KIND,
+          condText: n.action_kind === CONDITION_KIND ? describeCondition(n.action_value) : undefined,
+          done: instance?.steps.find((s) => s.node_id === n.id)?.done,
+          current: instance?.current_node_id === n.id,
+        },
+      })),
+    [ordered, instance]
   )
 
   /** 画布上被点中的节点（浮卡与「作为某条件的分支」都以它为准）。 */
@@ -1460,6 +1492,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
             </div>
           )}
 
+          {!useG6 && (
           <svg
             ref={pan.svgRef}
             className="wf-canvas"
@@ -1914,6 +1947,23 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                 )
               })()}
           </svg>
+          )}
+          {useG6 && current && (
+            <WorkflowCanvasG6
+              nodes={g6Nodes}
+              selectedId={selected}
+              onSelect={setSelected}
+              onOpen={(id) => {
+                const n = ordered.find((x) => x.id === id)
+                if (n) openEditNode(n)
+              }}
+              onBranch={async (nodeId, slot) => {
+                // 画布只报「点了谁、哪个槽位」，落库与刷新在这里 —— 与旧实现同一个入口
+                await window.zhixing.db.setWorkflowBranch(nodeId, null, slot)
+                await refresh()
+              }}
+            />
+          )}
           <p className="u-aux">
             点节点选中（工具栏的编辑 / 删除 / 上移 / 下移按它定位）、双击编辑；拖动节点改布局（自动保存）。
             画布空白处拖动可平移、滚轮缩放。条件节点下方写着判定内容，两个端口分别连出
