@@ -472,12 +472,9 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
    * 连线写入：
    * 先按允许矩阵判断，任务↔笔记再用 ownership/reference 决定写哪张表。
    */
-  const tryLink = useCallback(
-    async (dst: GraphNodePayload): Promise<void> => {
-      if (linkFrom == null) return
-      const src = nodes.find((n) => n.id === linkFrom)
-      setLinkFrom(null)
-      if (!src) return
+  const linkBetween = useCallback(
+    async (src: GraphNodePayload, dst: GraphNodePayload): Promise<void> => {
+      // 允许矩阵在主进程：画布与页面都不自行判断「能不能连」
       const kind = await window.zhixing.db.graphConnectionAllowed(src.kind, dst.kind)
       if (!kind) {
         onNotice(`不允许连接 ${src.kind} → ${dst.kind}`)
@@ -510,7 +507,19 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
       }
       await load()
     },
-    [linkFrom, linkMode, nodes, onNotice, load]
+    [linkMode, onNotice, load]
+  )
+
+  /** 点选式连线：先选了起点（侧栏「从此节点连线」），再点终点。 */
+  const tryLink = useCallback(
+    async (dst: GraphNodePayload): Promise<void> => {
+      if (linkFrom == null) return
+      const src = nodes.find((n) => n.id === linkFrom)
+      setLinkFrom(null)
+      if (!src) return
+      await linkBetween(src, dst)
+    },
+    [linkFrom, nodes, linkBetween]
   )
 
   /** 边的两端节点。d3 模拟会把 source/target 替换成对象，两种形态都要认。 */
@@ -894,7 +903,19 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
             focused={focused}
             searchHits={searchHits}
             linkFrom={linkFrom}
-            onSelect={setSelected}
+            // 点选式连线：侧栏点了「从此节点连线」之后，再点另一个节点即建立关系。
+            // **能不能连由 tryLink 里的 graphConnectionAllowed 判定**（主进程），
+            // 画布不参与裁决 —— 它只负责把「点了谁」报上来。
+            onSelect={(id) => {
+              if (linkFrom != null && id != null && id !== linkFrom) {
+                const dst = data?.nodes.find((n) => n.id === id)
+                if (dst) {
+                  void tryLink(dst)
+                  return
+                }
+              }
+              setSelected(id)
+            }}
             onHover={setHoverNode}
             onFocus={setFocused}
             onOpenNode={(n) => void openNode(n)}
