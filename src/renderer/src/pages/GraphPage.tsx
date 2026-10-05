@@ -6,10 +6,8 @@ import type { Simulation, SimulationLinkDatum, SimulationNodeDatum } from 'd3-fo
 import { Maximize2, RefreshCw } from '@renderer/lib/icons'
 import type { GraphDelta, GraphNodePayload, GraphPayload, NoteFolder } from '@shared/types'
 import { Toolbar } from '../components/Toolbar'
-import { GraphNodeIcon } from '../components/GraphNodeIcon'
 import { GraphCanvasG6, type GraphCanvasHandle } from '../components/GraphCanvasG6'
 import { usePanZoom } from '../lib/usePanZoom'
-import { edgeMidpoint, edgePath, trimEnd } from '../lib/edge-path'
 
 interface Props {
   onOpenNote: (id: number) => void
@@ -97,8 +95,6 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
   const [linkDrag, setLinkDrag] = useState<{ from: number; x: number; y: number } | null>(null)
   /** 任务↔笔记两种关系皆可：归属（实线）或引用（虚线） */
   const [linkMode, setLinkMode] = useState<'ownership' | 'reference'>('ownership')
-  /** 鼠标悬停的边（按下标标识）：只在悬停时才亮出端点手柄与删除按钮 */
-  const [edgeHover, setEdgeHover] = useState<number | null>(null)
   /** 鼠标悬浮的节点：与它直接相连的线与节点高亮，其余淡化到几乎隐形 */
   const [hoverNode, setHoverNode] = useState<number | null>(null)
   /** 正在改挂端点：记录边下标、被拖的那一端，以及指针当前的世界坐标 */
@@ -411,21 +407,10 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
     return () => window.removeEventListener('zhixing:motion', onMotion)
   }, [])
 
-  /**
-   * 画布实现开关（**迁移期临时**）。
-   *
-   * 旧路径：d3-force + 手写 SVG；新路径：G6 画布。两者共用同一份数据与同一套业务规则，
-   * **只是画法不同** —— 留开关是为了能在真实页面上对照，确认新画布无回归后，
-   * 连同它和整条旧路径一起删（见 docs/specs/g6-migration.md 的 P3）。
-   */
-  const [useG6, setUseG6] = useState(() => localStorage.getItem('graph.useg6') === '1')
-  useEffect(() => {
-    localStorage.setItem('graph.useg6', useG6 ? '1' : '0')
-  }, [useG6])
   const g6Ref = useRef<GraphCanvasHandle>(null)
 
-  // G6 模式下没有 d3 模拟，节点直接从数据派生 —— 侧栏与计数只要 label/kind/degree/format，不需要坐标
-  const nodes = (useG6 ? (data?.nodes ?? []) : (simRef.current?.nodes() ?? [])) as SimNode[]
+  // 节点直接从数据派生 —— 侧栏与计数只要 label/kind/degree/format，不需要坐标
+  const nodes = (data?.nodes ?? []) as SimNode[]
   const links = (simRef.current?.force('link') as ReturnType<typeof forceLink<SimNode, SimLink>> | undefined)?.links() as SimLink[] | undefined
 
   const folderColor = useMemo(() => {
@@ -544,50 +529,7 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
     return a.refId > 0 && b.refId > 0
   }, [])
 
-  /**
-   * 悬浮节点的直接邻居（含自己）。返回 null 表示不做任何淡化。
-   *
-   * 两种状态下强制不淡化：**连线模式**与**改挂端点**。这两种场景用户都在挑「目标节点」，
-   * 把不相连的候选淡到 0.05 会让人根本看不清该点哪里 —— 连不上不是点不准，是看不见。
-   */
-  const focusSet = useMemo(() => {
-    if (linkFrom != null || edgeDrag != null || hoverNode == null) return null
-    const set = new Set<number>([hoverNode])
-    for (const l of links ?? []) {
-      const [a, b] = edgeEnds(l)
-      if (!a || !b) continue
-      if (a.id === hoverNode) set.add(b.id)
-      if (b.id === hoverNode) set.add(a.id)
-    }
-    return set
-  }, [hoverNode, links, edgeEnds, linkFrom, edgeDrag])
 
-  /** 搜索淡化集合优先于悬浮淡化：搜索是显式动作，悬浮是临时态。 */
-  const dimSet = searchHits
-
-  /** 删除一条连线。分派交给主进程 —— 图谱连线的唯一入口，和改挂共用同一套裁决。 */
-  const removeEdge = useCallback(
-    async (index: number): Promise<void> => {
-      const l = (links ?? [])[index]
-      if (!l) return
-      const [a, b] = edgeEnds(l)
-      if (!a || !b || !canEditEdge(a, b)) {
-        onNotice('这条连线不支持删除')
-        return
-      }
-      const ok = await window.zhixing.db.removeGraphEdge(
-        a.kind,
-        a.refId,
-        b.kind,
-        b.refId,
-        (l.kind ?? 'ownership') as 'ownership' | 'reference'
-      )
-      onNotice(ok ? '已删除该连线' : '删除失败：该连线可能已被移除')
-      setEdgeHover(null)
-      await load()
-    },
-    [links, edgeEnds, canEditEdge, onNotice, load]
-  )
 
   /**
    * 按两端 id 删除连线 —— G6 画布走这条路。
@@ -646,37 +588,8 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
     [edgeDrag, links, edgeEnds, canEditEdge, nodes, onNotice, load]
   )
 
-  /**
-   * 从节点手柄按下：进入连线态并开始拉虚线。
-   * 手柄是节点 <g> 的子元素，stopPropagation 能挡在节点拖拽之前 —— 所以「拖节点」与
-   * 「拉连线」两种手势不会互相打架。
-   */
-  const startLinkDrag = (n: SimNode) => (e: React.PointerEvent<SVGGElement>): void => {
-    e.stopPropagation()
-    try {
-      // 由手柄自己接管指针：之后即使指针划出节点，move/up 也仍然回到这里。
-      // （先前试过让画布 svg 转发 pointerup，但它并不总能到达 endDrag，虚线会留在画布上。）
-      e.currentTarget.setPointerCapture(e.pointerId)
-    } catch {
-      // 捕获失败（合成事件等）不影响连线本身
-    }
-    setLinkFrom(n.id)
-    // 初始位置取节点自身坐标（世界坐标），指针一移动就会被覆盖
-    setLinkDrag({ from: n.id, x: n.x ?? 0, y: n.y ?? 0 })
-  }
 
-  /** 手柄接管的指针移动：把虚线终点跟到指针（世界坐标）。 */
-  const onLinkHandleMove = (e: React.PointerEvent<SVGGElement>): void => {
-    if (!linkDrag) return
-    const w = panRef.current?.toWorld(e.clientX, e.clientY)
-    if (w) setLinkDrag((d) => (d ? { ...d, x: w.x, y: w.y } : d))
-  }
 
-  /** 手柄接管的抬手：交给落点判定。 */
-  const onLinkHandleUp = (e: React.PointerEvent<SVGGElement>): void => {
-    if (!linkDrag) return
-    void dropLinkAt(e.clientX, e.clientY)
-  }
 
   /**
    * 拉线的落点判定：与改挂端点同一套反查（拖拽期间指针被画布捕获，hover 不触发）。
@@ -707,16 +620,6 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
     [linkDrag, nodes, tryLink, onNotice]
   )
 
-  const onNodePointerDown = (n: SimNode) => (e: React.PointerEvent<SVGGElement>) => {
-    dragRef.current = n.id
-    try {
-      ;(e.target as Element).setPointerCapture?.(e.pointerId)
-    } catch {
-      // 指针已失效（合成事件 / 快速交互）时忽略。
-      // 关键：捕获失败**不能挡住下面的 setSelected** —— 否则节点点不中、连线模式进不去。
-    }
-    setSelected(n.id)
-  }
 
   const onSvgPointerMove = (
     _e: React.PointerEvent<SVGSVGElement>,
@@ -884,38 +787,22 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
           <button
             key="relayout"
             className="text-btn"
-            onClick={() => {
-              if (useG6) g6Ref.current?.relayout()
-              else {
-                simRef.current?.alpha(1).restart()
-                setTick((t) => t + 1)
-              }
-            }}
+            onClick={() => g6Ref.current?.relayout()}
           >
             <RefreshCw size={13} /> 重新布局
           </button>,
           <button
             key="reset"
             className="text-btn"
-            onClick={() => (useG6 ? g6Ref.current?.resetView() : pan.reset())}
+            onClick={() => g6Ref.current?.resetView()}
           >
             <Maximize2 size={13} /> 重置视图
-          </button>,
-          // 迁移期开关：对照两套画布。P3 删旧路径时一并删掉。
-          <button
-            key="g6"
-            className="text-btn"
-            aria-pressed={useG6}
-            title="切换画布实现（迁移期对照用）"
-            onClick={() => setUseG6((v) => !v)}
-          >
-            {useG6 ? '旧画布' : '新画布'}
           </button>,
         ]}
       />
 
       <div className="graph-wrap">
-        {useG6 && data && (
+        {data && (
           <GraphCanvasG6
             data={data}
             colorOf={colorOf}
@@ -947,248 +834,6 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
             onEdgeDelete={(s, t, k) => void removeEdgeBetween(s, t, k)}
             handleRef={g6Ref}
           />
-        )}
-        {!useG6 && (
-        <svg
-          ref={pan.svgRef}
-          className="graph"
-          viewBox={pan.viewBox}
-          role="img"
-          aria-label="知识图谱"
-          style={{ cursor: pan.panning ? 'grabbing' : 'grab' }}
-          onPointerDown={pan.handlers.onPointerDown}
-          onPointerMove={pan.handlers.onPointerMove}
-          onPointerUp={pan.handlers.onPointerUp}
-          onPointerLeave={pan.handlers.onPointerLeave}
-        >
-          {/* 箭头：两条连线用不同 marker —— marker 是独立元素，不会跟着线的 class 变色 */}
-          <defs>
-            <marker
-              id="edge-arrow"
-              viewBox="0 0 8 8"
-              refX="7"
-              refY="4"
-              markerWidth="5"
-              markerHeight="5"
-              orient="auto-start-reverse"
-            >
-              <path d="M0,0 L8,4 L0,8 Z" className="edge-arrow" />
-            </marker>
-            <marker
-              id="edge-arrow-on"
-              viewBox="0 0 8 8"
-              refX="7"
-              refY="4"
-              markerWidth="6"
-              markerHeight="6"
-              orient="auto-start-reverse"
-            >
-              <path d="M0,0 L8,4 L0,8 Z" className="edge-arrow edge-arrow--on" />
-            </marker>
-          </defs>
-          <g className={'graph__edges' + (focusSet ? ' is-focused' : '')}>
-            {(links ?? []).map((l, i) => {
-              const [a, b] = edgeEnds(l)
-              if (!a || !b) return null
-              // 端点要收回节点外缘：线是从节点中心连出去的，不收边箭头会被节点图形盖住
-              const d = edgePath(
-                trimEnd(
-                  { x1: a.x ?? 0, y1: a.y ?? 0, x2: b.x ?? 0, y2: b.y ?? 0 },
-                  radiusOf() + 5
-                )
-              )
-              const related = hoverNode != null && (a.id === hoverNode || b.id === hoverNode)
-              const dim = focusSet != null && !related
-              return (
-                <g key={`${l.src}-${l.dst}-${i}`} className={dim ? 'is-dimmed' : undefined}>
-                  <path
-                    d={d}
-                    markerEnd={related ? 'url(#edge-arrow-on)' : 'url(#edge-arrow)'}
-                    className={
-                      'graph__edge' +
-                      (l.kind === 'reference' ? ' graph__edge--ref' : '') +
-                      (related ? ' graph__edge--on' : '')
-                    }
-                  />
-                  {/* 曲线只有 1.2px 根本点不到，沿同一条路径铺透明粗线做热区 */}
-                  {canEditEdge(a, b) && (
-                    <path
-                      d={d}
-                      className="graph__edge-hit"
-                      onPointerEnter={() => setEdgeHover(i)}
-                      onPointerLeave={() => setEdgeHover((h) => (h === i ? null : h))}
-                      onPointerDown={(e) => e.stopPropagation()}
-                    />
-                  )}
-                </g>
-              )
-            })}
-          </g>
-          <g className="graph__nodes">
-            {nodes.map((n) => {
-              const r = radiusOf()
-              const color = colorOf(n)
-              const isSel = selected === n.id
-              const isHit = searchHits != null && searchHits.has(n.id)
-              return (
-                <g
-                  key={n.id}
-                  data-node-id={n.id}
-                  transform={`translate(${n.x ?? 0},${n.y ?? 0})`}
-                  className={
-                    'gnode' +
-                    (n.id === hoverNode ? ' gnode--on' : '') +
-                    (dimSet != null && !dimSet.has(n.id) ? ' is-dimmed' : '') +
-                    (focusSet && !focusSet.has(n.id) ? ' is-dimmed' : '')
-                  }
-                  onPointerEnter={() => {
-                    // 拖动中不更新悬浮态：指针会一路划过其它节点，画面会乱闪
-                    if (dragRef.current == null) setHoverNode(n.id)
-                  }}
-                  onPointerLeave={() => setHoverNode((h) => (h === n.id ? null : h))}
-                  // 焦点自己接管：SVG <g> 的默认 outline 是**包围盒**矩形，
-                  // 而包围盒把标签文字也圈了进去（看起来像选中了一整块）。见 graph.css
-                  onFocus={() => setFocused(n.id)}
-                  onBlur={() => setFocused((f) => (f === n.id ? null : f))}
-                  onPointerDown={onNodePointerDown(n)}
-                  onDoubleClick={() => void openNode(n)}
-                  onClick={() => {
-                    if (linkFrom != null) void tryLink(n)
-                  }}
-                  tabIndex={0}
-                  role="button"
-                  aria-label={`${KIND_CN[n.kind] ?? n.kind} ${n.label}`}
-                >
-                  {/* 节点内容包一层：聚焦时的 scale(1.06) 挂在这一层上（见 graph.css）。
-                      外层 .gnode 的 transform 是定位属性 translate(x,y)，CSS transform 会盖掉它 ——
-                      缩放必须落在没有定位属性的内层，否则节点会叠到画布原点。
-                      连线手柄留在这一层之外：它的命中区不跟着缩放走，手感与改造前一致 */}
-                  <g className="gnode__body">
-                    {/* 节点图标：多色分层（主色 + 派生内层 + 深描边），见 GraphNodeIcon */}
-                    <GraphNodeIcon kind={n.kind} r={r} color={color} />
-                    {isSel && <circle r={r + 4} fill="none" stroke="var(--accent)" strokeWidth={2} />}
-                    {/* 焦点环也只包图标：半径与选中圆一致，虚线以便与「已选中」区分 */}
-                    {!isSel && focused === n.id && <circle r={r + 4} className="gnode__focus" />}
-                    {isHit && <circle r={r + 7} fill="none" stroke="var(--accent)" strokeWidth={1} strokeDasharray="2 2" />}
-                    <text y={r + 12} textAnchor="middle" className="gnode__label">
-                      {n.label.length > 12 ? n.label.slice(0, 12) + '…' : n.label}
-                    </text>
-                  </g>
-                  {/* 连接手柄：hover 或选中时出现在节点右侧，从这里按住往外拖就能拉出连线。
-                      它是本 <g> 的子元素，pointerdown 里 stopPropagation 挡在节点拖拽之前 ——
-                      于是「拖节点」与「拉连线」两种手势各走各的，不打架。 */}
-                  {(n.id === hoverNode || isSel) && linkDrag == null && (
-                    <g
-                      className="gnode__link-handle"
-                      onPointerDown={startLinkDrag(n)}
-                      onPointerMove={onLinkHandleMove}
-                      onPointerUp={onLinkHandleUp}
-                      role="button"
-                      aria-label={`从「${n.label}」拉出连线`}
-                    >
-                      <circle cx={r + 11} cy={0} r={6} />
-                      <path d={`M${r + 8} 0 h6 M${r + 11} -3 v6`} />
-                    </g>
-                  )}
-                </g>
-              )
-            })}
-          </g>
-
-          {/* 端点手柄与删除按钮画在节点层之上 —— 手柄就在端点上，放节点下面会被节点自身盖住 */}
-          {(links ?? []).map((l, i) => {
-            if (edgeHover !== i) return null
-            const [a, b] = edgeEnds(l)
-            if (!a || !b || !canEditEdge(a, b)) return null
-            const x1 = a.x ?? 0
-            const y1 = a.y ?? 0
-            const x2 = b.x ?? 0
-            const y2 = b.y ?? 0
-            // 删除按钮要压在**曲线上**：用两端中点会偏出去
-            const mid = edgeMidpoint({ x1, y1, x2, y2 })
-            const mx = mid.x
-            const my = mid.y
-            // 手柄必须抬到节点外缘：放在节点中心会和节点重合，点下去命中的是节点、
-            // 触发的是节点拖拽，端点根本拖不动
-            const off = radiusOf() + 7
-            const len = Math.hypot(x2 - x1, y2 - y1) || 1
-            const ux = (x2 - x1) / len
-            const uy = (y2 - y1) / len
-            const hx1 = x1 + ux * off
-            const hy1 = y1 + uy * off
-            const hx2 = x2 - ux * off
-            const hy2 = y2 - uy * off
-            return (
-              <g key={`tools-${i}`}>
-                <circle
-                  className="edge-handle"
-                  cx={hx1}
-                  cy={hy1}
-                  r={5}
-                  onPointerDown={(e) => {
-                    e.stopPropagation()
-                    setEdgeDrag({ index: i, end: 'src', x: hx1, y: hy1 })
-                  }}
-                />
-                <circle
-                  className="edge-handle"
-                  cx={hx2}
-                  cy={hy2}
-                  r={5}
-                  onPointerDown={(e) => {
-                    e.stopPropagation()
-                    setEdgeDrag({ index: i, end: 'dst', x: hx2, y: hy2 })
-                  }}
-                />
-                <g
-                  className="edge-del"
-                  onPointerDown={(e) => {
-                    e.stopPropagation()
-                    void removeEdge(i)
-                  }}
-                >
-                  <circle cx={mx} cy={my} r={8} />
-                  <path
-                    d={`M${mx - 3.5} ${my - 3.5} L${mx + 3.5} ${my + 3.5} M${mx + 3.5} ${my - 3.5} L${mx - 3.5} ${my + 3.5}`}
-                  />
-                </g>
-              </g>
-            )
-          })}
-          {edgeDrag &&
-            (() => {
-              const l = (links ?? [])[edgeDrag.index]
-              const [a, b] = l ? edgeEnds(l) : [undefined, undefined]
-              const keep = edgeDrag.end === 'src' ? b : a
-              if (!keep) return null
-              return (
-                <line
-                  className="graph__edge-drag"
-                  x1={keep.x ?? 0}
-                  y1={keep.y ?? 0}
-                  x2={edgeDrag.x}
-                  y2={edgeDrag.y}
-                />
-              )
-            })()}
-          {/* 拉新连线的虚线：从源节点跟到指针 */}
-          {linkDrag &&
-            (() => {
-              const from = (simRef.current?.nodes() as SimNode[] | undefined)?.find(
-                (n) => n.id === linkDrag.from
-              )
-              if (!from) return null
-              return (
-                <line
-                  className="graph__edge-drag"
-                  x1={from.x ?? 0}
-                  y1={from.y ?? 0}
-                  x2={linkDrag.x}
-                  y2={linkDrag.y}
-                />
-              )
-            })()}
-        </svg>
         )}
 
         {/* key 挂选中节点：换节点就重挂一次侧栏卡片，让它重播一遍进场动画
