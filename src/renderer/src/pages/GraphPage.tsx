@@ -7,6 +7,7 @@ import { Maximize2, RefreshCw } from '@renderer/lib/icons'
 import type { GraphDelta, GraphNodePayload, GraphPayload, NoteFolder } from '@shared/types'
 import { Toolbar } from '../components/Toolbar'
 import { GraphNodeIcon } from '../components/GraphNodeIcon'
+import { GraphCanvasG6, type GraphCanvasHandle } from '../components/GraphCanvasG6'
 import { usePanZoom } from '../lib/usePanZoom'
 import { edgeMidpoint, edgePath, trimEnd } from '../lib/edge-path'
 
@@ -410,7 +411,21 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
     return () => window.removeEventListener('zhixing:motion', onMotion)
   }, [])
 
-  const nodes = (simRef.current?.nodes() ?? []) as SimNode[]
+  /**
+   * 画布实现开关（**迁移期临时**）。
+   *
+   * 旧路径：d3-force + 手写 SVG；新路径：G6 画布。两者共用同一份数据与同一套业务规则，
+   * **只是画法不同** —— 留开关是为了能在真实页面上对照，确认新画布无回归后，
+   * 连同它和整条旧路径一起删（见 docs/specs/g6-migration.md 的 P3）。
+   */
+  const [useG6, setUseG6] = useState(() => localStorage.getItem('graph.useg6') === '1')
+  useEffect(() => {
+    localStorage.setItem('graph.useg6', useG6 ? '1' : '0')
+  }, [useG6])
+  const g6Ref = useRef<GraphCanvasHandle>(null)
+
+  // G6 模式下没有 d3 模拟，节点直接从数据派生 —— 侧栏与计数只要 label/kind/degree/format，不需要坐标
+  const nodes = (useG6 ? (data?.nodes ?? []) : (simRef.current?.nodes() ?? [])) as SimNode[]
   const links = (simRef.current?.force('link') as ReturnType<typeof forceLink<SimNode, SimLink>> | undefined)?.links() as SimLink[] | undefined
 
   const folderColor = useMemo(() => {
@@ -839,19 +854,57 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
             key="relayout"
             className="text-btn"
             onClick={() => {
-              simRef.current?.alpha(1).restart()
-              setTick((t) => t + 1)
+              if (useG6) g6Ref.current?.relayout()
+              else {
+                simRef.current?.alpha(1).restart()
+                setTick((t) => t + 1)
+              }
             }}
           >
             <RefreshCw size={13} /> 重新布局
           </button>,
-          <button key="reset" className="text-btn" onClick={pan.reset}>
+          <button
+            key="reset"
+            className="text-btn"
+            onClick={() => (useG6 ? g6Ref.current?.resetView() : pan.reset())}
+          >
             <Maximize2 size={13} /> 重置视图
+          </button>,
+          // 迁移期开关：对照两套画布。P3 删旧路径时一并删掉。
+          <button
+            key="g6"
+            className="text-btn"
+            aria-pressed={useG6}
+            title="切换画布实现（迁移期对照用）"
+            onClick={() => setUseG6((v) => !v)}
+          >
+            {useG6 ? '旧画布' : '新画布'}
           </button>,
         ]}
       />
 
       <div className="graph-wrap">
+        {useG6 && data && (
+          <GraphCanvasG6
+            data={data}
+            colorOf={colorOf}
+            positions={POS_CACHE}
+            selected={selected}
+            hover={hoverNode}
+            focused={focused}
+            searchHits={searchHits}
+            linkFrom={linkFrom}
+            onSelect={setSelected}
+            onHover={setHoverNode}
+            onFocus={setFocused}
+            onOpenNode={(n) => void openNode(n)}
+            onPositions={(pos) => {
+              for (const [id, p] of pos) POS_CACHE.set(id, p)
+            }}
+            handleRef={g6Ref}
+          />
+        )}
+        {!useG6 && (
         <svg
           ref={pan.svgRef}
           className="graph"
@@ -1092,6 +1145,7 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
               )
             })()}
         </svg>
+        )}
 
         {/* key 挂选中节点：换节点就重挂一次侧栏卡片，让它重播一遍进场动画
             （aside 是常驻的，只换 class 不会重播；这里的内容全是纯展示，重挂无副作用） */}
