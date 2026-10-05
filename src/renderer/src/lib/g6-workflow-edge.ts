@@ -85,10 +85,19 @@ export function svgPathToArray(d: string): PathArray {
   return out as PathArray
 }
 
-/** 节点中心 → 盒左上角（锚点函数用的是盒坐标）。 */
+/**
+ * `getCenter()` 的返回值 → 盒左上角（锚点函数用的是盒坐标）。
+ *
+ * **`getCenter()` 返回的不是中心，是盒的右下角** —— 实测（2026-10-05）：
+ * 节点 `getElementPosition` 是 `[160, 68]`、盒是 `85..235 / 40..96`，
+ * 而 `getCenter()` 给的是 `[235, 96, 0]`。名字骗人，值的语义是 `[maxX, maxY, ?]`。
+ *
+ * 踩过一次：按「中心」减半宽半高，得到的是**真中心**，再被 `directedAnchors` 当盒左上角用，
+ * 锚点整体偏了 `(+75, +56)` —— 线从节点外面画出去。所以这里减的是**整个宽高**。
+ */
 const toBox = (c: { x: number; y: number }): { x: number; y: number } => ({
-  x: c.x - NODE_W / 2,
-  y: c.y - NODE_H / 2,
+  x: c.x - NODE_W,
+  y: c.y - NODE_H,
 })
 
 class WorkflowEdge extends BaseEdge {
