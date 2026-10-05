@@ -7,8 +7,8 @@
   display: inline-flex;
   /* 分段控件与同行的输入框、按钮严格等高：整体取控件高度，按钮撑满内区 */
   height: var(--control-h);
-  padding: 2px;
-  gap: 2px;
+  padding: var(--space-2xs);
+  gap: var(--space-2xs);
   background: var(--bg-hover);
   border-radius: var(--radius-ctl);
 }
@@ -26,7 +26,7 @@
 .seg button[aria-pressed='true'] {
   background: var(--bg-layer-solid);
   color: var(--fg-primary);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   box-shadow: var(--shadow-sm);
 }
 /* 「列表」那一格的右内边距收窄：清单树收放按钮要贴着这两个字，
@@ -34,9 +34,9 @@
 .seg button:has(+ .seg__panel) {
   padding-right: var(--space-2);
 }
-/* 折叠按钮与「列表」之间**不留缝**：.seg 默认 gap: 2px，那 2px 会露出容器的 --bg-hover 底色，
+/* 折叠按钮与「列表」之间**不留缝**：.seg 默认 gap: var(--space-2xs)，那 var(--space-2xs) 会露出容器的 --bg-hover 底色，
    在两枚紧挨的按钮之间画出一条竖缝 —— 用户读到的"被分隔开了"就是它。
-   只在确实带折叠按钮时把 gap 归零；其他格之间仍保留 2px（那是分段控件自己的分隔语汇）。 */
+   只在确实带折叠按钮时把 gap 归零；其他格之间仍保留 var(--space-2xs)（那是分段控件自己的分隔语汇）。 */
 .seg:has(> .seg__panel) {
   gap: 0;
 }
@@ -75,7 +75,7 @@
   border-color: var(--accent);
 }
 .field--compact {
-  width: 200px;
+  width: var(--size-200);
 }
 
 .text-btn {
@@ -108,7 +108,7 @@
 /* 清单栏：分组、各清单的未完成计数，底部固定「已完成 / 已放弃」两个终态入口 */
 .tasklists {
   flex: 0 0 208px;
-  width: 208px;
+  width: var(--size-208);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -145,8 +145,8 @@
 .tasklists__row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  min-height: 30px;
+  gap: var(--space-sm);
+  min-height: var(--size-30);
   padding-right: var(--space-1);
   border-radius: var(--radius-sm);
   font-size: var(--text-body);
@@ -162,11 +162,11 @@
 .tasklists__row--on:hover {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--accent-text);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
 .tasklists__row--group {
   color: var(--fg-secondary);
-  font-weight: 500;
+  font-weight: var(--fw-medium);
 }
 /* 选中的分组：底色由 --on 给，这里要挡住上面那条次要文字色 —— 同权重下后写的赢，
    否则选中的分组只有一层淡底、名字仍是灰的。 */
@@ -188,7 +188,7 @@
   white-space: nowrap;
 }
 .tasklists__count {
-  font-size: 11px;
+  font-size: var(--text-sm);
   /* 跟主题强调色走：计数是「还剩多少」的读数，用强调色比灰字更该被看到 */
   color: var(--accent);
   font-variant-numeric: tabular-nums;
@@ -206,7 +206,7 @@
   display: inline-flex;
 }
 .tasklists__hint {
-  margin: 2px 0 6px;
+  margin: var(--space-2xs) 0 var(--space-sm);
   font-size: var(--text-aux);
 }
 /* 第二段：智能清单。与上面的清单树分块，中间一条分隔线 */
@@ -232,10 +232,10 @@
   opacity: 0.4;
 }
 .tasklists__row--drop-before {
-  box-shadow: inset 0 2px 0 0 var(--accent);
+  box-shadow: var(--shadow-local-3);
 }
 .tasklists__row--drop-after {
-  box-shadow: inset 0 -2px 0 0 var(--accent);
+  box-shadow: var(--shadow-local-4);
 }
 .tasklists__row--drop-inside {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
@@ -270,7 +270,7 @@
 @keyframes view-enter {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(var(--size-6));
   }
   to {
     opacity: 1;
@@ -278,7 +278,7 @@
   }
 }
 .inspector {
-  width: 260px;
+  width: var(--size-260);
   flex: 0 0 260px;
   display: flex;
   flex-direction: column;
@@ -353,7 +353,7 @@
 .kv {
   display: grid;
   grid-template-columns: 64px 1fr;
-  gap: 6px var(--space-2);
+  gap: var(--space-sm) var(--space-2);
   margin: 0;
   font-size: var(--text-aux);
 }
@@ -374,7 +374,7 @@
 .task-tree {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: var(--space-hair);
 }
 /* 时间进度条：贴在任务行底部的一道细线，颜色就是紧迫度的色阶。
    缺开始或截止的任务不画（见 lib/date.ts 的 taskProgress）。 */
@@ -382,10 +382,10 @@
   position: absolute;
   /* 从**勾选框**的位置开始，而不是行的最左边：左边那截是缩进与展开箭头，
      进度条压在上面会跟缩进语义打架。24px = 展开箭头 16px + .trow 的 gap 8px。 */
-  left: calc(var(--row-indent, 0px) + 24px);
+  left: calc(var(--row-indent, 0px) + var(--size-24));
   right: 0;
   bottom: 0;
-  height: 2px;
+  height: var(--size-2);
   overflow: hidden;
   /* 纯装饰：别抢行的点击与悬浮 */
   pointer-events: none;
@@ -434,8 +434,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: var(--size-16);
+  height: var(--size-16);
   flex: 0 0 16px;
   color: var(--fg-secondary);
   border-radius: var(--radius-sm);
@@ -469,7 +469,7 @@
   left: 0;
   right: 0;
   top: 50%;
-  height: 1px;
+  height: var(--size-1);
   background: currentColor;
   transform: translateY(-50%) scaleX(0);
   transform-origin: left center;
@@ -484,7 +484,7 @@
   /* 行内尺度：显式豁免全局 input 的「控件高度」兜底，
      否则 min-height 会盖过 height，把 24px 的行高撑破 */
   min-height: 0;
-  height: 26px;
+  height: var(--size-26);
   padding: 0 var(--space-2);
   background: var(--bg-layer-solid);
   border: var(--border-w) solid var(--accent);
@@ -515,7 +515,7 @@
    未悬浮时收拢为 0 宽且透明，不占位；悬浮/选中时展开，胶囊遂被推到它左侧。 */
 .trow__actions {
   display: flex;
-  gap: 2px;
+  gap: var(--space-2xs);
   flex: 0 0 auto;
   max-width: 0;
   opacity: 0;
@@ -525,15 +525,15 @@
 }
 .trow:hover .trow__actions,
 .trow--selected .trow__actions {
-  max-width: 220px;
+  max-width: var(--size-220);
   opacity: 1;
   pointer-events: auto;
 }
 /* 操作按钮与胶囊同款：同高（20px，与 .chip 一致）、同内边距、同圆角，属于同一套胶囊语言 */
 .trow__actions .icon-btn {
   width: auto;
-  height: 20px;
-  padding: 0 6px;
+  height: var(--size-20);
+  padding: 0 var(--space-sm);
   border-radius: var(--radius-sm);
   color: var(--fg-secondary);
 }
@@ -575,7 +575,7 @@
 @keyframes trow-enter {
   from {
     opacity: 0;
-    transform: translateY(-4px);
+    transform: translateY(-var(--size-4));
   }
   to {
     opacity: 1;
@@ -588,8 +588,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: var(--size-18);
+  height: var(--size-18);
   flex: 0 0 18px;
   border-radius: var(--radius-sm);
   transition: background var(--dur-instant);
@@ -606,9 +606,9 @@
    现在按钮胶囊不再写 font: inherit，两种形态同取这一个字号。 */
 .chip {
   flex: 0 0 auto;
-  padding: 1px 6px;
+  padding: var(--space-hair) var(--space-sm);
   font-size: var(--text-aux);
-  line-height: 16px;
+  line-height: var(--size-16);
   color: var(--fg-secondary);
   background: var(--glass-layer-control);
   border: var(--border-w) solid transparent;
@@ -653,21 +653,21 @@ button.chip--tag:hover {
   filter: brightness(1.12);
 }
 button.chip--tag:focus-visible {
-  outline: 2px solid var(--accent-text);
+  outline: var(--focus-w) solid var(--accent-text);
   outline-offset: 1px;
 }
 /* 笔记树里的小号胶囊：只占一行高度的一点点 */
 .chip--tag--mini {
-  padding: 0 5px;
-  font-size: 10px;
-  line-height: 15px;
+  padding: 0 var(--space-half);
+  font-size: var(--text-xs);
+  line-height: var(--size-15);
   border-radius: var(--radius-pill);
 }
 /* 「加标签」是个描边按钮，不该长得像一枚已有标签 */
 .chip--tag-add {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: var(--space-3xs);
   color: var(--fg-secondary);
   background: transparent;
   border-color: var(--border);
@@ -680,7 +680,7 @@ button.chip--tag:focus-visible {
 /* 终态视图里标出「原来属于哪个清单」 */
 .chip--list {
   color: var(--fg-tertiary);
-  max-width: 120px;
+  max-width: var(--size-120);
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -704,7 +704,7 @@ button.chip--status:hover {
   background: color-mix(in srgb, currentColor 22%, transparent);
 }
 button.chip--status:focus-visible {
-  outline: 2px solid var(--accent-text);
+  outline: var(--focus-w) solid var(--accent-text);
   outline-offset: 1px;
 }
 .chip--status-neutral {
@@ -727,7 +727,7 @@ button.chip--status:focus-visible {
 .popmenu {
   position: fixed;
   z-index: var(--z-menu);
-  min-width: 120px;
+  min-width: var(--size-120);
   /**
    * 高度上限 + 内部滚动。
    *
@@ -739,11 +739,11 @@ button.chip--status:focus-visible {
    * 量 offsetHeight 的 placeAnchored 读到的也是**限制后**的高度，翻上/夹下的
    * 判断因此仍然成立。
    */
-  max-height: min(70vh, 480px);
+  max-height: min(70vh, var(--size-480));
   overflow-y: auto;
   overscroll-behavior: contain;
-  min-width: 120px;
-  padding: 4px;
+  min-width: var(--size-120);
+  padding: var(--space-1);
   background: var(--bg-layer-solid);
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius-lg);
@@ -753,8 +753,8 @@ button.chip--status:focus-visible {
 }
 /* 内联搜索行：菜单顶部一个输入框，项多时直接筛 */
 .popmenu__search {
-  padding: 2px 2px 6px;
-  margin-bottom: 4px;
+  padding: var(--space-2xs) var(--space-2xs) var(--space-sm);
+  margin-bottom: var(--space-1);
   border-bottom: var(--border-w) solid var(--border);
 }
 .popmenu__search-input {
@@ -789,11 +789,11 @@ button.chip--status:focus-visible {
 }
 .popmenu__item--active {
   color: var(--accent-text);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
 .popmenu__dot {
-  width: 8px;
-  height: 8px;
+  width: var(--size-8);
+  height: var(--size-8);
   border-radius: var(--radius-pill);
 }
 
@@ -910,33 +910,33 @@ button.chip--status:focus-visible {
   padding: var(--space-1) var(--space-2);
 }
 .tagmenu__color {
-  width: 20px;
-  height: 20px;
+  width: var(--size-20);
+  height: var(--size-20);
   padding: 0;
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius-pill);
   cursor: pointer;
 }
 .tagmenu__color--on {
-  outline: 2px solid var(--accent-text);
+  outline: var(--focus-w) solid var(--accent-text);
   outline-offset: 1px;
 }
 /* 取色器：原生 input 长得不像色块，用外壳统一成圆点，input 透明覆盖在上面 */
 .tagmenu__custom {
   position: relative;
-  width: 20px;
-  height: 20px;
+  width: var(--size-20);
+  height: var(--size-20);
   border: var(--border-w) dashed var(--border);
   border-radius: var(--radius-pill);
   overflow: hidden;
   cursor: pointer;
-  background: conic-gradient(from 0deg, #ef4444, #f59e0b, #22c55e, #06b6d4, #6366f1, #d946ef, #ef4444);
+  background: var(--spectrum);
 }
 .tagmenu__custom input[type='color'] {
   position: absolute;
-  inset: -4px;
-  width: calc(100% + 8px);
-  height: calc(100% + 8px);
+  inset: -var(--size-4);
+  width: calc(100% + var(--size-8));
+  height: calc(100% + var(--size-8));
   padding: 0;
   border: none;
   opacity: 0;
@@ -988,7 +988,7 @@ button.chip--status:focus-visible {
   min-height: var(--control-h);
   padding: 0 var(--space-2);
   border-radius: var(--radius-sm);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   font-variant-numeric: tabular-nums;
 }
 .dpick__title:hover {
@@ -998,7 +998,7 @@ button.chip--status:focus-visible {
 .dpick__pick {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 2px;
+  gap: var(--space-2xs);
   width: calc(var(--control-h) * 7);
 }
 .dpick__ylist,
@@ -1049,12 +1049,12 @@ button.chip--status:focus-visible {
 }
 .dpick__day--today {
   color: var(--accent-text);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
 .dpick__day--on {
   background: var(--accent);
   color: var(--fg-on-accent);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
 .dpick__foot {
   display: flex;
@@ -1077,8 +1077,8 @@ button.chip--status:focus-visible {
 .popmenu--time {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 2px;
-  min-width: 168px;
+  gap: var(--space-2xs);
+  min-width: var(--size-168);
 }
 .popmenu__col {
   display: flex;
@@ -1100,12 +1100,12 @@ button.chip--status:focus-visible {
   grid-template-rows: 1fr 1fr;
   gap: var(--space-3);
   flex: 1;
-  min-height: 460px;
+  min-height: var(--size-460);
 }
 .quad-box {
   display: flex;
   flex-direction: column;
-  min-height: 220px;
+  min-height: var(--size-220);
   padding: var(--space-3);
   background: var(--bg-layer-solid);
   border: var(--border-w) solid var(--border);
@@ -1121,26 +1121,26 @@ button.chip--status:focus-visible {
   align-items: baseline;
   justify-content: space-between;
   margin-bottom: var(--space-2);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   font-size: var(--text-body);
 }
 .quad-box__body {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: var(--space-hair);
   overflow: auto;
 }
 .quad-box__empty {
   margin: var(--space-2) 0 0;
   padding: var(--space-3);
-  border: 1px dashed var(--border);
+  border: var(--border-w) dashed var(--border);
   border-radius: var(--radius-md);
 }
 .qrow {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  min-height: 34px;
+  min-height: var(--size-34);
   padding-right: var(--space-2);
   border-radius: var(--radius-ctl);
   cursor: grab;
@@ -1188,14 +1188,14 @@ button.chip--status:focus-visible {
   margin-bottom: var(--space-2);
 }
 .cal__title {
-  font-weight: 600;
-  min-width: 120px;
+  font-weight: var(--fw-semibold);
+  min-width: var(--size-120);
 }
 .cal__weekdays {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
-  margin-bottom: 4px;
+  gap: var(--space-1);
+  margin-bottom: var(--space-1);
   font-size: var(--text-aux);
   color: var(--fg-secondary);
   text-align: center;
@@ -1204,16 +1204,16 @@ button.chip--status:focus-visible {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   grid-template-rows: repeat(6, minmax(0, 1fr));
-  gap: 4px;
+  gap: var(--space-1);
   flex: 1;
   min-height: 0;
 }
 .cal__cell {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  min-height: 92px;
-  padding: 4px;
+  gap: var(--space-2xs);
+  min-height: var(--size-92);
+  padding: var(--space-1);
   background: var(--bg-layer-solid);
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius-md);
@@ -1236,30 +1236,30 @@ button.chip--status:focus-visible {
 }
 .cal__daynum {
   align-self: flex-start;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 4px;
+  min-width: var(--size-18);
+  height: var(--size-18);
+  padding: 0 var(--space-1);
   border-radius: var(--radius-sm);
-  font-size: 11px;
-  line-height: 18px;
+  font-size: var(--text-sm);
+  line-height: var(--size-18);
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
 .cal__pills {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2xs);
   overflow: hidden;
 }
 .cal-pill {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 1px 4px;
+  gap: var(--space-1);
+  padding: var(--space-hair) var(--space-1);
   border-radius: var(--radius-sm);
   background: var(--bg-hover);
-  font-size: 11px;
-  line-height: 16px;
+  font-size: var(--text-sm);
+  line-height: var(--size-16);
   text-align: left;
   cursor: grab;
 }
@@ -1267,8 +1267,8 @@ button.chip--status:focus-visible {
   background: var(--bg-pressed);
 }
 .cal-pill__dot {
-  width: 6px;
-  height: 6px;
+  width: var(--size-6);
+  height: var(--size-6);
   flex: 0 0 6px;
   border-radius: var(--radius-pill);
 }
@@ -1278,12 +1278,12 @@ button.chip--status:focus-visible {
   white-space: nowrap;
 }
 .cal__more {
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--fg-secondary);
-  padding-left: 4px;
+  padding-left: var(--space-1);
 }
 .cal-side {
-  width: 240px;
+  width: var(--size-240);
   flex: 0 0 240px;
   max-height: 100%;
   overflow: auto;
@@ -1297,7 +1297,7 @@ button.chip--status:focus-visible {
   align-items: baseline;
   justify-content: space-between;
   margin-bottom: var(--space-2);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   font-size: var(--text-body);
 }
 .cal-side__list {
@@ -1306,13 +1306,13 @@ button.chip--status:focus-visible {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: var(--space-hair);
 }
 .cal-side__row {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  min-height: 32px;
+  min-height: var(--size-32);
   border-radius: var(--radius-ctl);
 }
 .cal-side__row:hover {
@@ -1335,7 +1335,7 @@ button.chip--status:focus-visible {
   gap: var(--space-2);
   align-items: stretch;
   flex: 1;
-  min-height: 260px;
+  min-height: var(--size-260);
 }
 .kcol {
   display: flex;
@@ -1346,7 +1346,7 @@ button.chip--status:focus-visible {
   background: var(--bg-layer-solid);
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius-lg);
-  min-height: 260px;
+  min-height: var(--size-260);
   transition: border-color var(--dur-fast) var(--ease-standard),
     background var(--dur-fast) var(--ease-standard),
     box-shadow var(--dur-fast) var(--ease-standard);
@@ -1356,13 +1356,13 @@ button.chip--status:focus-visible {
 .kcol--drop {
   border-color: var(--accent);
   background: var(--accent-soft);
-  box-shadow: inset 0 2px 0 0 var(--accent);
+  box-shadow: var(--shadow-local-3);
 }
 .kcol__head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   font-size: var(--text-body);
 }
 .kcol__body {
@@ -1374,14 +1374,14 @@ button.chip--status:focus-visible {
 .kcol__empty {
   margin: 0;
   padding: var(--space-3);
-  border: 1px dashed var(--border);
+  border: var(--border-w) dashed var(--border);
   border-radius: var(--radius-md);
 }
 .kcol__add {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: var(--space-1);
   min-height: var(--control-h);
   border-radius: var(--radius-ctl);
   color: var(--fg-secondary);
@@ -1394,7 +1394,7 @@ button.chip--status:focus-visible {
 .kcard {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
   padding: var(--space-2);
   /* 外观见 global.css 的「页面级卡片」统一块 */
   cursor: grab;
@@ -1445,7 +1445,7 @@ button.chip--status:focus-visible {
 .kcard__meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 /* ------------------------------------------------------------------
@@ -1537,8 +1537,8 @@ button.chip--status:focus-visible {
   color: var(--fg-tertiary);
 }
 .note-picker {
-  width: 288px;
-  max-height: 360px;
+  width: var(--size-288);
+  max-height: var(--size-360);
   display: flex;
   flex-direction: column;
   padding: 0;
@@ -1627,7 +1627,7 @@ button.chip--status:focus-visible {
 .form-row {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 /* 表单里并排的两个输入（日期 + 时刻）：两者等分，窄窗口下也不会把时刻挤没 */
 .form-row__pair {
@@ -1669,11 +1669,11 @@ button.chip--status:focus-visible {
   display: flex;
   align-items: flex-start;
   gap: var(--space-1);
-  line-height: 1.6;
+  line-height: var(--lh-comfy);
 }
 .check-row input {
   flex: 0 0 auto;
-  margin-top: 3px;
+  margin-top: var(--space-3xs);
 }
 /* 关联笔记段落：一行 = 笔记按钮 + block_key/摘要 + 解除按钮 */
 .ctx-list {
@@ -1682,13 +1682,13 @@ button.chip--status:focus-visible {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2xs);
 }
 .ctx-row {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 2px var(--space-2);
+  padding: var(--space-2xs) var(--space-2);
   background: var(--bg-hover);
   border-radius: var(--radius-ctl);
 }
@@ -1709,10 +1709,10 @@ button.chip--status:focus-visible {
 }
 .field--area {
   padding: var(--space-2) var(--space-3);
-  min-height: 96px;
+  min-height: var(--size-96);
   resize: vertical;
   font-family: var(--font-ui);
-  line-height: 1.6;
+  line-height: var(--lh-comfy);
 }
 .text-btn--danger {
   color: var(--danger);
@@ -1721,7 +1721,7 @@ button.chip--status:focus-visible {
 .field--code {
   font-family: var(--font-mono);
   font-size: var(--text-aux);
-  min-height: 132px;
+  min-height: var(--size-132);
   white-space: pre;
   overflow-wrap: normal;
   overflow-x: auto;
@@ -1764,17 +1764,17 @@ button.chip--status:focus-visible {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 5px;
-  height: 9px;
+  width: var(--size-5);
+  height: var(--size-9);
   border: solid var(--fg-on-accent);
-  border-width: 0 2px 2px 0;
+  border-width: 0 var(--size-2) var(--size-2) 0;
   /* **只做几何居中，不加任何方向补偿**。
      一度在这里加过"环绕中心旋转后包围盒会偏"的补偿（+1.8px），结果反而偏右 ——
      放大截图复测：那笔补偿的方向就是错的，去掉它之后勾的包围盒中心与圆心重合。
      勾是 L 形（border 的右 + 下两条边），统一用 left/top: 50% + 绕自身中心旋转即可；
      若将来改了 .check 的尺寸或 border 宽度，重新拍一张放大图核对，不要再凭公式加补偿。 */
   /* 那 0.7 / 1.2px 是放大 8 倍量出来的余量：纯几何居中之后，勾的包围盒中心仍比圆心
-     右 0.67、下 1.25（L 形绕中心转 45° 的残差）。数字很小，但 18px 的圈里看得出来。 */
+     右 0.67、下 1.25（L 形绕中心转 45° 的残差）。数字很小，但 var(--size-18) 的圈里看得出来。 */
   transform: translate(calc(-50% - 0.7px), calc(-50% - 1.2px)) rotate(45deg) scaleX(0);
   transform-origin: center;
   transition: transform var(--dur-strike) var(--ease-enter);
@@ -1791,8 +1791,8 @@ button.chip--status:focus-visible {
 .popmenu__tick {
   /* 只占位、不画框：用不到勾选态的菜单（新建笔记类型、文件夹操作）不该每项前面
      都顶着一个空方块；选中态才画。占位保留，所以同一菜单里的文字仍然对齐。 */
-  width: 12px;
-  height: 12px;
+  width: var(--size-12);
+  height: var(--size-12);
   flex: 0 0 12px;
   border-radius: var(--radius-sm);
 }
@@ -1809,10 +1809,10 @@ button.chip--status:focus-visible {
    量出来的胶囊底是 rgba(0,0,0,0)。已删；hover 交给上面的 brightness 那条，保留色相。
    教训：CSS 与行内 style 争同一属性时，改方案必须两边一起改。 */
 .trow--drop-before {
-  box-shadow: inset 0 2px 0 0 var(--accent);
+  box-shadow: var(--shadow-local-3);
 }
 .trow--drop-after {
-  box-shadow: inset 0 -2px 0 0 var(--accent);
+  box-shadow: var(--shadow-local-4);
 }
 .trow--drop-child {
   background: var(--accent-soft);

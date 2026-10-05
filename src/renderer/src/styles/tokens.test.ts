@@ -135,3 +135,57 @@ describe('设计令牌完整性', () => {
     expect(offenders, '玻璃拟态只给固定且数量少的浮层用，列表与滚动容器一律不准用').toEqual([])
   })
 })
+
+/**
+ * 硬编码护栏（2026-10-05 加）。
+ *
+ * 起因：组件 CSS 里散着 47 处裸颜色、32 处裸字重、25 处裸字号 —— 主题包改不动它们，
+ * 想统一调字号也没有落点。全部收进 tokens.css 之后，这里把它们钉住。
+ *
+ * **为什么用「断言」而不是「约定」**：这三类值写错不会报错、也不会让任何检查变红，
+ * 只会在某个主题下看着不对 —— 而这条测试每次跑都会看一遍。
+ *
+ * 注：这里的正则**刻意不写反斜杠**（用 [0-9] 代替 d、[ ] 代替 s、[(] 代替括号转义），
+ * 因为这段代码是脚本生成的，反斜杠在多层转义里丢过一次。改动时保持这个风格。
+ */
+describe("组件 CSS 的硬编码护栏", () => {
+  const componentCss = (): { file: string; body: string }[] =>
+    readdirSync(STYLES)
+      .filter((f) => f.endsWith(".css") && f !== "tokens.css")
+      .map((f) => ({ file: f, body: readFileSync(join(STYLES, f), "utf8") }))
+
+  /** 去掉块注释：注释里出现色值通常是在解释历史，不算硬编码。 */
+  const strip = (s: string): string =>
+    s
+      .split("/*")
+      .map((part) => {
+        const end = part.indexOf("*/")
+        return end < 0 ? part : part.slice(end + 2)
+      })
+      .join("")
+
+  const collect = (re: RegExp): string[] => {
+    const hits: string[] = []
+    for (const { file, body } of componentCss()) {
+      for (const m of strip(body).matchAll(re)) hits.push(file + " → " + m[0].slice(0, 40))
+    }
+    return hits
+  }
+
+  it("没有裸颜色 —— 颜色只能来自 token（否则主题包改不动它）", () => {
+    const hits = collect(/#[0-9a-fA-F]{3,8}|rgba?[(]|hsla?[(]/g)
+    expect(hits, "改用 tokens.css 的语义色：--fg-* / --bg-* / --accent-* / --format-* / --border / --overlay").toEqual([])
+  })
+
+  it("没有裸字重 —— 只能 --fw-normal / --fw-medium / --fw-semibold", () => {
+    expect(collect(/font-weight[ ]*:[ ]*[0-9]/g)).toEqual([])
+  })
+
+  it("没有裸字号 —— 只能 --text-*", () => {
+    expect(collect(/font-size[ ]*:[ ]*[0-9]/g)).toEqual([])
+  })
+
+  it("没有裸行高 —— 只能 --lh-*", () => {
+    expect(collect(/line-height[ ]*:[ ]*[0-9]+([.][0-9]+)?[ ]*[;}]/g)).toEqual([])
+  })
+})

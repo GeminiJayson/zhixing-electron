@@ -21,8 +21,8 @@
 }
 /* 类型下拉：去掉描边、改成与分段控件同高的胶囊。
    **appearance: none 是必需的** —— 原生 select 有自己的最小高度，
-   不给它 height: var(--control-h) 也压不下去（实测渲染出 28px，
-   而旁边的按钮是 20px，一行里两个高度）。去掉原生外观后高度才真正说了算，
+   不给它 height: var(--control-h) 也压不下去（实测渲染出 var(--size-28)，
+   而旁边的按钮是 var(--size-20)，一行里两个高度）。去掉原生外观后高度才真正说了算，
    代价是箭头要自己画，所以下面补了一个内联 SVG 背景。
    箭头颜色写死成与 --fg-secondary 一致的灰，是为了避免 currentColor
    在 background-image 里无法继承的问题。 */
@@ -38,7 +38,7 @@
   background-position: right var(--space-3) center;
   color: var(--fg-primary);
   font: inherit;
-  line-height: 1;
+  line-height: var(--lh-none);
   cursor: pointer;
 }
 .notes-filter__select:hover { background-color: var(--bg-hover); }
@@ -46,14 +46,14 @@
 /* 分段控件：四个档位共用一个容器，选中项是浮起来的一块实底 */
 .notes-filter__seg {
   display: inline-flex;
-  gap: 2px;
-  padding: 2px;
+  gap: var(--space-2xs);
+  padding: var(--space-2xs);
   border-radius: var(--radius-pill);
   background: var(--glass-layer-control);
 }
 .notes-filter__btn {
   /* 与容器内边距配套：容器 padding 2px，按钮减 4px 后两边正好贴合 */
-  height: calc(var(--control-h) - 4px);
+  height: calc(var(--control-h) - var(--size-4));
   padding: 0 var(--space-3);
   border: none;
   border-radius: var(--radius-pill);
@@ -70,7 +70,7 @@
 .notes-filter__btn--on {
   background: var(--glass-layer-surface);
   color: var(--accent);
-  box-shadow: 0 1px 2px rgb(15 23 42 / 10%);
+  box-shadow: var(--shadow-chip);
 }
 .notes-filter__btn--on:hover { color: var(--accent); }
 

@@ -175,7 +175,7 @@
   stroke-dasharray: 3 2.5;
 }
 .gnode__label {
-  font-size: 9px;
+  font-size: var(--text-2xs);
   fill: var(--fg-secondary);
   pointer-events: none;
   user-select: none;
@@ -188,14 +188,14 @@
 @keyframes aside-in {
   from {
     opacity: 0;
-    transform: translateX(8px);
+    transform: translateX(var(--size-8));
   }
 }
 .graph-side {
   /* 卡片是常驻的 aside：换选中节点时靠 GraphPage 挂的 key 重播这条动画，
      只变 class 不会重播 */
   animation: aside-in var(--dur-panel) var(--ease-panel);
-  width: 240px;
+  width: var(--size-240);
   flex: 0 0 240px;
   max-height: 100%;
   overflow: auto;

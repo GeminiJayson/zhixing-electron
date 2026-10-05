@@ -18,8 +18,8 @@
   animation: aside-in var(--dur-panel) var(--ease-panel);
   /* 宽度由行内样式给出（可拖拽调节），这里只兜住弹性与边界 */
   flex: 0 0 auto;
-  min-width: 170px;
-  max-width: 460px;
+  min-width: var(--size-170);
+  max-width: var(--size-460);
   max-height: 100%;
   display: flex;
   flex-direction: column;
@@ -36,20 +36,20 @@
   justify-content: space-between;
   font-size: var(--text-aux);
   color: var(--fg-secondary);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
 /* 模板 / 实例树：分类 → 模板两层，行 hover 出编辑胶囊 */
 .wf-tree {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: var(--space-hair);
   overflow-y: auto;
   min-height: 0;
 }
 .wf-node {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-2xs);
   border-radius: var(--radius-md);
 }
 .wf-node:hover {
@@ -64,8 +64,8 @@
   display: flex;
   /* 换行后行高变大，图标与统计胶囊仍然垂直居中 —— 这是需求里点名要的 */
   align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
+  gap: var(--space-sm);
+  padding: var(--space-half) var(--space-2);
   text-align: left;
 }
 /* 名称吃掉剩余宽度；宽度不足时**换行**而不是省略号。
@@ -75,11 +75,11 @@
   min-width: 0;
   white-space: normal;
   overflow-wrap: anywhere;
-  line-height: 1.35;
+  line-height: var(--lh-tight);
   /* 模板项 / 实例名：**不加粗** —— 这一层是内容。
      浏览器对 <strong> 的默认字重是 700，不显式压平的话「分类 600 + 模板项 700」
      读起来反而是模板项更重（用户说的「没有区分」正是这个）。 */
-  font-weight: 400;
+  font-weight: var(--fw-normal);
 }
 .wf-node__label > .u-aux {
   margin-left: auto;
@@ -87,7 +87,7 @@
 }
 /* 分类（第一层）：加粗 + 用主文字色，与不加粗的模板项拉开层级 */
 .wf-node--group > .wf-node__label > strong {
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   color: var(--fg-primary);
 }
 /* 展开 / 折叠图标：与笔记树、任务行用的是同一套外观与切换方式 ——
@@ -99,8 +99,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: var(--size-16);
+  height: var(--size-16);
   color: var(--fg-secondary);
 }
 /* 行尾的编辑按钮组：未悬浮时**收拢为 0 宽**，不占位置。
@@ -109,7 +109,7 @@
 .wf-node__ops {
   display: flex;
   align-items: center;
-  gap: 1px;
+  gap: var(--space-hair);
   flex: 0 0 auto;
   max-width: 0;
   padding-right: 0;
@@ -122,8 +122,8 @@
 .wf-node:focus-within .wf-node__ops,
 .wf-node__ops--always {
   /* 分类行最多 4 个按钮，220px 足够展开 */
-  max-width: 220px;
-  padding-right: 4px;
+  max-width: var(--size-220);
+  padding-right: var(--space-1);
   opacity: 1;
   pointer-events: auto;
 }
@@ -131,13 +131,13 @@
 .wf-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2xs);
   margin-bottom: var(--space-2);
 }
 .wf-item {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2xs);
   padding: var(--space-2);
   border-radius: var(--radius-ctl);
   text-align: left;
@@ -214,13 +214,13 @@
 }
 /* 条件分支的文案：压在连线中点，用底色的粗描边把线「擦」开，小字才读得清 */
 .wf-edge__label {
-  font-size: 10px;
+  font-size: var(--text-xs);
   fill: var(--fg-secondary);
   text-anchor: middle;
   dominant-baseline: middle;
   paint-order: stroke;
   stroke: var(--bg-layer-solid);
-  stroke-width: 3px;
+  stroke-width: var(--size-3);
   stroke-linejoin: round;
   pointer-events: none;
   user-select: none;
@@ -294,7 +294,7 @@
   stroke: var(--success);
 }
 .wf-node__idx {
-  font-size: 9px;
+  font-size: var(--text-2xs);
   fill: var(--fg-tertiary);
 }
 .wf-node__title {
@@ -362,29 +362,29 @@
 .sop-picker__chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--space-1);
   min-height: var(--control-h-sm);
   align-items: center;
 }
 .sop-chip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   max-width: 100%;
-  padding: 2px 4px 2px 8px;
+  padding: var(--space-2xs) var(--space-1) var(--space-2xs) var(--space-2);
   font-size: var(--text-aux);
   background: var(--accent-soft);
   color: var(--fg-primary);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 .sop-chip__x {
   border: 0;
   background: transparent;
   color: var(--fg-secondary);
   cursor: pointer;
-  font-size: 13px;
-  line-height: 1;
-  padding: 0 4px;
+  font-size: var(--text-mid);
+  line-height: var(--lh-none);
+  padding: 0 var(--space-1);
 }
 .sop-chip__x:hover {
   color: var(--danger);
@@ -398,11 +398,11 @@
 /* 实例上「自动步骤」的运行态：运行中不抢眼，失败要显眼 */
 .wf-run {
   font-size: var(--text-aux);
-  padding: 1px 8px;
-  border-radius: 999px;
+  padding: var(--space-hair) var(--space-2);
+  border-radius: var(--radius-pill);
   background: var(--bg-layer);
   color: var(--fg-secondary);
-  max-width: 420px;
+  max-width: var(--size-420);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -471,8 +471,8 @@
 .wf-splitter::after {
   content: '';
   position: absolute;
-  inset: 8px 5px;
-  border-radius: 999px;
+  inset: var(--size-8) var(--size-5);
+  border-radius: var(--radius-pill);
   background: var(--border);
   transition: background var(--dur-fast);
 }
@@ -490,7 +490,7 @@
   stroke-width: 1;
 }
 .wf-node__cond text {
-  font-size: 9px;
+  font-size: var(--text-2xs);
   fill: var(--fg-secondary);
   text-anchor: middle;
   user-select: none;
@@ -517,11 +517,11 @@
 }
 /* 端口标签常驻：把「满足 / 不满足」的语义写在条件节点自己的两个尖角旁 */
 .wf-port__label {
-  font-size: 9px;
-  font-weight: 600;
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-semibold);
   paint-order: stroke;
   stroke: var(--bg-layer-solid);
-  stroke-width: 3px;
+  stroke-width: var(--size-3);
   stroke-linejoin: round;
   pointer-events: none;
   user-select: none;
@@ -579,9 +579,9 @@
 .wf-runlog__list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2xs);
   /* 实例跑得久时日志会很长：给它自己的滚动区，不要把左栏撑破 */
-  max-height: 220px;
+  max-height: var(--size-220);
   overflow-y: auto;
   margin: 0;
   padding: 0;
@@ -618,7 +618,7 @@
    只剩两行，用户还得在侧栏的窄宽度里横向滚。
    ------------------------------------------------------------------ */
 .modal--run {
-  width: min(780px, 92vw);
+  width: min(var(--size-780), 92vw);
   max-height: 82vh;
 }
 .run-step {
@@ -640,7 +640,7 @@
   background: var(--bg-hover);
 }
 .run-step__name {
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
 .run-step__time {
   color: var(--fg-tertiary);
@@ -667,7 +667,7 @@
   display: flex;
   gap: var(--space-2);
   align-items: baseline;
-  min-height: 20px;
+  min-height: var(--size-20);
 }
 .run-step__t {
   color: var(--fg-tertiary);
@@ -676,7 +676,7 @@
 }
 .run-step__k {
   flex: 0 0 auto;
-  min-width: 32px;
+  min-width: var(--size-32);
 }
 .run-step__d {
   overflow-wrap: anywhere;
@@ -689,11 +689,11 @@
   background: var(--bg-canvas);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: var(--text-aux);
-  line-height: 1.5;
+  line-height: var(--lh-normal);
   white-space: pre-wrap;
   word-break: break-all;
   color: var(--fg-secondary);
-  max-height: 320px;
+  max-height: var(--size-320);
   overflow: auto;
 }
 
@@ -729,7 +729,7 @@
 .form-row.wf-rule > .field {
   flex: 0 0 auto;
   width: auto;
-  min-width: 84px;
+  min-width: var(--size-84);
 }
 .form-row.wf-rule > .icon-btn {
   flex: 0 0 auto;

@@ -97,6 +97,7 @@
   --focus-ring: var(--accent);
 
   /* --- 形状：与 theme.COMPONENT_TOKENS 对齐 --- */
+  --radius-xs: 2px;      /* 微型：进度条、色块、标签内的小圆角 */
   --radius-sm: 4px;      /* 小控件 / 菜单 */
   --radius-ctl: 6px;     /* 按钮与全局统一控件 */
   --radius-md: 8px;      /* 卡片 / 内容内嵌 / 输入（页面级卡片统一用它） */
@@ -106,7 +107,18 @@
   --border-w: 1px;
   --focus-w: 2px;
 
-  /* --- 间距：4px 节奏（4 / 8 / 12 / 16 / 24） --- */
+  /* --- 间距 ---
+     主节奏是 4px 阶梯（space-1..6）；下面四档是**子节奏**：它们出现在图标与文字之间、
+     胶囊内边距、描边内侧这类「不到一格」的地方。收上来之前它们是 1/2/3/5/6px 裸值，
+     散在 9 个文件里且互相不一致。 */
+  --space-hair: 1px; /* 发丝缝：分隔线两侧、描边内 */
+  --space-2xs: 2px; /* 图标与文字之间 */
+  --space-3xs: 3px; /* 密集胶囊 */
+  --space-half: 5px; /* 半格：小胶囊内边距 */
+  --space-sm: 6px; /* 一格半 */
+  --space-tight: 7px; /* 胶囊横向内边距（原先两处裸写 7px） */
+
+  /* 4px 节奏（4 / 8 / 12 / 16 / 24） */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -116,15 +128,96 @@
      常规布局仍只用 1–5 档 —— 多这一档是为了让裸数字有名字，不是给日常排版用。 */
   --space-6: 32px;
 
+  /* --- 格式 / 语义色 ---
+     Word 与 Excel 的品牌色是**格式的身份**，不是主题色 —— 它们不跟随主题包变化，
+     但也不该散在组件里：收上来之后「以后要不要调」有一个地方可改。 */
+  --format-word: #2b579a;
+  --format-excel: #217346;
+  /* 自定义色相环（标签/优先级自定义颜色选择器的底图） */
+  --spectrum: conic-gradient(
+    from 0deg,
+    #ef4444, #f59e0b, #22c55e, #06b6d4, #6366f1, #d946ef, #ef4444
+  );
+
+  /* --- 局部阴影（不属于通用四档，各自贴合用途） --- */
+  --shadow-chip: 0 1px 2px rgb(15 23 42 / 10%);
+  --shadow-ball: drop-shadow(0 2px 6px rgb(0 0 0 / 28%));
+  /* 图片预览遮罩：比 --overlay 更厚，因为背后是内容而不是页面 */
+  --backdrop: rgb(0 0 0 / 62%);
+
+  /* --- 绝对尺寸刻度 ---
+     图标、圆点、进度条、固定栏宽这类**像素长度**。命名直接标像素数：
+     同一个 token 表示同一个长度，**不代表同一个语义位置**。
+     改一处会影响所有引用它的地方 —— 这正是集中化的目的，但改前先看引用面。
+     （语义化的别名可以在上层再叠，例如 --nav-w: var(--size-220)。） */
+  /* 补：由组件实际使用反推出来的刻度（守卫测试抓到的） */
+  --size-15: 15px;
+  --size-38: 38px;
+  --size-62: 62px;
+  --size-66: 66px;
+  --size-150: 150px;
+  --size-1: 1px;    --size-2: 2px;    --size-3: 3px;    --size-4: 4px;
+  --size-5: 5px;    --size-6: 6px;    --size-7: 7px;    --size-8: 8px;
+  --size-9: 9px;    --size-10: 10px;  --size-12: 12px;  --size-14: 14px;
+  --size-16: 16px;  --size-18: 18px;  --size-20: 20px;  --size-22: 22px;
+  --size-24: 24px;  --size-26: 26px;  --size-28: 28px;  --size-30: 30px;
+  --size-32: 32px;  --size-34: 34px;  --size-40: 40px;  --size-44: 44px;
+  --size-48: 48px;  --size-56: 56px;  --size-64: 64px;  --size-68: 68px;
+  --size-72: 72px;  --size-76: 76px;  --size-80: 80px;  --size-84: 84px;
+  --size-88: 88px;  --size-92: 92px;  --size-96: 96px;  --size-100: 100px;
+  --size-120: 120px; --size-132: 132px; --size-160: 160px; --size-168: 168px;
+  --size-170: 170px; --size-180: 180px; --size-200: 200px; --size-208: 208px;
+  --size-220: 220px; --size-240: 240px; --size-260: 260px; --size-288: 288px;
+  --size-300: 300px; --size-320: 320px; --size-340: 340px; --size-360: 360px;
+  --size-380: 380px; --size-400: 400px; --size-420: 420px; --size-440: 440px;
+  --size-460: 460px; --size-480: 480px; --size-520: 520px; --size-560: 560px;
+  --size-620: 620px; --size-780: 780px; --size-820: 820px;
+
+
+  /* --- 最后一轮清扫收上来的局部值 ---
+     这些是只有一两处用的阴影与固定尺寸。名字是「用途前缀 + 序号」，
+     确认用途后可以改成语义名（只影响引用它的那一处）。 --- */
+  --shadow-local-1: inset 0 0 14px color-mix(in srgb, var(--fg-primary) var(--shadow-inner), transparent);
+  --shadow-local-2: inset 0 0 0 1px var(--accent);
+  --shadow-local-3: inset 0 2px 0 0 var(--accent);
+  --shadow-local-4: inset 0 -2px 0 0 var(--accent);
+  --shadow-local-5: 0 0 0 2px var(--accent-text);
+  --size-920: 920px;
+  --size-1100: 1100px;
+  --size-neg9999: -9999px;
+
   /* --- 字体 --- */
   --font-ui: "PingFang SC", "Microsoft YaHei UI", "HarmonyOS Sans", "Noto Sans CJK SC",
     system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
-  --text-aux: 12px;
-  --text-body: 13.5px;
-  --text-lead: 15px;
-  --text-title: 18px;
-  --text-hero: 22px;
+  /* 字号阶梯。**上半段（2xs–sm）是从组件里收上来的**：组件原先直接写 9/10/11px，
+     而设计阶梯最细只到 12px —— 于是同一套 UI 里并存两套字号。现在合成一条：
+     9 / 10 / 11 / 12 / 13.5 / 15 / 18 / 22，中间补 13（徽标与胶囊用）。 */
+  --text-2xs: 9px; /* 角标、极窄胶囊 */
+  --text-xs: 10px; /* 小徽标、图表刻度 */
+  --text-sm: 11px; /* 次要说明、表头、密集列表 */
+  --text-aux: 12px; /* 辅助文字（默认小号） */
+  --text-mid: 13px; /* 徽标 / 胶囊正文 */
+  --text-body: 13.5px; /* 正文（默认） */
+  --text-lead: 15px; /* 强调正文、卡片标题 */
+  --text-lg: 16px; /* 段落级标题 */
+  --text-title: 18px; /* 页面标题 */
+  --text-hero: 22px; /* 空态 / 大数字 */
+
+  /* 字重：只有三档。组件里原先 26 处写 600、5 处 500、1 处 400，
+     收上来之后「加粗」这件事才有一个可改的地方。 */
+  --fw-normal: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+
+  /* 行高：无单位（跟随字号缩放）。1.65 / 1.75 两处已并入相邻档 ——
+     0.05 的行高差在 12px 正文上不到 1px。 */
+  --lh-none: 1; /* 单行定高（图标、徽标） */
+  --lh-tight: 1.35; /* 标题 */
+  --lh-snug: 1.4; /* 紧凑正文 */
+  --lh-normal: 1.5; /* 正文（默认） */
+  --lh-comfy: 1.6; /* 长文阅读 */
+  --lh-relaxed: 1.7; /* 说明段、设置项描述 */
 
   /* --- 尺寸：两个**用户可调**的高度尺度 + 一个派生档，边界见 docs/03 --- */
   --titlebar-h: 44px;

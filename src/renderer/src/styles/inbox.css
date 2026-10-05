@@ -27,7 +27,7 @@
  */
 .flash-card__html {
   width: 100%;
-  max-height: 320px;
+  max-height: var(--size-320);
   border: none;
   background: transparent;
   /* 让 iframe 内的内容与卡片同宽，避免出现内层横向滚动条 */
@@ -37,7 +37,7 @@
 .flash-card {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-sm);
   padding: var(--space-3);
   /* 外观见 global.css 的「页面级卡片」统一块 */
   /* 悬停 / 选中 / 深链高亮之间的状态切换：即时反馈走 --dur-instant */
@@ -71,7 +71,7 @@
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
-  line-height: 1.65;
+  line-height: var(--lh-comfy);
 }
 .flash-card__remark {
   margin: 0;

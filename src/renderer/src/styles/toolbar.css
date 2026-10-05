@@ -69,7 +69,7 @@
 .tb .tb__subright input,
 .tb .tb__measure input {
   flex: 0 1 200px;
-  min-width: 84px;
+  min-width: var(--size-84);
 }
 .tb__head {
   display: flex;
@@ -114,7 +114,7 @@
 /* 左侧（导航 / 统计）与右侧工具区之间留 50px。
    38px 是补的：.tb__sub 本身的 gap 已经给了 12px，两者相加正好 50。 */
 .tb__subleft--gap {
-  margin-right: 38px;
+  margin-right: var(--size-38);
 }
 /* 窗口停稳后（.tb__subright--fill）：把这一行剩下的宽度给**第一个表单控件**，
    右侧不再留一条空白带。只在第一个子元素真的含 input/select 时才拉伸 ——
@@ -162,12 +162,12 @@
 .tb__subright input {
   flex: 1 1 140px;
   width: auto;
-  min-width: 96px;
+  min-width: var(--size-96);
 }
 /* 隐藏测量行：只为量出各控件的自然宽度。fixed + 移出视口，确保它既不参与布局也不触发滚动。 */
 .tb__measure {
   position: fixed;
-  left: -9999px;
+  left: var(--size-neg9999);
   top: 0;
   display: flex;
   gap: var(--space-2);
@@ -219,8 +219,8 @@
   top: calc(100% + var(--space-1));
   right: 0;
   z-index: var(--z-menu);
-  min-width: 320px;
-  max-width: 520px;
+  min-width: var(--size-320);
+  max-width: var(--size-520);
   padding: var(--space-3);
   display: flex;
   flex-direction: column;
@@ -241,7 +241,7 @@
   gap: var(--space-1);
   flex: 0 0 64px;
   /* 与同组控件**同高**：控件都是 --control-h，标签也取这个高度才能真正对齐。
-     原来用 padding-top: 8px 猜偏移，控件换行后就错位了。 */
+     原来用 padding-top: var(--space-2) 猜偏移，控件换行后就错位了。 */
   height: var(--control-h);
   color: var(--fg-secondary);
   font-size: var(--text-aux);

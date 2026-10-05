@@ -52,7 +52,7 @@
      换了主题包或强调色会跟着变，不像中性色那样永远是同一条灰线。 */
   border: var(--border-w) solid color-mix(in srgb, var(--accent) var(--shadow-edge), transparent);
   /* 内阴影保持中性色：它表达的是"厚度"，掺色相反而会显得脏 */
-  box-shadow: inset 0 0 14px color-mix(in srgb, var(--fg-primary) var(--shadow-inner), transparent);
+  box-shadow: var(--shadow-local-1);
 }
 
 /* --- 标题栏（无边框窗口自定义） --- */
@@ -83,13 +83,13 @@
   background: var(--glass-layer-surface);
 }
 .titlebar__traffic {
-  width: 66px; /* 让出 macOS 红绿灯位置 */
+  width: var(--size-66); /* 让出 macOS 红绿灯位置 */
   flex: 0 0 66px;
 }
 .titlebar__title {
   flex: 1;
   font-size: var(--text-body);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   color: var(--fg-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -130,8 +130,8 @@
   color: var(--danger);
 }
 .win-dot {
-  width: 10px;
-  height: 1px;
+  width: var(--size-10);
+  height: var(--size-1);
   background: currentColor;
 }
 
@@ -194,7 +194,7 @@
 .sidebar__group {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2xs);
 }
 .sidebar__group--bottom {
   margin-top: auto;
@@ -226,7 +226,7 @@
 .nav-item--active {
   background: var(--accent-soft);
   color: var(--accent-text);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
 /* 选中态指示条：accent 实心。
    它现在是 .sidebar 下的独立元素（.nav-indicator），不再是活动项自己的 ::before ——
@@ -236,7 +236,7 @@
   position: absolute;
   left: var(--space-1);
   top: 0;
-  width: 3px;
+  width: var(--size-3);
   border-radius: var(--radius-pill);
   background: var(--accent);
   pointer-events: none;
@@ -264,14 +264,14 @@
   white-space: nowrap;
 }
 .nav-item__badge {
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
+  min-width: var(--size-18);
+  height: var(--size-18);
+  padding: 0 var(--space-half);
   border-radius: var(--radius-pill);
   background: var(--accent-solid);
   color: var(--fg-on-accent);
-  font-size: 11px;
-  line-height: 18px;
+  font-size: var(--text-sm);
+  line-height: var(--size-18);
   text-align: center;
   /* 数字变化时弹一下（Sidebar 用 key={count} 让它重建，从而重播这条动画）。
      徽标是「有新东西」的信号，一次轻微的放大足够，不要更响。 */
@@ -363,7 +363,7 @@
 .page__title {
   margin: 0;
   font-size: var(--text-hero);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   text-wrap: balance;
   animation: title-enter var(--dur-page) var(--ease-page);
   /* 正文滚动时标题收紧（transform，不改布局）；见 toolbar.css 的 .tb--lifted */
@@ -396,25 +396,25 @@
 @keyframes page-enter {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(var(--size-8));
   }
 }
 @keyframes page-enter-forward {
   from {
     opacity: 0;
-    transform: translateX(14px);
+    transform: translateX(var(--size-14));
   }
 }
 @keyframes page-enter-back {
   from {
     opacity: 0;
-    transform: translateX(-14px);
+    transform: translateX(-var(--size-14));
   }
 }
 @keyframes title-enter {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(var(--size-8));
   }
 }
 
@@ -426,14 +426,14 @@
   grid-template-columns: auto 1fr;
   grid-template-rows: auto auto;
   align-items: center;
-  gap: 2px var(--space-2);
+  gap: var(--space-2xs) var(--space-2);
   padding: var(--space-4);
   /* 外观见 global.css 的「页面级卡片」统一块（它现在是唯一一处加 --edge-light 的地方） */
   color: var(--fg-secondary);
 }
 .stat-card__value {
   font-size: var(--text-hero);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   color: var(--fg-primary);
   font-variant-numeric: tabular-nums;
 }
@@ -487,7 +487,7 @@
    从「剩余高度」里扣掉再按 grow 平分，所以两块的高差恒等于 150px）。
    从 100 提到 150 是按用户要求：最近笔记不需要那么高，把 50px 让给待办。 */
 .today-page .page__body > .section--today-todo {
-  flex-basis: 150px;
+  flex-basis: var(--size-150);
 }
 .section__head {
   display: flex;
@@ -498,13 +498,13 @@
 .section__head h2 {
   margin: 0;
   font-size: var(--text-lead);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
 
 /* 勾选圆圈：命中区 ≥32px，圆圈本体 18px */
 .check {
-  width: 18px;
-  height: 18px;
+  width: var(--size-18);
+  height: var(--size-18);
   border: 2px solid var(--border-strong);
   border-radius: var(--radius-pill);
   background: transparent;
@@ -518,8 +518,8 @@
 /* 优先级色点：具体色值由 shared/priority.ts 的固定 8 档色阶按内联样式给出
    （P1 绿 → P8 深红，不随主题派生）。 */
 .prio {
-  width: 8px;
-  height: 8px;
+  width: var(--size-8);
+  height: var(--size-8);
   border-radius: var(--radius-pill);
   background: var(--fg-tertiary);
 }
@@ -540,7 +540,7 @@
 .empty-hint {
   margin: 0;
   padding: var(--space-4);
-  border: 1px dashed var(--border);
+  border: var(--border-w) dashed var(--border);
   border-radius: var(--radius-md);
   color: var(--fg-secondary);
   font-size: var(--text-aux);
@@ -565,12 +565,12 @@
 .empty-state p {
   margin: 0;
   max-width: 46ch;
-  line-height: 1.7;
+  line-height: var(--lh-relaxed);
 }
 .empty-state code {
   font-family: var(--font-mono);
-  font-size: 12px;
-  padding: 1px 5px;
+  font-size: var(--text-aux);
+  padding: var(--space-hair) var(--space-half);
   border-radius: var(--radius-sm);
   background: var(--bg-hover);
 }
@@ -614,7 +614,7 @@
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translate(-50%, 8px);
+    transform: translate(-50%, var(--size-8));
   }
 }
 /* 今日页 */
@@ -627,7 +627,7 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2xs);
 }
 .recent-notes__row {
   display: flex;
@@ -695,9 +695,9 @@
 }
 .infobar__close {
   color: var(--fg-secondary);
-  font-size: 16px;
-  line-height: 1;
-  padding: 0 4px;
+  font-size: var(--text-lg);
+  line-height: var(--lh-none);
+  padding: 0 var(--space-1);
 }
 .infobar__close:hover {
   color: var(--fg-primary);
@@ -712,12 +712,12 @@
 .stat-card--clickable:hover {
   border-color: var(--border-strong);
   /* 悬停抬升：位移 + 阴影进阶。内高光要一起写回，否则会被这条 box-shadow 盖掉 */
-  transform: translateY(-2px);
+  transform: translateY(-var(--size-2));
   box-shadow: var(--edge-light), var(--shadow-md);
 }
 /* 命令面板 */
 .palette {
-  width: min(560px, calc(100vw - 64px));
+  width: min(var(--size-560), calc(100vw - var(--size-64)));
   max-height: 60vh;
   display: flex;
   flex-direction: column;
@@ -791,7 +791,7 @@
   position: fixed;
   right: var(--space-5);
   top: calc(var(--titlebar-h) + var(--space-3));
-  width: 300px;
+  width: var(--size-300);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -807,7 +807,7 @@
 @keyframes reminder-in {
   from {
     opacity: 0;
-    transform: translateX(10px) scale(0.98);
+    transform: translateX(var(--size-10)) scale(0.98);
   }
 }
 /* 捕获面板的样式已移到 global.css（它现在跑在独立窗口里，见 .modal--capture） */

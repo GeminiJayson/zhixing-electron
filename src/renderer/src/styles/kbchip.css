@@ -11,7 +11,7 @@
 .chip--kb {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   cursor: pointer;
 }
 /* 可用：低调的强调色 —— 它是常态，不该抢眼 */
@@ -24,18 +24,18 @@
   border-color: color-mix(in srgb, var(--danger) 40%, transparent);
 }
 .kbchip__draft {
-  padding: 0 5px;
+  padding: 0 var(--space-half);
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--danger) 16%, transparent);
-  font-size: 10px;
-  line-height: 16px;
+  font-size: var(--text-xs);
+  line-height: var(--size-16);
 }
 
 /**
  * 下拉面板：复用 .popmenu 的底与阴影，这里只管定位与内容排布。
  *
- * 定位改过一轮：原先 left: 0 + 固定 320px。徽标长在编辑区标题行偏右的位置，
- * 面板往右再伸 320px 就出了工作区，右半截被裁掉 —— 用户报的「显示到外面去了」
+ * 定位改过一轮：原先 left: 0 + 固定 var(--size-320)。徽标长在编辑区标题行偏右的位置，
+ * 面板往右再伸 var(--size-320) 就出了工作区，右半截被裁掉 —— 用户报的「显示到外面去了」
  * 就是这个。而且面板内容这几轮加了不少（来源区、核对清单、模板按钮），
  * 没有限高的话纵向也会顶出视口。
  *
@@ -43,14 +43,14 @@
  */
 .kbchip__pop {
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + var(--size-6));
   right: 0;
   z-index: 30;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  width: min(360px, calc(100vw - 48px));
-  max-height: min(70vh, 560px);
+  width: min(var(--size-360), calc(100vw - var(--size-48)));
+  max-height: min(70vh, var(--size-560));
   overflow-y: auto;
   padding: var(--space-3);
   text-align: left;
@@ -73,7 +73,7 @@
 }
 .kbchip__hint {
   margin: 0;
-  line-height: 1.5;
+  line-height: var(--lh-normal);
 }
 .kbchip__area {
   width: 100%;
@@ -85,7 +85,7 @@
   color: var(--fg-primary);
   font: inherit;
   resize: vertical;
-  line-height: 1.5;
+  line-height: var(--lh-normal);
 }
 .kbchip__act { width: 100%; }
 
@@ -106,9 +106,9 @@
 .kbchip__srctag {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   max-width: 100%;
-  padding: 1px var(--space-2);
+  padding: var(--space-hair) var(--space-2);
   border-radius: var(--radius-pill);
   background: var(--accent-soft);
   color: var(--accent);
@@ -119,7 +119,7 @@
   background: transparent;
   color: inherit;
   font: inherit;
-  line-height: 1;
+  line-height: var(--lh-none);
   cursor: pointer;
   opacity: 0.7;
 }
@@ -136,7 +136,7 @@
 .kbchip__hits {
   display: flex;
   flex-direction: column;
-  max-height: 160px;
+  max-height: var(--size-160);
   overflow-y: auto;
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius-ctl);
@@ -179,13 +179,13 @@
 /* ---- 综合分析的支持 / 反对开关 ---- */
 .kbchip__seg {
   display: inline-flex;
-  gap: 2px;
-  padding: 2px;
+  gap: var(--space-2xs);
+  padding: var(--space-2xs);
   border-radius: var(--radius-pill);
   background: var(--glass-layer-control);
 }
 .kbchip__segbtn {
-  height: calc(var(--control-h-sm) - 4px);
+  height: calc(var(--control-h-sm) - var(--size-4));
   padding: 0 var(--space-3);
   border: none;
   border-radius: var(--radius-pill);
@@ -224,7 +224,7 @@
   background: color-mix(in srgb, var(--danger) 12%, transparent);
   color: var(--danger);
   font-size: var(--text-aux);
-  line-height: 1.5;
+  line-height: var(--lh-normal);
 }
 /* 当初的核对结论。用强调色底的引用块，与面板里其他说明区分开 */
 .kbchip__saved {
@@ -234,6 +234,6 @@
   background: var(--accent-soft);
   color: var(--accent);
   font-size: var(--text-aux);
-  line-height: 1.5;
+  line-height: var(--lh-normal);
 }
 

@@ -8,7 +8,7 @@
 }
 .ntree {
   position: relative;
-  width: 240px;
+  width: var(--size-240);
   flex: 0 0 240px;
   max-height: 100%;
   display: flex;
@@ -38,8 +38,8 @@
 .ntree__resizer::after {
   content: '';
   position: absolute;
-  inset: 8px 5px;
-  border-radius: 999px;
+  inset: var(--size-8) var(--size-5);
+  border-radius: var(--radius-pill);
   background: var(--border);
   transition: background var(--dur-fast);
 }
@@ -58,7 +58,7 @@
 /* 树总宽 240px：格式选择器若沿用 .field--compact 的 200px，再加上搜索框与两个
    图标按钮必然顶破卡片。这里收窄成固定小宽，剩余空间交给搜索框。 */
 .ntree__format {
-  width: 72px;
+  width: var(--size-72);
   flex: 0 0 auto;
 }
 
@@ -67,13 +67,13 @@
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: var(--space-hair);
 }
 .ntree__folder {
   display: flex;
   align-items: center;
-  gap: 4px;
-  min-height: 28px;
+  gap: var(--space-1);
+  min-height: var(--size-28);
   border-radius: var(--radius-ctl);
   color: var(--fg-secondary);
 }
@@ -91,15 +91,15 @@
   min-width: 0;
   white-space: normal;
   overflow-wrap: anywhere;
-  line-height: 1.35;
+  line-height: var(--lh-tight);
   font-size: var(--text-aux);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
 .ntree__note {
   display: flex;
   align-items: center;
-  gap: 6px;
-  min-height: 30px;
+  gap: var(--space-sm);
+  min-height: var(--size-30);
   padding-right: var(--space-1);
   border-radius: var(--radius-ctl);
   cursor: pointer;
@@ -112,10 +112,10 @@
   color: var(--accent-text);
 }
 .ntree__dot {
-  width: 4px;
-  height: 4px;
+  width: var(--size-4);
+  height: var(--size-4);
   flex: 0 0 4px;
-  margin: 0 4px;
+  margin: 0 var(--space-1);
   border-radius: var(--radius-pill);
   background: var(--fg-tertiary);
 }
@@ -130,23 +130,23 @@
   min-width: 0;
   white-space: normal;
   overflow-wrap: anywhere;
-  line-height: 1.35;
+  line-height: var(--lh-tight);
   font-size: var(--text-body);
 }
 /* 行内标签：标题右侧的小胶囊；标题可以换行，胶囊保持第一行居中 */
 .ntree__tags {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: var(--space-3xs);
   flex: 0 0 auto;
-  max-width: 100px;
+  max-width: var(--size-100);
   overflow: hidden;
 }
 /* 行内操作：不悬浮时**不占位**（否则会把右侧的笔记数挤到中间）。
    与任务行 .trow__actions 同一套做法：0 宽 + 透明 + 不收指针事件。 */
 .ntree__actions {
   display: flex;
-  gap: 2px;
+  gap: var(--space-2xs);
   flex: 0 0 auto;
   max-width: 0;
   opacity: 0;
@@ -156,7 +156,7 @@
 }
 .ntree__note:hover .ntree__actions,
 .ntree__folder:hover .ntree__actions {
-  max-width: 76px;
+  max-width: var(--size-76);
   opacity: 1;
   pointer-events: auto;
 }
@@ -172,8 +172,8 @@
 }
 /* 展开箭头：笔记树比任务行宽松，盒子放大到看得清（不共用任务行的 16px 尺寸）。 */
 .ntree__folder .trow__caret {
-  width: 22px;
-  height: 22px;
+  width: var(--size-22);
+  height: var(--size-22);
 }
 /**
  * 箭头图标本身锁死 16×16 —— 实测它在 22px 盒子里只渲染成 **10×16**（被 flex 压扁），
@@ -182,8 +182,8 @@
  * width/height 兜底固定尺寸，flex: 0 0 auto 挡住收缩（父级是 inline-flex）。
  */
 .ntree__folder .trow__caret > svg {
-  width: 16px;
-  height: 16px;
+  width: var(--size-16);
+  height: var(--size-16);
   flex: 0 0 auto;
 }
 /* 搜索图标放进输入框内部：不再单独占一格，输入框因此能吃满整行 */
@@ -229,7 +229,7 @@
 }
 .ntree__search-wrap .ntree__search-input {
   /* 左侧要给图标留位，右侧对称留出同样的呼吸，否则看起来一边挤一边空 */
-  padding-left: calc(var(--space-2) * 2 + 14px);
+  padding-left: calc(var(--space-2) * 2 + var(--size-14));
   padding-right: var(--space-3);
 }
 /* 空树兜底入口：没有行可以 hover 时用 */
@@ -287,13 +287,13 @@
 .chip--meta {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 1px 7px;
+  gap: var(--space-3xs);
+  padding: var(--space-hair) var(--space-tight);
   background: transparent;
   border-color: var(--border);
   color: var(--fg-secondary);
   cursor: pointer;
-  max-width: 180px;
+  max-width: var(--size-180);
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -307,7 +307,7 @@
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-sm);
   min-height: 0;
   padding: 0;
   background: none;
@@ -315,9 +315,9 @@
   border-radius: 0;
 }
 .note-tags .chip {
-  padding: 2px 8px;
+  padding: var(--space-2xs) var(--space-2);
   border-radius: var(--radius-pill);
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 /* 头部不再是独立卡片：整张「笔记纸」（.sheet）才是那一个容器，
    这里只负责把标题与工具行排好，内边距统一由 .sheet 给。
@@ -402,8 +402,8 @@
 }
 /* 色块是行内尺度的小控件（同 .chip），高度由自身尺寸给出而不是 --control-h */
 .rt-editor .tb .rt-color {
-  width: 18px;
-  height: 18px;
+  width: var(--size-18);
+  height: var(--size-18);
   padding: 0;
   border: var(--border-w) solid var(--border-strong);
   border-radius: var(--radius-sm);
@@ -413,14 +413,14 @@
   border-color: var(--fg-secondary);
 }
 .rt-editor .tb .rt-color--on {
-  outline: 2px solid var(--accent-text);
+  outline: var(--focus-w) solid var(--accent-text);
   outline-offset: 1px;
 }
 .rt-editor .tb .rt-color--reset {
   background: transparent;
   color: var(--fg-tertiary);
   font-size: var(--text-aux);
-  line-height: 1;
+  line-height: var(--lh-none);
 }
 /* 代码块：块级代码的底色、边框与等宽字体；语言标记显示在右上角 */
 .rt-editor__body pre {
@@ -434,7 +434,7 @@
 .rt-editor__body pre code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: var(--text-aux);
-  line-height: 1.6;
+  line-height: var(--lh-comfy);
 }
 .rt-editor__body pre[data-language]::after {
   content: attr(data-language);
@@ -501,7 +501,7 @@
 }
 /* 编辑区不够宽时，左侧操作组收成纯图标，把宽度让给格式条。
    图标都带 title，语义不丢；宽窗口（编辑区 ≥ 920px）下文字照常显示。 */
-@container (max-width: 920px) {
+@container (max-width: var(--size-920)) {
   .editor .tb .tb__subleft .tb-label {
     display: none;
   }
@@ -541,19 +541,19 @@
 }
 .editor .tb__lead .editor__title {
   flex: 1 1 auto;
-  min-width: 80px;
+  min-width: var(--size-80);
 }
 .editor__title {
   flex: 1;
   min-width: 0;
   font-size: var(--text-lead);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   /* 密度（方案 C）：标题走紧凑档 —— 标题是「这一页的名字」，不是控件，
      没必要时时与控件同高。下面那条 .page--notes 规则负责真正压住全局兜底。 */
   min-height: var(--control-h-sm);
   /* 标题不画边框：它读起来是「这一页的名字」而不是一个输入控件；
      没有边框也就不需要聚焦态变色 —— 编辑状态由标题右侧的状态胶囊表达。 */
-  padding: 3px 0;
+  padding: var(--space-3xs) 0;
   background: none;
   border: none;
 }
@@ -571,7 +571,7 @@
    下限取 24px：既保证控件高度调到下限（24）时标题不被压扁，
    也正好是 WCAG 2.2 的最小指针目标（tokens.css 的行内尺度注释同款口径）。 */
 .page--notes .editor .tb .tb__lead .editor__title {
-  min-height: max(24px, var(--control-h-sm));
+  min-height: max(var(--size-24), var(--control-h-sm));
 }
 /* 页头：笔记树的收放按钮与副标题**同行同高**。
    app.css 的 .page__head 按文字基线对齐（标题与副标题要对齐基线），那颗 32px 的图标
@@ -590,7 +590,7 @@
 .chip.chip--save {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: var(--space-3xs);
   border-color: color-mix(in srgb, currentColor 45%, transparent);
   background: color-mix(in srgb, currentColor 12%, transparent);
   color: var(--fg-tertiary);
@@ -621,9 +621,9 @@
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 4px;
-  height: 30px;
-  margin-bottom: calc(4px - var(--space-3));
+  gap: var(--space-1);
+  height: var(--size-30);
+  margin-bottom: calc(var(--space-1) - var(--space-3));
 }
 /* 可横向滚动的 tab 列表：装不下时不画滚动条（滚轮 / 触控板横滑即可），
    由右侧的「选择」入口兜底 —— 横向滚动是个不可见的手势，不能只靠它。 */
@@ -632,8 +632,8 @@
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 4px;
-  height: 30px;
+  gap: var(--space-1);
+  height: var(--size-30);
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
@@ -646,14 +646,14 @@
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  height: 22px;
-  padding: 0 6px;
+  gap: var(--space-2xs);
+  height: var(--size-22);
+  padding: 0 var(--space-sm);
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius-pill);
   background: transparent;
   color: var(--fg-secondary);
-  font-size: 11px;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
   cursor: pointer;
 }
@@ -665,13 +665,13 @@
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  max-width: 180px;
-  height: 22px;
-  padding: 0 3px 0 8px;
+  gap: var(--space-half);
+  max-width: var(--size-180);
+  height: var(--size-22);
+  padding: 0 var(--space-3xs) 0 var(--space-2);
   border-radius: var(--radius-pill);
   color: var(--fg-secondary);
-  font-size: 12px;
+  font-size: var(--text-aux);
   cursor: pointer;
   user-select: none;
 }
@@ -701,10 +701,10 @@
   color: var(--accent);
 }
 .note-tab__type--word {
-  color: #2b579a;
+  color: var(--format-word);
 }
 .note-tab__type--excel {
-  color: #217346;
+  color: var(--format-excel);
 }
 .note-tab__type--link {
   color: var(--accent-warm);
@@ -712,8 +712,8 @@
 /* 未保存圆点：与标题行的保存胶囊同一套色（--accent-warm） */
 .note-tab__dot {
   flex: 0 0 auto;
-  width: 6px;
-  height: 6px;
+  width: var(--size-6);
+  height: var(--size-6);
   border-radius: 50%;
   background: var(--accent-warm);
 }
@@ -723,8 +723,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: var(--size-16);
+  height: var(--size-16);
   padding: 0;
   border: none;
   border-radius: 50%;
@@ -765,7 +765,7 @@
 .links__toggle {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: var(--space-3xs);
   color: var(--fg-secondary);
   font-size: var(--text-aux);
   flex: 0 0 auto;
@@ -797,13 +797,13 @@
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-2);
-  height: 240px;
+  height: var(--size-240);
   padding: 0 var(--space-3) var(--space-3);
 }
 /* 窄了改两列两行，总高相应提高，仍然是固定的 */
-@media (max-width: 1100px) {
+@media (max-width: var(--size-1100)) {
   .links__body {
-    height: 340px;
+    height: var(--size-340);
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -836,7 +836,7 @@
   flex-wrap: wrap;
   align-content: flex-start;
   gap: var(--space-1);
-  padding: 2px 0;
+  padding: var(--space-2xs) 0;
 }
 .links__empty {
   margin: 0;
@@ -862,7 +862,7 @@
 .links__pill-text {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   /**
    * **必须显式 min-width: 0。**
    *
@@ -884,7 +884,7 @@
    */
   flex: 1 1 auto;
   min-width: 0;
-  padding: 2px var(--space-2);
+  padding: var(--space-2xs) var(--space-2);
   border: none;
   background: transparent;
   color: var(--fg-secondary);
@@ -900,7 +900,7 @@ span.links__pill-text {
   cursor: default;
 }
 .links__pill-text b {
-  font-weight: 500;
+  font-weight: var(--fw-medium);
   color: var(--fg-primary);
   /*
    * 标题自己也要 min-width: 0 才肯收缩 —— 它同样是 flex 子项，
@@ -933,7 +933,7 @@ span.links__pill-text {
 .links__pill-del {
   display: inline-flex;
   align-items: center;
-  padding: 2px var(--space-1);
+  padding: var(--space-2xs) var(--space-1);
   border: none;
   background: transparent;
   color: var(--fg-tertiary);
@@ -987,7 +987,7 @@ span.links__pill-text {
   color: var(--fg-primary);
   font: inherit;
   font-size: var(--text-aux);
-  line-height: calc(var(--control-h-sm) - 2px);
+  line-height: calc(var(--control-h-sm) - var(--size-2));
 }
 .links__add-input:focus {
   outline: none;
@@ -997,8 +997,8 @@ span.links__pill-text {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: calc(var(--control-h) + 4px);
-  height: calc(var(--control-h) - 2px);
+  width: calc(var(--control-h) + var(--size-4));
+  height: calc(var(--control-h) - var(--size-2));
   border: none;
   /*
    * 中缝那条分割线**只给融合控件里的按钮**，见下面 .links__add 的规则。
@@ -1039,7 +1039,7 @@ span.links__pill-text {
   width: 100%;
   /* 与新增属性的输入框同高 —— 两个都是「设置页那套控件」，高度都取 --control-h */
   height: var(--control-h);
-  gap: 4px;
+  gap: var(--space-1);
   padding: 0 var(--space-2);
   /**
    * 边框要显式重置左边那条。
@@ -1062,17 +1062,17 @@ span.links__pill-text {
 }
 /* 提示文字弱化：更小字号 + 更淡颜色，它是说明不是内容 */
 .links__hint {
-  margin: 2px 0 0;
+  margin: var(--space-2xs) 0 0;
   color: var(--fg-tertiary);
-  font-size: 11px;
-  line-height: 1.4;
+  font-size: var(--text-sm);
+  line-height: var(--lh-snug);
 }
 .links__card {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2xs);
 }
 /* 信息条本身就是那张卡，内部三组用细竖线分隔 —— 不再卡中卡
    （改造前这里是三张各自带边框的卡片并排） */
@@ -1090,7 +1090,7 @@ span.links__pill-text {
   top: var(--titlebar-h);
   right: 0;
   bottom: 0;
-  width: min(400px, 86vw);
+  width: min(var(--size-400), 86vw);
   z-index: var(--z-menu);
   border-right: none;
   border-radius: 0;
@@ -1139,7 +1139,7 @@ span.links__pill-text {
 .links__item {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2xs);
   padding: var(--space-2);
   border-radius: var(--radius-ctl);
   text-align: left;
@@ -1149,7 +1149,7 @@ span.links__pill-text {
   background: var(--bg-hover);
 }
 .links__item strong {
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   font-size: var(--text-body);
 }
 .links__item--dangling .dangling {
@@ -1158,17 +1158,17 @@ span.links__pill-text {
 .links__item span {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: var(--space-3xs);
 }
 
 /* Markdown 渲染 */
 .md {
-  line-height: 1.75;
+  line-height: var(--lh-relaxed);
   font-size: var(--text-body);
 }
 .md h1, .md h2, .md h3 {
   margin: var(--space-4) 0 var(--space-2);
-  line-height: 1.35;
+  line-height: var(--lh-tight);
 }
 .md h1 { font-size: var(--text-hero); }
 .md h2 { font-size: var(--text-title); }
@@ -1176,8 +1176,8 @@ span.links__pill-text {
 .md ul, .md ol { margin: 0 0 var(--space-3); padding-left: 1.4em; }
 .md code {
   font-family: var(--font-mono);
-  font-size: 12px;
-  padding: 1px 5px;
+  font-size: var(--text-aux);
+  padding: var(--space-hair) var(--space-half);
   border-radius: var(--radius-sm);
   background: var(--bg-hover);
 }
@@ -1191,29 +1191,29 @@ span.links__pill-text {
 .md blockquote {
   margin: 0 0 var(--space-3);
   padding-left: var(--space-3);
-  border-left: 3px solid var(--border-strong);
+  border-left: var(--size-3) solid var(--border-strong);
   color: var(--fg-secondary);
 }
 .md table { border-collapse: collapse; margin-bottom: var(--space-3); }
-.md th, .md td { border: 1px solid var(--border); padding: 4px 8px; }
+.md th, .md td { border: var(--border-w) solid var(--border); padding: var(--space-1) var(--space-2); }
 .md a {
   color: var(--accent-text);
   text-decoration: none;
-  border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-bottom: var(--border-w) solid color-mix(in srgb, var(--accent) 40%, transparent);
 }
 .md a[href^='zhixing-note://new/'] {
   color: var(--accent-warm);
   border-bottom-style: dashed;
 }
 .modal--wide {
-  width: min(820px, calc(100vw - 64px));
+  width: min(var(--size-820), calc(100vw - var(--size-64)));
 }
 .history {
   display: grid;
   grid-template-columns: 240px 1fr;
   gap: var(--space-3);
   padding: 0 var(--space-4) var(--space-2);
-  min-height: 320px;
+  min-height: var(--size-320);
 }
 .history__list {
   list-style: none;
@@ -1223,12 +1223,12 @@ span.links__pill-text {
   max-height: 46vh;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2xs);
 }
 .history__item {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2xs);
   width: 100%;
   padding: var(--space-2);
   border-radius: var(--radius-ctl);
@@ -1252,15 +1252,15 @@ span.links__pill-text {
 .history__preview pre {
   margin: 0;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--text-aux);
   white-space: pre-wrap;
   word-break: break-word;
 }
 /* diff 行：只用底色区分增删，文字保持 --fg-primary —— 用 success/danger 当正文色
    在浅底上只有 3.2:1，达不到 4.5:1 的对比下限。段头/文件头是结构性标记，走弱化色。 */
 .history__diff-line {
-  padding: 0 2px;
-  border-radius: 2px;
+  padding: 0 var(--space-2xs);
+  border-radius: var(--radius-xs);
 }
 .history__diff-line--add {
   background: color-mix(in srgb, var(--success) 18%, transparent);
@@ -1291,7 +1291,7 @@ span.links__pill-text {
   background: var(--bg-hover);
   border-radius: var(--radius-md);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--text-aux);
   word-break: break-all;
 }
 .editor__external-actions {
@@ -1308,10 +1308,10 @@ span.links__pill-text {
 }
 .note-props__editor {
   width: 100%;
-  min-height: 64px;
+  min-height: var(--size-64);
   resize: vertical;
   font-size: var(--text-aux);
-  line-height: 1.5;
+  line-height: var(--lh-normal);
 }
 
 /* Word / Excel 笔记：正文在本地文件里、应用内不做预览时，给一条明确的出口。
@@ -1355,12 +1355,12 @@ span.links__pill-text {
 .chip.chip--type {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 1px 7px;
+  gap: var(--space-3xs);
+  padding: var(--space-hair) var(--space-tight);
   background: transparent;
   border-color: var(--border);
   color: var(--fg-secondary);
-  max-width: 180px;
+  max-width: var(--size-180);
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -1412,7 +1412,7 @@ span.links__pill-text {
   flex-direction: column;
   overflow: auto;
   padding: var(--space-2) 0 var(--space-4);
-  line-height: 1.7;
+  line-height: var(--lh-relaxed);
 }
 /* Word 变体：里面那个富文本编辑器自己已经带齐了上下内边距
    （格式条的下内边距 4px、ProseMirror 的 8px / 16px），容器再补一圈就是重复：
@@ -1442,9 +1442,9 @@ span.links__pill-text {
   font-size: var(--text-aux);
 }
 .editor__office-body td, .editor__office-body th {
-  border: 1px solid var(--border);
-  padding: 2px 8px;
-  min-width: 48px;
+  border: var(--border-w) solid var(--border);
+  padding: var(--space-2xs) var(--space-2);
+  min-width: var(--size-48);
 }
 .editor__office-body img {
   max-width: 100%;
@@ -1495,7 +1495,7 @@ span.links__pill-text {
   /* 内边距挪到 .ProseMirror 上（见下）：留在这里的话，子元素撑满 100% 之后
      还要再加上这段内边距，等于凭空多出一条滚动条。 */
   padding: 0;
-  line-height: 1.75;
+  line-height: var(--lh-relaxed);
 }
 /* 整块画布都可点：ProseMirror 是 contenteditable，默认只有内容高 ——
    正文下方的空白点不聚焦（富文本 / Word 同一条链路）。
@@ -1504,7 +1504,7 @@ span.links__pill-text {
   min-height: 100%;
   padding: var(--space-2) 0 var(--space-4);
 }
-/* 正文首块不带前导外边距。浏览器给 p 的 UA 默认是 margin-block: 1em（约 13.5px），
+/* 正文首块不带前导外边距。浏览器给 p 的 UA 默认是 margin-block: 1em（约 13.var(--space-half)），
    于是「格式条 → 正文首行」在富文本 / Word 里是 26px，而 Markdown 的 .cm-line
    只有 12px —— 同一条工具栏下面差出一整行。段间距是**段与段之间**的事，
    首块上面那一段属于容器的内边距，已经由 .ProseMirror 的 --space-2 给出。 */
@@ -1518,7 +1518,7 @@ span.links__pill-text {
 }
 .rt-editor__body img {
   max-width: 100%;
-  max-height: 240px;
+  max-height: var(--size-240);
 }
 /* 点进富文本 / Word 正文不画焦点框：与 Markdown 编辑器的 &.cm-focused { outline: none } 对齐。
    注意这一条必须显式写 :focus-visible —— contenteditable 在 Chromium 里**鼠标点击也算
@@ -1623,9 +1623,9 @@ span.links__pill-text {
   content: '';
   position: absolute;
   left: 50%;
-  top: 2px;
-  bottom: 2px;
-  width: 1px;
+  top: var(--size-2);
+  bottom: var(--size-2);
+  width: var(--size-1);
   transform: translateX(-50%);
   background: var(--border);
 }
@@ -1645,7 +1645,7 @@ span.links__pill-text {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: var(--space-2xs);
 }
 /* 链接列与操作列之间也画一条同样的分隔线（与标题/链接之间那条保持一致：
    上下各留 2px 空白，不是一根顶到底的 border） */
@@ -1658,9 +1658,9 @@ span.links__pill-text {
   content: '';
   position: absolute;
   left: 0;
-  top: 2px;
-  bottom: 2px;
-  width: 1px;
+  top: var(--size-2);
+  bottom: var(--size-2);
+  width: var(--size-1);
   background: var(--border);
 }
 .link-table__ops .icon-btn:disabled {
@@ -1689,7 +1689,7 @@ span.links__pill-text {
   display: grid;
   place-items: center;
   padding: var(--space-6);
-  background: rgb(0 0 0 / 62%);
+  background: var(--backdrop);
   cursor: zoom-out;
 }
 .rt-preview__img {
@@ -1704,7 +1704,7 @@ span.links__pill-text {
    双击 / 空格看原图（.rt-preview 里的图不受这条限制）。 */
 .rt-editor__body .ProseMirror img {
   max-width: 100%;
-  max-height: 240px;
+  max-height: var(--size-240);
   width: auto;
   height: auto;
   border-radius: var(--radius-sm);
@@ -1712,14 +1712,14 @@ span.links__pill-text {
 }
 /* 选中的图片要给得出「按空格预览的就是它」的反馈：ProseMirror 的节点选区默认不可见 */
 .rt-editor__body .ProseMirror-selectednode {
-  outline: 2px solid var(--accent);
+  outline: var(--focus-w) solid var(--accent);
   outline-offset: 2px;
 }
 
 /* 笔记类型图标：五种类型五种颜色（word 与 markdown 共用 FileText，靠色阶分辨） */
 .ntree__type {
   flex: 0 0 13px;
-  margin: 0 1px;
+  margin: 0 var(--space-hair);
 }
 .ntree__type--markdown {
   color: var(--fg-tertiary);
@@ -1728,10 +1728,10 @@ span.links__pill-text {
   color: var(--accent);
 }
 .ntree__type--word {
-  color: #2b579a;
+  color: var(--format-word);
 }
 .ntree__type--excel {
-  color: #217346;
+  color: var(--format-excel);
 }
 .ntree__type--link {
   color: var(--accent-warm);
@@ -1739,15 +1739,15 @@ span.links__pill-text {
 
 /* 单元格里的图片：缩略图展示，原图数据仍完整保存在附件里 */
 .xlsx-cell-img {
-  max-height: 22px;
+  max-height: var(--size-22);
   max-width: 100%;
   vertical-align: middle;
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
   cursor: zoom-in;
 }
 /* ag-grid 容器：撑满编辑区 */
 .xlsx-ag {
-  min-height: 240px;
+  min-height: var(--size-240);
 }
 
 /* =============================================================================

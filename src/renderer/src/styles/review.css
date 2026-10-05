@@ -33,11 +33,11 @@
   fill: var(--accent-warm);
 }
 .chart__label {
-  font-size: 10px;
+  font-size: var(--text-xs);
   fill: var(--fg-secondary);
 }
 .chart__sub {
-  font-size: 9px;
+  font-size: var(--text-2xs);
   fill: var(--fg-tertiary);
 }
 .heatmap {
@@ -75,8 +75,8 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  max-width: 460px;
+  gap: var(--space-sm);
+  max-width: var(--size-460);
 }
 .tagdist__row {
   display: grid;
@@ -91,7 +91,7 @@
   white-space: nowrap;
 }
 .tagdist__bar {
-  height: 8px;
+  height: var(--size-8);
   background: var(--bg-hover);
   border-radius: var(--radius-pill);
   overflow: hidden;
@@ -112,7 +112,7 @@
 .achv__item {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2xs);
   padding: var(--space-3);
   background: var(--bg-layer-solid);
   border: var(--border-w) solid var(--border);

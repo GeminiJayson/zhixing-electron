@@ -106,13 +106,13 @@ textarea {
 @keyframes pop-in {
   from {
     opacity: 0;
-    transform: scale(0.96) translateY(-4px);
+    transform: scale(0.96) translateY(-var(--size-4));
   }
 }
 @keyframes pop-out {
   to {
     opacity: 0;
-    transform: scale(0.96) translateY(-4px);
+    transform: scale(0.96) translateY(-var(--size-4));
   }
 }
 
@@ -130,13 +130,13 @@ textarea {
 @keyframes dialog-in {
   from {
     opacity: 0;
-    transform: scale(0.985) translateY(6px);
+    transform: scale(0.985) translateY(var(--size-6));
   }
 }
 @keyframes dialog-out {
   to {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(var(--size-6));
   }
 }
 
@@ -144,13 +144,13 @@ textarea {
 @keyframes drawer-in {
   from {
     opacity: 0;
-    transform: translateX(16px);
+    transform: translateX(var(--size-16));
   }
 }
 @keyframes drawer-out {
   to {
     opacity: 0;
-    transform: translateX(16px);
+    transform: translateX(var(--size-16));
   }
 }
 
@@ -158,13 +158,13 @@ textarea {
 @keyframes card-in {
   from {
     opacity: 0;
-    transform: translateY(10px) scale(0.98);
+    transform: translateY(var(--size-10)) scale(0.98);
   }
 }
 @keyframes card-out {
   to {
     opacity: 0;
-    transform: translateY(10px) scale(0.98);
+    transform: translateY(var(--size-10)) scale(0.98);
   }
 }
 
@@ -173,7 +173,7 @@ textarea {
 @keyframes toast-out {
   to {
     opacity: 0;
-    transform: translate(-50%, 8px);
+    transform: translate(-50%, var(--size-8));
   }
 }
 
@@ -210,8 +210,8 @@ textarea {
   pointer-events: none;
 }
 .modal {
-  width: min(560px, calc(100vw - 64px));
-  max-height: calc(100vh - 96px);
+  width: min(var(--size-560), calc(100vw - var(--size-64)));
+  max-height: calc(100vh - var(--size-96));
   display: flex;
   flex-direction: column;
   background: var(--bg-layer-solid);
@@ -264,7 +264,7 @@ textarea {
   background: var(--accent-solid);
   color: var(--fg-on-accent);
   font: inherit;
-  font-weight: 500;
+  font-weight: var(--fw-medium);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -272,7 +272,7 @@ textarea {
   background: var(--accent-solid-hover);
 }
 .btn:focus-visible {
-  outline: 2px solid var(--accent-text);
+  outline: var(--focus-w) solid var(--accent-text);
   outline-offset: 2px;
 }
 .btn:disabled {
@@ -337,7 +337,7 @@ textarea {
   animation-delay: calc(var(--dur-instant) * 0.6);
 }
 .modal--dialog {
-  width: min(420px, calc(100vw - 64px));
+  width: min(var(--size-420), calc(100vw - var(--size-64)));
 }
 /* 面板进场：只有**带遮罩**的弹框与命令面板走这一组。
    独立窗口里的捕获 / 条件确认「窗口本身就是那张卡片」（.cond-win .modal / .capture-host .modal），
@@ -382,7 +382,7 @@ textarea {
   left: var(--space-3);
   right: var(--space-3);
   bottom: 0;
-  height: 2px;
+  height: var(--size-2);
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, currentColor 45%, transparent);
   transform-origin: left center;
@@ -447,7 +447,7 @@ html[data-surface='pomodoro'] .modal--pomodoro {
   margin: 0;
   /* 字号仍是 5 档的派生（不新增档位）：番茄钟的时间要一眼可读，比 hero 再大一档半 */
   font-size: calc(var(--text-hero) * 1.45);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
 }
@@ -462,7 +462,7 @@ html[data-surface='pomodoro'] .modal--pomodoro {
 .pomo-card__bar {
   display: block;
   margin-top: var(--space-3);
-  height: 4px;
+  height: var(--size-4);
   border-radius: var(--radius-pill);
   background: var(--bg-hover);
   overflow: hidden;
@@ -511,7 +511,7 @@ html[data-surface='pomodoro'] .modal--pomodoro {
 }
 .reminder__status .chip[aria-pressed='true'] {
   border-color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent);
+  box-shadow: var(--shadow-local-2);
 }
 .reminder__reason {
   display: flex;
@@ -537,8 +537,8 @@ html[data-surface='pomodoro'] .modal--pomodoro {
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  width: 30px;
-  height: 30px;
+  width: var(--size-30);
+  height: var(--size-30);
   border-radius: var(--radius-pill);
   background: var(--accent-soft);
   color: var(--accent);
@@ -584,7 +584,7 @@ html[data-surface='capture'] #root {
   padding: 0;
 }
 .modal--capture {
-  width: min(560px, calc(100vw - 48px));
+  width: min(var(--size-560), calc(100vw - var(--size-48)));
   max-height: 100%;
 }
 .capture__text {
@@ -597,7 +597,7 @@ html[data-surface='capture'] #root {
   border-radius: var(--radius-md);
   color: var(--fg-primary);
   font: inherit;
-  line-height: 1.6;
+  line-height: var(--lh-comfy);
 }
 .capture__text:focus {
   border-color: var(--accent);
@@ -658,8 +658,8 @@ html[data-surface='capture'] .modal__head button {
 }
 
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: var(--size-10);
+  height: var(--size-10);
 }
 ::-webkit-scrollbar-thumb {
   background: var(--border-strong);
@@ -728,14 +728,14 @@ html[data-surface='capture'] .modal__head button {
 }
 .qn__title {
   flex: 1 1 auto;
-  font-weight: 500;
+  font-weight: var(--fw-medium);
 }
 .qn__icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: var(--size-24);
+  height: var(--size-24);
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -754,7 +754,7 @@ html[data-surface='capture'] .modal__head button {
 /* 透明度滑块：窄一点，别把标题栏撑开。accent-color 由 global.css 在 :root 统一给 */
 .qn__alpha {
   flex: 0 0 auto;
-  width: 62px;
+  width: var(--size-62);
   margin: 0 var(--space-1);
   /* 标题栏是 drag 区，控件要显式排除，否则拖不动滑块 */
   -webkit-app-region: no-drag;
@@ -773,9 +773,9 @@ html[data-surface='capture'] .modal__head button {
 }
 .qn__edge--n,
 .qn__edge--s {
-  left: 10px;
-  right: 10px;
-  height: 5px;
+  left: var(--size-10);
+  right: var(--size-10);
+  height: var(--size-5);
   cursor: ns-resize;
 }
 .qn__edge--n {
@@ -786,9 +786,9 @@ html[data-surface='capture'] .modal__head button {
 }
 .qn__edge--w,
 .qn__edge--e {
-  top: 10px;
-  bottom: 10px;
-  width: 5px;
+  top: var(--size-10);
+  bottom: var(--size-10);
+  width: var(--size-5);
   cursor: ew-resize;
 }
 .qn__edge--w {
@@ -801,8 +801,8 @@ html[data-surface='capture'] .modal__head button {
 .qn__edge--ne,
 .qn__edge--sw,
 .qn__edge--se {
-  width: 12px;
-  height: 12px;
+  width: var(--size-12);
+  height: var(--size-12);
 }
 .qn__edge--nw {
   top: 0;
@@ -828,13 +828,13 @@ html[data-surface='capture'] .modal__head button {
 .qn__edge--se::after {
   content: '';
   position: absolute;
-  right: 3px;
-  bottom: 3px;
-  width: 6px;
-  height: 6px;
-  border-right: 2px solid var(--fg-tertiary);
-  border-bottom: 2px solid var(--fg-tertiary);
-  border-radius: 0 0 2px 0;
+  right: var(--size-3);
+  bottom: var(--size-3);
+  width: var(--size-6);
+  height: var(--size-6);
+  border-right: var(--size-2) solid var(--fg-tertiary);
+  border-bottom: var(--size-2) solid var(--fg-tertiary);
+  border-radius: 0 0 var(--radius-xs) 0;
   opacity: 0.55;
   pointer-events: none;
 }
@@ -855,7 +855,7 @@ html[data-surface='capture'] .modal__head button {
 }
 .qn__body {
   flex: 1 1 auto;
-  min-height: 88px;
+  min-height: var(--size-88);
   overflow: auto;
   padding: var(--space-3) var(--space-3) var(--space-2);
   outline: none;
@@ -919,8 +919,8 @@ html[data-surface='capture'] .modal__head button {
 .qn__item-btn {
   flex: 0 0 auto;
   /* 24 → 28：一行里"转"和"✕"挨着，太小容易点错 */
-  width: 28px;
-  height: 28px;
+  width: var(--size-28);
+  height: var(--size-28);
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -960,7 +960,7 @@ html[data-surface='capture'] .modal__head button {
 }
 .qn__sheet-card {
   width: 100%;
-  max-width: 380px;
+  max-width: var(--size-380);
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -971,7 +971,7 @@ html[data-surface='capture'] .modal__head button {
   box-shadow: var(--shadow-lg);
 }
 .qn__sheet-head {
-  font-weight: 500;
+  font-weight: var(--fw-medium);
 }
 .qn__sheet-foot {
   display: flex;
@@ -1013,7 +1013,7 @@ html[data-surface='capture'] .modal__head button {
   /**
    * **不用描边，用羽化浅阴影**（--card-shadow，亮暗各一套见 tokens.css）。
    *
-   * 原来这里是 border: 1px solid var(--border) —— 一条硬线把卡片切得很死。
+   * 原来这里是 border: var(--border-w) solid var(--border) —— 一条硬线把卡片切得很死。
    * 但卡片本来就是"轻轻浮在面板上"的：边界该渐隐而不是被切开。
    * --card-shadow 里同时含顶边的内高光（玻璃片受光的暗示），
    * 所以那一项没有丢。
@@ -1140,7 +1140,7 @@ html:not([data-tree-guide='off'])
   left: 0;
   top: 0;
   bottom: 0;
-  width: calc(var(--tree-depth, 0) * var(--tree-step, 14px));
+  width: calc(var(--tree-depth, 0) * var(--tree-step, var(--size-14)));
   /* 用 --border-strong（18%）而不是 --border（9%）：后者在 1px 宽的点线上几乎看不见，
      而这条线的全部意义就是"看得见"。间距 3px 让点更密，缩进区里能数出层次。 */
   background-image: linear-gradient(to right, var(--border-strong) 1px, transparent 1px);
@@ -1149,15 +1149,15 @@ html:not([data-tree-guide='off'])
 }
 /* 到当前行的横向连接线：只给"有层级"且非根的行画。
    要求 [data-depth] 存在是必须的 —— 工作流侧栏的**实例行**也是 .wf-node，但它不带层级，
-   少了这个条件它会按 depth=0 算出 left: -7px，在侧栏padding 里凭空多出一小截线。 */
+   少了这个条件它会按 depth=0 算出 left: -var(--size-7)，在侧栏padding 里凭空多出一小截线。 */
 html:not([data-tree-guide='off'])
   :is(.tasklists__row, .ntree__note, .ntree__folder, .wf-tree .wf-node)[data-depth]:not([data-depth='0'])::after {
   content: '';
   position: absolute;
-  left: calc(var(--tree-depth, 0) * var(--tree-step, 14px) - 7px);
+  left: calc(var(--tree-depth, 0) * var(--tree-step, var(--size-14)) - var(--size-7));
   top: 50%;
-  width: 7px;
-  height: 1px;
+  width: var(--size-7);
+  height: var(--size-1);
   background: var(--border-strong);
   pointer-events: none;
 }

@@ -28,7 +28,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  width: min(440px, 100%);
+  width: min(var(--size-440), 100%);
   margin: auto;
   padding: var(--space-5);
   text-align: center;
@@ -52,14 +52,14 @@
   font: inherit;
 }
 .vault-input:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: var(--focus-w) solid var(--accent);
   outline-offset: -1px;
 }
 textarea.vault-input {
   height: auto;
   padding: var(--space-2) var(--space-3);
   resize: vertical;
-  line-height: 1.5;
+  line-height: var(--lh-normal);
 }
 .vault-select {
   height: var(--control-h);
@@ -82,11 +82,11 @@ textarea.vault-input {
   background: var(--glass-layer-control);
   text-align: left;
   font-size: var(--text-aux);
-  line-height: 1.5;
+  line-height: var(--lh-normal);
   cursor: pointer;
 }
 .vault-ack input {
-  margin-top: 2px;
+  margin-top: var(--space-2xs);
   flex: 0 0 auto;
 }
 
@@ -156,7 +156,7 @@ textarea.vault-input {
 .vault-item {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2xs);
   width: 100%;
   padding: var(--space-2) var(--space-3);
   border: none;
@@ -220,7 +220,7 @@ textarea.vault-input {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  max-width: min(560px, calc(100% - var(--space-4)));
+  max-width: min(var(--size-560), calc(100% - var(--space-4)));
   padding: var(--space-2) var(--space-3);
   border: var(--border-w) solid var(--glass-border);
   border-radius: var(--radius-pill);
@@ -292,7 +292,7 @@ textarea.vault-input {
 /* 强度指示：颜色是唯一的信号，不写"弱/中/强"以外的解释 —— 它就是一眼扫过的东西 */
 .vault-strength {
   flex: 0 0 auto;
-  padding: 2px var(--space-2);
+  padding: var(--space-2xs) var(--space-2);
   border-radius: var(--radius-pill);
   font-size: var(--text-aux);
 }
@@ -346,8 +346,8 @@ textarea.vault-input {
   margin: var(--space-2) 0;
 }
 .vault-ext code {
-  padding: 1px 5px;
-  border-radius: 4px;
+  padding: var(--space-hair) var(--space-half);
+  border-radius: var(--radius-sm);
   background: var(--bg-hover);
   font-size: var(--text-aux);
 }

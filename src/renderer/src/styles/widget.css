@@ -35,7 +35,7 @@ html[data-surface='widget'] #root {
   justify-content: space-between;
 }
 .widget__title {
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   font-size: var(--text-body);
 }
 .widget__input {
@@ -53,7 +53,7 @@ html[data-surface='widget'] #root {
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: var(--space-hair);
 }
 .widget__empty {
   margin: auto;
@@ -86,7 +86,7 @@ html[data-surface='widget'] #root {
   opacity: var(--widget-opacity, 1);
   width: 100%;
   height: 100%;
-  padding: 8px;
+  padding: var(--space-2);
   box-sizing: border-box;
   border: 0;
   background: transparent;
@@ -105,7 +105,7 @@ html[data-surface='widget'] #root {
   /* 不画圆底：球就是身体那个形状本身。
      对比度靠一层**跟随形状**的投影来保（drop-shadow 贴着轮廓走），而不是一个圆盘 ——
      圆盘会让它在深色桌面上变成一个白饼，也把「只是那个表情」的感觉盖掉了。 */
-  filter: drop-shadow(0 2px 6px rgb(0 0 0 / 28%));
+  filter: var(--shadow-ball);
   /* 声明成圆：这样焦点环（box-shadow 跟随圆角）才是圆的。曾经这里用 outline
      画焦点环 —— outline 不跟随 border-radius，会画出一个**方框**。 */
   border-radius: 50%;
@@ -143,5 +143,5 @@ html[data-surface='widget'] #root {
 }
 .wball:focus-visible .wball__host {
   /* 焦点环必须用 box-shadow：它跟随 border-radius（圆的），outline 会画成方框 */
-  box-shadow: 0 0 0 2px var(--accent-text);
+  box-shadow: var(--shadow-local-5);
 }

@@ -31,20 +31,20 @@
   gap: var(--space-2);
   margin: calc(-1 * var(--space-1)) 0 var(--space-1);
   padding-left: var(--space-3);
-  border-left: 2px solid var(--border);
+  border-left: var(--size-2) solid var(--border);
 }
 .set-card__head {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   margin-bottom: var(--space-1);
 }
 .set-row {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  min-height: 34px;
+  min-height: var(--size-34);
   font-size: var(--text-body);
 }
 .set-row > span:first-child {
@@ -67,7 +67,7 @@
    ------------------------------------------------------------------ */
 .glass-preview {
   position: relative;
-  height: 68px;
+  height: var(--size-68);
   margin-top: var(--space-2);
   border-radius: var(--radius-md);
   overflow: hidden;
@@ -85,7 +85,7 @@
 }
 .glass-preview__pane {
   position: absolute;
-  inset: 14px 28px;
+  inset: var(--size-14) var(--size-28);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -109,10 +109,10 @@
 /* 设置项下面的补充说明：整行铺开，不跟上面的控件挤在一行 */
 .set-row__note {
   margin: var(--space-1) 0 var(--space-2);
-  line-height: 1.5;
+  line-height: var(--lh-normal);
 }
 .field--num {
-  width: 88px;
+  width: var(--size-88);
 }
 /* 长文本配置项：URL / API Key / 模型名比输入框默认宽度长得多，占满剩余宽度才看得全 */
 .set-row .field--grow {
@@ -139,8 +139,8 @@
 }
 .swatch {
   /* 可点击控件：WCAG 2.2 的指针目标下限是 24×24 CSS px，22px 差 2px 不达标 */
-  width: 24px;
-  height: 24px;
+  width: var(--size-24);
+  height: var(--size-24);
   border-radius: var(--radius-pill);
   border: 2px solid transparent;
   transition: transform var(--dur-instant);
@@ -161,9 +161,9 @@
 }
 .swatch--custom input[type='color'] {
   position: absolute;
-  inset: -4px;
-  width: calc(100% + 8px);
-  height: calc(100% + 8px);
+  inset: -var(--size-4);
+  width: calc(100% + var(--size-8));
+  height: calc(100% + var(--size-8));
   padding: 0;
   border: none;
   opacity: 0;
@@ -197,10 +197,10 @@
 /* 被改过的 token 用强调色标出来，一眼能看出「哪些已经和主题包不一样」 */
 .theme-token--custom .theme-token__label {
   color: var(--accent-text);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
 .theme-token input[type='color'] {
-  width: 28px;
+  width: var(--size-28);
   height: var(--control-h-sm);
   padding: 0;
   border: var(--border-w) solid var(--border);
@@ -213,7 +213,7 @@
   min-width: 0;
 }
 .theme-token__value {
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--fg-tertiary);
   font-variant-numeric: tabular-nums;
 }
@@ -224,7 +224,7 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2xs);
   max-height: 40vh;
   overflow: auto;
 }
@@ -232,7 +232,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  min-height: 34px;
+  min-height: var(--size-34);
   padding: 0 var(--space-2);
   border-radius: var(--radius-ctl);
 }
@@ -261,7 +261,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  min-height: 34px;
+  min-height: var(--size-34);
   padding: 0 var(--space-2);
   border-radius: var(--radius-ctl);
 }
@@ -279,8 +279,8 @@
 }
 .tag-row__dot {
   flex: 0 0 auto;
-  width: 16px;
-  height: 16px;
+  width: var(--size-16);
+  height: var(--size-16);
   padding: 0;
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius-pill);
@@ -290,13 +290,13 @@
   transform: scale(1.12);
 }
 .tag-row__dot--on {
-  outline: 2px solid var(--accent-text);
+  outline: var(--focus-w) solid var(--accent-text);
   outline-offset: 1px;
 }
 .tag-row__colors {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-sm);
   padding: var(--space-1) var(--space-2) var(--space-2) 30px;
 }
 .tag-row__name {
