@@ -189,7 +189,16 @@ export function WorkflowCanvasG6({
           source: String(e.from),
           target: String(e.to),
           data: { kind: kindOfEdge(cb.current.nodes, e.from, e.to, e.branch) },
-          style: e.branch ? { lineDash: [4, 4] } : {},
+          style: {
+            // 自定义边在 getKeyPath 里拿不到 data，只能从 style 读这三项
+            wfKind: kindOfEdge(cb.current.nodes, e.from, e.to, e.branch),
+            wfNodeKind: cb.current.nodes.find((n) => n.id === e.from)?.view.isCondition ? CONDITION_KIND : undefined,
+            // 条件节点的分支要带槽位（满足 / 不满足），普通步骤的「跳到」口不带 ——
+            // 不带槽位时 getKeyPath 走 directedAnchors，正是「跳到」该有的锚点
+            wfSlot: e.branch && cb.current.nodes.find((n) => n.id === e.from)?.view.isCondition
+              ? (cb.current.nodes.find((n) => n.id === e.from)?.branch_node_id === e.to ? 'true' : 'false')
+              : undefined,
+          },
         })),
       }
     }
@@ -243,6 +252,11 @@ export function WorkflowCanvasG6({
       behaviors: ['drag-canvas', 'zoom-canvas', 'drag-element'],
     })
     graphRef.current = graph
+    // 只在冒烟页（?g6wf=1）把实例挂到 window：canvas 里画的东西 DOM 读不到，
+    // 验证线形只能从这里读。正常页面走不到这一支。
+    if (window.location.search.includes('g6wf')) {
+      ;(window as unknown as { __wfGraph?: Graph }).__wfGraph = graph
+    }
 
     const idOf = (e: IEvent): number =>
       Number((e as unknown as { target?: { id?: string } }).target?.id)
@@ -290,7 +304,16 @@ export function WorkflowCanvasG6({
         source: String(e.from),
         target: String(e.to),
         data: { kind: kindOfEdge(nodes, e.from, e.to, e.branch) },
-        style: e.branch ? { lineDash: [4, 4] } : {},
+        style: {
+            // 自定义边在 getKeyPath 里拿不到 data，只能从 style 读这三项
+            wfKind: kindOfEdge(nodes, e.from, e.to, e.branch),
+            wfNodeKind: nodes.find((n) => n.id === e.from)?.view.isCondition ? CONDITION_KIND : undefined,
+            // 条件节点的分支要带槽位（满足 / 不满足），普通步骤的「跳到」口不带 ——
+            // 不带槽位时 getKeyPath 走 directedAnchors，正是「跳到」该有的锚点
+            wfSlot: e.branch && nodes.find((n) => n.id === e.from)?.view.isCondition
+              ? (nodes.find((n) => n.id === e.from)?.branch_node_id === e.to ? 'true' : 'false')
+              : undefined,
+          },
       })),
     } as never)
     void g.render()
