@@ -231,6 +231,16 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   const [pos, setPos] = useState<Map<number, { x: number; y: number }>>(new Map())
   const [selected, setSelected] = useState<number | null>(null)
   /**
+   * 待定的分支出边：点了某个端口、还没点目标节点。
+   *
+   * 旧实现是从端口**拖**到目标节点（拖拽期间画一条跟指针的虚线）。G6 的 HTML 节点
+   * 命中区域限于节点盒，而端口画在盒的边界上、标签还溢到盒外 —— 拖拽的起手点做不了。
+   * 所以改成两段式点选：**点端口 → 点目标节点**，与图谱的点选式连线同一套语言。
+   */
+  const [pendingBranch, setPendingBranch] = useState<{ fromId: number; slot: 'true' | 'false' } | null>(
+    null
+  )
+  /**
    * 布局方向（TB 纵向 / LR 横向）。记住选择，重开页面仍是上次那个方向；
    * 它同时决定 dagre 的分层方向与连线的出入边（见 edgeAnchors）。
    */
@@ -1952,7 +1962,17 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
             <WorkflowCanvasG6
               nodes={g6Nodes}
               selectedId={selected}
-              onSelect={setSelected}
+              onSelect={async (id) => {
+                // 待定分支态下，点到的节点就是分支目标
+                if (pendingBranch && id != null) {
+                  const from = pendingBranch
+                  setPendingBranch(null)
+                  await window.zhixing.db.setWorkflowBranch(from.fromId, id, from.slot)
+                  await refresh()
+                  return
+                }
+                setSelected(id)
+              }}
               onNodeMoved={async (id, x, y) => {
                 // 只在 dragend 落一次库（不在拖动过程中写 —— 那是每帧一次 IPC）。
                 // **落完不 refresh**：画布上节点已经在拖后的位置了，重载数据会让 G6
@@ -1963,10 +1983,13 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                 const n = ordered.find((x) => x.id === id)
                 if (n) openEditNode(n)
               }}
-              onBranch={async (nodeId, slot) => {
-                // 画布只报「点了谁、哪个槽位」，落库与刷新在这里 —— 与旧实现同一个入口
-                await window.zhixing.db.setWorkflowBranch(nodeId, null, slot)
-                await refresh()
+              onBranch={(nodeId, slot) => {
+                // 两段式：点端口先进「待定分支」态，再点一个目标节点才落库。
+                // 旧实现是从端口拖到目标节点；G6 的 HTML 节点命中区域限于节点盒，
+                // 而端口画在盒的边界上 —— 拖拽起手点做不了，于是改成同一套
+                // 「点起点 → 点终点」的语言（与图谱的点选式连线一致）。
+                // 画布仍然只报「点了谁、哪个槽位」。
+                setPendingBranch({ fromId: nodeId, slot })
               }}
             />
           )}
