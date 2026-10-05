@@ -18,6 +18,7 @@
  * （`[['M',x,y], ['L',x,y], …]`）。中间加一层解析 —— 只认 `M` / `L`，恰好是
  * `orthogonalPath` 唯一的两种指令。
  */
+import { Path } from '@antv/g'
 import { BaseEdge, register, type PathArray } from '@antv/g6'
 import { CONDITION_KIND } from '@shared/workflow-condition'
 import type { Anchor } from './edge-path'
@@ -101,6 +102,47 @@ const toBox = (c: { x: number; y: number }): { x: number; y: number } => ({
 })
 
 class WorkflowEdge extends BaseEdge {
+  /**
+   * 在 key shape 之外**再画一条透明的粗路径当热区**。
+   *
+   * 1.2px 的线本身就是命中区域，右键/左键都很难点中（实测：44 个探测点只中 2 次）。
+   * 旧 SVG 实现是靠额外叠一条透明粗线解决的 —— 它的注释写着「1px 的线本身点不到」。
+   *
+   * `halo` **做不到这件事**（它只是视觉光晕，不参与命中的加宽），G6 也没有公开的
+   * 命中区域配置（查过 BaseShapeStyleProps 与 elements/edges 的类型）。
+   * 所以自己 `upsert` 一个形状：
+   *   - `stroke` 透明、`lineWidth` 16 —— 视觉上不可见，但命中判定按描边算；
+   *   - `pointerEvents: 'stroke'` 明确只在描边上命中，不会把节点的事件挡掉。
+   */
+  /* eslint-disable @typescript-eslint/no-explicit-any -- 覆写 G6 的 protected 方法：
+     基类签名是 (attributes: Required<BaseEdgeStyleProps>, container: Group) => Path | undefined，
+     而那三个类型 G6 没有从包根导出。这里只为了拿到 key shape 的 d，用 any 最省事，
+     也不影响调用方（没人直接调这个方法）。 */
+  protected drawKeyShape(attributes: any, container: any): any {
+    const shape = super.drawKeyShape(attributes, container)
+    if (shape?.attributes?.d) {
+      this.upsert(
+        'hit-area',
+        Path,
+        {
+          d: shape.attributes.d,
+          /**
+           * **不能用 `transparent`** —— 实测：`stroke: 'transparent'`（alpha=0）的形状
+           * 建得出来（`[key, hit-area, halo]`），但命中率一点没变（6% ↔ 5%）。
+           * `@antv/g` 的命中会跳过完全透明的形状。改成一个**几乎看不见但有 alpha** 的颜色。
+           */
+          stroke: 'rgba(0,0,0,0.001)',
+          lineWidth: 16,
+          lineCap: 'round',
+          lineJoin: 'round',
+          pointerEvents: 'stroke',
+        } as never,
+        container as never
+      )
+    }
+    return shape
+  }
+
   /**
    * 从**端口**出发的正交折线。
    *
