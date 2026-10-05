@@ -57,6 +57,14 @@ export interface WorkflowCanvasProps {
   selectedId: number | null
   rankdir?: WorkflowRankDir
   onSelect: (id: number | null) => void
+  /**
+   * 点了某个节点的出线端口。
+   *
+   * 画布**只报告「点了谁、哪个槽位」**，落库与刷新交给页面 —— 与图谱画布同一条边界。
+   * `slot` 只有条件节点才有意义（'true' = 满足 / 'false' = 不满足）；普通步骤的
+   * 「跳到」口传 'true'，因为 `setWorkflowBranch` 的第三参默认就是 'true'。
+   */
+  onBranch: (nodeId: number, slot: 'true' | 'false') => void
   /** 双击节点（打开编辑弹窗）。 */
   onOpen: (id: number) => void
   handleRef?: Ref<WorkflowCanvasHandle>
@@ -113,8 +121,34 @@ function nodeSvg(n: WorkflowCanvasNode, selected: boolean): string {
         '</g>'
     )
   }
+  /**
+   * 出线端口。
+   *
+   * 条件节点是菱形左右两个尖角（右 = 满足、左 = 不满足），普通步骤是右边中点一个「跳到」口 ——
+   * **与 `lib/workflow-anchors` 的 `nodePort` 同一套约定**，位置照它算。
+   *
+   * 端口画在**节点盒的边界上**（尖角正好在边界），所以这层 `<svg>` 要 `overflow: visible`：
+   * 圆的半径与标签都会溢到盒外。命中判定不指望 HTML 节点的点击区域能延伸出去 ——
+   * 那由画布的坐标判定负责。
+   */
+  const ports = v.isCondition
+    ? [
+        { cx: NODE_W, cy: NODE_H / 2, label: '满足', outward: 1 },
+        { cx: 0, cy: NODE_H / 2, label: '不满足', outward: -1 },
+      ]
+    : [{ cx: NODE_W, cy: NODE_H / 2, label: '跳到', outward: 1 }]
+  for (const p of ports) {
+    parts.push(
+      '<g class="wf-port">' +
+        '<circle cx="' + p.cx + '" cy="' + p.cy + '" r="5"></circle>' +
+        '<text class="wf-port__label" x="' + (p.cx + p.outward * 8) + '" y="' + (p.cy + 3) +
+        '" text-anchor="' + (p.outward > 0 ? 'start' : 'end') + '">' + escapeHtml(p.label) + '</text>' +
+        '</g>'
+    )
+  }
   return (
-    '<svg class="wf-node__svg" width="' + NODE_W + '" height="' + NODE_H + '" viewBox="0 0 ' + NODE_W + ' ' + NODE_H + '">' +
+    '<svg class="wf-node__svg" width="' + NODE_W + '" height="' + NODE_H + '" viewBox="0 0 ' + NODE_W + ' ' + NODE_H +
+    '" style="overflow:visible">' +
     parts.join('') +
     '</svg>'
   )
@@ -151,6 +185,7 @@ export function WorkflowCanvasG6({
   selectedId,
   rankdir = 'TB',
   onSelect,
+  onBranch,
   onOpen,
   handleRef,
 }: WorkflowCanvasProps): ReactElement {
@@ -164,8 +199,14 @@ export function WorkflowCanvasG6({
    * 又触发渲染，转成无限循环（实测：页面永不空闲，连 CDP 截图都超时）。
    * 画布只该对**数据**变化有反应。
    */
-  const cb = useRef({ onSelect, onOpen, selectedId, nodes: [] as readonly WorkflowCanvasNode[] })
-  cb.current = { onSelect, onOpen, selectedId, nodes }
+  const cb = useRef({
+    onSelect,
+    onBranch,
+    onOpen,
+    selectedId,
+    nodes: [] as readonly WorkflowCanvasNode[],
+  })
+  cb.current = { onSelect, onBranch, onOpen, selectedId, nodes }
 
   // 注册自定义边类型（只注册一次）
   ensureWorkflowEdge()
@@ -261,7 +302,38 @@ export function WorkflowCanvasG6({
 
     const idOf = (e: IEvent): number =>
       Number((e as unknown as { target?: { id?: string } }).target?.id)
-    graph.on('node:click', (e: IEvent) => cb.current.onSelect(idOf(e)))
+    /**
+     * 点的**是端口**还是节点本体？
+     *
+     * HTML 节点是真实 DOM，所以直接看事件目标有没有落在 `.wf-port` 里 —— 比拿
+     * client 坐标去反算端口位置可靠（不用管画布缩放与平移）。
+     */
+    const portOf = (e: IEvent): 'true' | 'false' | null => {
+      // G6 的事件对象上，原生事件与坐标的字段名没有一个稳定的公开契约 ——
+      // 逐个试，都拿不到就当没点端口（退回选中）。**这是实测踩出来的**：
+      // 只认 originalEvent 时端口点击全被当成选中节点。
+      const ev = e as unknown as {
+        originalEvent?: { target?: Element }
+        nativeEvent?: { target?: Element }
+        client?: { x: number; y: number }
+      }
+      const domTarget = ev.originalEvent?.target ?? ev.nativeEvent?.target
+      let g = domTarget?.closest?.('.wf-port') ?? null
+      if (!g && ev.client) {
+        // 退路：按屏幕坐标反查。端口圆点会溢到节点盒外，DOM 命中比坐标换算可靠，
+        // 但坐标这条路能覆盖「HTML 节点的容器把事件吞了」的情况。
+        g = document.elementFromPoint(ev.client.x, ev.client.y)?.closest?.('.wf-port') ?? null
+      }
+      if (!g) return null
+      // 条件节点左尖角 = 不满足；右尖角与普通步骤的「跳到」口都是 true
+      const text = g.querySelector?.('.wf-port__label')?.textContent ?? ''
+      return text.includes('不满足') ? 'false' : 'true'
+    }
+    graph.on('node:click', (e: IEvent) => {
+      const slot = portOf(e)
+      if (slot) cb.current.onBranch(idOf(e), slot)
+      else cb.current.onSelect(idOf(e))
+    })
     graph.on('node:dblclick', (e: IEvent) => cb.current.onOpen(idOf(e)))
     graph.on('canvas:click', () => cb.current.onSelect(null))
 

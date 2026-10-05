@@ -106,6 +106,11 @@ export function G6WfSmoke(): ReactElement {
             selectedId={selected}
             rankdir={rankdir}
             onSelect={setSelected}
+            onBranch={(nodeId, slot) =>
+              setStatus(
+                '点了 ' + (titles.get(nodeId) ?? nodeId) + ' 的「' + (slot === 'false' ? '不满足' : '满足') + '」口'
+              )
+            }
             onOpen={(id) => setStatus((s) => s.split(' · 打开')[0] + ' · 打开 ' + (titles.get(id) ?? id))}
             handleRef={handle}
           />
