@@ -18,7 +18,8 @@
  */
 import { Graph, type IEvent } from '@antv/g6'
 import { useEffect, useImperativeHandle, useRef, type ReactElement, type Ref } from 'react'
-import { subscribeG6Theme, tokNum, tokSolid } from '@renderer/lib/g6-theme'
+import { ensureWorkflowEdge, wfEdgeStyle, type WfEdgeKind } from '@renderer/lib/g6-workflow-edge'
+import { subscribeG6Theme } from '@renderer/lib/g6-theme'
 import { NODE_H, NODE_W, NODE_TEXT_W, COND_TEXT_W, fitNodeText } from '@renderer/lib/workflow-node-box'
 import { workflowEdges, type LayoutNode, type WorkflowRankDir } from '@renderer/lib/workflow-layout'
 
@@ -123,6 +124,27 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
+/**
+ * 边的语义类别：顺序 / 满足 / 不满足 / 跳到 —— 决定颜色与虚线样式。
+ *
+ * \`workflowEdges\` 只给 \`branch: boolean\`；「满足」还是「不满足」要看源节点的
+ * \`branch_node_id\` / \`branch_false_node_id\` 与终点的对应关系。
+ */
+function kindOfEdge(
+  nodes: readonly WorkflowCanvasNode[],
+  from: number,
+  to: number,
+  branch: boolean
+): WfEdgeKind {
+  if (!branch) return 'seq'
+  const src = nodes.find((n) => n.id === from)
+  if (!src) return 'branch-jump'
+  if (src.view.isCondition) {
+    if (src.branch_node_id === to) return 'branch-true'
+    if (src.branch_false_node_id === to) return 'branch-false'
+  }
+  return 'branch-jump'
+}
 export function WorkflowCanvasG6({
   nodes,
   selectedId,
@@ -144,6 +166,8 @@ export function WorkflowCanvasG6({
   const cb = useRef({ onSelect, onOpen, selectedId, nodes: [] as readonly WorkflowCanvasNode[] })
   cb.current = { onSelect, onOpen, selectedId, nodes }
 
+  // 注册自定义边类型（只注册一次）
+  ensureWorkflowEdge()
   useEffect(() => {
     const el = box.current
     if (!el) return
@@ -164,7 +188,7 @@ export function WorkflowCanvasG6({
           id: e.from + '>' + e.to,
           source: String(e.from),
           target: String(e.to),
-          data: { branch: e.branch },
+          data: { kind: kindOfEdge(cb.current.nodes, e.from, e.to, e.branch) },
           style: e.branch ? { lineDash: [4, 4] } : {},
         })),
       }
@@ -189,13 +213,22 @@ export function WorkflowCanvasG6({
           },
         },
       },
+      /**
+       * `wf-edge`：从**端口**出发的自定义正交折线（见 lib/g6-workflow-edge.ts）。
+       *
+       * 样式按边的语义类别取（顺序实线 / 分支两色虚线 / 兜底点线），
+       * 类别走 style 上的 `wfKind` —— 自定义边在 `getKeyPath` 里拿不到 `data`。
+       */
       edge: {
-        type: 'polyline',
+        type: 'wf-edge',
         style: {
-          stroke: tokSolid('--border-strong', '--border'),
-          lineWidth: tokNum('--border-w'),
           endArrow: true,
-          router: { type: 'orth' },
+          endArrowType: 'triangle',
+          stroke: (d: { data?: { kind?: WfEdgeKind } }) => wfEdgeStyle(d.data?.kind ?? 'seq').stroke,
+          lineWidth: (d: { data?: { kind?: WfEdgeKind } }) =>
+            wfEdgeStyle(d.data?.kind ?? 'seq').lineWidth,
+          lineDash: (d: { data?: { kind?: WfEdgeKind } }) =>
+            wfEdgeStyle(d.data?.kind ?? 'seq').lineDash,
         },
       },
       layout: {
@@ -256,7 +289,7 @@ export function WorkflowCanvasG6({
         id: e.from + '>' + e.to,
         source: String(e.from),
         target: String(e.to),
-        data: { branch: e.branch },
+        data: { kind: kindOfEdge(nodes, e.from, e.to, e.branch) },
         style: e.branch ? { lineDash: [4, 4] } : {},
       })),
     } as never)
