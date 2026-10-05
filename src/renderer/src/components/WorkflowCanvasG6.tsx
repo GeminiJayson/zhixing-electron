@@ -17,6 +17,7 @@
  * 边语义（这里的分支边是虚线，和图谱的「引用=虚线」不是一回事）。
  */
 import { Graph, type IEvent } from '@antv/g6'
+import { CONDITION_KIND } from '@shared/workflow-condition'
 import { useEffect, useImperativeHandle, useRef, type ReactElement, type Ref } from 'react'
 import { ensureWorkflowEdge, wfEdgeStyle, type WfEdgeKind } from '@renderer/lib/g6-workflow-edge'
 import { subscribeG6Theme } from '@renderer/lib/g6-theme'
