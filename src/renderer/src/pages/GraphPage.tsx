@@ -1,13 +1,12 @@
 import { subscribeDomain } from '@shared/events'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link2 } from '@renderer/lib/icons'
-import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation } from 'd3-force'
-import type { Simulation, SimulationLinkDatum, SimulationNodeDatum } from 'd3-force'
+
+
 import { Maximize2, RefreshCw } from '@renderer/lib/icons'
 import type { GraphDelta, GraphNodePayload, GraphPayload, NoteFolder } from '@shared/types'
 import { Toolbar } from '../components/Toolbar'
 import { GraphCanvasG6, type GraphCanvasHandle } from '../components/GraphCanvasG6'
-import { usePanZoom } from '../lib/usePanZoom'
 
 interface Props {
   onOpenNote: (id: number) => void
@@ -41,20 +40,15 @@ const KIND_CN: Record<string, string> = {
   anchor: '段落引用',
 }
 
-interface SimNode extends SimulationNodeDatum, GraphNodePayload {}
-interface SimLink extends SimulationLinkDatum<SimNode> {
+/** 图谱节点。曾是 d3 的 `SimulationNodeDatum`，d3 移除后就只剩业务字段。 */
+type SimNode = GraphNodePayload
+/** 图谱边。同理，原来继承 `SimulationLinkDatum`（那个基类提供 source/target 的对象/序号双形态）。 */
+interface SimLink {
   src: number
   dst: number
   kind: 'ownership' | 'reference'
 }
 
-/**
- * 节点统一外接半径 —— 不再随度数变化。
- * 原来 `5 + size * 4.5` 让同一个「笔记」在不同连接数下半径差出一倍，图上一眼就看出参差。
- * 度数改由标签字号与选中环表达，形状大小保持一致。
- */
-const NODE_R = 9
-const radiusOf = (): number => NODE_R
 
 /* 节点形状已迁到 components/GraphNodeIcon.tsx —— 那里按类型给出多色分层图标，
    本文件只负责把 kind / 半径 / 主色传进去。 */
@@ -87,36 +81,16 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
   const [preview, setPreview] = useState('')
   /** 连线起点：点「从此节点连线」后进入连线模式，再点另一个节点建立关系 */
   const [linkFrom, setLinkFrom] = useState<number | null>(null)
-  /**
-   * 正在从节点手柄「拉」连线：记源节点与指针的世界坐标，用来画那条跟随的虚线。
-   * 与 linkFrom 是同一件事的两个阶段 —— 按下手柄即进入连线态（linkFrom），
-   * 松开时按落点判定，所以在节点上直接拖拽也能建链，而不是只能「点按钮再点目标」。
-   */
-  const [linkDrag, setLinkDrag] = useState<{ from: number; x: number; y: number } | null>(null)
   /** 任务↔笔记两种关系皆可：归属（实线）或引用（虚线） */
   const [linkMode, setLinkMode] = useState<'ownership' | 'reference'>('ownership')
   /** 鼠标悬浮的节点：与它直接相连的线与节点高亮，其余淡化到几乎隐形 */
   const [hoverNode, setHoverNode] = useState<number | null>(null)
-  /** 正在改挂端点：记录边下标、被拖的那一端，以及指针当前的世界坐标 */
-  const [edgeDrag, setEdgeDrag] = useState<{
-    index: number
-    end: 'src' | 'dst'
-    x: number
-    y: number
-  } | null>(null)
-  const [tick, setTick] = useState(0)
-  const width = 900
-  const height = 560
-  const simRef = useRef<Simulation<SimNode, SimLink> | null>(null)
-  const dragRef = useRef<number | null>(null)
+
   // 拉连线要用世界坐标（画布可能被缩放/平移）。startLinkDrag 定义在 usePanZoom 之前，
   // 用这个 ref 桥接。
-  const panRef = useRef<ReturnType<typeof usePanZoom> | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   /** 上一次提示过的循环归属边集合 */
   const lastCycleWarn = useRef('')
-  /** 当前动效档位（'' = full）：模拟重建时据此决定是否立即冻结 */
-  const motionRef = useRef('')
   const scopeRef = useRef<Scope>(scope)
   scopeRef.current = scope
   // 坐标缓存见模块级 POS_CACHE（离开页面再回来也要能复用）
@@ -301,117 +275,16 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const view = base
-
-  // 布局：节点集合变化时重建模拟
-  useEffect(() => {
-    if (!view || view.nodes.length === 0) return
-    const cache = POS_CACHE
-    // 已有坐标的节点直接套用；新节点落在旧布局质心附近（而不是从螺旋分布起步），
-    // 否则新节点一进来就会把整个布局推开，老节点被迫搬家。
-    const hitNodes = view.nodes.filter((n) => cache.has(n.id))
-    const hitRatio = view.nodes.length ? hitNodes.length / view.nodes.length : 0
-    const centroid = hitNodes.length
-      ? {
-          x: hitNodes.reduce((s, n) => s + cache.get(n.id)!.x, 0) / hitNodes.length,
-          y: hitNodes.reduce((s, n) => s + cache.get(n.id)!.y, 0) / hitNodes.length,
-        }
-      : { x: width / 2, y: height / 2 }
-
-    let fresh = 0
-    const simNodes: SimNode[] = view.nodes.map((n) => {
-      const hit = cache.get(n.id)
-      if (hit) return { ...n, x: hit.x, y: hit.y }
-      // 黄金角散布，确定性且均匀；半径很小，只为避免完全重叠
-      const a = fresh * 2.399963
-      fresh += 1
-      return { ...n, x: centroid.x + Math.cos(a) * 24, y: centroid.y + Math.sin(a) * 24 }
-    })
-    const known = new Set(simNodes.map((n) => n.id))
-    const simLinks: SimLink[] = view.edges
-      .filter(([a, b]) => known.has(a) && known.has(b))
-      .map(([a, b]) => ({
-        source: a,
-        target: b,
-        src: a,
-        dst: b,
-        kind: view.edgeKinds[`${a},${b}`] ?? 'ownership',
-      }))
-
-    // 复用比例越高，越只做微调。注意 alphaDecay 默认 0.0228：alpha=0.25 也要跑
-    // 两百多步才停，节点照样会被一点点推走，所以微调场景必须同时加快收敛与摩擦。
-    // 阈值按「保住老节点」的实际意图定：只要多数节点是复用的就微调。
-    // 定成 0.6 会把 20/34 这种情况判成新图，导致老节点被重新布局。
-    const tuning = hitRatio > 0.3
-    const sim = forceSimulation<SimNode>(simNodes)
-      .alpha(tuning ? 0.25 : hitRatio > 0.1 ? 0.45 : 1)
-      // 收敛更慢、阻尼更大 —— 这是 Obsidian 那种「橡皮筋落定」手感的来源：
-      // 边缘不是一步到位，而是带着余量滑进去，全程不抖
-      .alphaDecay(tuning ? 0.06 : 0.018)
-      .velocityDecay(tuning ? 0.62 : 0.55)
-      .force(
-        'link',
-        forceLink<SimNode, SimLink>(simLinks)
-          .id((d) => d.id)
-          .distance(100)
-          // 略高的连 strength：连线更像有张力的橡皮筋，而不是松垮的绳
-          .strength(0.12)
-      )
-      // distanceMax 限制力的作用半径：远节点不再互相推挤，整体更稳
-      .force('charge', forceManyBody().strength(-320).distanceMax(420))
-      // 微调场景沿用旧质心：若仍居中到画面中心，整个已有布局会被整体平移
-      .force(
-        'center',
-        forceCenter(tuning && hitNodes.length ? centroid.x : width / 2, tuning && hitNodes.length ? centroid.y : height / 2)
-      )
-      .force('collide', forceCollide<SimNode>().radius(() => radiusOf() + 8))
-      .on('tick', () => {
-        // 每 tick 回写坐标，下一次重建模拟即可复用（含用户手动拖动后的位置）
-        for (const n of simNodes) {
-          if (n.x != null && n.y != null) cache.set(n.id, { x: n.x, y: n.y })
-        }
-        setTick((t) => t + 1)
-      })
-
-    // 处于减动效档位时，模拟一经建立就冻结。
-    // stop() 之后不会再触发 tick，所以手动推一帧让静态节点渲染出来。
-    if (motionRef.current === 'reduced' || motionRef.current === 'none') {
-      sim.stop()
-      setTick((t) => t + 1)
-    }
-    simRef.current = sim
-    return () => {
-      sim.stop()
-      simRef.current = null
-    }
-  }, [view])
-
-  // 动效降级 —— reduced/none 时冻结力导向物理，回到 full 且当前有节点时恢复
-  //
-  useEffect(() => {
-    const apply = (level: string): void => {
-      motionRef.current = level
-      const sim = simRef.current
-      if (!sim) return
-      if (level === 'reduced' || level === 'none') sim.stop()
-      // 重新升温再跑：力导向收敛后 alpha 已接近 0，单纯 restart() 不会真的动起来
-      else if ((sim.nodes() as SimNode[]).length) sim.alpha(0.3).restart()
-    }
-    const onMotion = (e: Event): void => {
-      const level = (e as CustomEvent<{ level?: string }>).detail?.level
-      apply(level ?? document.documentElement.dataset.motion ?? '')
-    }
-    // 挂载时先按当前档位对齐一次：applyMotion 通常在页面挂载前就广播过了，收不到那次事件
-    apply(document.documentElement.dataset.motion || 'full')
-    window.addEventListener('zhixing:motion', onMotion)
-    return () => window.removeEventListener('zhixing:motion', onMotion)
-  }, [])
-
   const g6Ref = useRef<GraphCanvasHandle>(null)
 
   // 节点直接从数据派生 —— 侧栏与计数只要 label/kind/degree/format，不需要坐标
   const nodes = (data?.nodes ?? []) as SimNode[]
-  const links = (simRef.current?.force('link') as ReturnType<typeof forceLink<SimNode, SimLink>> | undefined)?.links() as SimLink[] | undefined
+  // 边也从数据派生（原先是问 d3 模拟要 —— 换成 G6 后布局归 G6，边不再由模拟持有）
+  const links: SimLink[] = (data?.edges ?? []).map(([a, b]) => ({
+    src: a,
+    dst: b,
+    kind: (data?.edgeKinds[a + ',' + b] ?? 'ownership') as 'ownership' | 'reference',
+  }))
 
   const folderColor = useMemo(() => {
     const cache = new Map<string, string>()
@@ -507,14 +380,6 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
     [linkFrom, nodes, linkBetween]
   )
 
-  /** 边的两端节点。d3 模拟会把 source/target 替换成对象，两种形态都要认。 */
-  const edgeEnds = useCallback(
-    (l: SimLink): [SimNode | undefined, SimNode | undefined] => [
-      typeof l.source === 'object' ? (l.source as SimNode) : nodes.find((n) => n.id === l.src),
-      typeof l.target === 'object' ? (l.target as SimNode) : nodes.find((n) => n.id === l.dst)
-    ],
-    [nodes]
-  )
 
   /**
    * 这条边能否编辑。排除三类：
@@ -553,143 +418,6 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
     [nodes, canEditEdge, onNotice, load]
   )
 
-  /**
-   * 端点改挂的落点判定。
-   * 拖拽期间指针被画布捕获，节点的 hover 事件不会触发，所以用 elementFromPoint 反查。
-   */
-  const dropEdgeAt = useCallback(
-    async (clientX: number, clientY: number): Promise<void> => {
-      const drag = edgeDrag
-      setEdgeDrag(null)
-      if (!drag) return
-      const l = (links ?? [])[drag.index]
-      if (!l) return
-      const [a, b] = edgeEnds(l)
-      if (!a || !b || !canEditEdge(a, b)) return
-      const keep = drag.end === 'src' ? b : a
-      const from = drag.end === 'src' ? a : b
-      const hit = document.elementFromPoint(clientX, clientY)?.closest('[data-node-id]')
-      const target = hit
-        ? nodes.find((n) => n.id === Number(hit.getAttribute('data-node-id')))
-        : undefined
-      if (!target || target.id === keep.id) return // 落在空白或落回原端：取消
-      const ok = await window.zhixing.db.rewireGraphEdge({
-        keepKind: keep.kind,
-        keepRef: keep.refId,
-        fromKind: from.kind,
-        fromRef: from.refId,
-        toKind: target.kind,
-        toRef: target.refId,
-        edgeKind: (l.kind ?? 'ownership') as 'ownership' | 'reference'
-      })
-      onNotice(ok ? `已把连线改挂到「${target.label}」` : '改挂失败：该组合不允许连接')
-      await load()
-    },
-    [edgeDrag, links, edgeEnds, canEditEdge, nodes, onNotice, load]
-  )
-
-
-
-
-  /**
-   * 拉线的落点判定：与改挂端点同一套反查（拖拽期间指针被画布捕获，hover 不触发）。
-   * 落在空白或自己身上就取消，否则交给 tryLink 走既有的允许矩阵与写入分支。
-   */
-  const dropLinkAt = useCallback(
-    async (clientX: number, clientY: number): Promise<void> => {
-      const drag = linkDrag
-      setLinkDrag(null)
-      if (!drag) return
-      const hit = document.elementFromPoint(clientX, clientY)?.closest('[data-node-id]')
-      const target = hit
-        ? nodes.find((n) => n.id === Number(hit.getAttribute('data-node-id')))
-        : undefined
-      if (!target) {
-        // 明确回执：否则用户不知道是「没落到节点上」还是「功能坏了」
-        setLinkFrom(null)
-        onNotice('已取消连线（没有落在节点上）')
-        return
-      }
-      if (target.id === drag.from) {
-        setLinkFrom(null)
-        onNotice('已取消连线（不能连到自己）')
-        return
-      }
-      await tryLink(target)
-    },
-    [linkDrag, nodes, tryLink, onNotice]
-  )
-
-
-  const onSvgPointerMove = (
-    _e: React.PointerEvent<SVGSVGElement>,
-    world: { x: number; y: number } | null
-  ): void => {
-    // 正在改挂端点：跟随指针画那条虚线，此时不拖动节点
-    if (edgeDrag) {
-      if (world) setEdgeDrag((d) => (d ? { ...d, x: world.x, y: world.y } : d))
-      return
-    }
-    // 正在拉新连线：同样只更新虚线终点
-    if (linkDrag) {
-      if (world) setLinkDrag((d) => (d ? { ...d, x: world.x, y: world.y } : d))
-      return
-    }
-    const id = dragRef.current
-    if (id == null || !simRef.current || !world) return
-    const node = (simRef.current.nodes() as SimNode[]).find((n) => n.id === id)
-    if (!node) return
-    // 必须用画布世界坐标：画布缩放后同样的像素位移对应的世界位移不同，
-    // 直接拿 clientX 会让节点跟不上鼠标
-    node.fx = world.x
-    node.fy = world.y
-    simRef.current.alpha(0.4).restart()
-  }
-
-  const endDrag = (e?: { type?: string; clientX?: number; clientY?: number }): void => {
-    if (edgeDrag) {
-      // 移出画布算取消；在画布内抬手才做落点判定
-      if (e?.type === 'pointerleave' || e?.clientX == null || e?.clientY == null) setEdgeDrag(null)
-      else void dropEdgeAt(e.clientX, e.clientY)
-      return
-    }
-    if (linkDrag) {
-      // 同上：移出画布算取消
-      if (e?.type === 'pointerleave' || e?.clientX == null || e?.clientY == null) {
-        setLinkDrag(null)
-        setLinkFrom(null)
-      } else void dropLinkAt(e.clientX, e.clientY)
-      return
-    }
-    const id = dragRef.current
-    dragRef.current = null
-    if (id == null || !simRef.current) return
-    const node = (simRef.current.nodes() as SimNode[]).find((n) => n.id === id)
-    if (node) {
-      node.fx = null
-      node.fy = null
-    }
-  }
-
-  // 画布级平移 / 缩放：拖背景平移、滚轮以光标为中心缩放。
-  // 节点拖拽继续走原来的 onSvgPointerMove / endDrag，由 hook 在非平移时转发。
-  const pan = usePanZoom({ baseW: width, baseH: height, onMove: onSvgPointerMove, onEnd: endDrag })
-  panRef.current = pan
-
-  // 图内搜索命中首个节点时镜头飞入。
-  // 坐标在力导向模拟里，所以从 sim 取当前落位；centerOn 是稳定引用，避免每次渲染都重跑。
-  const firstHitId = firstHit?.id ?? null
-  const centerOn = pan.centerOn
-  useEffect(() => {
-    if (firstHitId == null) return
-    const timer = window.setTimeout(() => {
-      const node = (simRef.current?.nodes() as SimNode[] | undefined)?.find(
-        (n) => n.id === firstHitId
-      )
-      if (node && node.x != null && node.y != null) centerOn(node.x, node.y)
-    }, 0)
-    return () => window.clearTimeout(timer)
-  }, [firstHitId, centerOn])
 
   /**
    * 六类节点的打开动作：
@@ -899,7 +627,6 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
           )}
         </aside>
       </div>
-      <span hidden>{tick}</span>
       </div>
     </div>
   )

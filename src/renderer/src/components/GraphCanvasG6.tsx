@@ -36,6 +36,8 @@ export interface GraphCanvasHandle {
   relayout(): void
   /** 「重置视图」：缩放回 1 并适配内容。 */
   resetView(): void
+  /** 镜头飞入某个节点（图内搜索命中的第一个）。 */
+  focusNode(id: number): void
 }
 
 export interface GraphCanvasProps {
@@ -221,14 +223,27 @@ export function GraphCanvasG6({
     graph.on('node:pointerenter', (e: IEvent) => cb.current.onHover(idOf(e)))
     graph.on('node:pointerleave', () => cb.current.onHover(null))
     graph.on('canvas:click', () => cb.current.onSelect(null))
-    graph.on('node:dragend', () => {
+    /** 把当前所有节点的落位读出来，交给坐标缓存。 */
+    const snapshotPositions = (): void => {
       const next = new Map<number, { x: number; y: number }>()
       for (const n of payloadById.current.values()) {
         const p = graph.getElementPosition(String(n.id)) as [number, number]
         if (p) next.set(n.id, { x: p[0], y: p[1] })
       }
-      cb.current.onPositions(next)
-    })
+      if (next.size) cb.current.onPositions(next)
+    }
+    graph.on('node:dragend', snapshotPositions)
+
+    /**
+     * 定时回写落位，**替代原实现里 d3 模拟每 tick 的回写**。
+     *
+     * 原实现靠 `sim.on('tick', …)` 把坐标写进缓存，所以离开图谱页再回来时布局是稳定的。
+     * 换成 G6 之后布局归 G6 拥有，而**力导向是异步迭代的、没有可靠的「布局结束」事件** ——
+     * 与其猜时间，不如定期快照：这份缓存在下次挂载时才被读，**写中间值无害，最后一次写就是最终布局**。
+     *
+     * 卸载时再补一次，避免「刚摆好就切页」丢掉最后的落定位置。
+     */
+    const posTimer = window.setInterval(snapshotPositions, 1000)
 
     void graph.render().then(() => {
       if (dead) return
@@ -244,6 +259,13 @@ export function GraphCanvasG6({
 
     return () => {
       dead = true
+      window.clearInterval(posTimer)
+      // 卸载前补一次快照：刚摆好就切页时，最后那次落定不该丢
+      try {
+        snapshotPositions()
+      } catch {
+        // 图已在销毁流程里，取不到位置就算了 —— 缓存只是下次的播种值
+      }
       stopTheme?.()
       // G6 是有状态对象：不 destroy 会留下 canvas、事件监听与 rAF 循环
       graph.destroy()
@@ -290,6 +312,9 @@ export function GraphCanvasG6({
     },
     resetView: () => {
       void graphRef.current?.fitView()
+    },
+    focusNode: (id: number) => {
+      void graphRef.current?.focusElement(String(id), { duration: 300 })
     },
   }))
 
