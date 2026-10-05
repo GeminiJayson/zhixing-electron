@@ -58,6 +58,8 @@ export interface GraphCanvasProps {
   onOpenNode: (n: GraphNodePayload) => void
   /** 拖动结束后回传最新坐标 */
   onPositions: (pos: Map<number, { x: number; y: number }>) => void
+  /** 右键边 → 删除连线。能不能删仍由 GraphPage 的 canEditEdge 判定。 */
+  onEdgeDelete: (sourceId: number, targetId: number, kind: 'ownership' | 'reference') => void
   handleRef?: Ref<GraphCanvasHandle>
 }
 
@@ -100,13 +102,17 @@ export function GraphCanvasG6({
   onFocus,
   onOpenNode,
   onPositions,
+  onEdgeDelete,
   handleRef,
 }: GraphCanvasProps): ReactElement {
   const box = useRef<HTMLDivElement>(null)
   const graphRef = useRef<Graph | null>(null)
   /** 回调放 ref：G6 的事件订阅只登记一次，闭包不能捕获过期的 props。 */
-  const cb = useRef({ onSelect, onHover, onFocus, onOpenNode, onPositions })
-  cb.current = { onSelect, onHover, onFocus, onOpenNode, onPositions }
+  const cb = useRef({ onSelect, onHover, onFocus, onOpenNode, onPositions, onEdgeDelete })
+  cb.current = { onSelect, onHover, onFocus, onOpenNode, onPositions, onEdgeDelete }
+  /** 边 id（"src,dst"）→ 类别。右键菜单用它在删除时带上归属/引用。 */
+  const edgeKindById = useRef(new Map<string, 'ownership' | 'reference'>())
+  edgeKindById.current = new Map(data.edges.map(([a, b]) => [a + ',' + b, data.edgeKinds[a + ',' + b] ?? 'reference']))
   const payloadById = useRef(new Map<number, GraphNodePayload>())
   payloadById.current = new Map(data.nodes.map((n) => [n.id, n]))
   const colorRef = useRef(colorOf)
@@ -165,6 +171,36 @@ export function GraphCanvasG6({
         alphaDecay: 0.018,
       },
       behaviors: ['drag-canvas', 'zoom-canvas', 'drag-element'],
+      /**
+       * 右键菜单，当前只挂了「删除连线」。
+       *
+       * 旧实现是「悬停边 → 冒出端点手柄与删除按钮」。G6 没有对应的悬停浮层，
+       * 而右键菜单是它的惯用做法 —— **改挂端点（拖端点）暂未迁移**，见 docs/specs/g6-migration.md。
+       *
+       * 注意：插件自带的 `CONTEXTMENU_CSS` 是**硬编码的白底、圆角 4px**，不跟主题；
+       * 所以传了 `className`，由 graph.css 用 token 覆盖。
+       */
+      plugins: [
+        {
+          type: 'contextmenu',
+          trigger: 'contextmenu',
+          className: 'g6-menu',
+          offset: [4, 4],
+          getItems: (e: IEvent) => {
+            const id = (e as unknown as { target?: { id?: string }; targetType?: string }).target?.id
+            const type = (e as unknown as { targetType?: string }).targetType
+            if (type === 'edge' && id) return [{ name: '删除连线', value: 'edge:delete:' + id }]
+            return []
+          },
+          onClick: (value: string) => {
+            if (!value.startsWith('edge:delete:')) return
+            const id = value.slice('edge:delete:'.length)
+            const [s, t] = id.split(',')
+            if (!s || !t) return
+            cb.current.onEdgeDelete(Number(s), Number(t), edgeKindById.current.get(id) ?? 'reference')
+          },
+        },
+      ],
     })
     graphRef.current = graph
 

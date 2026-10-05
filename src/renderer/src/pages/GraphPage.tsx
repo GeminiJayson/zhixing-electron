@@ -590,6 +590,28 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
   )
 
   /**
+   * 按两端 id 删除连线 —— G6 画布走这条路。
+   *
+   * 与 `removeEdge`（按下标，旧 SVG 路径）**共用同一套判定与同一个 IPC**：
+   * `canEditEdge` 排掉段落锚、文件夹↔文件夹与悬空引用，`removeGraphEdge` 是唯一的落库入口。
+   * 两份实现会让「这条边能不能删」出现两种答案。
+   */
+  const removeEdgeBetween = useCallback(
+    async (sourceId: number, targetId: number, kind: 'ownership' | 'reference'): Promise<void> => {
+      const a = nodes.find((n) => n.id === sourceId)
+      const b = nodes.find((n) => n.id === targetId)
+      if (!a || !b || !canEditEdge(a, b)) {
+        onNotice('这条连线不支持删除')
+        return
+      }
+      const ok = await window.zhixing.db.removeGraphEdge(a.kind, a.refId, b.kind, b.refId, kind)
+      onNotice(ok ? '已删除该连线' : '删除失败：该连线可能已被移除')
+      await load()
+    },
+    [nodes, canEditEdge, onNotice, load]
+  )
+
+  /**
    * 端点改挂的落点判定。
    * 拖拽期间指针被画布捕获，节点的 hover 事件不会触发，所以用 elementFromPoint 反查。
    */
@@ -922,6 +944,7 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
             onPositions={(pos) => {
               for (const [id, p] of pos) POS_CACHE.set(id, p)
             }}
+            onEdgeDelete={(s, t, k) => void removeEdgeBetween(s, t, k)}
             handleRef={g6Ref}
           />
         )}

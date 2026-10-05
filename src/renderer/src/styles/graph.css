@@ -235,3 +235,31 @@
 .graph-side__link .field {
   width: 100%;
 }
+/* --- G6 右键菜单 ---
+ * 插件的 `CONTEXTMENU_CSS` 是**硬编码的**白底白框（`rgba(255,255,255,0.96)`、圆角 4px、
+ * 12px 字号），不跟主题 —— 深色主题下会是一个刺眼的白框。实测确认过：
+ * 未覆盖时算出来就是 `bg=rgba(255, 255, 255, 0.96)`。
+ *
+ * 画布在 Canvas 上画的东西拿不到 CSS 变量，但**菜单是真实 DOM**，所以这一层可以直接用 token。
+ * 组件侧传了 `className: 'g6-menu'` 作为挂钩。
+ */
+.g6-contextmenu.g6-menu {
+  padding: var(--space-2xs);
+  background: var(--bg-layer-solid);
+  color: var(--fg-primary);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-ctl);
+  box-shadow: var(--shadow-md);
+  font-family: var(--font-ui);
+  font-size: var(--text-aux);
+}
+
+.g6-contextmenu.g6-menu .g6-contextmenu-li {
+  padding: var(--space-2xs) var(--space-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.g6-contextmenu.g6-menu .g6-contextmenu-li:hover {
+  background: var(--bg-hover);
+}
