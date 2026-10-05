@@ -62,6 +62,16 @@ export interface GraphCanvasProps {
   onPositions: (pos: Map<number, { x: number; y: number }>) => void
   /** 右键边 → 删除连线。能不能删仍由 GraphPage 的 canEditEdge 判定。 */
   onEdgeDelete: (sourceId: number, targetId: number, kind: 'ownership' | 'reference') => void
+  /**
+   * 右键边 → 改挂某一端。
+   * `end` 是要换掉的那一端：`'src'` 换起点、`'dst'` 换终点；另一端保持不变。
+   */
+  onEdgeRewire: (
+    sourceId: number,
+    targetId: number,
+    kind: 'ownership' | 'reference',
+    end: 'src' | 'dst'
+  ) => void
   handleRef?: Ref<GraphCanvasHandle>
 }
 
@@ -105,13 +115,14 @@ export function GraphCanvasG6({
   onOpenNode,
   onPositions,
   onEdgeDelete,
+  onEdgeRewire,
   handleRef,
 }: GraphCanvasProps): ReactElement {
   const box = useRef<HTMLDivElement>(null)
   const graphRef = useRef<Graph | null>(null)
   /** 回调放 ref：G6 的事件订阅只登记一次，闭包不能捕获过期的 props。 */
-  const cb = useRef({ onSelect, onHover, onFocus, onOpenNode, onPositions, onEdgeDelete })
-  cb.current = { onSelect, onHover, onFocus, onOpenNode, onPositions, onEdgeDelete }
+  const cb = useRef({ onSelect, onHover, onFocus, onOpenNode, onPositions, onEdgeDelete, onEdgeRewire })
+  cb.current = { onSelect, onHover, onFocus, onOpenNode, onPositions, onEdgeDelete, onEdgeRewire }
   /** 边 id（"src,dst"）→ 类别。右键菜单用它在删除时带上归属/引用。 */
   const edgeKindById = useRef(new Map<string, 'ownership' | 'reference'>())
   edgeKindById.current = new Map(data.edges.map(([a, b]) => [a + ',' + b, data.edgeKinds[a + ',' + b] ?? 'reference']))
@@ -132,7 +143,25 @@ export function GraphCanvasG6({
 
     const graph = new Graph({
       container: el,
+      /**
+       * `'view'` 即「渲染后适配视图」。
+       *
+       * **不要给它加内边距**：试过顶层 `padding: 32`（`ViewportOptions.padding`，
+       * 类型上合法、tsc 通过），结果是**布局彻底不跑** —— 251 个节点全叠在同一个点上，
+       * 不报错、不警告。去掉之后立刻恢复（内容 2290×2292 → 稳定 2536×2515）。
+       * 想要留边只能另找办法（如 fitView 前手动留白），别走 `padding`。
+       */
       autoFit: 'view',
+      /**
+       * 画布内边距。
+       *
+       * **不能写在 `autoFit.options` 里** —— `FitViewOptions` 只有 `when` / `direction`，
+       * 传 `padding` 会直接编译不过（踩过一次）。它是 `ViewportOptions` 的字段，
+       * 放在顶层，`autoFit` 时会按它留边。
+       *
+       * 不留的话贴边节点会被画布边缘裁掉半个图标。
+       */
+
       data: toG6Data(data),
       node: {
         type: 'html',
@@ -191,15 +220,22 @@ export function GraphCanvasG6({
           getItems: (e: IEvent) => {
             const id = (e as unknown as { target?: { id?: string }; targetType?: string }).target?.id
             const type = (e as unknown as { targetType?: string }).targetType
-            if (type === 'edge' && id) return [{ name: '删除连线', value: 'edge:delete:' + id }]
-            return []
+            if (type !== 'edge' || !id) return []
+            return [
+              { name: '改挂起点', value: 'edge:rewire-src:' + id },
+              { name: '改挂终点', value: 'edge:rewire-dst:' + id },
+              { name: '删除连线', value: 'edge:delete:' + id },
+            ]
           },
           onClick: (value: string) => {
-            if (!value.startsWith('edge:delete:')) return
-            const id = value.slice('edge:delete:'.length)
+            const m = /^edge:(delete|rewire-src|rewire-dst):(.+)$/.exec(value)
+            if (!m) return
+            const [, action, id] = m
             const [s, t] = id.split(',')
             if (!s || !t) return
-            cb.current.onEdgeDelete(Number(s), Number(t), edgeKindById.current.get(id) ?? 'reference')
+            const kind = edgeKindById.current.get(id) ?? 'reference'
+            if (action === 'delete') cb.current.onEdgeDelete(Number(s), Number(t), kind)
+            else cb.current.onEdgeRewire(Number(s), Number(t), kind, action === 'rewire-src' ? 'src' : 'dst')
           },
         },
       ],

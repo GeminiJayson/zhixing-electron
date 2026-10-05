@@ -403,6 +403,51 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
    * `canEditEdge` 排掉段落锚、文件夹↔文件夹与悬空引用，`removeGraphEdge` 是唯一的落库入口。
    * 两份实现会让「这条边能不能删」出现两种答案。
    */
+  /**
+   * 改挂端点：右键边选「改挂起点 / 改挂终点」后进入，再点一个节点作为新端点。
+   *
+   * 旧实现是「悬停边 → 冒出端点手柄 → 拖到新节点」。G6 的 HTML 节点没有端口，
+   * 拖拽式无从挂起，所以换成**两段式点选** —— 与点选式连线同一套交互语言。
+   *
+   * `keep` 是不动的那一端，`from` 是要换掉的那一端；`rewireGraphEdge` 会**先建新边再删旧边**，
+   * 所以中途失败不会两头都丢。
+   */
+  const [rewire, setRewire] = useState<{
+    keep: number
+    from: number
+    kind: 'ownership' | 'reference'
+  } | null>(null)
+
+  const rewireEdgeTo = useCallback(
+    async (dst: GraphNodePayload): Promise<void> => {
+      const r = rewire
+      setRewire(null)
+      if (!r) return
+      const keep = nodes.find((n) => n.id === r.keep)
+      const from = nodes.find((n) => n.id === r.from)
+      if (!keep || !from || !canEditEdge(keep, from)) {
+        onNotice('这条连线不支持改挂')
+        return
+      }
+      if (!canEditEdge(keep, dst)) {
+        onNotice('不能改挂到这个节点')
+        return
+      }
+      const ok = await window.zhixing.db.rewireGraphEdge({
+        keepKind: keep.kind,
+        keepRef: keep.refId,
+        fromKind: from.kind,
+        fromRef: from.refId,
+        toKind: dst.kind,
+        toRef: dst.refId,
+        edgeKind: r.kind,
+      })
+      onNotice(ok ? '已改挂该连线' : '改挂失败：该组合可能不允许')
+      await load()
+    },
+    [rewire, nodes, canEditEdge, onNotice, load]
+  )
+
   const removeEdgeBetween = useCallback(
     async (sourceId: number, targetId: number, kind: 'ownership' | 'reference'): Promise<void> => {
       const a = nodes.find((n) => n.id === sourceId)
@@ -544,6 +589,14 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
             // **能不能连由 tryLink 里的 graphConnectionAllowed 判定**（主进程），
             // 画布不参与裁决 —— 它只负责把「点了谁」报上来。
             onSelect={(id) => {
+              // 改挂模式：点到的节点作为新的那一端（keep 那一端不参与选择）
+              if (rewire != null && id != null && id !== rewire.keep) {
+                const dst = data?.nodes.find((n) => n.id === id)
+                if (dst) {
+                  void rewireEdgeTo(dst)
+                  return
+                }
+              }
               if (linkFrom != null && id != null && id !== linkFrom) {
                 const dst = data?.nodes.find((n) => n.id === id)
                 if (dst) {
@@ -560,6 +613,11 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
               for (const [id, p] of pos) POS_CACHE.set(id, p)
             }}
             onEdgeDelete={(s, t, k) => void removeEdgeBetween(s, t, k)}
+            onEdgeRewire={(s, t, k, end) => {
+              // 换起点时 keep 是终点，换终点时 keep 是起点
+              setRewire({ keep: end === 'src' ? t : s, from: end === 'src' ? s : t, kind: k })
+              onNotice(end === 'src' ? '点一个节点作为新的起点' : '点一个节点作为新的终点')
+            }}
             handleRef={g6Ref}
           />
         )}

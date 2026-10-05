@@ -87,6 +87,7 @@ export function G6Smoke(): ReactElement {
               for (const [id, p] of pos) graphPositions.set(id, p)
             }}
             onEdgeDelete={(s, t) => setStatus((v) => v.split(' · 删')[0] + ' · 删除连线 ' + s + '→' + t)}
+            onEdgeRewire={(s, t, _k, end) => setStatus('改挂 ' + (end === 'src' ? s : t) + '（' + s + '→' + t + '）')}
             handleRef={handle}
           />
         )}
