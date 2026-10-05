@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { COND_TEXT_W, NODE_W, NODE_H, NODE_TEXT_W } from '../lib/workflow-node-box'
 import {
   ArrowDown,
   ArrowUp,
@@ -80,8 +81,6 @@ interface Props {
   onChanged: () => Promise<void>
 }
 
-const NODE_W = 150
-const NODE_H = 56
 
 /**
  * 节点详情浮卡是否启用。
@@ -100,13 +99,11 @@ const SHOW_NODE_CARD = false
 
 /** 时间轴与它的时刻格式化都随执行记录搬到了 components/WorkflowRunDialog.tsx */
 /** 节点内文字左右各留 10px，再留 2px 余量给抗锯齿 */
-const NODE_TEXT_W = NODE_W - 22
 /**
  * 条件节点的可用文字宽度要**再收一档**：它画在菱形里，而菱形中间最宽处才有整框宽度，
  * 上下两侧迅速收窄 —— 按整框宽度排的文字会在四个斜边处顶出去（用户报的就是这个）。
  * 取 0.6 是让文字只落在菱形的"腰部"。
  */
-const COND_TEXT_W = Math.round(NODE_W * 0.6)
 
 /**
  * 节点内文字的排版：SVG 的 <text> **既不会自动换行也不会自动缩小**，超出的部分会直接画到

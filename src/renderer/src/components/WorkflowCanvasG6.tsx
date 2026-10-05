@@ -18,7 +18,8 @@
  */
 import { Graph, type IEvent } from '@antv/g6'
 import { useEffect, useImperativeHandle, useRef, type ReactElement, type Ref } from 'react'
-import { subscribeG6Theme, tok, tokNum, tokSolid } from '@renderer/lib/g6-theme'
+import { subscribeG6Theme, tokNum, tokSolid } from '@renderer/lib/g6-theme'
+import { NODE_H, NODE_W, NODE_TEXT_W, COND_TEXT_W, fitNodeText } from '@renderer/lib/workflow-node-box'
 import { workflowEdges, type LayoutNode, type WorkflowRankDir } from '@renderer/lib/workflow-layout'
 
 export interface WorkflowCanvasHandle {
@@ -28,10 +29,29 @@ export interface WorkflowCanvasHandle {
   fit(): void
 }
 
+/**
+ * 节点外观需要、而布局不需要的字段。
+ *
+ * `LayoutNode` 刻意只有 id / 顺序 / 分支三个字段（那样才能脱离数据层单测），
+ * 所以外观信息单独一层传进来，**不去把它撑肥**。
+ */
+export interface WorkflowNodeView {
+  title: string
+  /** 角标：「第 3 步 · 任务」或「条件」。 */
+  badge: string
+  isCondition: boolean
+  /** 条件节点菱形下方那行判据。 */
+  condText?: string
+  /** 已完成（实例跑过这一步）。 */
+  done?: boolean
+  /** 实例当前停在这一步。 */
+  current?: boolean
+}
+
+export type WorkflowCanvasNode = LayoutNode & { view: WorkflowNodeView }
+
 export interface WorkflowCanvasProps {
-  nodes: readonly LayoutNode[]
-  /** 模板节点标题（id → 文案）。 */
-  labelOf: (id: number) => string
+  nodes: readonly WorkflowCanvasNode[]
   selectedId: number | null
   rankdir?: WorkflowRankDir
   onSelect: (id: number | null) => void
@@ -40,9 +60,71 @@ export interface WorkflowCanvasProps {
   handleRef?: Ref<WorkflowCanvasHandle>
 }
 
+/**
+ * 节点外观的 HTML 模板。
+ *
+ * **沿用 WorkflowPage 那一套类名**（`wf-node__box` / `wf-node__diamond` / `wf-node__idx` /
+ * `wf-node__title` / `wf-node__cond`），所以 `workflow.css` 原样生效 ——
+ * 选中、完成、当前步骤这些状态也是同一批 `--on` / `--done` / `--current` 修饰类。
+ *
+ * **必须自己包一层 `<svg>`**：里面的 `<rect>` / `<polygon>` / `<text>` 是 SVG 命名空间，
+ * 直接塞进 HTML 的 `<div>` 不会渲染（图谱那边踩过同一个坑：`<g>` 不报错也不显示）。
+ */
+function nodeSvg(n: WorkflowCanvasNode, selected: boolean): string {
+  const v = n.view
+  const title = fitNodeText(v.title, 12, 10, v.isCondition ? COND_TEXT_W : NODE_TEXT_W)
+  const parts: string[] = []
+  if (v.isCondition) {
+    parts.push(
+      '<polygon class="wf-node__diamond' +
+        (selected ? ' wf-node__diamond--on' : '') +
+        '" points="' +
+        NODE_W / 2 + ',2 ' + (NODE_W - 2) + ',' + NODE_H / 2 + ' ' + NODE_W / 2 + ',' + (NODE_H - 2) + ' 2,' + NODE_H / 2 +
+        '"></polygon>'
+    )
+  } else {
+    parts.push(
+      '<rect class="wf-node__box' +
+        (selected ? ' wf-node__box--on' : '') +
+        (v.done ? ' wf-node__box--done' : '') +
+        (v.current ? ' wf-node__box--current' : '') +
+        '" width="' + NODE_W + '" height="' + NODE_H + '" rx="8"></rect>'
+    )
+  }
+  const cx = v.isCondition ? NODE_W / 2 : 10
+  parts.push(
+    '<text class="wf-node__idx' + (v.isCondition ? ' wf-node__idx--center' : '') + '" x="' + cx + '" y="20">' +
+      escapeHtml(v.badge) +
+      '</text>'
+  )
+  parts.push(
+    '<text class="wf-node__title' + (v.isCondition ? ' wf-node__title--center' : '') + '" x="' + cx + '" y="40" font-size="' + title.size + '">' +
+      escapeHtml(title.text) +
+      '</text>'
+  )
+  if (v.isCondition && v.condText) {
+    const fit = fitNodeText(v.condText, 9, 8)
+    parts.push(
+      '<g class="wf-node__cond" transform="translate(0,' + (NODE_H + 5) + ')">' +
+        '<rect x="6" width="' + (NODE_W - 12) + '" height="18" rx="6"></rect>' +
+        '<text x="' + NODE_W / 2 + '" y="12.5" font-size="' + fit.size + '">' + escapeHtml(fit.text) + '</text>' +
+        '</g>'
+    )
+  }
+  return (
+    '<svg class="wf-node__svg" width="' + NODE_W + '" height="' + NODE_H + '" viewBox="0 0 ' + NODE_W + ' ' + NODE_H + '">' +
+    parts.join('') +
+    '</svg>'
+  )
+}
+
+/** 标题是用户输入，进 innerHTML 前要转义 —— 否则一个 `<` 就能把节点画坏。 */
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
 export function WorkflowCanvasG6({
   nodes,
-  labelOf,
   selectedId,
   rankdir = 'TB',
   onSelect,
@@ -59,8 +141,8 @@ export function WorkflowCanvasG6({
    * 又触发渲染，转成无限循环（实测：页面永不空闲，连 CDP 截图都超时）。
    * 画布只该对**数据**变化有反应。
    */
-  const cb = useRef({ onSelect, onOpen, labelOf, nodes: [] as readonly LayoutNode[] })
-  cb.current = { onSelect, onOpen, labelOf, nodes }
+  const cb = useRef({ onSelect, onOpen, selectedId, nodes: [] as readonly WorkflowCanvasNode[] })
+  cb.current = { onSelect, onOpen, selectedId, nodes }
 
   useEffect(() => {
     const el = box.current
@@ -75,7 +157,7 @@ export function WorkflowCanvasG6({
         nodes: ns.map((n) => ({
           id: String(n.id),
           data: { id: n.id },
-          style: { labelText: cb.current.labelOf(n.id) },
+          style: { innerHTML: nodeSvg(n, cb.current.selectedId === n.id) },
         })),
         // 分支边虚线 —— 与顺序边区分，语义来自 workflowEdges 的投影，不在这里重判
         edges: edges.map((e) => ({
@@ -93,21 +175,18 @@ export function WorkflowCanvasG6({
       autoFit: 'view',
       // setData / 构造的 data 类型对不上是 G6 的已知粗糙处，这里的形状是对的
       data: build() as never,
+      /**
+       * HTML 节点：外观交给 `nodeSvg` 与 `workflow.css`，**选中态也画在模板里**
+       * （用同一批 `--on` 修饰类），所以这里不再需要 G6 的 state 动画。
+       */
       node: {
-        type: 'rect',
+        type: 'html',
         style: {
-          size: [150, 56],
-          radius: tokNum('--radius-md'),
-          fill: tokSolid('--bg-layer-solid', '--pack-layer'),
-          stroke: tokSolid('--border-strong', '--border'),
-          lineWidth: tokNum('--border-w'),
-          labelFill: tokSolid('--fg-primary', '--fg-primary'),
-          labelFontFamily: tok('--font-ui'),
-          labelFontSize: tokNum('--text-aux'),
-          labelMaxWidth: 130,
-        },
-        state: {
-          selected: { stroke: tokSolid('--accent', '--accent'), lineWidth: tokNum('--focus-w') },
+          size: [NODE_W, NODE_H],
+          innerHTML: (d: { id: string }) => {
+            const n = cb.current.nodes.find((x) => String(x.id) === d.id)
+            return n ? nodeSvg(n, cb.current.selectedId === n.id) : ''
+          },
         },
       },
       edge: {
@@ -171,7 +250,7 @@ export function WorkflowCanvasG6({
       nodes: nodes.map((n) => ({
         id: String(n.id),
         data: { id: n.id },
-        style: { labelText: cb.current.labelOf(n.id) },
+        style: { innerHTML: nodeSvg(n, cb.current.selectedId === n.id) },
       })),
       edges: workflowEdges(nodes).map((e) => ({
         id: e.from + '>' + e.to,
@@ -184,13 +263,19 @@ export function WorkflowCanvasG6({
     void g.render()
   }, [nodes])
 
-  // 选中态
+  /**
+   * 选中态。
+   *
+   * **重写节点内容、而不是切 G6 的 state** —— 选中是画在 `nodeSvg` 里的（用了 workflow.css
+   * 原有的 `--on` 修饰类），这样外观与旧 SVG 实现逐像素一致；用 state 就得再维护一份样式映射。
+   */
   useEffect(() => {
     const g = graphRef.current
     if (!g) return
-    const states: Record<string, string[]> = {}
-    for (const n of nodes) states[String(n.id)] = selectedId === n.id ? ['selected'] : []
-    void g.setElementState(states)
+    for (const n of nodes) {
+      g.updateNodeData([{ id: String(n.id), style: { innerHTML: nodeSvg(n, selectedId === n.id) } }])
+    }
+    void g.draw()
   }, [nodes, selectedId])
 
   useImperativeHandle(handleRef, () => ({

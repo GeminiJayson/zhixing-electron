@@ -6,10 +6,12 @@
  */
 import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { WorkflowCanvasG6, type WorkflowCanvasHandle } from '@renderer/components/WorkflowCanvasG6'
-import type { LayoutNode } from '@renderer/lib/workflow-layout'
+import { CONDITION_KIND } from '@shared/workflow-condition'
+import { describeCondition } from '@shared/workflow-condition'
+import type { WorkflowCanvasNode } from '@renderer/components/WorkflowCanvasG6'
 
 export function G6WfSmoke(): ReactElement {
-  const [nodes, setNodes] = useState<LayoutNode[]>([])
+  const [nodes, setNodes] = useState<WorkflowCanvasNode[]>([])
   const [titles, setTitles] = useState<Map<number, string>>(new Map())
   const [status, setStatus] = useState('加载中…')
   const [selected, setSelected] = useState<number | null>(null)
@@ -37,13 +39,22 @@ export function G6WfSmoke(): ReactElement {
           order_index: number
           branch_node_id: number | null
           branch_false_node_id?: number | null
+          action_kind: string
+          action_value: string
         }[]
         setNodes(
-          ns.map((n) => ({
+          ns.map((n, i) => ({
             id: n.id,
             order_index: n.order_index,
             branch_node_id: n.branch_node_id,
             branch_false_node_id: n.branch_false_node_id ?? null,
+            view: {
+              title: n.title,
+              badge: n.action_kind === CONDITION_KIND ? '条件' : '第 ' + (i + 1) + ' 步 · 任务',
+              isCondition: n.action_kind === CONDITION_KIND,
+              condText:
+                n.action_kind === CONDITION_KIND ? describeCondition(n.action_value) : undefined,
+            },
           }))
         )
         setTitles(new Map(ns.map((n) => [n.id, n.title])))
@@ -92,7 +103,6 @@ export function G6WfSmoke(): ReactElement {
         {nodes.length > 0 && (
           <WorkflowCanvasG6
             nodes={nodes}
-            labelOf={(id) => titles.get(id) ?? String(id)}
             selectedId={selected}
             rankdir={rankdir}
             onSelect={setSelected}
