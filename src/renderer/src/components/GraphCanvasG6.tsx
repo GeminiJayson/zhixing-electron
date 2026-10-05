@@ -143,6 +143,7 @@ export function GraphCanvasG6({
 
     const graph = new Graph({
       container: el,
+
       /**
        * `'view'` 即「渲染后适配视图」。
        *
@@ -281,6 +282,17 @@ export function GraphCanvasG6({
      */
     const posTimer = window.setInterval(snapshotPositions, 1000)
 
+    /**
+     * 跟随容器尺寸变化。
+     *
+     * **G6 只在建图时量一次容器** —— 用户拖大窗口，画布还是原尺寸、内容锁在小画布里
+     * （实测：视口从 704 改到 1280 后容器 1280×771，而 canvas 仍是 204×4）。
+     * 试过 `canvas: { autoResize: true }`，**不在 `CanvasConfig` 类型里**，编译不过，
+     * 所以自己盯容器。
+     */
+    const ro = new ResizeObserver(() => graph.resize())
+    ro.observe(el)
+
     void graph.render().then(() => {
       if (dead) return
       // 主题变更：只换样式，不重建图
@@ -295,6 +307,7 @@ export function GraphCanvasG6({
 
     return () => {
       dead = true
+      ro.disconnect()
       window.clearInterval(posTimer)
       // 卸载前补一次快照：刚摆好就切页时，最后那次落定不该丢
       try {
