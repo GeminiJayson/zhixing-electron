@@ -106,6 +106,9 @@ export function G6WfSmoke(): ReactElement {
             selectedId={selected}
             rankdir={rankdir}
             onSelect={setSelected}
+            onNodeMoved={(id, x, y) =>
+              setStatus('拖动 ' + (titles.get(id) ?? id) + ' → ' + x + ',' + y)
+            }
             onBranch={(nodeId, slot) =>
               setStatus(
                 '点了 ' + (titles.get(nodeId) ?? nodeId) + ' 的「' + (slot === 'false' ? '不满足' : '满足') + '」口'

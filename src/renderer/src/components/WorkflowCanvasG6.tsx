@@ -65,6 +65,14 @@ export interface WorkflowCanvasProps {
    * 「跳到」口传 'true'，因为 `setWorkflowBranch` 的第三参默认就是 'true'。
    */
   onBranch: (nodeId: number, slot: 'true' | 'false') => void
+  /**
+   * 拖完一个节点。
+   *
+   * **坐标是节点盒的左上角，不是中心** —— 旧实现存的就是左上角（它用
+   * `transform: translate(x, y)` 且节点内容从 `(0,0)` 画起），而 G6 的
+   * `getElementPosition` 返回中心。这里替调用方转好，免得存错了下次打开节点移位。
+   */
+  onNodeMoved: (id: number, x: number, y: number) => void
   /** 双击节点（打开编辑弹窗）。 */
   onOpen: (id: number) => void
   handleRef?: Ref<WorkflowCanvasHandle>
@@ -186,6 +194,7 @@ export function WorkflowCanvasG6({
   rankdir = 'TB',
   onSelect,
   onBranch,
+  onNodeMoved,
   onOpen,
   handleRef,
 }: WorkflowCanvasProps): ReactElement {
@@ -202,11 +211,12 @@ export function WorkflowCanvasG6({
   const cb = useRef({
     onSelect,
     onBranch,
+    onNodeMoved,
     onOpen,
     selectedId,
     nodes: [] as readonly WorkflowCanvasNode[],
   })
-  cb.current = { onSelect, onBranch, onOpen, selectedId, nodes }
+  cb.current = { onSelect, onBranch, onNodeMoved, onOpen, selectedId, nodes }
 
   // 注册自定义边类型（只注册一次）
   ensureWorkflowEdge()
@@ -335,6 +345,17 @@ export function WorkflowCanvasG6({
       else cb.current.onSelect(idOf(e))
     })
     graph.on('node:dblclick', (e: IEvent) => cb.current.onOpen(idOf(e)))
+    /**
+     * 拖完落库。**只在 dragend 报**，不在拖动过程中报 —— 一次拖动只写一次库，
+     * 否则每帧一次 IPC（渲染层逐条调 IPC 那条架构断言正是拦这个的）。
+     */
+    graph.on('node:dragend', (e: IEvent) => {
+      const id = idOf(e)
+      const p = graph.getElementPosition(String(id)) as [number, number] | undefined
+      if (!p) return
+      // 中心 → 左上角（旧实现的坐标语义）
+      cb.current.onNodeMoved(id, Math.round(p[0] - NODE_W / 2), Math.round(p[1] - NODE_H / 2))
+    })
     graph.on('canvas:click', () => cb.current.onSelect(null))
 
     // 同图谱画布：G6 只在建图时量一次容器，尺寸变化要自己盯（canvas.autoResize 不在类型里）

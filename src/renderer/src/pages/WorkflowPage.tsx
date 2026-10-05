@@ -1953,6 +1953,12 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
               nodes={g6Nodes}
               selectedId={selected}
               onSelect={setSelected}
+              onNodeMoved={async (id, x, y) => {
+                // 只在 dragend 落一次库（不在拖动过程中写 —— 那是每帧一次 IPC）。
+                // **落完不 refresh**：画布上节点已经在拖后的位置了，重载数据会让 G6
+                // 重跑布局、节点跳回原处；侧栏等地方并不显示坐标，不需要立刻同步。
+                await window.zhixing.db.updateWorkflowNodePos(id, x, y)
+              }}
               onOpen={(id) => {
                 const n = ordered.find((x) => x.id === id)
                 if (n) openEditNode(n)
