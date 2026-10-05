@@ -309,6 +309,20 @@ export function WorkflowCanvasG6({
            * （它的注释写着「热区复用图谱那边的透明粗线」）。G6 里对应的就是 halo：
            * 不给的话右键永远命不中分支线（实测：15×10 的网格扫下来一条都没中）。
            */
+          /**
+           * ⚠️ **实测：halo 不能扩大命中区域**（它只管视觉光晕）。
+           *
+           * 自定义边是 1.2px 的线，**右键很难命不中** —— 用 CDP 真实右键扫了两遍网格
+           * （15×10 与 28×18）都没稳定命中；换到冒烟页、用节点位置推算的探测点，
+           * 才偶尔触发到 edge:contextmenu（44 个点里中过 2 次）。
+           *
+           * 旧 SVG 实现是靠**额外叠一条透明粗线**当热区解决的（它的注释写着
+           * 「热区复用图谱那边的透明粗线：1px 的线本身点不到」）—— 同一个坑。
+           *
+           * **G6 没有公开的命中区域配置**（查过 BaseShapeStyleProps 与 edges 的类型，
+           * 没有 hit / pointerEvents / hotspot 之类的键）。要真正修好得覆写
+           * `drawKeyShape`，在 key shape 之外再画一条透明的粗路径 —— 那是一条独立的工作。
+           */
           halo: true,
           haloStroke: 'transparent',
           haloLineWidth: 12,
