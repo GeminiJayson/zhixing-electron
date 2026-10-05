@@ -26,6 +26,7 @@ import { Graph, type IEvent } from '@antv/g6'
 import { useEffect, useImperativeHandle, useRef, type ReactElement, type Ref } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { GraphNodeIcon } from '@renderer/components/GraphNodeIcon'
+import { NODE_R } from '@renderer/lib/graph-colors'
 import { toG6Data } from '@renderer/lib/g6-adapt'
 import { g6Theme, subscribeG6Theme, tokNum, tokSolid } from '@renderer/lib/g6-theme'
 import type { GraphNodePayload, GraphPayload } from '@shared/types'
@@ -149,11 +150,19 @@ export function GraphCanvasG6({
         },
         state: { dim: { opacity: 0.08 }, active: { lineWidth: tokNum('--focus-w') } },
       },
+      /**
+       * 力参数**照搬原 d3 模拟**（GraphPage 里那套），不是随手填的：
+       *   link.distance 100 / strength 0.12、manyBody -320 / distanceMax 420、
+       *   collide 半径 = NODE_R + 8 = 17、alphaDecay 0.018。
+       * 这套值是调出来的 —— 换个数字图就会散开或者挤成一团（第一版只给 link.distance，
+       * 结果外围挂着一圈孤立节点，见 P1 的第一张实测截图）。
+       */
       layout: {
         type: 'd3-force',
-        // 有缓存坐标的节点钉住，其余交给布局 —— 和原实现的「保留布局」一致
-        ...(positions.size ? { preventOverlap: true } : {}),
-        link: { distance: tokNum('--size-48') },
+        link: { distance: 100, strength: 0.12 },
+        manyBody: { strength: -320, distanceMax: 420 },
+        collide: { radius: NODE_R + 8, strength: 0.7 },
+        alphaDecay: 0.018,
       },
       behaviors: ['drag-canvas', 'zoom-canvas', 'drag-element'],
     })
