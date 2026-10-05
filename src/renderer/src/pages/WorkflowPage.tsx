@@ -1991,6 +1991,12 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                 // 画布仍然只报「点了谁、哪个槽位」。
                 setPendingBranch({ fromId: nodeId, slot })
               }}
+              onBranchRemove={async (fromId, slot) => {
+                // 删除分支出边：同一个 IPC，第二参传 null 即清空该槽位。
+                // **改挂端点不需要单独接** —— 重新走一次两段式点选就是改挂。
+                await window.zhixing.db.setWorkflowBranch(fromId, null, slot)
+                await refresh()
+              }}
             />
           )}
           <p className="u-aux">

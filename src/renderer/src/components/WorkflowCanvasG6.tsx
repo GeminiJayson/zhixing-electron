@@ -73,6 +73,13 @@ export interface WorkflowCanvasProps {
    * `getElementPosition` 返回中心。这里替调用方转好，免得存错了下次打开节点移位。
    */
   onNodeMoved: (id: number, x: number, y: number) => void
+  /**
+   * 删除某条分支出边（右键菜单触发）。
+   *
+   * **改挂端点不需要单独的回调** —— 重新走一次两段式点选就是改挂
+   * （`setWorkflowBranch(fromId, 新目标, slot)` 会覆盖旧值）。
+   */
+  onBranchRemove: (fromId: number, slot: 'true' | 'false') => void
   /** 双击节点（打开编辑弹窗）。 */
   onOpen: (id: number) => void
   handleRef?: Ref<WorkflowCanvasHandle>
@@ -194,6 +201,7 @@ export function WorkflowCanvasG6({
   rankdir = 'TB',
   onSelect,
   onBranch,
+  onBranchRemove,
   onNodeMoved,
   onOpen,
   handleRef,
@@ -211,12 +219,23 @@ export function WorkflowCanvasG6({
   const cb = useRef({
     onSelect,
     onBranch,
+    onBranchRemove,
     onNodeMoved,
     onOpen,
     selectedId,
     nodes: [] as readonly WorkflowCanvasNode[],
   })
-  cb.current = { onSelect, onBranch, onNodeMoved, onOpen, selectedId, nodes }
+  cb.current = { onSelect, onBranch, onBranchRemove, onNodeMoved, onOpen, selectedId, nodes }
+  /**
+   * 边 id（"from>to"）→ 语义类别。
+   *
+   * 右键菜单要知道被点中的是哪一类边（顺序边不给菜单、分支边才给）。
+   * 每次渲染重建：边是数据的纯函数，不值得为它做记忆化。
+   */
+  const edgeKindById = useRef(new Map<string, WfEdgeKind>())
+  edgeKindById.current = new Map(
+    workflowEdges(nodes).map((e) => [e.from + '>' + e.to, kindOfEdge(nodes, e.from, e.to, e.branch)])
+  )
 
   // 注册自定义边类型（只注册一次）
   ensureWorkflowEdge()
@@ -283,6 +302,16 @@ export function WorkflowCanvasG6({
       edge: {
         type: 'wf-edge',
         style: {
+          /**
+           * `halo`：把命中区域加宽。
+           *
+           * **1.2px 的线本身点不到** —— 旧 SVG 实现为此刻意叠了一条透明的粗线
+           * （它的注释写着「热区复用图谱那边的透明粗线」）。G6 里对应的就是 halo：
+           * 不给的话右键永远命不中分支线（实测：15×10 的网格扫下来一条都没中）。
+           */
+          halo: true,
+          haloStroke: 'transparent',
+          haloLineWidth: 12,
           endArrow: true,
           endArrowType: 'triangle',
           stroke: (d: { data?: { kind?: WfEdgeKind } }) => wfEdgeStyle(d.data?.kind ?? 'seq').stroke,
@@ -302,6 +331,39 @@ export function WorkflowCanvasG6({
         marginy: 40,
       },
       behaviors: ['drag-canvas', 'zoom-canvas', 'drag-element'],
+      /**
+       * 右键菜单，当前只挂了「删除分支」。
+       *
+       * 旧实现是「鼠标移到分支线上 → 冒出删除按钮」。G6 没有对应的悬停浮层，
+       * 右键菜单是它的惯用做法（图谱的边删除也是这么做的）。
+       *
+       * **改挂端点不需要单独做** —— 重新走一次两段式点选就是改挂
+       * （`setWorkflowBranch(fromId, 新目标, slot)` 会覆盖旧值）。
+       *
+       * 自带样式是硬编码白底，用 `className` 挂钩、由 workflow.css 用 token 覆盖。
+       */
+      plugins: [
+        {
+          type: 'contextmenu',
+          trigger: 'contextmenu',
+          className: 'g6-menu',
+          offset: [4, 4],
+          getItems: (e: IEvent) => {
+            const t = e as unknown as { target?: { id?: string }; targetType?: string }
+            if (t.targetType !== 'edge' || !t.target?.id) return []
+            const kind = edgeKindById.current.get(t.target.id)
+            if (!kind || kind === 'seq') return [] // 顺序边是隐式的，删它没有意义
+            return [{ name: '删除分支', value: 'wf:unbranch:' + t.target.id }]
+          },
+          onClick: (value: string) => {
+            const m = /^wf:unbranch:(\d+)>(\d+)$/.exec(value)
+            if (!m) return
+            const fromId = Number(m[1])
+            const kind = edgeKindById.current.get(m[1] + '>' + m[2])
+            cb.current.onBranchRemove(fromId, kind === 'branch-false' ? 'false' : 'true')
+          },
+        },
+      ],
     })
     graphRef.current = graph
     // 只在冒烟页（?g6wf=1）把实例挂到 window：canvas 里画的东西 DOM 读不到，

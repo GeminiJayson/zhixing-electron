@@ -106,6 +106,9 @@ export function G6WfSmoke(): ReactElement {
             selectedId={selected}
             rankdir={rankdir}
             onSelect={setSelected}
+            onBranchRemove={(fromId, slot) =>
+              setStatus('删除 ' + (titles.get(fromId) ?? fromId) + ' 的 ' + slot + ' 分支')
+            }
             onNodeMoved={(id, x, y) =>
               setStatus('拖动 ' + (titles.get(id) ?? id) + ' → ' + x + ',' + y)
             }
