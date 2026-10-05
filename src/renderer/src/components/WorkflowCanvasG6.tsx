@@ -362,19 +362,44 @@ export function WorkflowCanvasG6({
           trigger: 'contextmenu',
           className: 'g6-menu',
           offset: [4, 4],
+          /**
+           * 菜单项。
+           *
+           * **节点上的分支清除走这里，不走边** —— 边的命中区域只有 1.2px，实测
+           * 右键很难点中（见文件下方 halo 的注释）；而节点是 HTML、命中区域 150×56，
+           * 点它选中都验证过，可靠得多。旧实现的浮卡在 `<foreignObject>` 里、
+           * G6 路径下不显示，所以这里用右键代替它。
+           */
           getItems: (e: IEvent) => {
             const t = e as unknown as { target?: { id?: string }; targetType?: string }
-            if (t.targetType !== 'edge' || !t.target?.id) return []
-            const kind = edgeKindById.current.get(t.target.id)
-            if (!kind || kind === 'seq') return [] // 顺序边是隐式的，删它没有意义
-            return [{ name: '删除分支', value: 'wf:unbranch:' + t.target.id }]
+            if (!t.target?.id) return []
+            if (t.targetType === 'edge') {
+              const kind = edgeKindById.current.get(t.target.id)
+              if (!kind || kind === 'seq') return [] // 顺序边是隐式的，删它没有意义
+              return [{ name: '删除分支', value: 'wf:unbranch-edge:' + t.target.id }]
+            }
+            if (t.targetType === 'node') {
+              const n = cb.current.nodes.find((x) => String(x.id) === t.target?.id)
+              if (!n) return []
+              const items: { name: string; value: string }[] = []
+              if (n.branch_node_id) items.push({ name: '清除「满足」分支', value: 'wf:unbranch:' + n.id + ':true' })
+              if (n.branch_false_node_id)
+                items.push({ name: '清除「不满足」分支', value: 'wf:unbranch:' + n.id + ':false' })
+              return items
+            }
+            return []
           },
           onClick: (value: string) => {
-            const m = /^wf:unbranch:(\d+)>(\d+)$/.exec(value)
-            if (!m) return
-            const fromId = Number(m[1])
-            const kind = edgeKindById.current.get(m[1] + '>' + m[2])
-            cb.current.onBranchRemove(fromId, kind === 'branch-false' ? 'false' : 'true')
+            // 边来的：wf:unbranch-edge:<from>><to>
+            const me = /^wf:unbranch-edge:(\d+)>(\d+)$/.exec(value)
+            if (me) {
+              const kind = edgeKindById.current.get(me[1] + '>' + me[2])
+              cb.current.onBranchRemove(Number(me[1]), kind === 'branch-false' ? 'false' : 'true')
+              return
+            }
+            // 节点来的：wf:unbranch:<nodeId>:<slot>
+            const mn = /^wf:unbranch:(\d+):(true|false)$/.exec(value)
+            if (mn) cb.current.onBranchRemove(Number(mn[1]), mn[2] as 'true' | 'false')
           },
         },
       ],
