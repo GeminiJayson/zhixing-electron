@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { isMotionFull, usePresence } from '../lib/presence'
 import { placeAnchored } from '../lib/anchored-position'
+import { ChevronDown } from '@renderer/lib/icons'
 
 export interface SelectOption {
   value: string
@@ -240,7 +241,9 @@ export function Select({
         onKeyDown={onKeyDown}
       >
         <span className="select__value">{currentLabel}</span>
-        <span className="select__caret" aria-hidden />
+        {/* 箭头用应用的图标（morphicons 的 ChevronDown）——与树、日期选择器同一套形状，
+            颜色走 --fg-secondary 跟随主题；CSS 三角的粗细与角度都不如它稳。 */}
+        <ChevronDown size={14} className="select__caret" aria-hidden />
       </button>
       {/*
         浮层**就地渲染**（不用 Portal）。

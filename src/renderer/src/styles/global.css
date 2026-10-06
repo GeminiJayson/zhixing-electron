@@ -1199,15 +1199,13 @@ html:not([data-tree-guide='off'])
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 小三角用伪元素画：不占额外 DOM，颜色跟随文字 */
+/* 箭头是图标（ChevronDown），这里只管盒子与颜色 —— 与树、日期选择器同一个 16px 盒子、
+   同样的 --fg-secondary，所以整应用的"可展开"标志是同一个形状。 */
 .select__caret {
   flex: 0 0 auto;
-  width: 0;
-  height: 0;
-  border-left: 4px solid transparent;
-  border-right: 4px solid transparent;
-  border-top: 5px solid currentColor;
-  opacity: 0.55;
+  width: 16px;
+  height: 16px;
+  color: var(--fg-secondary);
   transition: transform var(--dur-fast) var(--ease-standard);
 }
 .select__trigger.is-open .select__caret {
