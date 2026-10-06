@@ -754,10 +754,10 @@
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--border);
-  border-radius: var(--radius-lg);
-}
+  background: var(--glass-layer-inset);
+  border: none;
+  border-radius: var(--radius-md);
+  box-shadow: var(--card-shadow);}
 /* 收起态就是这一行：左侧开关 + 计数，右侧「隐藏」 */
 .links__bar {
   display: flex;
@@ -1286,10 +1286,10 @@ span.links__pill-text {
   flex-direction: column;
   gap: var(--space-3);
   padding: var(--space-4);
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--border);
-  border-radius: var(--radius-lg);
-}
+  background: var(--glass-layer-inset);
+  border: none;
+  border-radius: var(--radius-md);
+  box-shadow: var(--card-shadow);}
 .editor__path {
   padding: var(--space-2) var(--space-3);
   background: var(--bg-hover);

@@ -185,12 +185,10 @@
   width: 100%;
   flex: 1;
   min-height: 0;
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--border);
+  background: var(--bg-layer);
+  border: none;
   border-radius: var(--radius-lg);
-  touch-action: none;
-  cursor: grab;
-}
+  box-shadow: var(--panel-shadow);}
 /* 连线：与知识图谱同一套 Obsidian 视觉 —— 极细、暗到几乎隐没 */
 .wf-edge {
   stroke: var(--graph-edge);

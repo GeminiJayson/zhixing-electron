@@ -117,12 +117,10 @@
   flex-direction: column;
   gap: var(--space-2xs);
   padding: var(--space-3);
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--border);
-  border-radius: var(--radius-lg);
-  color: var(--fg-tertiary);
-  opacity: 0.6;
-}
+  background: var(--glass-layer-inset);
+  border: none;
+  border-radius: var(--radius-md);
+  box-shadow: var(--card-shadow);}
 .achv__item--on {
   color: var(--accent-text);
   opacity: 1;
