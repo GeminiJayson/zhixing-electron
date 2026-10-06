@@ -26,6 +26,37 @@ export interface AnchorRect {
 
 /** 视口安全边距：贴着窗口边缘会让阴影被切掉半截 */
 const PAD = 8
+
+/**
+ * 找出浮层的**包含块偏移**。
+ *
+ * `position: fixed` 的元素本该相对视口定位，但只要**任一祖先**带 `transform` / `filter` /
+ * `backdrop-filter` / `contain` / `will-change` / `perspective`，那个祖先就会**创建包含块** ——
+ * 此时 `left/top` 变成"相对该祖先"的坐标。弹窗里的下拉正好踩中：算出来的是视口坐标，
+ * 应用下去却被当成相对弹窗的坐标，于是整个偏掉（用户截图：状态的下拉跑到了"提醒"那一行）。
+ *
+ * 这里把偏移量找出来，调用方减掉它，浮层就仍然落在正确的视口位置。
+ * 返回 `null` 表示没有干扰 —— 那时不做任何补偿（绝大多数情况）。
+ */
+function containingBlockOffset(el: HTMLElement): { x: number; y: number } | null {
+  let cur: HTMLElement | null = el.parentElement
+  while (cur && cur !== document.documentElement) {
+    const cs = getComputedStyle(cur)
+    if (
+      cs.transform !== 'none' ||
+      cs.filter !== 'none' ||
+      cs.backdropFilter !== 'none' ||
+      cs.contain !== 'none' ||
+      cs.perspective !== 'none' ||
+      (cs.willChange !== 'auto' && cs.willChange !== '')
+    ) {
+      const r = cur.getBoundingClientRect()
+      return { x: r.left, y: r.top }
+    }
+    cur = cur.parentElement
+  }
+  return null
+}
 /** 与锚点之间的间距 */
 const GAP = 4
 
@@ -55,6 +86,13 @@ export function placeAnchored(el: HTMLElement, anchor: AnchorRect, gap = GAP): v
     el.style.maxHeight = Math.max(80, below) + 'px'
   }
   if (top > vh - PAD) top = vh - PAD
+  /* 减去包含块偏移 —— 见 containingBlockOffset 的注释 */
+  const block = containingBlockOffset(el)
+  if (block) {
+    left -= block.x
+    top -= block.y
+  }
+
   el.style.left = `${Math.round(left)}px`
   el.style.top = `${Math.round(top)}px`
 }
