@@ -383,6 +383,9 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 - 左侧：macOS 红绿灯占位（`isMac` 时渲染 `titlebar__traffic`，）。
 - 中间：`知行 ZhiXing · <当前页名>`（i18n 取词，`App.tsx`）；右侧签名位来自 `settings.signature`（默认「知行合一」，`settings.ts`）。
 - 右侧动作：明暗切换（图标与 `aria-label` 随当前主题变化，）；非 macOS 时追加最小化/最大化/关闭，关闭按钮为危险色。
+- **双击标题栏 = 最大化 / 还原**（Windows 的原生习惯）。标题栏虽是 `-webkit-app-region: drag` 拖窗区，
+  但 Electron **不会**像系统标题栏那样自带双击最大化——拖窗归拖窗，双击得自己在 `TitleBar.tsx` 里接
+  （`window.zhixing.window.toggleMaximize()`）。落在按钮等交互控件上的双击不触发。
 - 键盘折叠侧栏：Ctrl/Cmd+B（`App.tsx`）。
 
 ---

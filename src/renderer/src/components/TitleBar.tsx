@@ -1,3 +1,4 @@
+import type { MouseEvent } from 'react'
 import { Morph, IconData, Square, X } from '@renderer/lib/icons'
 
 interface Props {
@@ -10,9 +11,23 @@ interface Props {
 
 const isMac = window.zhixing.platform === 'darwin'
 
+/**
+ * **双击标题栏 = 最大化 / 还原**（Windows 上的原生习惯）。
+ *
+ * 标题栏是 `-webkit-app-region: drag` 拖窗区，但 **Electron 不会**像系统标题栏那样
+ * 自带双击最大化 —— 拖窗归拖窗，双击得自己接。
+ *
+ * 落在交互控件上的双击不处理（`.titlebar__actions` 里的按钮各有各的 onClick，
+ * 双击关闭按钮不该把窗口最大化）。
+ */
+function onTitlebarDoubleClick(e: MouseEvent<HTMLElement>): void {
+  if ((e.target as HTMLElement).closest('button, a, input, select, textarea')) return
+  void window.zhixing.window.toggleMaximize()
+}
+
 export function TitleBar({ title, theme, onToggleTheme, signature }: Props) {
   return (
-    <header className="titlebar drag-region">
+    <header className="titlebar drag-region" onDoubleClick={onTitlebarDoubleClick}>
       {/* macOS 红绿灯占位（titleBarStyle: hiddenInset） */}
       {isMac && <div className="titlebar__traffic" aria-hidden />}
       <div className="titlebar__title">{title}</div>
