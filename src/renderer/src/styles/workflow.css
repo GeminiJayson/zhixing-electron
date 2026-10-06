@@ -31,6 +31,10 @@
   border-radius: var(--radius-lg);
   box-shadow: var(--panel-shadow);
   overflow: auto;
+  /* 底部留白：滚动到底时最后一个卡片不能贴着容器底边 —— 否则它自己的圆角与阴影
+     会被容器边界切平（用户反馈"最后一个 card 底部从圆角处被分割"）。
+     用 padding 而不是 margin：滚动容器的下内边距会算进可滚动区域，最后一项才真的抬起来。 */
+  padding-block-end: var(--space-4);
 }
 .wf-side__head {
   display: flex;
@@ -47,6 +51,8 @@
   gap: var(--space-hair);
   overflow-y: auto;
   min-height: 0;
+  /* 底部留白：滚动到底时最后一项不能贴着容器底边（否则卡片圆角与阴影被切平）。 */
+  padding-block-end: var(--space-4);
 }
 .wf-node {
   display: flex;
