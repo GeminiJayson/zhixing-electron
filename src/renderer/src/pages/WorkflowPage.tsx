@@ -28,7 +28,7 @@ import {
   Timer,
   Trash2,
 } from '@renderer/lib/icons'
-import type {
+import type {NoteFolder, 
   Note,
   WorkflowInstancePayload,
   WorkflowNodePayload,
@@ -221,6 +221,8 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   const editingIsCondition = editing?.action_kind === CONDITION_KIND
   /** 步骤可绑定的 SOP 笔记 */
   const [noteChoices, setNoteChoices] = useState<Note[]>([])
+  /** 笔记文件夹：绑定弹层按它分组展示（与任务编辑器的「关联整篇笔记」同一套数据） */
+  const [noteFolders, setNoteFolders] = useState<NoteFolder[]>([])
   /**
    * 正在拖动节点。拖动期间不渲染详情浮卡 —— 浮卡画在 foreignObject 里，
    * 节点移动时它的坐标更新了但不会重绘，会在原地留下一张「拖影」。
@@ -291,6 +293,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     void (async () => {
       try {
         setNoteChoices(await window.zhixing.db.recentNotes(NOTE_CHOICE_LIMIT))
+      setNoteFolders(await window.zhixing.db.noteFolders())
       } catch (e) {
         // SOP 文档候选会变空，看起来像「一篇笔记都没有」
         quietFailure('读取笔记候选（SOP 文档）', e)
@@ -1287,6 +1290,7 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
             selectedTitle={selectedNode?.title ?? null}
             selectedIsCondition={selectedNode?.action_kind === CONDITION_KIND}
             noteChoices={noteChoices}
+            noteFolders={noteFolders}
             // 排除自己：一个流程接续自己就是死循环。间接成环（A→B→A）在启动时另有拦截
             subflowChoices={templates.filter((t) => t.id !== current?.id).map((t) => ({ id: t.id, name: t.name }))}
             onSave={(node, asBranch) => void handleSaveNode(node, asBranch)}

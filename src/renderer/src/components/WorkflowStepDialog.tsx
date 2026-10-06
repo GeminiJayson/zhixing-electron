@@ -1,6 +1,7 @@
 import { useState } from 'react'
+import { NotePicker } from './NotePicker'
 import { Select } from './Select'
-import type { Note, WorkflowNodePayload } from '@shared/types'
+import type {NoteFolder,  Note, WorkflowNodePayload } from '@shared/types'
 import {
   DEFAULT_EXPECT_CODE,
   DEFAULT_SCRIPT_RUNTIME,
@@ -34,6 +35,8 @@ interface Props {
   /** 选中节点是不是条件节点：只有条件节点才承接分支，所以只有它才给这个勾选框 */
   selectedIsCondition: boolean
   noteChoices: Note[]
+  /** 笔记文件夹：绑定 SOP 文档的弹层要按文件夹分组展示（与任务编辑器的"关联笔记"同一套） */
+  noteFolders: NoteFolder[]
   /**
    * 可选的子流程（key=模板 id，label=名字）。
    * 由调用方过滤掉「自己」—— 一个流程接续自己就是死循环，不该出现在选项里。
@@ -62,6 +65,7 @@ export function WorkflowStepDialog({
   selectedTitle,
   selectedIsCondition,
   noteChoices,
+  noteFolders,
   subflowChoices,
   onSave,
   onCancel,
@@ -72,6 +76,9 @@ export function WorkflowStepDialog({
     action_runtime: node.action_runtime || DEFAULT_SCRIPT_RUNTIME,
   })
   const [asBranch, setAsBranch] = useState<BranchSlot | null>(null)
+  /** 绑定 SOP 文档的弹层（与任务编辑器的「关联整篇笔记」同一套交互） */
+  const [docPickerOpen, setDocPickerOpen] = useState(false)
+  const [docPickerAnchor, setDocPickerAnchor] = useState<DOMRect | null>(null)
   /**
    * 日志规则：界面里以结构化对象编辑，落到 draft 时序列化成 JSON 字符串。
    * 解析与序列化都走 shared/workflow-log-rules —— 与主进程读的是同一份实现，
@@ -167,21 +174,39 @@ export function WorkflowStepDialog({
                 })}
                 {draft.note_ids.length === 0 && <span className="u-aux">（未绑定）</span>}
               </div>
-              <Select
-                  className="field field--compact"
-                  ariaLabel="添加文档"
+              {/*
+                绑定 SOP 文档用**任务编辑器「关联整篇笔记」那一套**（NotePicker）：
+                带类型图标、按文件夹分组缩进、顶部可搜索。
+                原先这里是原生 <select>（后来换成 Select）—— <option> 里放不下图标也做不出层级，
+                笔记一多就只剩一列标题，认不出哪篇是哪个类型、在哪个文件夹。
+              */}
+              <button
+                type="button"
+                className="field field--compact note-pick-btn"
+                aria-haspopup="dialog"
+                aria-expanded={docPickerOpen}
+                aria-label="添加文档"
+                onClick={(e) => {
+                  setDocPickerAnchor(e.currentTarget.getBoundingClientRect())
+                  setDocPickerOpen((v) => !v)
+                }}
+              >
+                ＋ 添加文档…
+              </button>
+              {docPickerOpen && (
+                <NotePicker
+                  notes={noteChoices}
+                  folders={noteFolders}
                   value=""
-                  onChange={(v) => {
-                    const id = Number(v)
-                    if (Number.isFinite(id) && id > 0) toggleNote(id)
+                  anchor={docPickerAnchor}
+                  onPick={(id) => {
+                    const n = Number(id)
+                    if (Number.isFinite(n) && n > 0) toggleNote(n)
+                    setDocPickerOpen(false)
                   }}
-                  options={[
-                    { value: '', label: '＋ 添加文档…' },
-                    ...noteChoices
-                      .filter((x) => !draft.note_ids.includes(x.id))
-                      .map((x) => ({ value: String(x.id), label: x.title || '（无标题）' })),
-                  ]}
+                  onClose={() => setDocPickerOpen(false)}
                 />
+              )}
             </div>
           </div>
 
