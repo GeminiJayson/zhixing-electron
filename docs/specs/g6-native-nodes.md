@@ -3,14 +3,14 @@
 > **问题**：两个画布现在都用 HTML 节点（`node: { type: 'html', style: { innerHTML } }`）。
 > 本文评估「换成 G6 原生节点（内置图形节点 + 自定义注册节点）」的可行性与收益。
 >
-> **依据**：下面每一条结论都读自**本仓库安装的 @antv/g6 v5.1.1 源码**（`node_modules/@antv/g6/src/**`），
-> 逐条给出**文件路径 + 符号名**（按仓库文档规范，不写行号）。
-> 官方文档 `https://g6.antv.antgroup.com/` 在本机**访问不了** —— DNS 把它解析到非公网地址，
-> `web_fetch` 对 g6.antv.antgroup.com / github.com / raw.githubusercontent.com 全部失败。
-> 所以本文**没有一条结论引自网页**；提到的文档 URL 只是将来对照用的路径，**未逐条核对**。
-> 好在 G6 的源码注释本身就是双语文档（`<zh/>` / `<en/>` 的 JSDoc），关键约定都能在源码里读到。
+> **依据**：第一轮（§一 ~ §十）逐条读自**本仓库安装的 @antv/g6 v5.1.1 源码**（`node_modules/@antv/g6/src/**`），
+> 每条给出**文件路径 + 符号名**（按仓库文档规范，不写行号）。
 >
-> 最后更新：2026-10-06。
+> **第二轮（§十一）补上了官方文档依据**：`web_fetch` 仍被拦（`g6.antv.antgroup.com` 被本机 DNS 解析到
+> `198.18.0.8` / `2001:2::29`，属非公网地址），但 `Invoke-WebRequest` 与 Node 的 `fetch` 都能走本机代理
+> 拿到 200 —— 抓取方法见 §11.0。**第二轮的实测修正了第一轮的两条判断**，见 §11.5。
+>
+> 最后更新：2026-10-06（第二轮：按官方文档「图形 Shape / 自定义节点」重新评估）。
 
 ## 一、结论（先看这段）
 
@@ -22,6 +22,11 @@
 | **反对理由** | 见 §10.2，最长的一条是：**节点外观现在由 CSS 变量驱动、换主题天然生效；换成原生节点后每个色值都要经主题桥映射，且 `color-mix()` 必须预先算成具体色值**（canvas 不认，本仓库已经踩过）。 |
 
 **一句话**：这是一次「把 CSS 的活搬到 TS 里」的重构，换来的是端口与连线的原生能力 —— 除非确定要做**拖拽式连线 / 端口级交互**，否则不划算。
+
+> ⚠️ **第二轮修正**（见 §十一）：上面四条是**只读源码**时的判断。按官方文档的「自定义节点 / 复合 Shape」机制
+> 实测之后，「图谱图标要重画」与「工作流必须重写 `nodeSvg` 的等价物」两条**都被实测推翻或大幅减轻** ——
+> 现有 SVG 的 `d` 数据可以直接喂给 `upsert(..., 'path', { d })`，自定义节点就是「继承内置节点 + 几次 upsert」。
+> **修正后的结论见 §11.5**；§10 的建议按 §11.5 读。
 
 ## 二、内置节点清单（v5.1.1）
 
@@ -499,3 +504,139 @@ labelWordWrap: true, labelWordWrapWidth: NODE_W - 18, labelMaxLines: 2,
    换节点等于**先把安全网拆了**，再重建一套基于 G6 内部 API 的断言 —— 这段时间里回归风险最高。
 6. **图谱那条链路尤其不划算**：251 个节点换来的是「少 251 棵 DOM 子树」，代价是重画 6 类多色分层图标
    并放弃「颜色由 CSS 变量派生」。除非实测证明 DOM 造成了卡顿（目前没有这样的证据），否则不值得。
+   > **第二轮修正（§11.3）**：前半句不成立 —— 图标的 `d` 可以直接复用，不用重画；
+   > 「颜色由 CSS 派生 → 改由 TS 算」这条仍然成立，但配色规则本来就在 `lib/graph-colors.ts` 里。
+
+---
+
+## 十一、第二轮：按官方文档的「图形 Shape / 自定义节点」重新评估
+
+### 11.0 官方文档是怎么拿到的（方法本身值得留档）
+
+`web_fetch` 对这个域名**仍然失败**（工具层检查：`g6.antv.antgroup.com` 被本机 DNS 解析到 `198.18.0.8` /
+`2001:2::29`，不是公网地址）。但**本机有代理**（那正是 fake-ip），所以：
+
+```powershell
+Invoke-WebRequest -Uri 'https://g6.antv.antgroup.com/manual/introduction' -UseBasicParsing
+```
+
+**能拿到 200**；Node 里的 `fetch()` 同样可以。拿到 HTML 后从 `<div class="markdown">` 处切出正文即可
+（文档站是 SSR，正文在 HTML 里，不用等前端渲染）。
+
+本轮读的四页（用户给的入口是 `/manual/introduction`）：
+
+| 页面 | 内容 |
+| --- | --- |
+| `/manual/element/shape/overview` | 图形 Shape 与 KeyShape |
+| `/manual/element/shape/properties` | 原子 Shape 清单与属性 |
+| `/manual/element/shape/label-shape` | **复合 Shape 的设计与实现**（自定义 Shape 的完整示例） |
+| `/manual/element/node/custom-node` | 自定义节点（三种示例：图标卡片 / 可点击按钮 / 状态变色） |
+
+### 11.1 官方文档给出的机制（与源码逐条对得上）
+
+| 文档说 | 源码/实测对应 |
+| --- | --- |
+| 元素由多个 Shape 组成，keyShape 唯一，负责交互拾取与包围盒 | `BaseNode.render()` 的固定顺序：key → halo → icon → badge → label → port |
+| 自定义节点 = **继承内置节点 + 重写 `render` + `this.upsert()`** | `elements/shapes/base-shape.ts` 的 `upsert`：有则更新 / 无则创建 / 传 `false` 则删除 |
+| 自定义 Shape = 继承 `BaseShape`（`@antv/g` 的 `CustomElement`），只实现 `render` | `BaseShape` 与 `ExtensionCategory.SHAPE` 都在包导出里（实测 `typeof G6.BaseShape` 存在） |
+| 注册：`register(ExtensionCategory.NODE / SHAPE, name, Ctor)` | `registry/register.ts`；第三参**必须是类** |
+| 样式**前缀分离**（`Prefix<'background', RectStyleProps>`），用 `subStyleProps` 取 | `utils/prefix.ts` 的 `subStyleProps` / `subObject` |
+| 状态：`node.state.selected` + `graph.setElementState()` | 与源码一致（正好替代现在的 `--on` 修饰类） |
+| 子图形可以自己绑事件 + `stopPropagation` | `upsert` 返回图形实例，示例里给按钮绑了 `click` |
+| 原子 Shape 共 10 种：Circle / Ellipse / Rect / **HTML** / Image / Line / **Path** / Polygon / Polyline / Text | 与 §二/§四 读到的源码一致 |
+
+### 11.2 实测：工作流节点用「继承 + upsert」复刻（可行）
+
+按文档的写法（继承内置节点、重写 `render`、用 `upsert` 加子图形），在临时图里复刻了工作流的两种节点。
+骨架（实测跑通）：
+
+```ts
+class WfStep extends Rect {
+  render(attributes = this.parsedAttributes, container = this) {
+    super.render(attributes, container)          // 圆角矩形 + 端口（ports 由 BaseNode 画）
+    this.upsert('idx', 'text', { x: -65, y: -14, text: attributes.idxText, fontSize: 9, fill: '#64748b', textAlign: 'left', textBaseline: 'middle' }, container)
+    this.upsert('title', 'text', { x: -65, y: 6, text: attributes.titleText, fontSize: 12, fill: '#0f172a',
+      textAlign: 'left', textBaseline: 'middle', wordWrap: true, wordWrapWidth: 130, maxLines: 1, textOverflow: '...' }, container)
+    this.upsert('portText', 'text', { x: 88, y: 0, text: attributes.portLabel, fontSize: 9, fill: '#16a34a', textAlign: 'left', textBaseline: 'middle' }, container)
+  }
+}
+class WfCond extends Diamond { /* 菱形 + 判据胶囊（rect + text） */ }
+register(ExtensionCategory.NODE, 'wf-step', WfStep)
+register(ExtensionCategory.NODE, 'wf-cond', WfCond)
+```
+
+实测效果（导出画布位图看的）：圆角矩形 + 小字角标 + 左对齐标题（超宽自动省略号）、
+橙色菱形 + 「条件」+ 判据文字 + 下方橙色胶囊、左右端口 + 端口旁绿字「跳到」、
+`sourcePort: 'true'` 的虚线边从菱形右尖角出发 —— **与现有 HTML 节点的观感一致**。
+
+要点：
+- 长标题的省略号**由 G6 直接给**（`wordWrap` + `maxLines` + `textOverflow`），不用自己截断；
+- **缩字号仍要自己算**（§4.4 的结论不变）—— `fitNodeText` 保留；
+- 端口文字用**自绘 `text`**（跟着端口走），不必重写 `drawPortShapes`（§7.2 说的 badge 方案也可行，二者都比 §3.5 估计的轻）；
+- 一个节点类约 20 行，两个类 ≈ 50 行 —— 不是「重写一遍 `nodeSvg`」，是「把模板里的几行搬成 upsert」。
+
+### 11.3 实测：图谱多色图标**可以直接复用现有 SVG 的 `d`**（推翻第一轮判断）
+
+第一轮的结论是「图谱图标要靠 CSS 着色，换 canvas 只能重画」。**那只证明了 `iconSrc` + data URL 走不通**
+（§7.5：CSS 不生效 → 纯黑），**不等于资产不能复用**。
+
+第二轮实测：把 `.gnode__icon` 里每个 `<path>` 的 `d` 取出来，逐个 `upsert`：
+
+```ts
+class GnIconNode extends Circle {
+  render(attributes = this.parsedAttributes, container = this) {
+    super.render(attributes, container)
+    ;(attributes.iconShapes || []).forEach((s, i) => {
+      this.upsert('ic-' + i, 'path', { d: s.d, fill: s.fill, stroke: s.stroke, lineWidth: s.lineWidth, lineCap: s.lineCap, lineJoin: s.lineJoin }, container)
+    })
+  }
+}
+```
+
+**结果：完全还原** —— 浅色「笔记」图标（主体 + 折角 + 横线三色）与彩色节点图标都试了，多色分层正确。
+
+⚠️ **一个必须记住的属性名坑**（实测三种写法）：
+
+| `upsert(..., 'path', …)` 的样式 | `getLocalBounds()` | 结论 |
+| --- | --- | --- |
+| `{ path: 'M0,0 L30,0 L30,30 Z' }` | `[0,0,0,0]` | ❌ 不解析 |
+| `{ path: [['M',0,0],['L',30,0],['L',30,30],['Z']] }` | `[0,0,0,0]` | ❌ 不解析 |
+| `{ d: 'M0,0 L30,0 L30,30 Z' }` | `[0,0,30,30]` | ✅ |
+
+—— G6 注册出来的 `path` shape 吃的是 **`d`**，不是直接 `new` `@antv/g` 的 `Path` 时的 `path`。
+（`@antv/g` 另导出了 `parsePath`，需要 PathArray 时可用。）
+
+⚠️ **颜色仍要自己算**：`getComputedStyle()` 给出的是 `color(srgb 0.679 0.710 0.755 / 0.808)` 这种新语法，
+**canvas / G 都不认**，要转成 `rgb()/rgba()`（实测转换后才正常上色）。也就是说图标的**几何可以直接复用、
+颜色必须走 TS**（而颜色规则本来就在 `lib/graph-colors.ts` 里）——这比「重画 6 类图标」轻得多。
+
+### 11.4 成本重估（第一轮 vs 第二轮实测）
+
+| 项 | 第一轮估计 | 第二轮实测后 |
+| --- | --- | --- |
+| 工作流节点外观 | 「必须重写 `nodeSvg` 的等价物」 | 继承 `Rect`/`Diamond` + 3~5 次 `upsert`，**约 50 行** |
+| 图谱 6 类图标 | 「要重画」 | **`d` 直接复用**；只需把 JSX 里的 path 抽成数据 + 颜色改由 TS 算 |
+| 端口文字 | 「必须自定义 `drawPortShapes`」 | 自绘 `text` 或 badge 都行（§7.2、§11.2） |
+| 端口命中 | 靠 `e.originalTarget` | 不变（§7.1 已实测可行） |
+| 主题 | 每个色值都要过桥 | **不变**（这条仍然是真成本） |
+| `fitNodeText` 缩字号 | 要保留 | **不变**（G6 不会为塞进框而缩字号） |
+| CSS 过渡 / `:hover` | 要改 state | 不变 |
+| 端到端脚本 | 「安全网会断」 | 部分**已经断了**（§7.6），本来就要修 |
+
+### 11.5 修正后的结论
+
+| 问题 | 第一轮 | **第二轮（修正）** |
+| --- | --- | --- |
+| 值不值得换 | 不值得整体换 | **仍然不是"顺手就换"，但已从"不划算"变成"成本可控、按需换"** —— 阻滞项从「要重画资产」变成了「主题映射与交互改写」 |
+| 图谱能不能换 | 不建议（图标要重画） | **可以换**：图标几何复用 `d`，颜色走已有的 `graph-colors`；保留 HTML 的收益（CSS 直接调试、文本可选中）仍是反对理由 |
+| 先换哪个 | 先工作流 | 不变：**先工作流**（节点少、收益明确、范式先跑通），图谱可作为第二步 |
+
+**决定性的判据还是需求**：换过去真正换来的是「端口级交互 / 拖拽连线 / 原生 state」。
+如果只是「不想用 HTML 节点」，那不值得 —— 主题映射与 CSS 过渡的损失是实打实的。
+
+### 11.6 第二轮仍没做的
+
+1. 端口上按下会不会触发 `drag-element` 拖节点（§7.7 第 1 条）。
+2. `create-edge` 从端口拖拽连线、与 `graphConnectionAllowed` 的接法。
+3. 自定义 `Shape`（`register(ExtensionCategory.SHAPE, …)`）封装的实战收益 —— 本轮只验证了「自定义节点 + upsert」，
+   没验证把「角标+标题」封成一个可复用 Shape 是否更划算。
