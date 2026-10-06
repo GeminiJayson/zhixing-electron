@@ -299,3 +299,15 @@
   font-size: var(--text-2xs);
   color: var(--fg-secondary);
 }
+
+/* ---- 小地图（G6 minimap 插件）----
+   插件把白底与浅灰描边**写在它自己的样式/内联里**（实测 `.g6-minimap` 的
+   `background: rgb(255,255,255)`、`border: 1px solid rgb(221,221,221)`），
+   暗色主题下就是画布右下角一块白 —— 与 tooltip 同一类问题，同样按它的类名覆盖。
+   位置/尺寸是插件动态算的内联样式，只覆盖颜色相关的几项。 */
+.graph--g6 .g6-minimap {
+  background: var(--glass-layer-control) !important;
+  border: var(--border-w) solid var(--border) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--panel-shadow) !important;
+}
