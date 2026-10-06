@@ -120,7 +120,8 @@
   background: var(--glass-layer-inset);
   border: none;
   border-radius: var(--radius-md);
-  box-shadow: var(--card-shadow);}
+  box-shadow: var(--card-shadow);
+}
 .achv__item--on {
   color: var(--accent-text);
   opacity: 1;

@@ -46,6 +46,12 @@
   flex: 1;
   min-width: 0;
   min-height: 0;
+  /**
+   * **裁剪溢出**：小地图是绝对定位 + 带边框，实际占地比它的内联尺寸多出 1–2px；
+   * 画布容器若是 `overflow: visible`，这点溢出会一路顶到 `.page__body`（`overflow: auto`），
+   * 于是**图谱页多出一条滚动条** —— 而画布页本来就不该有滚动条。
+   */
+  overflow: hidden;
   /* 与侧栏 / 主区同一层玻璃 + 羽化阴影（原来是更实的 --bg-layer-solid + 硬描边）——
      它们是并排的面板，见 app.css 里 .sidebar 的注释。 */
   background: var(--bg-layer);
@@ -306,6 +312,8 @@
    暗色主题下就是画布右下角一块白 —— 与 tooltip 同一类问题，同样按它的类名覆盖。
    位置/尺寸是插件动态算的内联样式，只覆盖颜色相关的几项。 */
 .graph--g6 .g6-minimap {
+  /* 插件的内联尺寸是 200×140；不加 border-box 的话我们这圈边框会额外撑出 2px。 */
+  box-sizing: border-box !important;
   background: var(--glass-layer-control) !important;
   border: var(--border-w) solid var(--border) !important;
   border-radius: var(--radius-md) !important;

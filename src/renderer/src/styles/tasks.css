@@ -1113,7 +1113,8 @@ button.chip--status:focus-visible {
   background: var(--glass-layer-inset);
   border: none;
   border-radius: var(--radius-md);
-  box-shadow: var(--card-shadow);}
+  box-shadow: var(--card-shadow);
+}
 .quad-box--drop {
   border-color: var(--accent);
   background: var(--accent-soft);
@@ -1293,7 +1294,8 @@ button.chip--status:focus-visible {
   background: var(--glass-layer-inset);
   border: none;
   border-radius: var(--radius-md);
-  box-shadow: var(--card-shadow);}
+  box-shadow: var(--card-shadow);
+}
 .cal-side__head {
   display: flex;
   align-items: baseline;
@@ -1348,7 +1350,8 @@ button.chip--status:focus-visible {
   background: var(--glass-layer-inset);
   border: none;
   border-radius: var(--radius-md);
-  box-shadow: var(--card-shadow);}
+  box-shadow: var(--card-shadow);
+}
 /* 落点高亮：淡底 + 强调色边框，再补一条 2px 强调色指示条
    （与 .trow--drop-before / .trow--drop-after 同一套落点语言，--dur-fast） */
 .kcol--drop {

@@ -188,7 +188,10 @@
   background: var(--bg-layer);
   border: none;
   border-radius: var(--radius-lg);
-  box-shadow: var(--panel-shadow);}
+  box-shadow: var(--panel-shadow);
+  /* 与图谱画布同理：裁剪绝对定位浮层（提示框等）的溢出，别让它顶出页面级滚动条。 */
+  overflow: hidden;
+}
 /* 连线：与知识图谱同一套 Obsidian 视觉 —— 极细、暗到几乎隐没 */
 .wf-edge {
   stroke: var(--graph-edge);

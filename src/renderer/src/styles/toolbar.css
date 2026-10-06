@@ -228,7 +228,8 @@
   background: var(--glass-layer-inset);
   border: none;
   border-radius: var(--radius-md);
-  box-shadow: var(--card-shadow);}
+  box-shadow: var(--card-shadow);
+}
 .tb-sheet__group {
   display: flex;
   align-items: flex-start;
