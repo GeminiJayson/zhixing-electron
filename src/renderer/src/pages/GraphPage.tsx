@@ -105,6 +105,21 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
     }
   }, [scope, selected, data])
 
+  /**
+   * **切到邻域但还没选中心节点时，自动挑一个。**
+   *
+   * 邻域视图的语义是「以**选中的节点**为中心、只留 N 跳以内的关联」——
+   * 没选中心时 `base` 会退回全图（见上面的 useMemo），于是整块切换看起来**毫无反应**
+   * （用户反馈「切换不起作用」）。这里自动选中**度数最高**的那个节点当中心：
+   * 它通常是整张图里最值得看的一处，切过去立刻能看到邻域收窄的效果。
+   * 已经有选中节点时不介入 —— 用户手动选的永远优先。
+   */
+  useEffect(() => {
+    if (scope === 'all' || selected != null || !data?.nodes.length) return
+    const hub = [...data.nodes].sort((a, b) => (b.degree ?? 0) - (a.degree ?? 0))[0]
+    if (hub) setSelected(hub.id)
+  }, [scope, selected, data])
+
   /** 最近一次收到增量的时刻：域订阅兜底据此避免与增量重复重查。 */
   const lastDeltaAt = useRef(0)
 
@@ -256,13 +271,19 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
 
   const g6Ref = useRef<GraphCanvasHandle>(null)
 
-  // 节点直接从数据派生 —— 侧栏与计数只要 label/kind/degree/format，不需要坐标
-  const nodes = (data?.nodes ?? []) as SimNode[]
-  // 边也从数据派生（原先是问 d3 模拟要 —— 换成 G6 后布局归 G6，边不再由模拟持有）
-  const links: SimLink[] = (data?.edges ?? []).map(([a, b]) => ({
+  /**
+   * 节点从 **`base`** 派生（不是 `data`）—— `base` 才是「当前该看什么」：
+   * `scope=all` 时是全图，切到 1/2 度邻域时是主进程算出来的子图。
+   *
+   * ⚠️ 这里原先接的是 `data`，于是**邻域切换只影响搜索与侧栏、画布照旧画全图** ——
+   * 表现就是「点了 1 度邻域毫无反应」（用户反馈）。画布、计数、侧栏都该跟着 `base` 走。
+   */
+  const nodes = (base?.nodes ?? []) as SimNode[]
+  // 边同样从 base 派生（原先是问 d3 模拟要 —— 换成 G6 后布局归 G6，边不再由模拟持有）
+  const links: SimLink[] = (base?.edges ?? []).map(([a, b]) => ({
     src: a,
     dst: b,
-    kind: (data?.edgeKinds[a + ',' + b] ?? 'ownership') as 'ownership' | 'reference',
+    kind: (base?.edgeKinds[a + ',' + b] ?? 'ownership') as 'ownership' | 'reference',
   }))
 
   const selectedNode = nodes.find((n) => n.id === selected) ?? null
@@ -533,7 +554,8 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
       <div className="graph-wrap">
         {data && (
           <GraphCanvasG6
-            data={data}
+            /* 画布也接 base：邻域视图下画的就是那张子图 */
+            data={base ?? data}
             colorOf={colorOf}
             positions={POS_CACHE}
             selected={selected}
