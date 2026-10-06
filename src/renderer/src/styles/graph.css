@@ -229,3 +229,31 @@
 .g6-contextmenu.g6-menu .g6-contextmenu-li:hover {
   background: var(--bg-hover);
 }
+
+/* ---- 悬停提示（G6 tooltip 插件）----
+   插件自带一套白底（rgba(255,255,255,.96)）、圆角 4px、padding 12px 的固定样式，不跟主题。
+   实测：插件**不认** `className`（传了 `g6-tip`，外层类名仍是它自己的 `.tooltip`），
+   所以只能按它的类名覆盖，并限定在画布容器内、加 `!important`（插件把 CSS 注进了文档，
+   同权重下后写的会赢）。 */
+.graph--g6 .tooltip,
+.wf-canvas--g6 .tooltip {
+  padding: var(--space-2) var(--space-3) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-md) !important;
+  background: var(--bg-layer-solid) !important;
+  box-shadow: var(--shadow-md) !important;
+  color: var(--fg-primary) !important;
+  font-family: var(--font-ui) !important;
+  max-width: 280px;
+}
+.gtip__t {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-snug);
+  word-break: break-word;
+}
+.gtip__s {
+  margin-top: 2px;
+  font-size: var(--text-2xs);
+  color: var(--fg-secondary);
+}

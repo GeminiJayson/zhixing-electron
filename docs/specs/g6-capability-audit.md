@@ -83,7 +83,22 @@
 | `dendrogram` / `mindmap` / `indented` 布局 | 知识图谱不是树；工作流是 DAG |
 | `animate` 全量开关 | 要照顾 `prefers-reduced-motion`，只该在关键处（边流动）用 |
 
-## 五、建议的落地顺序
+## 五、落地记录（2026-10-06 已实施）
+
+下面这六项**已经做完**，都在 `GraphCanvasG6` / `WorkflowCanvasG6` 的配置里：
+
+| # | 做了什么 | 关键点 |
+| --- | --- | --- |
+| 1 | **邻居高亮** | `hover-activate: { degree: 1 }` + `click-select: { neighborState: 'active' }`。⚠️ 页面的状态同步 effect **必须保留 G6 自己维护的状态**（只接管 `selected`/`dim`），否则点一下就会把刚点亮的邻居清掉 |
+| 2 | **tooltip** | 两个画布都装了。⚠️ 插件**不认 `className`**（传了也没用，外层始终是 `.tooltip`）—— CSS 要按它的类名覆盖，并 `!important` |
+| 3 | **网格 + 对齐线** | 工作流装了 `grid-line`（20px，主题边框色）与 `snapline`（容差 6px） |
+| 4 | **运行时边流动** | 「当前步骤」的出边改成虚线并由定时器推 `lineDashOffset`（90ms/格），尊重 `prefers-reduced-motion` |
+| 5 | **拖拽建边** | 两个画布都装了 `create-edge`。⚠️ 它的起手与「拖节点」**抢同一个手势**，必须加 `enable: (e) => e.shiftKey`（不设条件时控制台会刷 `Edge not found`） |
+| 6 | **小地图 + 图例** | 图谱装了 `minimap`（200×140）与 `legend`（按 `kind` 分组） |
+
+剩下的（撤销重做、combo 折叠、hull、边捆绑、框选）见下面第三节的第二 / 第三梯队。
+
+## 六、建议的落地顺序（原始清单）
 
 1. **邻居高亮**（`hover-activate.degree: 1` + `click-select.neighborState`）—— 两行配置，读图体验立刻不同；
 2. **tooltip 插件** —— 图谱节点只有图标，这是最大的一处「看不懂」；

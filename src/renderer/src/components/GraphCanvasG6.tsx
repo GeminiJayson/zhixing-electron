@@ -33,6 +33,8 @@ import { Graph, type IEvent } from '@antv/g6'
 import { useEffect, useImperativeHandle, useRef, type ReactElement, type Ref } from 'react'
 import { toG6Data } from '@renderer/lib/g6-adapt'
 import { setupEdgeRewire } from '@renderer/lib/g6-edge-rewire'
+import { tipHtml } from '@renderer/lib/g6-tooltip'
+import { KIND_CN } from '@renderer/lib/graph-colors'
 import { iconDataUrl } from '@renderer/lib/graph-icon'
 import {
   THEME_NAME,
@@ -41,6 +43,7 @@ import {
   subscribeG6Theme,
   themeTokens,
   tokNum,
+  tokSolid,
 } from '@renderer/lib/g6-theme'
 import type { GraphNodePayload, GraphPayload } from '@shared/types'
 
@@ -71,6 +74,8 @@ interface GraphCanvasProps {
   onFocus: (id: number | null) => void
   /** 双击 / 侧栏「打开」 */
   onOpenNode: (n: GraphNodePayload) => void
+  /** **拖拽建链**：从节点拖到另一个节点松手。能不能连仍由页面判定。 */
+  onConnect: (sourceId: number, targetId: number) => void
   /** 拖动结束后回传最新坐标 */
   onPositions: (pos: Map<number, { x: number; y: number }>) => void
   /** 右键边 → 删除连线。能不能删仍由 GraphPage 的 canEditEdge 判定。 */
@@ -117,6 +122,7 @@ export function GraphCanvasG6({
   onHover,
   onFocus,
   onOpenNode,
+  onConnect,
   onPositions,
   onEdgeDelete,
   onEdgeRewire,
@@ -131,6 +137,7 @@ export function GraphCanvasG6({
     onHover,
     onFocus,
     onOpenNode,
+    onConnect,
     onPositions,
     onEdgeDelete,
     onEdgeRewire,
@@ -141,6 +148,7 @@ export function GraphCanvasG6({
     onHover,
     onFocus,
     onOpenNode,
+    onConnect,
     onPositions,
     onEdgeDelete,
     onEdgeRewire,
@@ -254,9 +262,44 @@ export function GraphCanvasG6({
       behaviors: [
         'drag-canvas',
         'zoom-canvas',
-        { type: 'click-select', key: 'click-select', state: 'selected' },
-        'hover-activate',
+        /**
+         * **读图的两条主路**：
+         * · `hover-activate` 配 `degree: 1` —— 悬停时把**一跳邻居**一起点亮（默认 degree 0 只亮自己，
+         *   在关系图里基本没用）；
+         * · `click-select` 配 `neighborState` —— 选中时同样点亮邻居，选中谁就看谁的关系圈。
+         * 邻居的高亮态用主题里的 `active`（halo 光晕）。
+         */
+        { type: 'click-select', key: 'click-select', state: 'selected', neighborState: 'active' },
+        { type: 'hover-activate', key: 'hover-activate', degree: 1, state: 'active' },
         'drag-element-force',
+        /**
+         * **拖拽建链**：从一个节点拖到另一个节点松手即成链（G6 内置的 create-edge）。
+         * 与「点起点 → 点终点」的两段式并存 —— 短距离直接拖更快，跨屏点选更省力。
+         * 落库交给页面（`onConnect`），G6 临时加的那条边会被随后的数据刷新覆盖掉。
+         */
+        {
+          type: 'create-edge',
+          key: 'create-edge',
+          trigger: 'drag',
+          /**
+           * ⚠️ **必须按住 Shift** —— `create-edge` 的拖拽起手就是「在节点上按下」，
+           * 与 `drag-element-force`（拖节点）**抢同一个手势**：不设条件时两者会互相打架，
+           * 控制台刷 `Edge not found for id: …`（实测），节点也拖不利索。
+           */
+          enable: (e: unknown) => (e as { shiftKey?: boolean }).shiftKey === true,
+          style: {
+            stroke: tokSolid('--accent', '--focus-ring'),
+            lineDash: [6, 4],
+            lineWidth: 2,
+            endArrow: true,
+            increasedLineWidthForHitTesting: 0,
+          },
+          onFinish: (edge: { source?: string; target?: string }) => {
+            const s = Number(edge.source)
+            const t = Number(edge.target)
+            if (s && t && s !== t) cb.current.onConnect(s, t)
+          },
+        },
       ],
 
       /**
@@ -266,6 +309,41 @@ export function GraphCanvasG6({
        * 所以传了 `className`，由 graph.css 用 token 覆盖。
        */
       plugins: [
+        /**
+         * 悬停提示：图谱节点**只有图标没有文字**，不点开侧栏就不知道是谁 ——
+         * 这是「看不懂」的最大一处，交给 G6 的 tooltip 插件补上。
+         */
+        {
+          type: 'tooltip',
+          key: 'tooltip',
+          className: 'g6-tip',
+          getContent: (e: IEvent) => {
+            const t = e as unknown as { targetType?: string; target?: { id?: string } }
+            if (!t.target?.id) return ''
+            if (t.targetType === 'edge') {
+              const [s, d] = String(t.target.id).split(',')
+              const a = payloadById.current.get(Number(s))
+              const b = payloadById.current.get(Number(d))
+              if (!a || !b) return ''
+              const kind = edgeKindById.current.get(String(t.target.id)) === 'ownership' ? '归属' : '引用'
+              return tipHtml(`${a.label} → ${b.label}`, kind + (a.kind === 'note' ? '' : `（${KIND_CN[a.kind] ?? a.kind}）`))
+            }
+            const n = payloadById.current.get(Number(t.target.id))
+            if (!n) return ''
+            const sub = [KIND_CN[n.kind] ?? n.kind, n.subKind, `关联 ${n.degree}`].filter(Boolean).join(' · ')
+            return tipHtml(n.label, sub)
+          },
+        },
+        /**
+         * 小地图：251 个节点的图谱全靠拖拽找位置太费劲，右下角给一张缩略图兼导航。
+         * 尺寸按容器比例定小一点，不挡内容。
+         */
+        { type: 'minimap', key: 'minimap', size: [200, 140] },
+        /**
+         * 图例：颜色语义（文件夹调色板 / 知识类型色）本来没有任何说明，图例让它自解释。
+         * `nodeField` 指向**节点数据里的分组字段** —— 图谱的 `data.kind` 正是「笔记 / 任务 / 闪念…」。
+         */
+        { type: 'legend', key: 'legend', nodeField: 'kind' },
         {
           type: 'contextmenu',
           trigger: 'contextmenu',
@@ -479,7 +557,15 @@ export function GraphCanvasG6({
       // 搜索/连线是显式动作，未命中的淡化
       if (dimmed && !dimmed.has(n.id)) st.push('dim')
       else if (!dimmed && active != null && n.id !== active) st.push('dim')
-      next.set(id, st)
+      /**
+       * **保留 G6 自己维护的状态**（`active` 等）。
+       *
+       * 这个 effect 只接管 `selected` 与 `dim` 两个业务态；邻居高亮是
+       * `hover-activate` / `click-select` 设的 `active` —— 如果这里按"目标状态"整份覆盖，
+       * 点一下节点就会把刚点亮的邻居又清掉（这个 effect 恰好也在 selected 变化时跑）。
+       */
+      const keep = (g.getElementState(id) as string[]).filter((s) => s !== 'selected' && s !== 'dim')
+      next.set(id, [...keep, ...st])
     }
     const changed: Record<string, string[]> = {}
     for (const [id, st] of next) {

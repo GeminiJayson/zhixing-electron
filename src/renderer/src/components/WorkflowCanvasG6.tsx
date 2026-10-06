@@ -33,6 +33,7 @@ import {
   tokSolid,
 } from '@renderer/lib/g6-theme'
 import { setupEdgeRewire } from '@renderer/lib/g6-edge-rewire'
+import { tipHtml } from '@renderer/lib/g6-tooltip'
 import { NODE_H, NODE_W } from '@renderer/lib/workflow-node-box'
 import { workflowEdges, type LayoutNode, type WorkflowRankDir } from '@renderer/lib/workflow-layout'
 
@@ -83,6 +84,14 @@ interface WorkflowCanvasProps {
    * 没有「挂在哪」这回事（要改顺序得用步骤的上下移动）。
    */
   onEdgeRewire: (fromId: number, slot: 'true' | 'false', toId: number) => void
+  /**
+   * **拖拽建分支**：从节点拖到另一个节点松手。
+   *
+   * 与「节点右键菜单选槽位 → 再点目标」的两段式同一个落库口子（`setWorkflowBranch`）。
+   * 拖拽只覆盖**默认槽位 'true'**（步骤的「跳到」、条件的「满足」）；
+   * 「不满足」仍走右键菜单 —— 一个拖拽手势分不出两个槽位。
+   */
+  onBranchTo: (fromId: number, slot: 'true' | 'false', toId: number) => void
   /** 双击节点（打开编辑弹窗）。 */
   onOpen: (id: number) => void
   handleRef?: Ref<WorkflowCanvasHandle>
@@ -331,6 +340,8 @@ function buildData(
       .filter((e) => !forwardOnly || !isBackEdge(nodes, e.from, e.to))
       .map((e) => {
       const kind = kindOfEdge(nodes, e.from, e.to, e.branch)
+      /** 源节点是「实例正停在这一步」→ 它的出边要流动。 */
+      const srcCurrent = nodes.find((n) => n.id === e.from)?.view.current === true
       return {
         id: e.from + '>' + e.to,
         source: String(e.from),
@@ -361,6 +372,16 @@ function buildData(
           },
           endArrow: true,
           endArrowType: 'triangle',
+          /**
+           * **运行中的流动效果**：源节点是「当前步骤」时，出边用虚线并**动起来**。
+           *
+           * 实例跑起来后，光靠节点上的边框与阴影看「执行到哪了」不够直观 ——
+           * 让这条边走起来，一眼就知道卡在哪一步、下一步去哪。
+           * 偏移量由 `useEffect` 里的定时器推进（见 `flowRef`），这里只给初始虚线与相位。
+           */
+          ...(srcCurrent
+            ? { lineDash: [6, 4], lineDashOffset: 0, lineWidth: 2 }
+            : {}),
           labelText: edgeLabelOf(kind),
           labelFontSize: 9,
           labelBackground: true,
@@ -381,6 +402,7 @@ export function WorkflowCanvasG6({
   onBranchRemove,
   onNodeMoved,
   onEdgeRewire,
+  onBranchTo,
   onOpen,
   handleRef,
 }: WorkflowCanvasProps): ReactElement {
@@ -396,12 +418,28 @@ export function WorkflowCanvasG6({
     onBranchRemove,
     onNodeMoved,
     onEdgeRewire,
+    onBranchTo,
     onOpen,
     selectedId,
     nodes: [] as readonly WorkflowCanvasNode[],
   })
-  cb.current = { onSelect, onBranch, onBranchRemove, onNodeMoved, onEdgeRewire, onOpen, selectedId, nodes }
+  cb.current = {
+    onSelect,
+    onBranch,
+    onBranchRemove,
+    onNodeMoved,
+    onEdgeRewire,
+    onBranchTo,
+    onOpen,
+    selectedId,
+    nodes,
+  }
   /** 边 id（"from>to"）→ 语义类别。右键菜单要知道被点中的是哪一类边。 */
+  /** 需要流动的边 id（源节点是「实例当前步骤」的那些）—— 数据变化时更新。 */
+  const flowIds = useRef<string[]>([])
+  flowIds.current = workflowEdges(nodes)
+    .filter((e) => nodes.find((n) => n.id === e.from)?.view.current === true)
+    .map((e) => e.from + '>' + e.to)
   const edgeKindById = useRef(new Map<string, string>())
   edgeKindById.current = new Map(
     workflowEdges(nodes).map((e) => [e.from + '>' + e.to, kindOfEdge(nodes, e.from, e.to, e.branch)])
@@ -413,6 +451,8 @@ export function WorkflowCanvasG6({
     let dead = false
     let stopTheme: (() => void) | null = null
     let stopRewire: (() => void) | null = null
+    /** 「当前步骤」出边的流水相位（每 90ms 推一格）。 */
+    let flowPhase = 0
 
     registerZhixingTheme()
     ensureWorkflowNodes()
@@ -459,8 +499,32 @@ export function WorkflowCanvasG6({
         'drag-canvas',
         'zoom-canvas',
         'drag-element',
-        { type: 'click-select', key: 'click-select', state: 'selected' },
-        'hover-activate',
+        /** 与图谱同款：选中/悬停都点亮一跳邻居（工作流里就是「上下游各一步」）。 */
+        { type: 'click-select', key: 'click-select', state: 'selected', neighborState: 'active' },
+        { type: 'hover-activate', key: 'hover-activate', degree: 1, state: 'active' },
+        /**
+         * **拖拽建分支**：从节点拖到目标节点松手（G6 内置的 create-edge）。
+         * 落库交给页面（`onBranchTo`），G6 临时加的那条边会被随后的数据刷新覆盖掉。
+         */
+        {
+          type: 'create-edge',
+          key: 'create-edge',
+          trigger: 'drag',
+          /** 同图谱：**按住 Shift** 才进建边手势，否则与「拖节点」抢同一个起手。 */
+          enable: (e: unknown) => (e as { shiftKey?: boolean }).shiftKey === true,
+          style: {
+            stroke: tokSolid('--accent', '--focus-ring'),
+            lineDash: [6, 4],
+            lineWidth: 2,
+            endArrow: true,
+            increasedLineWidthForHitTesting: 0,
+          },
+          onFinish: (edge: { source?: string; target?: string }) => {
+            const s = Number(edge.source)
+            const t = Number(edge.target)
+            if (s && t && s !== t) cb.current.onBranchTo(s, 'true', t)
+          },
+        },
       ],
 
       /**
@@ -468,6 +532,41 @@ export function WorkflowCanvasG6({
        * 旧实现是「悬停分支线 → 冒出删除按钮」；G6 没有对应浮层，右键菜单是它的惯用做法。
        */
       plugins: [
+        /**
+         * 网格背景：空白画布上没有任何参照，拖节点全靠肉眼估位置。
+         * 用主题的边框色（很淡）画 20px 的格子，只在工作流开 —— 图谱的力导向布局不需要网格。
+         */
+        {
+          type: 'grid-line',
+          key: 'grid-line',
+          size: 20,
+          stroke: tokSolid('--border', '--border-strong'),
+          lineWidth: 1,
+          border: false,
+        },
+        /**
+         * 对齐辅助线：拖节点时显示与其它节点的 x/y 对齐关系（流程图排版的基本手感）。
+         * 容差 6px —— 太小了不好对齐，太大了会到处吸。
+         */
+        { type: 'snapline', key: 'snapline', tolerance: 6 },
+        /** 悬停提示：标题会被折行截断（最多两行），悬停看全文；边则说明它是哪类分支。 */
+        {
+          type: 'tooltip',
+          key: 'tooltip',
+          className: 'g6-tip',
+          getContent: (e: IEvent) => {
+            const t = e as unknown as { targetType?: string; target?: { id?: string } }
+            if (!t.target?.id) return ''
+            if (t.targetType === 'edge') {
+              const kind = edgeKindById.current.get(String(t.target.id))
+              const label = edgeLabelOf(kind ?? '')
+              return tipHtml(label ? `${label}分支` : '顺序连线', label ? '拖住线靠近目标的一端可改挂' : '由步骤顺序自动连出')
+            }
+            const n = cb.current.nodes.find((x) => String(x.id) === t.target?.id)
+            if (!n) return ''
+            return tipHtml(n.view.title, [n.view.badge, n.view.condText].filter(Boolean).join(' · '))
+          },
+        },
         {
           type: 'contextmenu',
           trigger: 'contextmenu',
@@ -543,6 +642,22 @@ export function WorkflowCanvasG6({
     graph.on('canvas:click', () => cb.current.onSelect(null))
 
     /**
+     * **让「当前步骤」的出边走起来**。
+     *
+     * 每 90ms 把 `lineDashOffset` 推一格 —— 虚线相位一动，看起来就是"流"向下一步。
+     * 只在真的有流动边（`flowIds` 非空）时才做事；并且尊重 `prefers-reduced-motion`。
+     */
+    const flowTimer = window.setInterval(() => {
+      if (dead) return
+      const ids = flowIds.current
+      if (!ids.length) return
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+      flowPhase = (flowPhase - 1.5) % 20
+      graph.updateEdgeData(ids.map((id) => ({ id, style: { lineDashOffset: flowPhase } })) as never)
+      void graph.draw()
+    }, 90)
+
+    /**
      * 同图谱画布：G6 只在建图时量一次容器，尺寸变化要自己盯。
      *
      * **必须防抖 + 比尺寸** —— 选中节点会让侧栏/滚动条变化，容器宽度高频抖动，
@@ -599,6 +714,7 @@ export function WorkflowCanvasG6({
       dead = true
       ro.disconnect()
       window.clearTimeout(resizeTimer)
+      window.clearInterval(flowTimer)
       stopTheme?.()
       stopRewire?.()
       graph.destroy()
@@ -646,7 +762,14 @@ export function WorkflowCanvasG6({
     const g = graphRef.current
     if (!g) return
     for (const n of nodes) {
-      g.setElementState(String(n.id), selectedId === n.id ? ['selected'] : [])
+      const id = String(n.id)
+      /**
+       * 只接管 `selected`，**保留 G6 自己维护的状态**（`active` 等）——
+       * 邻居高亮是 `hover-activate` / `click-select` 设的，整份覆盖会把它们清掉
+       * （这个 effect 恰好也在 selectedId 变化时跑）。
+       */
+      const keep = (g.getElementState(id) as string[]).filter((s) => s !== 'selected')
+      g.setElementState(id, selectedId === n.id ? [...keep, 'selected'] : keep)
     }
   }, [nodes, selectedId])
 

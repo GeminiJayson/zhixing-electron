@@ -568,6 +568,12 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
             onPositions={(pos) => {
               for (const [id, p] of pos) POS_CACHE.set(id, p)
             }}
+            onConnect={(s, t) => {
+              // 拖拽建链：一步到位，直接走 linkBetween（与「点起点 → 点终点」同一条落库路径）
+              const a = nodes.find((n) => n.id === s)
+              const b = nodes.find((n) => n.id === t)
+              if (a && b) void linkBetween(a, b)
+            }}
             onEdgeDelete={(s, t, k) => void removeEdgeBetween(s, t, k)}
             onEdgeRewire={(s, t, k, end) => {
               // 换起点时 keep 是终点，换终点时 keep 是起点

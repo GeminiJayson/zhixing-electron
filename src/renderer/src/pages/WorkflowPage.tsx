@@ -1244,6 +1244,11 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
                 await window.zhixing.db.setWorkflowBranch(fromId, null, slot)
                 await refresh()
               }}
+              onBranchTo={async (fromId, slot, toId) => {
+                // 拖拽建分支：与右键菜单的两段式落到同一个 IPC
+                await window.zhixing.db.setWorkflowBranch(fromId, toId, slot)
+                await refresh()
+              }}
               onEdgeRewire={async (fromId, slot, toId) => {
                 // 拖拽改挂：与上面的两段式点选落到同一个 IPC（`setWorkflowBranch` 本就是把
                 // 「谁的分支、去哪个节点」重写一遍），只是在松手那一刻就拿到了目标。
