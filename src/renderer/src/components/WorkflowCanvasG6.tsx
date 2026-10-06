@@ -257,11 +257,26 @@ function buildData(
         style: {
           ...edgeStyleOf(kind),
           /**
-           * **A\* 避障路由**：`shortest-path` 会在节点包围盒之间搜一条不穿节点的折线，
-           * 搜不到才回退到普通正交路由（`polyline.ts` 的 `getControlPoints`）。
-           * 之前用的 `orth` 只做正交、**不看节点**，所以线会从节点身上穿过去。
+           * **A\* 避障路由** —— 三个参数缺一不可，都是实测出来的（`utils/router/shortest-path.ts`）：
+           *
+           * · `enableObstacleAvoidance: true` —— 默认是 **false**，此时障碍物只有源和目标两个节点
+           *   （`const obstacles = options.enableObstacleAvoidance ? nodes : [sourceNode, targetNode]`），
+           *   A\* 只是在空白网格上找折线，**中间的节点照穿不误**；
+           * · `gridSize: 10` —— 默认 **5** 太细：格子越多搜索空间越大，配合默认的
+           *   `maximumLoops: 3000` 根本走不到终点，`aStarSearch` 返回空数组 → `polyline.ts`
+           *   回退到普通正交路由 → **线又穿过去了**（实测：gridSize 5 时路径与「完全不开避障」逐字相同；
+           *   调到 8/10/15/20 才真正绕行）；
+           * · `maximumLoops: 50000` —— 给绕行留足搜索预算（默认 3000 在稍大的图上就会耗尽）。
+           *
+           * 真找不到路径时 `polyline.ts` 仍会回退正交路由，所以不会出现「画不出线」。
            */
-          router: { type: 'shortest-path', offset: 8 },
+          router: {
+            type: 'shortest-path',
+            offset: 12,
+            gridSize: 10,
+            maximumLoops: 50000,
+            enableObstacleAvoidance: true,
+          },
           endArrow: true,
           endArrowType: 'triangle',
           labelText: edgeLabelOf(kind),
