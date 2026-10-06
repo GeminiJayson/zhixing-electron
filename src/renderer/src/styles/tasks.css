@@ -1341,13 +1341,29 @@ button.chip--status:focus-visible {
   gap: var(--space-2);
   align-items: stretch;
   flex: 1;
-  min-height: var(--size-260);
+  /**
+   * **看板自己吃掉高度，不往上传**。
+   *
+   * 两个坑叠在一起：
+   * 1. 原先 `min-height: var(--size-260)`：卡片一多就顶着下限长高，把 `.page__body` 顶出滚动条；
+   * 2. 光把 min-height 改成 0 还不够 —— `display: grid` 的**行高由内容决定**，
+   *    容器虽然被 flex 压到 622px，网格内容仍是 865px，照样溢出。
+   *    所以还要 `grid-template-rows: minmax(0, 1fr)` 把行高钉在容器高度上 + `overflow: hidden` 收边。
+   *
+   * 溢出至此交给每一列的 `.kcol__body`（本来就是 `overflow: auto`）—— 任务页主布局不再滚动。
+   */
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
 }
 .kcol {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  max-height: 100%;
+  /* 列要能被网格行压住（`max-height: 100%` 在 grid 里不保证生效），
+     溢出再往下交给 .kcol__body */
+  min-height: 0;
+  overflow: hidden;
   padding: var(--space-2);
   background: var(--glass-layer-inset);
   border: none;
@@ -1372,6 +1388,8 @@ button.chip--status:focus-visible {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  /* 卡片区的滚动就发生在这里 —— `min-height: 0` 是让 flex 子项真的能被压缩的前提 */
+  min-height: 0;
   overflow: auto;
 }
 .kcol__empty {
