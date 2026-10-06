@@ -523,6 +523,11 @@ Invoke-WebRequest -Uri 'https://g6.antv.antgroup.com/manual/introduction' -UseBa
 **能拿到 200**；Node 里的 `fetch()` 同样可以。拿到 HTML 后从 `<div class="markdown">` 处切出正文即可
 （文档站是 SSR，正文在 HTML 里，不用等前端渲染）。
 
+> **全量镜像**：`.g6-docs/`（**本地、不入库**，见 `.gitignore`）—— 站点 `sitemap.xml` 里中文站共 **209 页**
+> （manual 130 / examples 62 / api 15 / 其它 2），已全部转成 Markdown，索引在 `.g6-docs/INDEX.md`。
+> 重跑：`node .g6-docs/fetch.mjs`（`--en` 连英文站、`--force` 全量重抓、`--limit N` 试跑）。
+> 本文档后续提到的「官方文档说」都可以在镜像里按路径直接查。
+
 本轮读的四页（用户给的入口是 `/manual/introduction`）：
 
 | 页面 | 内容 |

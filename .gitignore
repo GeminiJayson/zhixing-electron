@@ -44,3 +44,7 @@ dist-*/
 
 
 .build-tmp/
+
+# G6 官方文档的本地镜像（.g6-docs/fetch.mjs 拉取，约 209 页 Markdown）。
+# 第三方文档，仅供本地查阅与后续需求对照，不入库。
+.g6-docs/
