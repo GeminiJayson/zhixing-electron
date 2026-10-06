@@ -492,9 +492,17 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
             ariaLabel="按文件夹过滤"
             value={folderId == null ? '' : String(folderId)}
             onChange={(v) => setFolderId(v === '' ? null : Number(v))}
+            /* 按 parent_id 铺出层级：顶层先出，子文件夹跟在后面并缩进一格。
+               与任务页「按清单筛选」同一套写法（Select 的 depth），而不是平铺一列 ——
+               文件夹名字常常重名或相似，不缩进就分不出谁属于谁。 */
             options={[
               { value: '', label: '全部文件夹' },
-              ...folders.map((f) => ({ value: String(f.id), label: f.name })),
+              ...folders
+                .filter((f) => (f.parent_id ?? null) === null)
+                .map((f) => ({ value: String(f.id), label: f.name })),
+              ...folders
+                .filter((f) => (f.parent_id ?? null) !== null)
+                .map((f) => ({ value: String(f.id), label: f.name, depth: 1 })),
             ]}
           />,
           <Select
