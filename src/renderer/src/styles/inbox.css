@@ -9,10 +9,6 @@
   min-height: 0;
   gap: var(--space-2);
   overflow: auto;
-  /* 底部留白：滚动到底时最后一个卡片不能贴着容器底边 —— 否则它自己的圆角与阴影
-     会被容器边界切平（用户反馈"最后一个 card 底部从圆角处被分割"）。
-     用 padding 而不是 margin：滚动容器的下内边距会算进可滚动区域，最后一项才真的抬起来。 */
-  padding-block-end: var(--space-4);
   /* 同 .page__body：滚动容器的横向是 hidden，贴边的闪念卡片阴影会被切掉 ——
      padding 撑开裁剪边界、负 margin 把布局拉回（实测卡片到该边界原本只有 0/10px）。 */
   padding-inline: 24px;
