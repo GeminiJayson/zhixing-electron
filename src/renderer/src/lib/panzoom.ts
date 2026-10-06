@@ -56,13 +56,6 @@ export function zoomAt(
   return { x: worldX - cursor.rx * w, y: worldY - cursor.ry * h, w, h }
 }
 
-/**
- * 镜头飞入：把视图中心移到指定世界坐标，保持当前缩放不变。
- */
-export function centerView(view: ViewBox, worldX: number, worldY: number): ViewBox {
-  return { ...view, x: worldX - view.w / 2, y: worldY - view.h / 2 }
-}
-
 /** 平移：dxRatio / dyRatio 是视口相对位移（像素位移 ÷ 视口尺寸）。 */
 export function panBy(view: ViewBox, dxRatio: number, dyRatio: number): ViewBox {
   return { ...view, x: view.x - dxRatio * view.w, y: view.y - dyRatio * view.h }
