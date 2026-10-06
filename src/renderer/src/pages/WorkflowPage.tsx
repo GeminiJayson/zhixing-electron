@@ -48,6 +48,7 @@ import {
   withBranchTarget,
   type BranchSlot,
 } from '@shared/workflow-branch'
+import { Select } from '../components/Select'
 import { Toolbar } from '../components/Toolbar'
 import { WorkflowStepDialog } from '../components/WorkflowStepDialog'
 import { WorkflowScheduleDialog } from '../components/WorkflowScheduleDialog'
@@ -939,16 +940,17 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     filters={[
       <label key="policy" className="wf-policy">
         <span className="u-aux">启动策略</span>
-        <select
+        <Select
           className="field field--compact"
+          ariaLabel="启动策略"
           value={current?.start_policy === 'all' ? 'all' : 'first'}
           disabled={!current}
-          onChange={(e) => void handlePolicyChange(e.target.value)}
-          aria-label="启动策略"
-        >
-          <option value="first">只生成第一步待办</option>
-          <option value="all">一次性生成全部待办</option>
-        </select>
+          onChange={(v) => void handlePolicyChange(v)}
+          options={[
+            { value: 'first', label: '只生成第一步待办' },
+            { value: 'all', label: '一次性生成全部待办' },
+          ]}
+        />
       </label>,
     ]}
     primary={(

@@ -16,6 +16,7 @@ import {
   parseThemeOverrides,
   type ThemeColors,
 } from '@shared/theme-packs'
+import { Select } from '../components/Select'
 import { Toolbar } from '../components/Toolbar'
 import { applyAppearance, prefersReducedMotion, resolveThemeMode } from '../theme'
 import { useDialog } from '../components/Dialogs'
@@ -530,11 +531,11 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
               </label>
               <label className="set-row">
                 <span>主题包</span>
-                <select
+                <Select
                   className="field"
+                  ariaLabel="主题包"
                   value={settings.theme_pack}
-                  onChange={(e) => {
-                    const picked = e.target.value
+                  onChange={(picked) => {
                     void (async () => {
                       // update() 内部已经 applyAppearance，换主题包立即预览，不必重启
                       await update('theme_pack', picked)
@@ -546,13 +547,8 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                       }
                     })()
                   }}
-                >
-                  {THEME_PACK_NAMES.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
+                  options={THEME_PACK_NAMES.map((name) => ({ value: name, label: name }))}
+                />
               </label>
               <div className="set-row">
                 <span>强调色</span>
@@ -620,15 +616,17 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
               </div>
               <label className="set-row">
                 <span>动效</span>
-                <select
+                <Select
                   className="field"
+                  ariaLabel="动效"
                   value={settings.motion_level}
-                  onChange={(e) => void update('motion_level', e.target.value)}
-                >
-                  <option value="full">完整</option>
-                  <option value="essential">仅必要</option>
-                  <option value="none">关闭</option>
-                </select>
+                  onChange={(v) => void update('motion_level', v)}
+                  options={[
+                    { value: 'full', label: '完整' },
+                    { value: 'essential', label: '仅必要' },
+                    { value: 'none', label: '关闭' },
+                  ]}
+                />
                 <span className="u-aux">
                   {osReducedMotion
                     ? '系统已开启「减少动态效果」，实际按「仅必要」降级'
@@ -988,18 +986,16 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
             </label>
             <label className="set-row">
               <span>落到清单</span>
-              <select
+              <Select
                 className="field field--compact"
-                value={settings.task_api_list_id ?? ''}
-                onChange={(e) => void updateApi('task_api_list_id', e.target.value)}
-              >
-                <option value="">收件箱（默认）</option>
-                {lists.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name}
-                  </option>
-                ))}
-              </select>
+                ariaLabel="落到清单"
+                value={settings.task_api_list_id == null ? '' : String(settings.task_api_list_id)}
+                onChange={(v) => void updateApi('task_api_list_id', v)}
+                options={[
+                  { value: '', label: '收件箱（默认）' },
+                  ...lists.map((l) => ({ value: String(l.id), label: l.name })),
+                ]}
+              />
               <span className="u-aux">外部拉回来的任务进哪个清单</span>
             </label>
             <div className="set-row set-row--end">
@@ -1277,18 +1273,19 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
             <header className="set-card__head"><Database size={15} /> 密码保险箱</header>
             <label className="set-row">
               <span>自动锁定</span>
-              <select
+              <Select
                 className="vault-select"
-                value={settings.vault_auto_lock_min}
-                aria-label="保险箱自动锁定"
-                onChange={(e) => void update('vault_auto_lock_min', e.target.value)}
-              >
-                <option value={1}>1 分钟无操作</option>
-                <option value={5}>5 分钟无操作</option>
-                <option value={15}>15 分钟无操作</option>
-                <option value={30}>30 分钟无操作</option>
-                <option value={0}>从不自动锁定</option>
-              </select>
+                ariaLabel="保险箱自动锁定"
+                value={String(settings.vault_auto_lock_min)}
+                onChange={(v) => void update('vault_auto_lock_min', v)}
+                options={[
+                  { value: '1', label: '1 分钟无操作' },
+                  { value: '5', label: '5 分钟无操作' },
+                  { value: '15', label: '15 分钟无操作' },
+                  { value: '30', label: '30 分钟无操作' },
+                  { value: '0', label: '从不自动锁定' },
+                ]}
+              />
             </label>
             <p className="u-aux set-row__note">
               保险箱的主密码**无法找回** —— 它不以任何形式保存，只在你输入时用于派生密钥。
@@ -1464,15 +1461,13 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
               <header className="set-card__head"><Sparkles size={15} /> 笔记 AI 整理（大模型）</header>
               <label className="set-row">
                 <span>协议</span>
-                <select
+                <Select
                   className="field field--compact"
+                  ariaLabel="协议"
                   value={settings.ai_protocol}
-                  onChange={(e) => void update('ai_protocol', normalizeAiProtocol(e.target.value))}
-                >
-                  {AI_PROTOCOLS.map((p) => (
-                    <option key={p.value} value={p.value}>{p.label}</option>
-                  ))}
-                </select>
+                  onChange={(v) => void update('ai_protocol', normalizeAiProtocol(v))}
+                  options={AI_PROTOCOLS.map((p) => ({ value: p.value, label: p.label }))}
+                />
               </label>
               <p className="u-aux">
                 {AI_PROTOCOLS.find((p) => p.value === settings.ai_protocol)?.hint}

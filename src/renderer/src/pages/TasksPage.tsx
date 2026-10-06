@@ -22,6 +22,7 @@ import type {
 } from '@shared/types'
 import { subscribeDomain } from '@shared/events'
 import { parseSettings } from '@shared/settings'
+import { Select } from '../components/Select'
 import { useDialog } from '../components/Dialogs'
 import { PopMenu, type PopMenuItem } from '../components/PopMenu'
 import { TagMenu } from '../components/TagMenu'
@@ -1320,21 +1321,17 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
           >
             清单设置
           </button>,
-          <select
+          <Select
             key="smart"
             className="field field--compact"
+            ariaLabel="智能清单"
             value={activeQueryId === null ? '' : String(activeQueryId)}
-            onChange={(e) => (e.target.value ? pickQuery(Number(e.target.value)) : setActiveQueryId(null))}
-            aria-label="智能清单"
-            title="智能清单：把「我要看什么」固化成一条表达式"
-          >
-            <option value="">智能清单…</option>
-            {savedQueries.map((q) => (
-              <option key={q.id} value={String(q.id)}>
-                {q.name}
-              </option>
-            ))}
-          </select>,
+            onChange={(v) => (v ? pickQuery(Number(v)) : setActiveQueryId(null))}
+            options={[
+              { value: '', label: '智能清单…' },
+              ...savedQueries.map((q) => ({ value: String(q.id), label: q.name })),
+            ]}
+          />,
         ]}
         secondary={[
           <button

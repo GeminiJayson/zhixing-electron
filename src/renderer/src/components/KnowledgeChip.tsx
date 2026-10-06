@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Select } from './Select'
 import { CheckCircle2, CircleAlert } from '@renderer/lib/icons'
 import {
   EVIDENCE_LABELS,
@@ -222,18 +223,13 @@ export function KnowledgeChip({
         <div className="popmenu popmenu--pop kbchip__pop">
           <label className="kbchip__row">
             <span className="u-aux">类型</span>
-            <select
+            <Select
               className="kbchip__select"
+              ariaLabel="知识类型"
               value={meta.kind}
-              aria-label="知识类型"
-              onChange={(e) => void changeKind(e.target.value)}
-            >
-              {KINDS.map((k) => (
-                <option key={k.key} value={k.key}>
-                  {k.label}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => void changeKind(v)}
+              options={KINDS.map((k) => ({ value: k.key, label: k.label }))}
+            />
           </label>
 
           {/*
@@ -372,20 +368,16 @@ export function KnowledgeChip({
               */}
               <label className="kbchip__checkrow">
                 <span className="u-aux">关键说法有依据</span>
-                <select
+                <Select
                   className="kbchip__select"
+                  ariaLabel="关键说法是否有依据"
                   value={check.evidence}
-                  aria-label="关键说法是否有依据"
-                  onChange={(e) =>
-                    setCheck({ ...check, evidence: e.target.value as CheckNote['evidence'] })
-                  }
-                >
-                  {(['yes', 'partial', 'no'] as const).map((k) => (
-                    <option key={k} value={k}>
-                      {EVIDENCE_LABELS[k]}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setCheck({ ...check, evidence: v as CheckNote['evidence'] })}
+                  options={(['yes', 'partial', 'no'] as const).map((k) => ({
+                    value: k,
+                    label: EVIDENCE_LABELS[k],
+                  }))}
+                />
               </label>
               {check.evidence === 'no' && (
                 <p className="kbchip__warn">
