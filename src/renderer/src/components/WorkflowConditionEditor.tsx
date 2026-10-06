@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Select } from './Select'
 import {
   CONDITION_SOURCES,
   describeCondition,
@@ -54,17 +55,13 @@ export function WorkflowConditionEditor({ value, onChange }: Props) {
     <div className="wf-cond">
       <label className="form-row">
         <span>注入条件</span>
-        <select
+        <Select
           className="field"
+          ariaLabel="注入条件"
           value={kind}
-          onChange={(e) => update({ kind: e.target.value as ConditionSource })}
-        >
-          {CONDITION_SOURCES.map((s) => (
-            <option key={s.value} value={s.value}>
-              {s.label}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => update({ kind: v as ConditionSource })}
+          options={CONDITION_SOURCES.map((s) => ({ value: s.value, label: s.label }))}
+        />
       </label>
       <p className="u-aux">{hint}</p>
 
@@ -84,29 +81,32 @@ export function WorkflowConditionEditor({ value, onChange }: Props) {
         <div className="u-grid u-grid--2">
           <label className="form-row">
             <span>判定任务</span>
-            <select
+            <Select
               className="field"
-              value={cfg?.taskId ?? ''}
-              onChange={(e) => update({ taskId: e.target.value ? Number(e.target.value) : undefined })}
-            >
-              <option value="">（未选择）</option>
-              {tasks.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.title.length > 24 ? t.title.slice(0, 24) + '…' : t.title}
-                </option>
-              ))}
-            </select>
+              ariaLabel="判定任务"
+              value={cfg?.taskId == null ? '' : String(cfg.taskId)}
+              onChange={(v) => update({ taskId: v ? Number(v) : undefined })}
+              options={[
+                { value: '', label: '（未选择）' },
+                ...tasks.map((t) => ({
+                  value: String(t.id),
+                  label: t.title.length > 24 ? t.title.slice(0, 24) + '…' : t.title,
+                })),
+              ]}
+            />
           </label>
           <label className="form-row">
             <span>期望状态</span>
-            <select
+            <Select
               className="field"
+              ariaLabel="期望状态"
               value={cfg?.expectDone === false ? 'notDone' : 'done'}
-              onChange={(e) => update({ expectDone: e.target.value === 'done' })}
-            >
-              <option value="done">已完成</option>
-              <option value="notDone">未完成</option>
-            </select>
+              onChange={(v) => update({ expectDone: v === 'done' })}
+              options={[
+                { value: 'done', label: '已完成' },
+                { value: 'notDone', label: '未完成' },
+              ]}
+            />
           </label>
         </div>
       )}
@@ -115,14 +115,16 @@ export function WorkflowConditionEditor({ value, onChange }: Props) {
         <div className="u-grid u-grid--2">
           <label className="form-row">
             <span>期望结果</span>
-            <select
+            <Select
               className="field"
+              ariaLabel="期望结果"
               value={cfg?.expectOk === false ? 'fail' : 'ok'}
-              onChange={(e) => update({ expectOk: e.target.value === 'ok' })}
-            >
-              <option value="ok">成功</option>
-              <option value="fail">失败</option>
-            </select>
+              onChange={(v) => update({ expectOk: v === 'ok' })}
+              options={[
+                { value: 'ok', label: '成功' },
+                { value: 'fail', label: '失败' },
+              ]}
+            />
           </label>
           <label className="form-row">
             <span>期望退出码（可留空）</span>
