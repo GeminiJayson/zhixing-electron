@@ -24,6 +24,10 @@
   overscroll-behavior: contain;
   /* 同 .page__body：滚动容器的横向是 hidden，会把贴边卡片的阴影切掉 ——
      padding 撑开裁剪边界、负 margin 把布局拉回，内容位置不变而阴影有地方落。 */
+  /* 滚动区**自己**的底部留白：滚到底时最后一张 card 要能整体露出来。
+     留白加在滚动容器上（而不是它的父面板）—— 父面板的 padding 在裁切边界**之外**，
+     内容滚到那里就被切掉，卡片的下半截正好卡在边界上（用户截图）。 */
+  padding-bottom: var(--radius-lg);
 }
 .set-card {
   display: flex;
