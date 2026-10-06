@@ -34,7 +34,7 @@ import { useEffect, useImperativeHandle, useRef, type ReactElement, type Ref } f
 import { toG6Data } from '@renderer/lib/g6-adapt'
 import { setupEdgeRewire } from '@renderer/lib/g6-edge-rewire'
 import { tipHtml } from '@renderer/lib/g6-tooltip'
-import { KIND_CN } from '@renderer/lib/graph-colors'
+import { KIND_CN, KIND_COLOR } from '@renderer/lib/graph-colors'
 import { iconDataUrl } from '@renderer/lib/graph-icon'
 import {
   THEME_NAME,
@@ -339,11 +339,6 @@ export function GraphCanvasG6({
          * 尺寸按容器比例定小一点，不挡内容。
          */
         { type: 'minimap', key: 'minimap', size: [200, 140] },
-        /**
-         * 图例：颜色语义（文件夹调色板 / 知识类型色）本来没有任何说明，图例让它自解释。
-         * `nodeField` 指向**节点数据里的分组字段** —— 图谱的 `data.kind` 正是「笔记 / 任务 / 闪念…」。
-         */
-        { type: 'legend', key: 'legend', nodeField: 'kind' },
         {
           type: 'contextmenu',
           trigger: 'contextmenu',
@@ -601,13 +596,47 @@ export function GraphCanvasG6({
    * **必须有确定的高度**：G6 建图时按容器量尺寸，容器高度为 0 会让画布塌成一条线，
    * 而 `autoFit` 又会把整张图缩到那个高度里 —— 结果是「251 个节点都在、但一个也看不见」。
    */
+  /** 图例的图标要用当前主题色现算（每次渲染取一次，很轻）。 */
+  const legendTok = themeTokens()
+
   return (
-    <div
-      ref={box}
-      className="graph graph--g6"
-      role="img"
-      aria-label="知识图谱"
-      style={{ width: '100%', height: '100%' }}
-    />
+    /**
+     * 外层只是**定位壳**：G6 的 canvas 挂在内层，图例再叠一层。
+     * 直接往 G6 的容器里塞子元素不行 —— 它 `destroy()` 时会清理容器。
+     */
+    <div className="graph-shell">
+      <div
+        ref={box}
+        className="graph graph--g6"
+        role="img"
+        aria-label="知识图谱"
+        style={{ width: '100%', height: '100%' }}
+      />
+      {/*
+        图例**自绘**，不用 G6 的 legend 插件：那个只画色块 + 文字，
+        而这里恰恰要用**节点图标**说话（"星形是任务、便签是笔记"）。
+        图标直接复用 `iconDataUrl` —— 与画布上那一份是同一个生成器，不会走样。
+      */}
+      <div className="graph-legend" aria-hidden>
+        {LEGEND_KINDS.map((k) => (
+          <span key={k} className="graph-legend__item">
+            <img
+              className="graph-legend__icon"
+              src={iconDataUrl(k, 8, {
+                color: KIND_COLOR[k] ?? legendTok.fgPrimary,
+                ...legendTok,
+              })}
+              width={16}
+              height={16}
+              alt=""
+            />
+            <span>{KIND_CN[k] ?? k}</span>
+          </span>
+        ))}
+      </div>
+    </div>
   )
 }
+
+/** 图例里列哪几类（笔记的颜色随文件夹/知识类型变，放进图例反而误导，所以只列固定色的五类 + 笔记）。 */
+const LEGEND_KINDS = ['note', 'folder', 'task', 'flash', 'anchor', 'dangling']

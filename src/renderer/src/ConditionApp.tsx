@@ -83,10 +83,15 @@ export function ConditionApp(): JSX.Element {
         </div>
         <footer className="modal__foot">
           <span className="modal__spacer" />
-          <button className="text-btn" onClick={() => answer(false)}>
+          {/*
+            还没收到问询（`ask` 为 null）时**禁用**按钮 —— 原来的 `answer()` 在这时会**静默 return**，
+            用户点了「成立」毫无反应，看起来就是坏了。现在至少从界面上说得清"还没准备好"。
+            （问询丢失的根因在主进程：`did-finish-load` 早于 React 挂载监听，见那里的条件重发逻辑。）
+          */}
+          <button className="text-btn" disabled={!ask} onClick={() => answer(false)}>
             不成立
           </button>
-          <button className="text-btn text-btn--accent" onClick={() => answer(true)}>
+          <button className="text-btn text-btn--accent" disabled={!ask} onClick={() => answer(true)}>
             成立
           </button>
         </footer>

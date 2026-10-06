@@ -6,6 +6,41 @@
   gap: var(--space-3);
   align-items: stretch;
 }
+/* 外层定位壳：G6 的 canvas 在内层，图例再叠一层（不能塞进 G6 容器，它 destroy 时会清理） */
+.graph-shell {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+/* 图例：自绘而非用 G6 的 legend 插件 —— 那个只画色块，而这里要用节点图标说话 */
+.graph-legend {
+  position: absolute;
+  left: var(--space-3);
+  bottom: var(--space-3);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-layer-solid);
+  box-shadow: var(--shadow-sm);
+  /* 纯展示，不抢画布的指针事件（按住图例也能拖画布） */
+  pointer-events: none;
+  font-size: var(--text-2xs);
+  color: var(--fg-secondary);
+}
+.graph-legend__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  line-height: var(--lh-tight);
+}
+.graph-legend__icon {
+  flex: none;
+}
 .graph {
   flex: 1;
   min-width: 0;

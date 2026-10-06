@@ -22,8 +22,8 @@ const FOLDER_PALETTE = [
 ]
 /** 根目录（未归类笔记）的颜色。 */
 const ROOT_NOTE_COLOR = '#64748B'
-/** 非笔记类节点的固定色。 */
-const KIND_COLOR: Record<string, string> = {
+/** 非笔记类节点的固定色（图谱图例也要用，所以导出）。 */
+export const KIND_COLOR: Record<string, string> = {
   folder: '#7C3AED',
   task: '#16A34A',
   flash: '#EA580C',

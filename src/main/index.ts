@@ -1056,6 +1056,16 @@ let conditionAskSeq = 0
 let conditionWindow: BrowserWindow | null = null
 /** 当前窗口的「可以显示了」回调（渲染层应用完主题后调用） */
 let conditionShowOnce: (() => void) | null = null
+/**
+ * 「把问询发给确认窗口」这件事**必须能被重放**。
+ *
+ * 原来的时序是：`did-finish-load` 里发 `condition:confirm` —— 但那只保证**页面加载完**，
+ * 不保证 React 的 `useEffect` 已经挂上监听。实测会丢：窗口弹出来了，界面停在
+ * 「正在读取条件…」，点「成立 / 不成立」**毫无反应**（`ConditionApp` 的 `answer()` 在
+ * `ask` 为 null 时直接 return）。
+ * 所以渲染层在挂载完成、应用完外观之后发的 `condition:ready`，这里要**再发一次**。
+ */
+let conditionSendAsk: (() => void) | null = null
 /** 兜底等待上限：极端情况（窗口开着但没人理）不能让实例永久挂起 */
 const CONDITION_ASK_TIMEOUT_MS = 10 * 60 * 1000
 
@@ -1128,9 +1138,15 @@ function showConditionWindow(prompt: string): Promise<boolean | null> {
       win.focus()
     }
     conditionShowOnce = showOnce
-    win.webContents.once('did-finish-load', () => {
+    /** 发问询：可重放（见 conditionSendAsk 的注释）。 */
+    const sendAsk = (): void => {
       if (win.isDestroyed()) return
       win.webContents.send('condition:confirm', { id, prompt })
+    }
+    conditionSendAsk = sendAsk
+    win.webContents.once('did-finish-load', () => {
+      if (win.isDestroyed()) return
+      sendAsk()
       // 渲染层应用完主题（浅色/深色、字号）再显示 —— 否则会先闪一下默认配色。
       // 1.5s 兜底：万一 ready 没来，也不能让用户看不到这个确认框。
       setTimeout(showOnce, 1500)
@@ -1141,6 +1157,7 @@ function showConditionWindow(prompt: string): Promise<boolean | null> {
     // 用户直接关窗 = 不成立（与原生的 cancelId=0 一致）
     win.on('closed', () => {
       if (conditionWindow === win) conditionWindow = null
+      conditionSendAsk = null
       finish(false)
     })
 
@@ -1173,7 +1190,11 @@ function registerConditionAsk(): void {
         void pumpConditionQueue()
       })
   )
-  ipcMain.on('condition:ready', () => conditionShowOnce?.())
+  ipcMain.on('condition:ready', () => {
+    conditionShowOnce?.()
+    // 渲染层说「我挂好了」—— 这时再发一次问询，保证它一定收得到（见 conditionSendAsk 的注释）
+    conditionSendAsk?.()
+  })
   ipcMain.on('condition:answer', (_e, id: string, ok: boolean) => {
     if (!conditionAsk || conditionAsk.id !== String(id ?? '')) return
     conditionAsk.resolve(ok === true)
