@@ -33,6 +33,9 @@
 }
 .wf-side__head {
   display: flex;
+  /* 左右与列表同宽（一个圆角半径）—— 原来这里没有内边距，"模板" / "实例"
+     两个小标题紧贴面板左右边缘，而它们下面的列表有 12px（用户反馈"贴太近"）。 */
+  padding-inline: var(--radius-lg);
   align-items: center;
   justify-content: space-between;
   font-size: var(--text-aux);
