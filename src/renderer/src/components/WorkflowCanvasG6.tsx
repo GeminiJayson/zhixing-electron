@@ -405,11 +405,6 @@ export function WorkflowCanvasG6({
       ],
     })
     graphRef.current = graph
-    // 只在冒烟页（?g6wf=1）把实例挂到 window：canvas 里画的东西 DOM 读不到，
-    // 验证线形只能从这里读。正常页面走不到这一支。
-    if (window.location.search.includes('g6wf')) {
-      ;(window as unknown as { __wfGraph?: Graph }).__wfGraph = graph
-    }
 
     const idOf = (e: IEvent): number =>
       Number((e as unknown as { target?: { id?: string } }).target?.id)
