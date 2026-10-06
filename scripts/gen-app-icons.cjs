@@ -30,7 +30,16 @@ const themeDir = join(resources, 'theme-icons')
 
 /** 打包图标固定用默认强调色（青竹），与 shared/settings.ts 的 accent_color 默认值一致 */
 const PACK_ACCENT = '#0D9488'
-/** 与设置页的 8 个色板一致（SettingsPage 的 ACCENTS） */
+/**
+ * 要预生成图标的强调色。
+ *
+ * = 设置页的 8 个色板（SettingsPage 的 ACCENTS）
+ * + **所有主题包的推荐强调色**（shared/theme-packs.ts 的 PACK_ACCENT）。
+ *
+ * 后者是必须的：主进程按"最接近的预设"给自定义色兜底，而主题包的推荐色里有几个
+ * （**墨黑 #525252**、奶咖棕、暖沙、暮色、柠檬黄…）离那 8 个色板都挺远 ——
+ * 落到最近的预设上就是"换了主题包图标却没变"（用户报的就是墨黑）。
+ */
 const PRESET_ACCENTS = [
   '#0D9488',
   '#2563EB',
@@ -40,6 +49,14 @@ const PRESET_ACCENTS = [
   '#16A34A',
   '#D97706',
   '#0891B2',
+  '#525252',
+  '#A16207',
+  '#B45309',
+  '#C2410C',
+  '#CA8A04',
+  '#BE185D',
+  '#059669',
+  '#9333EA',
 ]
 
 const clamp = (n) => Math.max(0, Math.min(255, Math.round(n)))
@@ -57,7 +74,19 @@ function mix(hex, target, amount) {
 }
 
 function applyAccent(svg, accent) {
+  /**
+   * **弱化的强调色**：向白混 55%，只留色相、不抢眼。
+   *
+   * 图标现在**不带底板**（见 resources/icon.svg 的说明）—— 书页直接落在任务栏/桌面上，
+   * 用原饱和度的强调色会太跳；弱化之后的色相仍认得出是哪个主题，但安静得多。
+   * 深浅两档由它再各混一档得来，保持原来的"渐变书页"观感。
+   */
+  const soft = mix(accent, '#ffffff', 0.55)
+  // 注意顺序：先替换更长的占位符，避免 {{ACCENT}} 抢先匹配（虽然 }} 挡住了，但显式写清更稳）
   return svg
+    .replaceAll('{{ACCENT_SOFT_LIGHT}}', mix(soft, '#ffffff', 0.34))
+    .replaceAll('{{ACCENT_SOFT_DARK}}', mix(soft, '#000000', 0.3))
+    .replaceAll('{{ACCENT_SOFT}}', soft)
     .replaceAll('{{ACCENT_LIGHT}}', mix(accent, '#ffffff', 0.34))
     .replaceAll('{{ACCENT_DARK}}', mix(accent, '#000000', 0.3))
     .replaceAll('{{ACCENT}}', accent)
