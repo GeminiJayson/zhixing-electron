@@ -169,6 +169,18 @@ function nodeSvg(n: WorkflowCanvasNode, selected: boolean): string {
   )
 }
 
+/**
+ * 布局配置。
+ *
+ * **必须显式传给 `layout()`** —— 不传参时它用 context.layout 里**建图那一刻**的
+ * presetOptions；而 `render()` 也用那一份。所以「切方向」只有把配置交进来才生效。
+ */
+function LAYOUT_OPTS(rankdir: WorkflowRankDir): never {
+  // G6 的 LayoutOptions 联合类型没有导出可用的窄化形式，这里断言一次；
+  // 形状与建图时 layout 那段完全一致（同一份参数两处用，不该各写一遍）。
+  return { type: 'antv-dagre', rankdir, nodesep: 24, ranksep: 40, marginx: 40, marginy: 40 } as never
+}
+
 /** 标题是用户输入，进 innerHTML 前要转义 —— 否则一个 `<` 就能把节点画坏。 */
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -493,6 +505,9 @@ export function WorkflowCanvasG6({
    * 首帧也会跑一次（与建图时那份配置等价，幂等）。这样切「纵向 / 横向」时
    * 图实例始终是同一个，没有「销毁后异步任务才回来」的窗口。
    */
+  /** 当前方向 —— 数据同步那个 effect 也要用它（render() 只认建图时的 options）。 */
+  const dirSeenRankdir = useRef(rankdir)
+  dirSeenRankdir.current = rankdir
   const dirSeen = useRef(false)
   useEffect(() => {
     // **跳过首帧**：建图时那份配置已经带着当时的 rankdir，此时 render() 还没完成，
@@ -506,7 +521,10 @@ export function WorkflowCanvasG6({
     // **配置要直接传给 layout()**：不传参时它用的是 context.layout 里建图那一刻的
     // presetOptions，而 setOptions 并不会更新那份 —— 于是永远按旧 rankdir 排
     // （实测：点「横向」按钮与 state 都正常切换，节点坐标却一个都没动）。
-    void g.layout({ type: 'antv-dagre', rankdir, nodesep: 24, ranksep: 40, marginx: 40, marginy: 40 } as never)
+    // **layout() 之后必须再 draw() 一次** —— 实测：模型坐标确实重排了（getElementPosition
+    // 从 TB 的 [99,204] 变成 LR 的 [345,52]），但页面上 HTML 节点的 DOM 位置一动不动，
+    // 用户看不到任何变化。layout 只更新模型，画布要自己再画一帧。
+    void Promise.resolve(g.layout(LAYOUT_OPTS(rankdir) as never)).then(() => g.draw())
   }, [rankdir])
 
   // 数据变化 → 增量同步（不重建图，布局会自己重跑）。
@@ -537,7 +555,11 @@ export function WorkflowCanvasG6({
           },
       })),
     } as never)
-    void g.render()
+    // **不能只 render()** —— 它用的是建图那一刻的 options，会把方向覆盖回初始值
+    // （实测：切方向时 effect 明明跑了、rankdir 也确实变成了 LR，节点坐标却一点没动；
+    //  而在页面里手动调 layout({rankdir:'LR'}) 立刻就变了）。
+    // 所以这里也把当前方向一起交给 layout()。
+    void Promise.resolve(g.layout(LAYOUT_OPTS(dirSeenRankdir.current))).then(() => g.draw())
   }, [nodes])
 
   /**
