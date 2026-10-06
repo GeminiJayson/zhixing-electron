@@ -8,9 +8,6 @@ import { CaptureWindowApp } from './CaptureWindowApp'
 import { ReminderApp } from './ReminderApp'
 import { PomodoroWindowApp } from './PomodoroWindowApp'
 import { QuickNoteWindowApp } from './QuickNoteWindowApp'
-// G6 冒烟页（P0 验收）：?g6smoke=1 时替代主窗口。迁移完成后连同这个 import 一起删。
-import { G6Smoke } from './components/G6Smoke'
-import { G6WfSmoke } from './components/G6WfSmoke'
 import './styles/tokens.css'
 import './styles/global.css'
 import './styles/widget.css'
@@ -24,8 +21,6 @@ const isCapture = params.get('capture') === '1'
 const isReminder = params.get('reminder') === '1'
 const isPomodoro = params.get('pomodoro') === '1'
 const isQuickNote = params.get('quicknote') === '1'
-const isG6Smoke = params.get('g6smoke') === '1'
-const isG6WfSmoke = params.get('g6wf') === '1'
 document.documentElement.dataset.surface = isCondition
   ? 'condition'
   : isQuickNote
@@ -62,10 +57,6 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
     ) : isReminder ? (
       // 提醒气泡：透明小窗，挂在悬浮表情旁边（消费已收归主进程，这里只显示）
       <ReminderApp />
-    ) : isG6WfSmoke ? (
-      <G6WfSmoke />
-    ) : isG6Smoke ? (
-      <G6Smoke />
     ) : (
       <App />
     )}
