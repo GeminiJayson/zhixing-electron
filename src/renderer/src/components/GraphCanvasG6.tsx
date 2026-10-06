@@ -411,18 +411,39 @@ export function GraphCanvasG6({
   }, [])
 
   // ---- 数据增量同步 ----
+  const posRef = useRef(positions)
+  posRef.current = positions
+
   useEffect(() => {
     const g = graphRef.current
     if (!g) return
+    const next = toG6Data(data)
+    /**
+     * **数据变化时不再重跑力导向布局**。
+     *
+     * 之前这里是 `setData` + `layout()` —— d3-force 会把 251 个节点**重新排一遍**
+     * （几百毫秒到 1 秒），于是「改挂一条连线」这种只动了两个节点的操作，
+     * 也要等整张图重新散开（用户反馈：改挂后连线要等将近 1 秒才落位）。
+     *
+     * 现在把**已知坐标带上**（`positions` 是模块级缓存，存着上次布局的结果与用户拖过的位置），
+     * 只画不动布局；**只有真的出现了没有坐标的新节点**才跑一次布局。
+     */
+    let missing = false
+    for (const n of next.nodes as { id: string; style?: Record<string, unknown> }[]) {
+      const p = posRef.current.get(Number(n.id))
+      if (p) n.style = { ...(n.style ?? {}), x: p.x, y: p.y }
+      else missing = true
+    }
     // setData 返回 void（只有 render/布局是异步的），不能链 .then
-    g.setData(toG6Data(data))
+    g.setData(next as never)
     /**
      * **不要用 `render()` 做数据同步**：`autoFit: 'view'` 是「每次 render 后都 fitView」，
      * 于是数据一刷新视图就被重置回自适应 —— 用户看到的就是「整个画布闪一下」。
      * 这里改成 `layout()` + `draw()`：布局照跑、画面照重绘，但**不碰视口**。
      * （首次的 autoFit 仍然发生在建图那次 render 里。）
      */
-    void Promise.resolve(g.layout()).then(() => g.draw())
+    if (missing) void Promise.resolve(g.layout()).then(() => g.draw())
+    else void g.draw()
   }, [data])
 
   // ---- 业务态同步：选中 / 搜索结果淡化 / 连线起点 ----

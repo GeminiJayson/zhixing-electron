@@ -288,8 +288,26 @@ async function syncLayout(
   g: Graph,
   nodes: readonly WorkflowCanvasNode[],
   selectedId: number | null,
-  rankdir: WorkflowRankDir
+  rankdir: WorkflowRankDir,
+  opts: { relayout?: boolean } = {}
 ): Promise<void> {
+  /**
+   * **节点没变就别重排**（`relayout: false`）。
+   *
+   * 改挂一条分支、拖一下节点这类操作只动了边或位置，节点集合一个没变 ——
+   * 再跑一趟 dagre 就是白等（还要经历两次 setData + draw）。这时直接沿用现有坐标、
+   * 只把边重建一遍即可。判定交给调用方（比对节点签名，见下面的 effect）。
+   */
+  if (opts.relayout === false) {
+    const pos = new Map<string, [number, number]>()
+    for (const n of nodes) {
+      const p = g.getElementPosition(String(n.id)) as [number, number] | undefined
+      if (p) pos.set(String(n.id), [p[0], p[1]])
+    }
+    g.setData(buildData(nodes, selectedId, { pos }) as never)
+    await g.draw()
+    return
+  }
   g.setData(buildData(nodes, selectedId, { forwardOnly: true }) as never)
   await g.layout(layoutCfg(rankdir) as never)
   const pos = new Map<string, [number, number]>()
@@ -589,6 +607,9 @@ export function WorkflowCanvasG6({
     // 依赖是**空**：图只建一次。方向变化改走下面那个 effect（改布局配置重跑 layout）
   }, [])
 
+  /** 上一次的节点签名（节点集合 / 分支关系 / 标题）—— 用来判断要不要重排。 */
+  const lastSig = useRef('')
+
   /** 布局方向变化：改配置 + 重跑一次布局，**不重建图**（首帧那次与建图配置等价、幂等）。 */
   const dirSeen = useRef(false)
   useEffect(() => {
@@ -605,7 +626,16 @@ export function WorkflowCanvasG6({
   useEffect(() => {
     const g = graphRef.current
     if (!g) return
-    void syncLayout(g, nodes, cb.current.selectedId, rankdir)
+    /**
+     * 只有**节点集合或分支关系**变了才重排；仅仅是边/选中/坐标变化时沿用现有位置。
+     * 签名里带上标题：改标题只影响节点内文字，不需要重排，但带上也无妨（避免漏判）。
+     */
+    const sig = nodes
+      .map((n) => `${n.id}:${n.order_index}:${n.branch_node_id ?? ''}:${n.branch_false_node_id ?? ''}:${n.view.title}`)
+      .join('|')
+    const changed = sig !== lastSig.current
+    lastSig.current = sig
+    void syncLayout(g, nodes, cb.current.selectedId, rankdir, { relayout: changed })
   }, [nodes, rankdir])
 
   /**
