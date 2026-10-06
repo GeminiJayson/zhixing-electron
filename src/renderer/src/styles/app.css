@@ -898,3 +898,18 @@
     radial-gradient(100% 80% at 88% 110%, color-mix(in srgb, var(--accent) 4%, transparent), transparent 80%),
     var(--glass-layer-surface);
 }
+
+/**
+ * **知识库 / 工作流 / 图谱：内容区上下留白**。
+ *
+ * 这三页的主体是一排"面板"（笔记树、模板树、画布、侧栏卡），它们原来**上下都贴着**
+ * `.page__body` 的边界（实测距上 0 / 距下 0）—— 面板自己的圆角与阴影被页面内容区的边界切平，
+ * 看着"像被分割"（用户反馈）。
+ *
+ * 只给这三页加：任务页与回顾页的内容本来就吃满高度，再塞纵向内边距会把它们顶出滚动条。
+ */
+.page--notes .page__body,
+.page--workflow .page__body,
+.page--graph .page__body {
+  padding-block: var(--space-3);
+}

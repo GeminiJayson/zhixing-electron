@@ -14,7 +14,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-2);
+  /* 与其它面板同档（14px）。原来 8px —— 比面板级内边距小一档，树的第一项与最后一项
+     会贴到卡片的上/下边缘，"像被分割"（用户反馈）。 */
+  padding: var(--space-3);
   /* 与卡片/侧栏同一层玻璃 + 羽化阴影（原来更实 + 硬描边，和旁边的卡片不是一种面板）。 */
   background: var(--bg-layer);
   border: none;
@@ -248,7 +250,9 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: var(--space-3) var(--space-4) var(--space-2);
+  /* 底部原来只有 --space-2（8px）—— 正文最后一行会顶到卡片下边缘，看着"被切"。
+     与其他面板同档，四边都用 --space-3 起（左右保留更宽的一档给阅读）。 */
+  padding: var(--space-3) var(--space-4);
   /* 同类面板统一：玻璃层 + 羽化阴影。 */
   background: var(--bg-layer);
   border: none;
