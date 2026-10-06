@@ -352,10 +352,12 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  /* 上下收到 12px（原 24px）：页面内边距露出的也是页面背景，太宽会在内容区上下
-     各显出一条横带（用户截图的顶部与底部两条）。左右仍保留 24px 与 .page__body 的
-     横向内边距对齐。 */
-  padding: var(--space-3) var(--space-5);
+  /**
+   * **上下不留内边距**（用户确认）。页面这一层的背景与内容区的卡片不是同一层，
+   * 上下留出的任何空隙都会显成一条横向"分割带"（截图里框出来的就是它）。
+   * 左右保留 24px：横向的空间由 `.page__body` 的内边距提供，两侧不涉及"切割"。
+   */
+  padding: 0 var(--space-5);
   overflow: hidden;
   animation: page-enter var(--dur-normal) var(--ease-enter);
 }
@@ -900,22 +902,4 @@
     radial-gradient(120% 90% at 12% -10%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 78%),
     radial-gradient(100% 80% at 88% 110%, color-mix(in srgb, var(--accent) 4%, transparent), transparent 80%),
     var(--glass-layer-surface);
-}
-
-/**
- * **内容区的上下留白只留一丝（4px）**。
- *
- * 试过 `--space-3`（14px）：面板不贴死了，但留白露出来的是**页面背景**，
- * 而面板/卡片区是更深的一层 —— 上下各一条浅色横带，看着像"把内容切开"（用户截图指出）。
- * 根因是**滚动区与卡片的背景本就不同**，只要留白够宽就会显形。
- *
- * 所以取一个最小的量：既让面板的圆角与阴影不被页面边界切平，又不至于形成可见的色带。
- * 任务页 / 回顾页不加：它们的内容吃满高度，加纵向内边距会顶出滚动条。
- */
-.page--notes .page__body,
-.page--workflow .page__body,
-.page--graph .page__body,
-.page--inbox .page__body,
-.page--settings .page__body {
-  padding-block: var(--space-1);
 }
