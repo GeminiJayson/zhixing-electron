@@ -4,7 +4,7 @@
  *
  * 这里是建库 DDL 的**唯一真源**，随功能直接维护：改 `SCHEMA_SQL` 后要同步升
  * `SCHEMA_VERSION`，并在 migrate.ts 的迁移链里补上同号步骤，旧库才会跟着补齐。
- * 当前 SCHEMA_VERSION = 17，共 28 张表。
+ * 当前 SCHEMA_VERSION = 18，共 28 张表。
  * v15 加了密码保险箱的 vault_meta / vault_entry；
  * v16 给 note 加了知识库需要的 kind / verified_at / archived_at / verify_note；
  * v17 给 flash 加了 content_format（网页剪藏保留原格式时存 HTML）。
