@@ -27,6 +27,8 @@ interface Props {
   disabled?: boolean
   /** 占位文案：`value` 为空且没有对应 option 时显示 */
   placeholder?: string
+  /** 触发按钮的原生 tooltip —— 与原 `<select title="…">` 对齐 */
+  title?: string
 }
 
 /** 退场时长：与 `.popmenu--pop.is-leaving` 用的 `--dur-instant` 一致 */
@@ -59,6 +61,7 @@ export function Select({
   className = 'field',
   disabled = false,
   placeholder,
+  title,
 }: Props) {
   const [open, setOpen] = useState(false)
   const openRef = useRef(false)
@@ -218,6 +221,7 @@ export function Select({
         aria-activedescendant={activeId}
         aria-disabled={disabled || undefined}
         disabled={disabled}
+        title={title}
         className={className + ' select__trigger' + (open ? ' is-open' : '')}
         onClick={() => (open ? requestClose() : openList(1))}
         onKeyDown={onKeyDown}

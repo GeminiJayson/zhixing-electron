@@ -1,3 +1,4 @@
+import { Select } from './Select'
 import { useEditorState, type Editor } from '@tiptap/react'
 import { Toolbar } from './Toolbar'
 import { TEXT_COLORS } from './rich-text-colors'
@@ -82,25 +83,24 @@ export function RichTextToolbar({
          * 旧版是 defaultValue="" + onChange 里把自己清空 —— 那是个"一次性开关"，
          * 用户看不出当前是多少号，也看不出有没有设上。空选项现在表示"清除字号"。
          */
-        <select
+        <Select
           key="size"
           className="field field--compact"
+          ariaLabel="字号"
           title="字号（当前光标处生效的值）"
-          aria-label="字号"
           value={fmt.fontSize.replace('px', '')}
-          onChange={(e) => {
-            const v = e.target.value
+          onChange={(v) => {
             if (v) chain().setFontSize(v + 'px').run()
             else chain().unsetFontSize().run()
           }}
-        >
-          <option value="">默认</option>
-          {[12, 13, 14, 15, 16, 18, 20, 24, 28, 32].map((sz) => (
-            <option key={sz} value={String(sz)}>
-              {sz}
-            </option>
-          ))}
-        </select>,
+          options={[
+            { value: '', label: '默认' },
+            ...[12, 13, 14, 15, 16, 18, 20, 24, 28, 32].map((sz) => ({
+              value: String(sz),
+              label: String(sz) + ' px',
+            })),
+          ]}
+        />,
         /**
          * 文字颜色：一排预设色直接点。
          *
@@ -242,20 +242,18 @@ export function RichTextToolbar({
          */
         ...(fmt.code
           ? [
-              <select
+              <Select
                 key="codelang"
                 className="field field--compact"
+                ariaLabel="代码块语言"
                 title="代码块语言"
-                aria-label="代码块语言"
                 value={fmt.codeLang}
-                onChange={(e) => chain().setCodeBlockLanguage(e.target.value).run()}
-              >
-                {CODE_LANGUAGES.map((l) => (
-                  <option key={l.value || 'plain'} value={l.value}>
-                    {l.label}
-                  </option>
-                ))}
-              </select>,
+                onChange={(v) => chain().setCodeBlockLanguage(v).run()}
+                options={CODE_LANGUAGES.map((l) => ({
+                  value: l.value,
+                  label: l.label,
+                }))}
+              />,
             ]
           : []),
         <button key="jl" className="text-btn" title="左对齐" aria-pressed={fmt.left} onClick={() => chain().setTextAlign('left').run()}>
