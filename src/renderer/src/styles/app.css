@@ -20,7 +20,18 @@
     交界处是「灰 vs 白」，那就是一眼看出上下两块的原因。
     现在两者共享同一层玻璃，分隔感只由主区自己的内层卡片表达。
   */
-  background: var(--glass-layer-canvas);
+  /**
+   * **氛围光放在最外层**（原先只挂在主区上）。
+   *
+   * 侧栏与主区是并排的两块玻璃（见 `.sidebar` 的注释：层级与外形要对称）——
+   * 只给主区加径向渐变，两者就成了「一个有色一个没色」，交界处一眼能看出不一致。
+   * 移到最外层之后，两块半透明玻璃叠在同一层光上面，**天然一致**，
+   * 也不用给侧栏单独补一份渐变（它窄，同样的 58%×42% 落上去比例会变形）。
+   * 换主题包或换强调色时它照旧自动跟着变。
+   */
+  background:
+    radial-gradient(58% 42% at 10% 0%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 72%),
+    var(--glass-layer-canvas);
   /**
    * **阴影一律向内（inset），不向外。**
    *
@@ -305,14 +316,12 @@
   min-width: 0;
   /* 滚动交给页面内的 .page__body：标题必须固定，不能跟着一起滚 */
   overflow: hidden;
-  /* 氛围光：左上角一层 5% 的强调色径向渐变，用 color-mix(var(--accent)) 派生 ——
-     换主题包或换强调色都会自动跟着变。它只是背景，不参与任何文字对比度判定。 */
   /* 主区是"玻璃里的一张卡片"：比最外层（.app 的 --glass-layer-canvas）实一档，
      但不再是纯白 —— 两层的 alpha 差小了，交界处才不会画出一条线。
      边框改用 --glass-border（白 72%）：浅色下几乎看不见，深色下是一道反光边。 */
-  background:
-    radial-gradient(58% 42% at 10% 0%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 72%),
-    var(--glass-layer-surface);
+  /* **氛围光已经上提到 .app**（那里才是两块玻璃共享的底）——
+     留在这一层会让主区比侧栏多一层色，两侧看起来就不一致了。 */
+  background: var(--glass-layer-surface);
   /**
    * 边界用羽化阴影，不用描边 —— 与侧栏同一套处理。
    *
