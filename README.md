@@ -204,7 +204,7 @@ zhixing-electron/
 | [audit/design-review-2026-09-21.md](docs/audit/design-review-2026-09-21.md) | 全库设计缺陷审计（72 条）与复核结论 |
 | [optimization-proposals.md](docs/optimization-proposals.md) | 工程债提案（**状态：已实施**） |
 | [MAINTENANCE.md](docs/MAINTENANCE.md) | **文档地图与同步规则** —— 改了功能 / UI 要动哪几份文档，以及怎么核对没漏 |
-| [specs/](docs/specs) | 方案与规范：知识库重组、归属 vs 引用、第三期调研、保险箱设计、**G6 迁移（[方案](docs/specs/g6-migration.md) + [进程](docs/specs/g6-migration-status.md) + [原生节点调研](docs/specs/g6-native-nodes.md)）** |
+| [specs/](docs/specs) | 方案与规范：知识库重组、归属 vs 引用、第三期调研、保险箱设计、**G6 迁移（[方案](docs/specs/g6-migration.md) + [进程](docs/specs/g6-migration-status.md) + [原生节点调研](docs/specs/g6-native-nodes.md) + [能力审计](docs/specs/g6-capability-audit.md)）** |
 | [audit/gaps-2026-10-04.md](docs/audit/gaps-2026-10-04.md) | 全库缺口审计（本轮的起点） |
 | [research/product-comparison-2026.md](docs/research/product-comparison-2026.md) | 竞品对比调研 |
 | [release-notes-v*.md](docs/release-notes-v1.20.0.md) | 逐版本发布说明（v1.0.0 – v1.20.0） |
