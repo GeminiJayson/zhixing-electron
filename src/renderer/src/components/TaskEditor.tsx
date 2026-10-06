@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { cellKey, isCellRef, isSheetName, listNoteBlocks, type NoteBlock } from '@renderer/lib/block-fingerprint'
 import { NotePicker } from './NotePicker'
+import { Select } from './Select'
 import { RepeatRuleEditor } from './RepeatRuleEditor'
 import { PRIORITY_CHOICES } from '@shared/priority'
 import { STATUS_CHOICES } from '@shared/task'
@@ -220,37 +221,33 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
           <div className="form-grid form-grid--task">
             <label className="form-row form-row--third">
               <span>状态</span>
-              <select className="field" value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)}>
-                {STATUS_CHOICES.map((s) => (
-                  <option key={s.value} value={s.value}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
+              <Select
+                className="field"
+                ariaLabel="状态"
+                value={status}
+                onChange={(v) => setStatus(v as TaskStatus)}
+                options={STATUS_CHOICES.map((s) => ({ value: s.value, label: s.label }))}
+              />
             </label>
             <label className="form-row form-row--third">
               <span>优先级</span>
-              <select className="field" value={priority} onChange={(e) => setPriority(Number(e.target.value))}>
-                {PRIORITY_CHOICES.map((p) => (
-                  <option key={p.value} value={p.value}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
+              <Select
+                className="field"
+                ariaLabel="优先级"
+                value={String(priority)}
+                onChange={(v) => setPriority(Number(v))}
+                options={PRIORITY_CHOICES.map((p) => ({ value: String(p.value), label: p.label }))}
+              />
             </label>
             <label className="form-row form-row--third">
               <span>循环</span>
-              <select
+              <Select
                 className="field"
+                ariaLabel="循环"
                 value={repeat}
-                onChange={(e) => setRepeat(e.target.value as RepeatPeriod)}
-              >
-                {REPEAT_CHOICES.map((r) => (
-                  <option key={r.value} value={r.value}>
-                    {r.label}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setRepeat(v as RepeatPeriod)}
+                options={REPEAT_CHOICES.map((r) => ({ value: r.value, label: r.label }))}
+              />
             </label>
             <label className="form-row form-row--half">
               <span>开始</span>
