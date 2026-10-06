@@ -143,15 +143,25 @@ export function zhixingTheme(): Record<string, unknown> {
         portLineWidth: borderW,
         badgeFill: t.bgLayer,
         badgeFontSize: 9,
+        /**
+         * 选中/悬停用 **halo（光晕）** 表达，而不是改 stroke ——
+         * 图谱节点的 keyShape 是透明的（视觉主体是图标），改 stroke 会让圆圈"啪"地冒出来，
+         * 看起来就是「点击后闪一下」（用户反馈）。halo 在默认样式里先声明、状态里只翻开关，
+         * 过渡就平顺了（G6 内置主题也正是这么做的）。
+         */
         halo: false,
+        haloStroke: focusRing,
+        haloLineWidth: 12,
+        haloStrokeOpacity: 0.28,
+        haloPointerEvents: 'none',
       },
       state: {
-        selected: { stroke: focusRing, lineWidth: focusW },
-        active: { stroke: focusRing, lineWidth: focusW },
-        highlight: { stroke: focusRing, lineWidth: focusW },
-        inactive: { opacity: 0.15 },
-        /** 图谱搜索/悬浮时的淡化用自己的状态名，与 inactive 分开，便于独立调。 */
-        dim: { opacity: 0.15 },
+        selected: { halo: true },
+        active: { halo: true },
+        highlight: { halo: true },
+        inactive: { opacity: 0.3 },
+        /** 图谱搜索/连线时的淡化用自己的状态名，与 inactive 分开，便于独立调。 */
+        dim: { opacity: 0.3 },
       },
     },
 

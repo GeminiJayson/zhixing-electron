@@ -80,13 +80,6 @@ interface WorkflowCanvasProps {
   handleRef?: Ref<WorkflowCanvasHandle>
 }
 
-/** 出线端口的 key —— 条件节点左右各一，普通步骤右侧一个「跳到」。 */
-function portKeyOf(n: WorkflowCanvasNode, to: number): string | undefined {
-  if (n.branch_false_node_id === to) return 'false'
-  if (n.branch_node_id === to) return 'true'
-  return n.view.isCondition ? undefined : 'jump'
-}
-
 /** 边语义 → 描边与虚线（颜色现算：canvas 不认 CSS 变量与 color-mix）。 */
 function edgeStyleOf(kind: string): { stroke: string; lineWidth: number; lineDash: number[] } {
   const base = tokSolid('--graph-edge', '--border-strong')
@@ -180,20 +173,12 @@ function nodeDataOf(n: WorkflowCanvasNode, selectedId: number | null): Record<st
   if (v.current) states.push('current')
 
   /**
-   * 端口：条件节点左右各一（满足 / 不满足），步骤右侧一个「跳到」。
+   * **不用连接桩（ports）**：节点上不钉死连接点，让 G6 按连线方向自动取边框交点
+   * （`BaseEdge` 的 `getEndpoints` → `getIntersectPoint`）—— 这是内置行为，比固定桩更自然，
+   * 也不会出现「线从一个奇怪的桩上斜着出去」。分支语义已经写在**边 label** 上，不靠桩区分。
    *
-   * ⚠️ **必须给 `r`**：G6 把「没给 r（或 r=0）」的端口当作 *simple port* ——
-   * 不画图形但仍是可连接的点（`utils/element.ts` 的 `isSimplePort`）。
-   * 第一版漏了 r，结果端口一个都看不见。颜色与对应分支的边同源，一眼能对上。
+   * 建分支的入口相应地从「点端口」改成**节点右键菜单**（见下方 contextmenu 的 items）。
    */
-  const gEdge = tokSolid('--graph-edge', '--border-strong')
-  const gFill = tokSolid('--bg-layer-solid', '--pack-layer')
-  const ports = cond
-    ? [
-        { key: 'true', placement: 'right' as const, r: 4, fill: gFill, stroke: mix(tokSolid('--success', '--accent'), 0.62, gEdge), lineWidth: 1.4 },
-        { key: 'false', placement: 'left' as const, r: 4, fill: gFill, stroke: mix(tokSolid('--danger', '--accent'), 0.58, gEdge), lineWidth: 1.4 },
-      ]
-    : [{ key: 'jump', placement: 'right' as const, r: 4, fill: gFill, stroke: gEdge, lineWidth: 1.4 }]
 
   /** 角标走自定义节点里那行 `text`（badge 定不出"盒内左上角"，见 makeNodeClass 的注释）。 */
   const badges: Record<string, unknown>[] = []
@@ -201,6 +186,8 @@ function nodeDataOf(n: WorkflowCanvasNode, selectedId: number | null): Record<st
     badges.push({
       text: v.condText,
       placement: 'bottom',
+      /** 往下让开——贴太近会压住菱形本体（用户反馈）。 */
+      offsetY: 16,
       fontSize: 9,
       fill: tokSolid('--fg-secondary', '--fg-primary'),
       backgroundFill: tokSolid('--accent-warm-soft', '--bg-hover'),
@@ -216,7 +203,6 @@ function nodeDataOf(n: WorkflowCanvasNode, selectedId: number | null): Record<st
     style: {
       size: [NODE_W, NODE_H],
       radius: cond ? 0 : 8,
-      ports,
       /** 自定义键：自定义节点在 render 里读它画角标。 */
       idxText: v.badge,
       badge: true,
@@ -246,18 +232,19 @@ function buildData(
     nodes: nodes.map((n) => nodeDataOf(n, selectedId)),
     edges: workflowEdges(nodes).map((e) => {
       const kind = kindOfEdge(nodes, e.from, e.to, e.branch)
-      const src = nodes.find((n) => n.id === e.from)
       return {
         id: e.from + '>' + e.to,
         source: String(e.from),
         target: String(e.to),
-        /** 从**指定端口**出发（内置边按 key 找桩）。 */
-        sourcePort: src ? portKeyOf(src, e.to) : undefined,
         type: 'polyline',
         style: {
           ...edgeStyleOf(kind),
-          /** 正交折线是内置路由，不用自己算折点。 */
-          router: { type: 'orth', padding: 6 },
+          /**
+           * **A\* 避障路由**：`shortest-path` 会在节点包围盒之间搜一条不穿节点的折线，
+           * 搜不到才回退到普通正交路由（`polyline.ts` 的 `getControlPoints`）。
+           * 之前用的 `orth` 只做正交、**不看节点**，所以线会从节点身上穿过去。
+           */
+          router: { type: 'shortest-path', offset: 8 },
           endArrow: true,
           endArrowType: 'triangle',
           labelText: edgeLabelOf(kind),
@@ -346,7 +333,7 @@ export function WorkflowCanvasG6({
         marginy: 40,
       },
 
-      /** 交互全部用内置 behavior；端口点击不是独立交互（见下面的 portOf）。 */
+      /** 交互全部用内置 behavior；「点端口建分支」已取消（节点上不留固定连接点）。 */
       behaviors: [
         'drag-canvas',
         'zoom-canvas',
@@ -377,6 +364,16 @@ export function WorkflowCanvasG6({
               const n = cb.current.nodes.find((x) => String(x.id) === t.target?.id)
               if (!n) return []
               const items: { name: string; value: string }[] = []
+              /**
+               * 建分支：**先在这里选槽位，再点目标节点**（页面的两段式点选）。
+               * 这是取消固定连接点之后「分支从哪里开始」的入口。
+               */
+              if (n.view.isCondition) {
+                items.push({ name: '建立「满足」分支', value: 'wf:branch:' + n.id + ':true' })
+                items.push({ name: '建立「不满足」分支', value: 'wf:branch:' + n.id + ':false' })
+              } else {
+                items.push({ name: '建立「跳到」分支', value: 'wf:branch:' + n.id + ':true' })
+              }
               if (n.branch_node_id) items.push({ name: '清除「满足」分支', value: 'wf:unbranch:' + n.id + ':true' })
               if (n.branch_false_node_id)
                 items.push({ name: '清除「不满足」分支', value: 'wf:unbranch:' + n.id + ':false' })
@@ -385,6 +382,11 @@ export function WorkflowCanvasG6({
             return []
           },
           onClick: (value: string) => {
+            const mb = /^wf:branch:(\d+):(true|false)$/.exec(value)
+            if (mb) {
+              cb.current.onBranch(Number(mb[1]), mb[2] as 'true' | 'false')
+              return
+            }
             const me = /^wf:unbranch-edge:(\d+)>(\d+)$/.exec(value)
             if (me) {
               const kind = edgeKindById.current.get(me[1] + '>' + me[2])
@@ -402,32 +404,10 @@ export function WorkflowCanvasG6({
     const idOf = (e: IEvent): number => Number((e as unknown as { target?: { id?: string } }).target?.id)
 
     /**
-     * 点的**是端口**还是节点本体？
-     *
-     * G6 事件里 `e.target` 永远是元素（节点），要拿**原始命中图形**得看 `e.originalTarget`；
-     * 再用 `node.getPorts()`（`subObject` 已剥掉 `port-` 前缀）做一次**对象身份比对**即可 ——
-     * 实测四次点击（左桩 / 右桩 / 菱形尖角 / 节点本体）全部判断正确。
-     * 旧实现那套「closest('.wf-port') → elementFromPoint 兜底 → 按中文字面量判槽位」已删。
+     * 点节点 = 选中。**不再有「点端口」这一支** —— 节点上没有固定连接点，
+     * 边由 G6 按方向自动取交点；建分支改走右键菜单（见上面 contextmenu 的 items）。
      */
-    const portOf = (e: IEvent): string | null => {
-      const ev = e as unknown as {
-        originalTarget?: unknown
-        target?: { getPorts?: () => Record<string, unknown> }
-      }
-      const hit = ev.originalTarget
-      const node = ev.target
-      if (!hit || !node?.getPorts) return null
-      for (const [key, shape] of Object.entries(node.getPorts())) {
-        if (shape === hit) return key
-      }
-      return null
-    }
-
-    graph.on('node:click', (e: IEvent) => {
-      const key = portOf(e)
-      if (key) cb.current.onBranch(idOf(e), key === 'false' ? 'false' : 'true')
-      else cb.current.onSelect(idOf(e))
-    })
+    graph.on('node:click', (e: IEvent) => cb.current.onSelect(idOf(e)))
     graph.on('node:dblclick', (e: IEvent) => cb.current.onOpen(idOf(e)))
     /**
      * 拖完落库。**只在 dragend 报**，不在拖动过程中报 —— 一次拖动只写一次库，

@@ -22,7 +22,20 @@
  *
  * 换主题 → 颜色重新算 → 新的 data URL → `setOptions` 增量更新（不必重建图）。
  */
-import { mix } from './g6-theme'
+import { mix, tokSolid } from './g6-theme'
+
+/**
+ * 把 `var(--x)` 形式的颜色解成实色。
+ *
+ * `lib/graph-colors.ts` 的 `knowledgeColor()` 会返回 `var(--danger)` / `var(--accent-warm)`
+ * 这类**CSS 变量字符串** —— 它们在 HTML/CSS 里没问题，可一旦写进 data URL 的 SVG 里，
+ * 浏览器解析不了就**静默退回黑色**（实测：笔记类节点的图标全黑，星形/菱形却是好的，
+ * 因为后者的颜色来自具体色值的 KIND_COLOR）。所以进 SVG 之前必须解一遍。
+ */
+export function resolveColor(c: string): string {
+  const m = /^var\(\s*(--[a-z0-9-]+)\s*\)$/i.exec(c.trim())
+  return m ? tokSolid(m[1], '--fg-primary') : c
+}
 
 /** 图标的色槽 —— 与原来那批 CSS 类同名，方便对照。 */
 export type IconTone = 's1' | 's2' | 's3' | 'stroke' | 'ring' | 'plus' | 'lines'
@@ -118,7 +131,8 @@ export interface IconPalette {
 }
 
 /** 色槽 → SVG 呈现属性（与 graph.css 原规则等价）。 */
-export function toneAttrs(tone: IconTone, p: IconPalette): string {
+export function toneAttrs(tone: IconTone, raw: IconPalette): string {
+  const p: IconPalette = { ...raw, color: resolveColor(raw.color) }
   switch (tone) {
     case 's1':
       return `fill="${p.color}"`
@@ -126,8 +140,15 @@ export function toneAttrs(tone: IconTone, p: IconPalette): string {
       return `fill="${mix(p.color, 0.38, p.bgLayer)}"`
     case 's3':
       return `fill="${mix(p.color, 0.22, p.fgPrimary)}"`
+    /**
+     * ⚠️ 这一档**必须同时给 fill**。
+     *
+     * 原 CSS 里主图形挂的是**两个类**（`gn-stroke gn-s1`）：fill 来自 `.gn-s1`（主色）、
+     * 描边来自 `.gn-stroke`。第一版照字面只写了 stroke，SVG 的缺省 fill 是**黑色** ——
+     * 于是笔记/任务那些主图形整块变黑（实测踩到）。
+     */
     case 'stroke':
-      return `stroke="${mix(p.color, 0.4, p.bgCanvas)}" stroke-width="1" stroke-linejoin="round"`
+      return `fill="${p.color}" stroke="${mix(p.color, 0.4, p.bgCanvas)}" stroke-width="1" stroke-linejoin="round"`
     case 'ring':
       return `fill="none" stroke="${p.color}" stroke-width="1.4" stroke-dasharray="3 3"`
     case 'plus':

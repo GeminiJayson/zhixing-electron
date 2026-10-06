@@ -31,7 +31,6 @@
  */
 import { Graph, type IEvent } from '@antv/g6'
 import { useEffect, useImperativeHandle, useRef, type ReactElement, type Ref } from 'react'
-import { NODE_R } from '@renderer/lib/graph-colors'
 import { toG6Data } from '@renderer/lib/g6-adapt'
 import { iconDataUrl } from '@renderer/lib/graph-icon'
 import {
@@ -133,7 +132,14 @@ export function GraphCanvasG6({
     registerZhixingTheme()
     const tokens = themeTokens()
     const size = tokNum('--size-18')
-    const iconBox = size * 2
+    /**
+     * 节点是「圆 + 图标」：圆的直径 = 图标盒 36（与原实现的视觉尺寸一致），
+     * **图标只占 78%**（28）—— 这样图标外接方完全落在圆内，四周留出边距，看着才不挤
+     * （用户反馈：图标顶满/超出节点）。
+     */
+    const nodeD = size * 2
+    const iconBox = Math.round(nodeD * 0.78)
+    const iconR = iconBox / 2
 
     const graph = new Graph({
       container: el,
@@ -155,7 +161,7 @@ export function GraphCanvasG6({
         /** 内置圆形节点：keyShape 既是命中区域也是选中环的载体。 */
         type: 'circle',
         style: {
-          size: [iconBox, iconBox],
+          size: [nodeD, nodeD],
           /**
            * keyShape 默认**透明**：视觉主体是图标本身，圆只负责命中与状态反馈
            * （选中/悬停时由主题的 state 把 stroke 换成焦点色）。
@@ -166,7 +172,7 @@ export function GraphCanvasG6({
           iconSrc: (d: { id: string }): string => {
             const n = payloadById.current.get(Number(d.id))
             if (!n) return ''
-            return iconDataUrl(n.kind, NODE_R, { color: colorRef.current(n), ...tokens })
+            return iconDataUrl(n.kind, iconR, { color: colorRef.current(n), ...tokens })
           },
           iconWidth: iconBox,
           iconHeight: iconBox,
@@ -190,14 +196,15 @@ export function GraphCanvasG6({
       /**
        * 力参数**照搬原 d3 模拟**，不是随手填的：
        *   link.distance 100 / strength 0.12、manyBody -320 / distanceMax 420、
-       *   collide 半径 = NODE_R + 8 = 17、alphaDecay 0.018。
+       *   collide 半径 = 节点半径 + 6、alphaDecay 0.018。
        * 这套值是调出来的 —— 换个数字图就会散开或者挤成一团。
        */
       layout: {
         type: 'd3-force',
         link: { distance: 100, strength: 0.12 },
         manyBody: { strength: -320, distanceMax: 420 },
-        collide: { radius: NODE_R + 8, strength: 0.7 },
+        /** 碰撞半径按**节点的实际半径**（nodeD/2 = 18）算，再留 6px 间距 —— 否则节点会叠在一起。 */
+        collide: { radius: nodeD / 2 + 6, strength: 0.7 },
         alphaDecay: 0.018,
       },
 
@@ -345,7 +352,14 @@ export function GraphCanvasG6({
     const g = graphRef.current
     if (!g) return
     const dimmed = searchHits
-    const active = hover ?? linkFrom
+    /**
+     * **只有「连线起点」会淡化其他节点，悬停不再淡化**。
+     *
+     * 之前把 `hover` 也算进来，结果鼠标一停在某个节点上，其余 250 个一起变淡 ——
+     * 看起来就是「整张图被置灰」（用户反馈）。悬停的高亮交给内置的 `hover-activate`
+     * （主题里配的是 halo 光晕），不抢别的节点的存在感。
+     */
+    const active = linkFrom
     const states: Record<string, string[]> = {}
     for (const n of data.nodes) {
       const id = String(n.id)
