@@ -1266,41 +1266,35 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
           />
         )}
         filters={[
-          <select
+          <Select
             key="list"
             className="field field--compact"
+            ariaLabel="按清单筛选"
             value={listKey}
-            onChange={(e) => setListKey(e.target.value)}
-            aria-label="按清单筛选"
-          >
-            <option value="">全部清单</option>
-            <option value="none">收件箱（未归属）</option>
-            <option value={DONE_KEY}>已完成</option>
-            <option value={ABANDONED_KEY}>已放弃</option>
-            {/* 顶层清单直挂；分组下的清单用 optgroup 归类，否则层级在下拉里完全看不出来 */}
-            {folders
-              .filter((f) => f.kind === 'list' && (f.parent_id ?? null) === null)
-              .map((f) => (
-                <option key={f.id} value={String(f.id)}>
-                  {f.name}
-                </option>
-              ))}
-            {folders
-              .filter((f) => f.kind === 'group')
-              .map((g) => {
-                const kids = folders.filter((f) => f.kind === 'list' && f.parent_id === g.id)
-                if (kids.length === 0) return null
-                return (
-                  <optgroup key={`group-${g.id}`} label={g.name}>
-                    {kids.map((f) => (
-                      <option key={f.id} value={String(f.id)}>
-                        {f.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                )
-              })}
-          </select>,
+            onChange={setListKey}
+            /* 层级用 depth 表达，而不是原生那种 optgroup：optgroup 只能分一层且不能嵌套，
+               而清单树可以更深；缩进还与菜单（PopMenu 的 depth）共用同一套视觉。
+               分组名做成不可选的标题行（disabled），与菜单里的 header 行同一读法。 */
+            options={[
+              { value: '', label: '全部清单' },
+              { value: 'none', label: '收件箱（未归属）' },
+              { value: DONE_KEY, label: '已完成' },
+              { value: ABANDONED_KEY, label: '已放弃' },
+              ...folders
+                .filter((f) => f.kind === 'list' && (f.parent_id ?? null) === null)
+                .map((f) => ({ value: String(f.id), label: f.name })),
+              ...folders
+                .filter((f) => f.kind === 'group')
+                .flatMap((g) => {
+                  const kids = folders.filter((f) => f.kind === 'list' && f.parent_id === g.id)
+                  if (kids.length === 0) return []
+                  return [
+                    { value: 'group-' + g.id, label: g.name, disabled: true },
+                    ...kids.map((f) => ({ value: String(f.id), label: f.name, depth: 1 })),
+                  ]
+                }),
+            ]}
+          />,
           <button key="newlist" className="text-btn" title="新建清单" onClick={() => void newList()}>
             ＋ 清单
           </button>,

@@ -6,6 +6,14 @@ export interface SelectOption {
   value: string
   label: string
   disabled?: boolean
+  /**
+   * 层级缩进（0 = 顶层）。
+   *
+   * 与 `PopMenu` 的 `depth` 同义：清单、文件夹这类有父子关系的数据平铺成一列看不出归属 ——
+   * 原生 `<select>` 用 `<optgroup>` 表达，这里用缩进（`<optgroup>` 只分一层，
+   * 而目录树可以更深）。与菜单是同一套视觉，所以两处的层级读起来一致。
+   */
+  depth?: number
 }
 
 interface Props {
@@ -239,6 +247,8 @@ export function Select({
                 (o.value === value ? ' is-selected' : '') +
                 (o.disabled ? ' is-disabled' : '')
               }
+              /* 层级缩进。内联样式而不是类名：深度是数据，档数不定（与 PopMenu 同一写法） */
+              style={o.depth ? { paddingLeft: 'calc(var(--space-3) + ' + o.depth * 14 + 'px)' } : undefined}
               onMouseEnter={() => !o.disabled && setActive(i)}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => commit(i)}
