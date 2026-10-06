@@ -21,6 +21,11 @@
  * 否则想平移画布时会误触。
  */
 import type { Graph } from '@antv/g6'
+import { tokSolid } from './g6-theme'
+
+/** 拖拽预览用的「幽灵节点」与临时边 —— 用完即删，不留在图数据里。 */
+const GHOST_NODE = '__rewire_ghost__'
+const GHOST_EDGE = '__rewire_ghost_edge__'
 
 export interface EdgeRewireHandlers {
   /** 这条边允不允许改挂（工作流只允许**分支边**，顺序边是隐式的、改不动）。 */
@@ -63,8 +68,76 @@ export function setupEdgeRewire(
     hovered = null
   }
 
+  /**
+   * 拖拽时的**预览线**：一条从固定端连到指针位置的临时边。
+   *
+   * 做法是在指针处放一个 2×2、全透明的「幽灵节点」，再连一条虚线边到它 ——
+   * 这样线就**跟着鼠标走**了，而且走的是 G6 自己的边（避障路由、主题样式照旧生效），
+   * 不需要另画一层 SVG。幽灵节点与临时边用完即删，不参与布局、不参与命中。
+   */
+  let ghostOn = false
+  const ghostAt = (fixedId: string, p: [number, number]): void => {
+    try {
+      if (!ghostOn) {
+        graph.addNodeData([
+          {
+            id: GHOST_NODE,
+            type: 'circle',
+            style: {
+              x: p[0],
+              y: p[1],
+              size: [2, 2],
+              fill: 'transparent',
+              stroke: 'transparent',
+              zIndex: 0,
+              pointerEvents: 'none',
+            },
+          },
+        ] as never)
+        graph.addEdgeData([
+          {
+            id: GHOST_EDGE,
+            source: fixedId,
+            target: GHOST_NODE,
+            type: 'polyline',
+            style: {
+              stroke: tokSolid('--accent', '--focus-ring'),
+              lineWidth: 2,
+              lineDash: [6, 4],
+              endArrow: true,
+              /** 预览线只给人看：不参与命中，也不该被拖拽逻辑再次抓到自己。 */
+              pointerEvents: 'none',
+              increasedLineWidthForHitTesting: 0,
+              zIndex: 3,
+            },
+          },
+        ] as never)
+        ghostOn = true
+      } else {
+        graph.updateNodeData([{ id: GHOST_NODE, style: { x: p[0], y: p[1] } }] as never)
+      }
+      void graph.draw()
+    } catch {
+      // 预览是「锦上添花」，任何一步失败都不该让改挂本身挂掉
+      ghostOn = false
+    }
+  }
+
+  const ghostOff = (): void => {
+    if (!ghostOn) return
+    ghostOn = false
+    try {
+      // 删节点会连带删掉挂在它上面的临时边
+      graph.removeNodeData([GHOST_NODE])
+      void graph.draw()
+    } catch {
+      // 同上
+    }
+  }
+
   const endDrag = (): void => {
     clearHover()
+    ghostOff()
     if (drag) container.style.removeProperty('cursor')
     drag = null
   }
@@ -126,6 +199,8 @@ export function setupEdgeRewire(
     /** G6 的 `drag-canvas` 会在每次指针移动时重写 inline `cursor`，所以这里每次都设回来。 */
     setCursor()
     const p = toCanvas(ev)
+    /** 预览线跟着指针走。 */
+    ghostAt(drag.fixed, p)
     const id = nodeAt(p)
     const ok = id && id !== drag.fixed && (handlers.canDropOn?.(id, drag.edgeId) ?? true) ? id : null
     if (ok === hovered) return
