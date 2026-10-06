@@ -32,6 +32,7 @@
 import { Graph, type IEvent } from '@antv/g6'
 import { useEffect, useImperativeHandle, useRef, type ReactElement, type Ref } from 'react'
 import { toG6Data } from '@renderer/lib/g6-adapt'
+import { setupEdgeRewire } from '@renderer/lib/g6-edge-rewire'
 import { iconDataUrl } from '@renderer/lib/graph-icon'
 import {
   THEME_NAME,
@@ -84,6 +85,19 @@ interface GraphCanvasProps {
     kind: 'ownership' | 'reference',
     end: 'src' | 'dst'
   ) => void
+  /**
+   * **拖拽改挂**：按住连线靠近某一端拖动、松手落在新节点上时直接给出目标。
+   *
+   * 与 `onEdgeRewire` 的区别是「要不要再点一次」—— 菜单式是两段式（先选端、再点节点），
+   * 拖拽式在松手那一刻目标就已经确定了。两条路都接到页面同一段落库逻辑上。
+   */
+  onEdgeRewireTo: (
+    sourceId: number,
+    targetId: number,
+    kind: 'ownership' | 'reference',
+    end: 'src' | 'dst',
+    newNodeId: number
+  ) => void
   handleRef?: Ref<GraphCanvasHandle>
 }
 
@@ -106,13 +120,32 @@ export function GraphCanvasG6({
   onPositions,
   onEdgeDelete,
   onEdgeRewire,
+  onEdgeRewireTo,
   handleRef,
 }: GraphCanvasProps): ReactElement {
   const box = useRef<HTMLDivElement>(null)
   const graphRef = useRef<Graph | null>(null)
   /** 回调放 ref：G6 的事件订阅只登记一次，闭包不能捕获过期的 props。 */
-  const cb = useRef({ onSelect, onHover, onFocus, onOpenNode, onPositions, onEdgeDelete, onEdgeRewire })
-  cb.current = { onSelect, onHover, onFocus, onOpenNode, onPositions, onEdgeDelete, onEdgeRewire }
+  const cb = useRef({
+    onSelect,
+    onHover,
+    onFocus,
+    onOpenNode,
+    onPositions,
+    onEdgeDelete,
+    onEdgeRewire,
+    onEdgeRewireTo,
+  })
+  cb.current = {
+    onSelect,
+    onHover,
+    onFocus,
+    onOpenNode,
+    onPositions,
+    onEdgeDelete,
+    onEdgeRewire,
+    onEdgeRewireTo,
+  }
   /** 边 id（"src,dst"）→ 类别。右键菜单用它在删除时带上归属/引用。 */
   const edgeKindById = useRef(new Map<string, 'ownership' | 'reference'>())
   edgeKindById.current = new Map(data.edges.map(([a, b]) => [a + ',' + b, data.edgeKinds[a + ',' + b] ?? 'reference']))
@@ -127,6 +160,7 @@ export function GraphCanvasG6({
     if (!el) return
     let dead = false
     let stopTheme: (() => void) | null = null
+    let stopRewire: (() => void) | null = null
 
     // 主题必须先注册，G6 只会按名字去注册表里取（见 lib/g6-theme.ts）
     registerZhixingTheme()
@@ -331,6 +365,24 @@ export function GraphCanvasG6({
 
     void graph.render().then(() => {
       if (dead) return
+      /**
+       * 拖拽改挂：按住连线靠近某一端拖动，松手落到新节点上。
+       * 图谱的边 id 就是 `"src,dst"`（见 lib/g6-adapt.ts 的 edgeKey），直接拆得两端。
+       */
+      stopRewire = setupEdgeRewire(graph, el, {
+        canRewire: (edgeId) => edgeKindById.current.has(edgeId),
+        onDrop: (edgeId, end, targetId) => {
+          const [s, t] = edgeId.split(',')
+          if (!s || !t) return
+          cb.current.onEdgeRewireTo(
+            Number(s),
+            Number(t),
+            edgeKindById.current.get(edgeId) ?? 'reference',
+            end,
+            Number(targetId)
+          )
+        },
+      })
       // 主题变更：重新注册主题对象并切换，不重建图（见 lib/g6-theme.ts 的注释）
       stopTheme = subscribeG6Theme(() => {
         applyZhixingTheme(graph)
@@ -349,6 +401,7 @@ export function GraphCanvasG6({
         // 图已在销毁流程里，取不到位置就算了 —— 缓存只是下次的播种值
       }
       stopTheme?.()
+      stopRewire?.()
       // G6 是有状态对象：不 destroy 会留下 canvas、事件监听与 rAF 循环
       graph.destroy()
       graphRef.current = null

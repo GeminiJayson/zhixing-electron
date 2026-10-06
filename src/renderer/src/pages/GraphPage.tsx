@@ -359,14 +359,19 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
     kind: 'ownership' | 'reference'
   } | null>(null)
 
-  const rewireEdgeTo = useCallback(
-    async (dst: GraphNodePayload): Promise<void> => {
-      const r = rewire
-      setRewire(null)
-      if (!r) return
-      const keep = nodes.find((n) => n.id === r.keep)
-      const from = nodes.find((n) => n.id === r.from)
-      if (!keep || !from || !canEditEdge(keep, from)) {
+  /**
+   * 改挂的**核心逻辑**：`keep` 那一端不动，把 `from` 换成 `to`。
+   *
+   * 抽出来是因为有**两条触发路径**：右键菜单的「两段式」（先选端、再点节点）
+   * 与拖拽（按住端点拖到目标节点松手）—— 后者在松手时目标已经确定，不需要再点一次。
+   */
+  const doRewire = useCallback(
+    async (keepId: number, fromId: number, kind: 'ownership' | 'reference', toId: number): Promise<void> => {
+      const keep = nodes.find((n) => n.id === keepId)
+      const from = nodes.find((n) => n.id === fromId)
+      const dst = nodes.find((n) => n.id === toId)
+      if (!keep || !from || !dst) return
+      if (!canEditEdge(keep, from)) {
         onNotice('这条连线不支持改挂')
         return
       }
@@ -381,12 +386,22 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
         fromRef: from.refId,
         toKind: dst.kind,
         toRef: dst.refId,
-        edgeKind: r.kind,
+        edgeKind: kind,
       })
       onNotice(ok ? '已改挂该连线' : '改挂失败：该组合可能不允许')
       await load()
     },
-    [rewire, nodes, canEditEdge, onNotice, load]
+    [nodes, canEditEdge, onNotice, load]
+  )
+
+  const rewireEdgeTo = useCallback(
+    async (dst: GraphNodePayload): Promise<void> => {
+      const r = rewire
+      setRewire(null)
+      if (!r) return
+      await doRewire(r.keep, r.from, r.kind, dst.id)
+    },
+    [rewire, doRewire]
   )
 
   const removeEdgeBetween = useCallback(
@@ -558,6 +573,10 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
               // 换起点时 keep 是终点，换终点时 keep 是起点
               setRewire({ keep: end === 'src' ? t : s, from: end === 'src' ? s : t, kind: k })
               onNotice(end === 'src' ? '点一个节点作为新的起点' : '点一个节点作为新的终点')
+            }}
+            onEdgeRewireTo={(s, t, k, end, toId) => {
+              // 拖拽路径：松手时目标已确定，直接落库（与上面同一条 doRewire）
+              void doRewire(end === 'src' ? t : s, end === 'src' ? s : t, k, toId)
             }}
             handleRef={g6Ref}
           />

@@ -1241,16 +1241,23 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
               }}
               onBranchRemove={async (fromId, slot) => {
                 // 删除分支出边：同一个 IPC，第二参传 null 即清空该槽位。
-                // **改挂端点不需要单独接** —— 重新走一次两段式点选就是改挂。
                 await window.zhixing.db.setWorkflowBranch(fromId, null, slot)
+                await refresh()
+              }}
+              onEdgeRewire={async (fromId, slot, toId) => {
+                // 拖拽改挂：与上面的两段式点选落到同一个 IPC（`setWorkflowBranch` 本就是把
+                // 「谁的分支、去哪个节点」重写一遍），只是在松手那一刻就拿到了目标。
+                await window.zhixing.db.setWorkflowBranch(fromId, toId, slot)
                 await refresh()
               }}
             />
           )}
           <p className="u-aux">
             点节点选中（工具栏的编辑 / 删除 / 上移 / 下移按它定位）、双击编辑；拖动节点改布局（自动保存）。
-            画布空白处拖动可平移、滚轮缩放。条件节点下方写着判定内容，两个端口分别连出
-            「满足 / 不满足」分支：从端口拖到目标节点即连线；鼠标移到分支线上可删除或拖动端点改挂。
+            画布空白处拖动可平移、滚轮缩放。条件节点下方写着判定内容，它连出的分支线上标着
+            「满足 / 不满足」。**按住分支线靠近目标的一端拖动，松手落到另一个节点上即可改挂**；
+            右键分支线可删除。新建分支走节点右键菜单（建立「满足」/「不满足」/「跳到」分支），
+            之后再点一个目标节点。
           </p>
         </div>
       </div>

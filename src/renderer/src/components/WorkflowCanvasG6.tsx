@@ -32,6 +32,7 @@ import {
   tokNum,
   tokSolid,
 } from '@renderer/lib/g6-theme'
+import { setupEdgeRewire } from '@renderer/lib/g6-edge-rewire'
 import { NODE_H, NODE_W } from '@renderer/lib/workflow-node-box'
 import { workflowEdges, type LayoutNode, type WorkflowRankDir } from '@renderer/lib/workflow-layout'
 
@@ -75,6 +76,13 @@ interface WorkflowCanvasProps {
   onNodeMoved: (id: number, x: number, y: number) => void
   /** 删除某条分支出边（右键菜单触发）。 */
   onBranchRemove: (fromId: number, slot: 'true' | 'false') => void
+  /**
+   * **拖拽改挂分支**：按住某条分支边靠近其起点的一端拖到另一个节点上松手。
+   *
+   * 只有**分支边**能改挂 —— 顺序边是 `order_index` 相邻隐式推出来的，
+   * 没有「挂在哪」这回事（要改顺序得用步骤的上下移动）。
+   */
+  onEdgeRewire: (fromId: number, slot: 'true' | 'false', toId: number) => void
   /** 双击节点（打开编辑弹窗）。 */
   onOpen: (id: number) => void
   handleRef?: Ref<WorkflowCanvasHandle>
@@ -354,6 +362,7 @@ export function WorkflowCanvasG6({
   onBranch,
   onBranchRemove,
   onNodeMoved,
+  onEdgeRewire,
   onOpen,
   handleRef,
 }: WorkflowCanvasProps): ReactElement {
@@ -368,11 +377,12 @@ export function WorkflowCanvasG6({
     onBranch,
     onBranchRemove,
     onNodeMoved,
+    onEdgeRewire,
     onOpen,
     selectedId,
     nodes: [] as readonly WorkflowCanvasNode[],
   })
-  cb.current = { onSelect, onBranch, onBranchRemove, onNodeMoved, onOpen, selectedId, nodes }
+  cb.current = { onSelect, onBranch, onBranchRemove, onNodeMoved, onEdgeRewire, onOpen, selectedId, nodes }
   /** 边 id（"from>to"）→ 语义类别。右键菜单要知道被点中的是哪一类边。 */
   const edgeKindById = useRef(new Map<string, string>())
   edgeKindById.current = new Map(
@@ -384,6 +394,7 @@ export function WorkflowCanvasG6({
     if (!el) return
     let dead = false
     let stopTheme: (() => void) | null = null
+    let stopRewire: (() => void) | null = null
 
     registerZhixingTheme()
     ensureWorkflowNodes()
@@ -542,6 +553,27 @@ export function WorkflowCanvasG6({
       // 首屏布局已由 render 跑完（数据里只有前进边），这里把回边连同坐标补上
       await syncLayout(graph, cb.current.nodes, cb.current.selectedId, rankdir)
       if (dead) return
+      /**
+       * 拖拽改挂分支。
+       *
+       * 只有**分支边**能改挂（顺序边由 order_index 隐式推出，没有「挂在哪」）；
+       * 而且只能拖**指向目标的那一端** —— 分支是挂在起点节点上的属性
+       * （`branch_node_id` / `branch_false_node_id`），改的永远是「满足/不满足去哪」。
+       */
+      stopRewire = setupEdgeRewire(graph, el, {
+        canRewire: (edgeId) => {
+          const k = edgeKindById.current.get(edgeId)
+          return k === 'branch-true' || k === 'branch-false' || k === 'branch-jump'
+        },
+        canDropOn: (nodeId, edgeId) => nodeId !== edgeId.split('>')[0],
+        onDrop: (edgeId, end, targetId) => {
+          if (end !== 'dst') return
+          const kind = edgeKindById.current.get(edgeId)
+          const from = edgeId.split('>')[0]
+          if (!from || !kind) return
+          cb.current.onEdgeRewire(Number(from), kind === 'branch-false' ? 'false' : 'true', Number(targetId))
+        },
+      })
       stopTheme = subscribeG6Theme(() => applyZhixingTheme(graph))
     })
 
@@ -550,6 +582,7 @@ export function WorkflowCanvasG6({
       ro.disconnect()
       window.clearTimeout(resizeTimer)
       stopTheme?.()
+      stopRewire?.()
       graph.destroy()
       graphRef.current = null
     }

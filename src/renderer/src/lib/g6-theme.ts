@@ -169,6 +169,13 @@ export function zhixingTheme(): Record<string, unknown> {
       style: {
         stroke: t.borderStrong,
         lineWidth: borderW,
+        /**
+         * **把命中区域加宽**（视觉不变）—— G 的图形属性，命中检测时按这个宽度算。
+         *
+         * 连线只有 1.2px 宽，不改的话「按住端点拖拽改挂」几乎按不中（实测：
+         * 按在路径数据算出来的点上，命中结果仍是 `canvas`）—— 人也一样按不中。
+         */
+        increasedLineWidthForHitTesting: 14,
         endArrow: false,
         labelFill: t.fgPrimary,
         labelFontFamily: t.fontUi,
