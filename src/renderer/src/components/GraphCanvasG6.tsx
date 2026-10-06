@@ -411,29 +411,29 @@ export function GraphCanvasG6({
   }, [])
 
   // ---- 数据增量同步 ----
-  const posRef = useRef(positions)
-  posRef.current = positions
-
   useEffect(() => {
     const g = graphRef.current
     if (!g) return
     const next = toG6Data(data)
     /**
-     * **数据变化时不再重跑力导向布局**。
+     * **数据变化时不重跑力导向布局**，但**也不要往数据里塞坐标**。
      *
-     * 之前这里是 `setData` + `layout()` —— d3-force 会把 251 个节点**重新排一遍**
-     * （几百毫秒到 1 秒），于是「改挂一条连线」这种只动了两个节点的操作，
-     * 也要等整张图重新散开（用户反馈：改挂后连线要等将近 1 秒才落位）。
+     * 两个教训叠在一起：
      *
-     * 现在把**已知坐标带上**（`positions` 是模块级缓存，存着上次布局的结果与用户拖过的位置），
-     * 只画不动布局；**只有真的出现了没有坐标的新节点**才跑一次布局。
+     * 1. 原来是 `setData` + `layout()`：改挂一条连线也要把 251 个节点重新散开一遍
+     *    （几百毫秒到 1 秒），所以改成「只画不动布局」；
+     * 2. 为了「只画」我给每个节点塞了缓存里的坐标 —— **这一塞把图炸了**：
+     *    缓存来自每秒的位置快照，里面难免有「布局跑到一半」的中间坐标，
+     *    把它们当成下一轮力导向的**初始位置**，斥力会把远处的节点推得更远，
+     *    正反馈几轮下来节点跑到 **±10 万**，`autoFit` 只好缩到 0.01 —— 画布上就什么都看不见了
+     *    （用户反馈「图谱看不到东西了」）。
+     *
+     * 正确做法是**让 G6 自己保留位置**：`setData` 对已存在的元素不会清掉它的坐标，
+     * 只有**新出现的节点**才需要重新布局。判断「有没有新节点」也比对缓存可靠 ——
+     * 直接看 G6 里现有哪些元素。
      */
-    let missing = false
-    for (const n of next.nodes as { id: string; style?: Record<string, unknown> }[]) {
-      const p = posRef.current.get(Number(n.id))
-      if (p) n.style = { ...(n.style ?? {}), x: p.x, y: p.y }
-      else missing = true
-    }
+    const known = new Set(g.getNodeData().map((n) => String(n.id)))
+    const hasNew = next.nodes.some((n) => !known.has(String(n.id)))
     // setData 返回 void（只有 render/布局是异步的），不能链 .then
     g.setData(next as never)
     /**
@@ -442,7 +442,7 @@ export function GraphCanvasG6({
      * 这里改成 `layout()` + `draw()`：布局照跑、画面照重绘，但**不碰视口**。
      * （首次的 autoFit 仍然发生在建图那次 render 里。）
      */
-    if (missing) void Promise.resolve(g.layout()).then(() => g.draw())
+    if (hasNew) void Promise.resolve(g.layout()).then(() => g.draw())
     else void g.draw()
   }, [data])
 
