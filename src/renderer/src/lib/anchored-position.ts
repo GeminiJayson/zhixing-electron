@@ -8,9 +8,12 @@
  *
  * 策略（按优先级）：
  *   1. 默认贴锚点下方、左对齐；
- *   2. 下方放不下 → **翻到上方**（不是硬夹进视口——夹进去会把菜单盖在按钮上，视线要重新找）；
- *   3. 上方也放不下（锚点几乎撑满一屏）→ 退回"夹进视口"，至少保证内容可见；
- *   4. 水平方向同理：右边放不下就往左收，仍放不下再夹到安全边距。
+ *   2. **向下优先**：下方放得下就往下弹；下方不够高时**不是翻上去**，而是把菜单压到剩余空间、
+ *      交给它自己的 `overflow-y: auto` 滚 —— 下拉的视线习惯是"从控件往下读"，
+ *      翻转会让菜单跳到视线上方、反而要重新找（用户："向下弹出布局优先"）；
+ *   3. 只有下方**窄到连一两行都放不下**时（锚点贴住窗口底沿）才翻到上方；
+ *   4. **任何情况下都不覆盖锚点** —— 用户要一直看得见自己在操作哪个控件；
+ *   5. 水平方向：右边放不下就往左收，仍放不下再夹到安全边距。
  *
  * 尺寸取 `offsetWidth/offsetHeight` 实测值，不估算 —— 菜单高度取决于项数、
  * 有没有说明行、有没有展开调色板，估算必然在某一项上失手。
@@ -36,13 +39,22 @@ export function placeAnchored(el: HTMLElement, anchor: AnchorRect, gap = GAP): v
   if (left + w + PAD > vw) left = vw - w - PAD
   if (left < PAD) left = PAD
 
+  /**
+   * **永远吸附在原控件下方**（用户明确要求："吸附在原控件下方优先"）。
+   *
+   * 不再有"翻到上方"这条分支 —— 下拉的视线习惯是"从控件往下读"，翻上去会让菜单
+   * 跳到视线上方、与触发它的控件断开。空间不足时**压缩菜单高度 + 内部滚动**，
+   * 而不是换个方向；也**不遮盖锚点**（那是"夹进视口"的老做法，已废弃）。
+   *
+   * `maxHeight` 只在放不下时才写：放得下就保留 CSS 里的上限，免得把菜单压得比它本来的上限还矮。
+   */
   let top = anchor.bottom + gap
-  if (top + h + PAD > vh) {
-    const above = anchor.top - gap - h
-    top = above >= PAD ? above : vh - h - PAD
-    if (top < PAD) top = PAD
+  const below = vh - top - PAD
+  if (below < h) {
+    // 至少留 80px —— 比这更矮就连一行选项都看不见了，那时宁可贴底溢出
+    el.style.maxHeight = Math.max(80, below) + 'px'
   }
-
+  if (top > vh - PAD) top = vh - PAD
   el.style.left = `${Math.round(left)}px`
   el.style.top = `${Math.round(top)}px`
 }
