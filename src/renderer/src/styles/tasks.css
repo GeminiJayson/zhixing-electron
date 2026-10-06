@@ -1767,18 +1767,21 @@ button.chip--status:focus-visible {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: var(--size-5);
-  height: var(--size-9);
+  /* **尺寸与补偿都走 em**（= 相对字号）：勾选框本体已随字号缩放（见 app.css 的 .check），
+     勾若继续用固定 px，字号一大就变成"大圆里一个小勾"；而下面那两笔居中补偿
+     本来就是按 13.5px 的字号量出来的，字号一变同样失准。 */
+  width: 0.37em; /* 原 5px @13.5 */
+  height: 0.667em; /* 原 9px @13.5 */
   border: solid var(--fg-on-accent);
-  border-width: 0 var(--size-2) var(--size-2) 0;
+  border-width: 0 0.148em 0.148em 0; /* 原 2px @13.5 */
   /* **只做几何居中，不加任何方向补偿**。
      一度在这里加过"环绕中心旋转后包围盒会偏"的补偿（+1.8px），结果反而偏右 ——
      放大截图复测：那笔补偿的方向就是错的，去掉它之后勾的包围盒中心与圆心重合。
      勾是 L 形（border 的右 + 下两条边），统一用 left/top: 50% + 绕自身中心旋转即可；
      若将来改了 .check 的尺寸或 border 宽度，重新拍一张放大图核对，不要再凭公式加补偿。 */
-  /* 那 0.7 / 1.2px 是放大 8 倍量出来的余量：纯几何居中之后，勾的包围盒中心仍比圆心
-     右 0.67、下 1.25（L 形绕中心转 45° 的残差）。数字很小，但 var(--size-18) 的圈里看得出来。 */
-  transform: translate(calc(-50% - 0.7px), calc(-50% - 1.2px)) rotate(45deg) scaleX(0);
+  /* 那两笔余量是放大 8 倍量出来的（L 形绕中心转 45° 的残差）：0.7 / 1.2px @13.5 字号。
+     用 em 表达同一比例 —— 字号变了补偿跟着变，不然大字号下勾会重新偏离圆心。 */
+  transform: translate(calc(-50% - 0.052em), calc(-50% - 0.089em)) rotate(45deg) scaleX(0);
   transform-origin: center;
   transition: transform var(--dur-strike) var(--ease-enter);
 }

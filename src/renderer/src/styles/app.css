@@ -274,15 +274,25 @@
   white-space: nowrap;
 }
 .nav-item__badge {
-  min-width: var(--size-18);
-  height: var(--size-18);
+  /**
+   * **居中交给 flex，尺寸随字号**。
+   *
+   * 原来是 `min-width/height: var(--size-18)`（18px 写死）+ `line-height: --lh-tight` ——
+   * 字号一调（设置页的「字号」），文字比 18px 高或矮，而 line-height（1.35 × 字号）
+   * 又和固定高度对不上，数字就**偏上或偏下**（用户反馈"不在正中间"）。
+   * 现在尺寸从 `--text-body` 派生（18/13.5 ≈ 1.333），垂直居中交给 flex。
+   */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: calc(var(--text-body) * 1.333);
+  height: calc(var(--text-body) * 1.333);
   padding: 0 var(--space-half);
   border-radius: var(--radius-pill);
   background: var(--accent-solid);
   color: var(--fg-on-accent);
   font-size: var(--text-sm);
-  line-height: var(--lh-tight);
-  text-align: center;
+  line-height: var(--lh-none);
   /* 数字变化时弹一下（Sidebar 用 key={count} 让它重建，从而重播这条动画）。
      徽标是「有新东西」的信号，一次轻微的放大足够，不要更响。 */
   animation: badge-pop var(--dur-fast) var(--ease-spring);
@@ -509,11 +519,13 @@
   font-weight: var(--fw-semibold);
 }
 
-/* 勾选圆圈：命中区 ≥32px，圆圈本体 18px */
+/* 勾选圆圈：命中区 ≥32px，圆圈本体随字号（18/13.5 ≈ 1.333 倍正文）——
+   原来写死 18px，设置页把字号调大后勾选框就显得过小、与行内文字不成比例。 */
 .check {
-  width: var(--size-18);
-  height: var(--size-18);
-  border: 2px solid var(--border-strong);
+  width: calc(var(--text-body) * 1.333);
+  height: calc(var(--text-body) * 1.333);
+  /* 边线也跟着缩放（0.15em ≈ 原 2px @13.5），但保底 1.5px 免得小字号下细到看不见 */
+  border: max(1.5px, 0.15em) solid var(--border-strong);
   border-radius: var(--radius-pill);
   background: transparent;
   transition: border-color var(--dur-instant), background var(--dur-instant);
