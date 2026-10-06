@@ -444,27 +444,29 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
                 </>
               ) : (
                 <>
-                  <select
+                  <Select
                     className="field"
+                    ariaLabel="选择段落"
                     value={pickBlock}
-                    onChange={(e) => setPickBlock(e.target.value)}
                     disabled={!pickNote || blocks.length === 0}
-                    aria-label="选择段落"
-                  >
-                    <option value="">
-                      {!pickNote
-                        ? '2. 先选笔记'
-                        : blocks.length === 0
-                          ? '这篇笔记没有可关联项'
-                          : `2. 选择关联项（共 ${blocks.length} 项）…`}
-                    </option>
-                    {blocks.map((b) => (
-                      <option key={b.key} value={b.key} title={b.text}>
-                        第 {b.index} 项 · {b.text.slice(0, 40)}
-                        {b.text.length > 40 ? '…' : ''}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setPickBlock}
+                    options={[
+                      {
+                        value: '',
+                        label: !pickNote
+                          ? '2. 先选笔记'
+                          : blocks.length === 0
+                            ? '这篇笔记没有可关联项'
+                            : `2. 选择关联项（共 ${blocks.length} 项）…`,
+                      },
+                      ...blocks.map((b) => ({
+                        value: b.key,
+                        label:
+                          '第 ' + b.index + ' 项 · ' + b.text.slice(0, 40) + (b.text.length > 40 ? '…' : ''),
+                        title: b.text,
+                      })),
+                    ]}
+                  />
                   <button
                     className="text-btn"
                     onClick={() => void attachContext()}

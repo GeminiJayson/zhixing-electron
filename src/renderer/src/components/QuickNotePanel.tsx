@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Select } from './Select'
 import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import TextAlign from '@tiptap/extension-text-align'
@@ -420,26 +421,30 @@ function ArchiveSheet(props: {
         {mode === 'new' ? (
           <label className="form-row">
             <span>文件夹</span>
-            <select className="field" value={folder} onChange={(e) => setFolder(e.target.value)} aria-label="目标文件夹">
-              <option value="">未分类</option>
-              {props.folders.map((f) => (
-                <option key={f.id} value={String(f.id)}>
-                  {f.name}
-                </option>
-              ))}
-            </select>
+            <Select
+              className="field"
+              ariaLabel="目标文件夹"
+              value={folder}
+              onChange={setFolder}
+              options={[
+                { value: '', label: '未分类' },
+                ...props.folders.map((f) => ({ value: String(f.id), label: f.name })),
+              ]}
+            />
           </label>
         ) : (
           <label className="form-row">
             <span>目标笔记</span>
-            <select className="field" value={target} onChange={(e) => setTarget(e.target.value)} aria-label="目标笔记">
-              <option value="">选择一篇…</option>
-              {writable.map((n) => (
-                <option key={n.id} value={String(n.id)}>
-                  {n.title}
-                </option>
-              ))}
-            </select>
+            <Select
+              className="field"
+              ariaLabel="目标笔记"
+              value={target}
+              onChange={setTarget}
+              options={[
+                { value: '', label: '选择一篇…' },
+                ...writable.map((x) => ({ value: String(x.id), label: x.title })),
+              ]}
+            />
           </label>
         )}
         <footer className="qn__sheet-foot">

@@ -6,6 +6,8 @@ export interface SelectOption {
   value: string
   label: string
   disabled?: boolean
+  /** 选项级原生 tooltip —— 对应原 `<option title="…">` */
+  title?: string
   /**
    * 层级缩进（0 = 顶层）。
    *
@@ -29,6 +31,8 @@ interface Props {
   placeholder?: string
   /** 触发按钮的原生 tooltip —— 与原 `<select title="…">` 对齐 */
   title?: string
+  /** 选项级 tooltip —— 与原 `<option title="…">` 对齐（长文本截断后靠它看全） */
+  optionTitle?: string
 }
 
 /** 退场时长：与 `.popmenu--pop.is-leaving` 用的 `--dur-instant` 一致 */
@@ -62,6 +66,7 @@ export function Select({
   disabled = false,
   placeholder,
   title,
+  optionTitle,
 }: Props) {
   const [open, setOpen] = useState(false)
   const openRef = useRef(false)
@@ -245,6 +250,7 @@ export function Select({
               role="option"
               aria-selected={o.value === value}
               aria-disabled={o.disabled || undefined}
+              title={o.title}
               className={
                 'popmenu__item select__option' +
                 (i === active ? ' is-active' : '') +
