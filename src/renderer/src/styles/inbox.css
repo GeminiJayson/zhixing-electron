@@ -9,6 +9,10 @@
   min-height: 0;
   gap: var(--space-2);
   overflow: auto;
+  /* 同 .page__body：滚动容器的横向是 hidden，贴边的闪念卡片阴影会被切掉 ——
+     padding 撑开裁剪边界、负 margin 把布局拉回（实测卡片到该边界原本只有 0/10px）。 */
+  padding-inline: 24px;
+  margin-inline: -24px;
 }
 
 .flash-list {
@@ -49,23 +53,31 @@
      交错延迟由 InboxPage 按 --dur-stagger 逐行给（最多 8 行）。 */
   animation: zx-inbox-enter var(--dur-normal) var(--ease-enter) backwards;
 }
-/* 悬停：抬一层底 + 贴顶内高光 */
+/**
+ * ⚠️ **状态色只管底色，别把卡片的阴影替换掉**。
+ *
+ * 这三条原本都写 `box-shadow: var(--edge-light)` —— 那是**只有一层贴顶内高光**的令牌，
+ * 等于把 `global.css` 卡片统一块给的 `--card-shadow`（三层 + 一圈描边，负责让卡片"浮在面板上"）
+ * 整个**替换**掉了：鼠标一悬停，卡片的外阴影就没了 —— 用户报"收件箱的闪念卡片还没解决"时，
+ * 他的鼠标正停在卡片上。现在一律保留 `--card-shadow`，状态只改底色与描边色。
+ */
 .flash-card:hover {
   background: var(--bg-hover);
   border-color: var(--border-strong);
-  box-shadow: var(--edge-light);
+  box-shadow: var(--card-shadow);
 }
 /* 选中待合并：蘸一点强调色，与未选中的卡片区分开 */
 .flash-card--picked {
   background: var(--accent-soft);
   border-color: color-mix(in srgb, var(--accent) 40%, transparent);
-  box-shadow: var(--edge-light);
+  box-shadow: var(--card-shadow);
 }
 /* 深链定位到的闪念：短暂高亮。选择器带上基类是为了压过上面 :hover 那条阴影 ——
    悬停时那圈高亮不该被抹掉（内高光一并写回）。 */
 .flash-card.flash-card--focus {
   border-color: var(--accent);
-  box-shadow: var(--edge-light), 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+  /* 在卡片自己的阴影**之上**再叠一圈强调色光晕（原来是替换掉，光晕在、外阴影没了） */
+  box-shadow: var(--card-shadow), 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 .flash-card__content {
   margin: 0;
