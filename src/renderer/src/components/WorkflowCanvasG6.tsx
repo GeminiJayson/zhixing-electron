@@ -170,6 +170,28 @@ function nodeSvg(n: WorkflowCanvasNode, selected: boolean): string {
 }
 
 /**
+ * 把模型里的位置**写回元素**。
+ *
+ * 为什么需要这一步：`layout()` 内部的 `postLayout` 会调 `updateElementPosition()`，
+ * 它做两件事 —— `model.updateData(layoutResult)` 与 `element.draw()`。**模型确实更新了**
+ * （`getElementPosition` 从 TB 的 [99,204] 变成 LR 的 [345,52]），**但元素实例的
+ * `attributes.x/y` 一动不动**（实测），于是 DOM 上的 HTML 节点也就没动，用户看不到变化。
+ * 而 `draw()` 是拿 `model.getChanges()` 驱动的增量更新 —— 那份变化已经被上一步消费掉了，
+ * 事后再调 `draw()`/`render()` 都是空转。
+ *
+ * 所以这里走文档化的路径：读出模型位置，用 `updateNodeData` 显式写回，再 `draw()`。
+ */
+function syncPositions(g: Graph): void {
+  const data = g.getNodeData().map((n) => {
+    const p = g.getElementPosition(n.id) as [number, number] | undefined
+    return p ? { id: n.id, style: { x: p[0], y: p[1] } } : null
+  }).filter(Boolean)
+  if (!data.length) return
+  g.updateNodeData(data as never)
+  void g.draw()
+}
+
+/**
  * 布局配置。
  *
  * **必须显式传给 `layout()`** —— 不传参时它用 context.layout 里**建图那一刻**的
@@ -524,7 +546,7 @@ export function WorkflowCanvasG6({
     // **layout() 之后必须再 draw() 一次** —— 实测：模型坐标确实重排了（getElementPosition
     // 从 TB 的 [99,204] 变成 LR 的 [345,52]），但页面上 HTML 节点的 DOM 位置一动不动，
     // 用户看不到任何变化。layout 只更新模型，画布要自己再画一帧。
-    void Promise.resolve(g.layout(LAYOUT_OPTS(rankdir) as never)).then(() => g.draw())
+    void Promise.resolve(g.layout(LAYOUT_OPTS(rankdir) as never)).then(() => syncPositions(g))
   }, [rankdir])
 
   // 数据变化 → 增量同步（不重建图，布局会自己重跑）。
@@ -559,7 +581,7 @@ export function WorkflowCanvasG6({
     // （实测：切方向时 effect 明明跑了、rankdir 也确实变成了 LR，节点坐标却一点没动；
     //  而在页面里手动调 layout({rankdir:'LR'}) 立刻就变了）。
     // 所以这里也把当前方向一起交给 layout()。
-    void Promise.resolve(g.layout(LAYOUT_OPTS(dirSeenRankdir.current))).then(() => g.draw())
+    void Promise.resolve(g.layout(LAYOUT_OPTS(dirSeenRankdir.current))).then(() => syncPositions(g))
   }, [nodes])
 
   /**
