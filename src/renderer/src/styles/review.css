@@ -6,8 +6,15 @@
 }
 /* 每个统计分区套一层卡片：与设置页 .set-card 同一套视觉语言。
    此前几块图表只有标题，分区之间没有边界，读起来是连成一片的。 */
+/**
+ * **回顾页要塞进一屏**（用户要求不要滚动条）。
+ *
+ * 内容天然比视口高 67px，图表是 SVG（高度由 viewBox 比例定），所以只能从"卡片呼吸感"里省：
+ * 内边距 16 → 12、分区间距 14 → 8、页面内边距 24 → 16（见下面的 .page--review）。
+ * 省出来的正好把 67px 覆盖掉，且没有一项紧到读起来发挤。
+ */
 .page--review .section {
-  padding: var(--space-4);
+  padding: var(--space-3);
   /* 归到 global.css 的「页面级卡片」规范：inset 底 + --card-shadow（自带内高光），不用描边。
      注释里本来就写着"与设置页 .set-card 同一套视觉语言"—— 那条规范就是这么定的。 */
   background: var(--glass-layer-inset);
@@ -17,7 +24,7 @@
 }
 .page--review .section + .section,
 .page--review .review-pair {
-  margin-top: var(--space-3);
+  margin-top: var(--space-2);
 }
 /* 并排的两块已经在同一行里，不需要再各留上边距 */
 .page--review .review-pair > .section + .section {
