@@ -60,7 +60,7 @@ import {
   ballWindowPx,
   clampBallSize,
 } from './widget-geometry'
-import { setConditionAsker } from './db/workflow'
+import { recoverStuckInstances, setConditionAsker } from './db/workflow'
 import { importAttachment, importAttachmentData, importAttachmentDataBatch } from './db/attachments'
 import { syncExternalTasks, taskSyncStatus } from './task-sync'
 import { readSelectedText } from './selection'
@@ -1288,6 +1288,15 @@ app.whenReady().then(() => {
   registerDbHandlers()
   registerAiHandlers()
   registerConditionAsk()
+  /**
+   * 启动自愈：把「停在人工节点却没有任何未完成待办」的实例补派一次。
+   * 见 `recoverStuckInstances` 的注释 —— 修好派发逻辑之后，已经卡住的老实例还需要有人把它们叫醒。
+   */
+  try {
+    recoverStuckInstances()
+  } catch (err) {
+    console.error('[workflow] 启动自愈失败', err)
+  }
   registerTaskSyncHandlers()
   registerCaptureWindow()
   registerShellHandlers()

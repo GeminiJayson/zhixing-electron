@@ -1016,6 +1016,47 @@ export async function pumpInstance(instanceId: number): Promise<void> {
 }
 
 /**
+ * **启动自愈**：把「停在人工节点、却没有任何未完成待办」的 running 实例补派一次。
+ *
+ * 会造成这种状态的是派发环节断过 —— 例如历史版本在**回边重入**时只看绑定记录、
+ * 不看任务状态，判定成"已有待办"而跳过（`advanceInstance` 的 `has` 查询）。
+ * 修复之后新流程不会再这样，但**已经卡住的实例**不会自己醒过来：
+ * 界面上「重试该步」只对自动节点有效，人工节点除了中止没别的出路。
+ * 所以启动时扫一遍、补派一次 —— **幂等**：真的有待办就一个都不动。
+ *
+ * 返回补派的实例数（用于日志）。
+ */
+export function recoverStuckInstances(): number {
+  const c = conn()
+  const rows = c
+    .prepare("SELECT id, template_id, origin_task_id, current_node_id FROM workflow_instance WHERE status = 'running' AND current_node_id IS NOT NULL")
+    .all() as { id: number; template_id: number; origin_task_id: number | null; current_node_id: number }[]
+  let fixed = 0
+  for (const r of rows) {
+    const tpl = getWorkflowTemplate(r.template_id)
+    if (!tpl) continue
+    const node = tpl.nodes.find((n) => n.id === r.current_node_id)
+    if (!node || !needsTask(node)) continue
+    const has = c
+      .prepare(
+        `SELECT 1 FROM workflow_step_task st
+           JOIN task t ON t.id = st.task_id
+          WHERE st.instance_id = ? AND st.node_id = ? AND t.status != 'done'`
+      )
+      .get(r.id, node.id)
+    if (has) continue
+    spawnStepTask(r.id, node, tpl.name, r.origin_task_id)
+    logRun(r.id, node.id, 'enter', '已补派待办（启动时的自愈）')
+    fixed++
+  }
+  if (fixed) {
+    console.error('[workflow] 启动自愈：为 ' + fixed + ' 个卡住的实例补派了待办')
+    notifyWorkflow()
+  }
+  return fixed
+}
+
+/**
  * 某步骤任务完成时推进实例：
  * 有下一步则生成其任务并前移 current_node_id，最后一步则完结实例。
  */
