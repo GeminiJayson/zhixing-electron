@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { isMotionFull, usePresence } from '../lib/presence'
 import { placeAnchored } from '../lib/anchored-position'
 
@@ -244,15 +243,13 @@ export function Select({
         <span className="select__caret" aria-hidden />
       </button>
       {/*
-        浮层**挂到 body**（Portal），而不是留在原地。
-        弹窗/抽屉这类祖先常常带 `transform`、`filter`、`backdrop-filter`、`container-type` ——
-        它们会**创建新的包含块**，于是 `position: fixed` 的浮层不再相对视口定位，
-        `placeAnchored` 算出来的视口坐标就被当成了相对那个祖先的坐标，位置整个偏掉
-        （用户报"任务项编辑页的状态/优先级/循环下拉位置都不对"——那三个就在弹窗里）。
-        Portal 到 body 之后，浮层的坐标系恒等于视口，与祖先无关。
+        浮层**就地渲染**（不用 Portal）。
+        试过挂到 body，结果是"点开一闪就没了"：选择器大量用在 `<label className="form-row">` 里，
+        Portal 之后浮层在 body、脱离了那个 label —— 在浮层上按下鼠标会先被 label 的"点击即聚焦
+        关联控件"接管，浮层当场被关掉。就地渲染没有这个问题，而定位的坐标系问题已经由
+        `mounted` 依赖那处修复解决（见上面的 useLayoutEffect）。
       */}
-      {mounted &&
-        createPortal(
+      {mounted && (
           <div
             ref={listRef}
             id={listId}
@@ -284,10 +281,9 @@ export function Select({
               <span className={'popmenu__tick' + (o.value === value ? ' popmenu__tick--on' : '')} />
               {o.label}
             </div>
-            ))}
-          </div>,
-          document.body
-        )}
+          ))}
+        </div>
+      )}
     </>
   )
 }
