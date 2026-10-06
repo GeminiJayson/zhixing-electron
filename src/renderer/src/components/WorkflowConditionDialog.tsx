@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Select } from './Select'
 import type { WorkflowNodePayload } from '@shared/types'
 import { WorkflowConditionEditor } from './WorkflowConditionEditor'
 import { X } from '@renderer/lib/icons'
@@ -55,40 +56,31 @@ export function WorkflowConditionDialog({ node, isNew, siblings, onSave, onCance
           />
           <label className="form-row">
             <span>满足时跳到</span>
-            <select
+            <Select
               className="field"
-              value={draft.branch_node_id ?? ''}
-              onChange={(e) =>
-                setDraft({ ...draft, branch_node_id: e.target.value ? Number(e.target.value) : null })
-              }
-            >
-              <option value="">（按顺序走下一步）</option>
-              {siblings.map((n) => (
-                <option key={n.id} value={n.id}>
-                  {n.title}
-                </option>
-              ))}
-            </select>
+              ariaLabel="满足时跳到"
+              value={draft.branch_node_id == null ? '' : String(draft.branch_node_id)}
+              onChange={(v) => setDraft({ ...draft, branch_node_id: v ? Number(v) : null })}
+              options={[
+                { value: '', label: '（按顺序走下一步）' },
+                ...siblings.map((n) => ({ value: String(n.id), label: n.title })),
+              ]}
+            />
           </label>
           <label className="form-row">
             <span>不满足时跳到</span>
-            <select
+            <Select
               className="field"
-              value={draft.branch_false_node_id ?? ''}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  branch_false_node_id: e.target.value ? Number(e.target.value) : null,
-                })
+              ariaLabel="不满足时跳到"
+              value={draft.branch_false_node_id == null ? '' : String(draft.branch_false_node_id)}
+              onChange={(v) =>
+                setDraft({ ...draft, branch_false_node_id: v ? Number(v) : null })
               }
-            >
-              <option value="">（按顺序走下一步）</option>
-              {siblings.map((n) => (
-                <option key={n.id} value={n.id}>
-                  {n.title}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: '', label: '（按顺序走下一步）' },
+                ...siblings.map((n) => ({ value: String(n.id), label: n.title })),
+              ]}
+            />
           </label>
           <p className="u-aux">
             两条分支都可以留空 —— 留空就按顺序走下一个节点。也可以在画布上直接拖动条件节点
