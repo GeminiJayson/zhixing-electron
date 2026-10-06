@@ -1175,6 +1175,15 @@ html:not([data-tree-guide='off'])
    触发器沿用 .field 的尺寸与描边（与输入框同款，所以一行里的控件是齐的）；
    浮层复用 .popmenu —— 下拉与右键菜单、优先级菜单是同一种浮层。 */
 .select__trigger {
+  /**
+   * **清掉原下拉类自画的箭头**。
+   *
+   * 原生 `<select>` 不能改 `appearance` 之外的样子，所以各处的下拉类名都自己用
+   * `background-image: url("data:image/svg+xml,…")` 画了一个小三角（`.notes-filter__select`、
+   * `.kbchip__select` 等）。换成 `Select` 之后组件自带 `.select__caret`，
+   * 不清掉就会**出现两个箭头**（用户报"知识库页所有类型下拉框有两个下拉按钮"）。
+   */
+  background-image: none;
   display: inline-flex;
   align-items: center;
   justify-content: space-between;
