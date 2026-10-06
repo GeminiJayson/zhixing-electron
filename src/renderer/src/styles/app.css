@@ -375,6 +375,17 @@
   overflow-x: hidden;
   overflow-y: auto;
   /**
+   * **给卡片阴影留出横向余量（padding 撑开 + 负 margin 拉回）**。
+   *
+   * 滚动容器（`overflow-y: auto`）的横向必然是 `hidden` —— 于是**贴着左右边缘的卡片阴影被切掉**
+   *（实测：今日页概览卡左侧间距 0、回顾页分区左右 0/10、设置页卡片左侧 0，而阴影半径是 20px）。
+   * 想靠 `overflow-clip-margin` 不行（见下），所以改用最朴素的办法：
+   * **padding 把裁剪边界向外撑 12px**（阴影落进 padding 区，不会被裁），
+   * **负 margin 再把布局拉回来**（内容视觉位置分毫不动）。
+   */
+  padding-inline: 24px;
+  margin-inline: -24px;
+  /**
    * ⚠️ **这里不能用 `overflow-x: clip` + `overflow-clip-margin`**。
    *
    * 试过，不生效：按规范，一轴是 `clip` 而另一轴是 `auto`/`scroll`/`hidden` 时，
