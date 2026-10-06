@@ -98,10 +98,31 @@ export const motionPolicy = (): ReducedMotionMode =>
 /** 与 lucide-react 同签名（size / strokeWidth / absoluteStrokeWidth / color / className 直通 svg） */
 export type LucideIcon = (props: MorphIconProps) => ReactElement
 
+/**
+ * **`--text-body` 的默认值**（`tokens.css` 里那一档）。
+ *
+ * 图标尺寸在业务代码里到处写成 `size={16}` 这类**数字**，lucide 会把它当 px 用 ——
+ * 于是设置页调字号时文字缩放了、图标却纹丝不动（用户反馈）。
+ * 这里统一把**数字**折算成 `em`：`16 / 13.5 = 1.185em` ——
+ * 图标从此跟着**所在上下文**的字号走（标题旁边的大一点、胶囊里的小一点），
+ * 也和整条字号阶梯（`--text-body` 派生）保持同一套比例。
+ *
+ * 需要**绝对尺寸**的地方（窗口控制按钮这类不该随字号变的）显式传字符串：
+ * `size="16px"` —— 字符串原样透传，不做折算。
+ */
+const ICON_BASE_PX = 13.5
+
 const make = (data: unknown): LucideIcon => {
   const node = unpack(data)
-  return function Icon(props: MorphIconProps): ReactElement {
-    return <MorphIcon icon={node} reducedMotion={motionPolicy()} {...props} />
+  return function Icon({ size, ...props }: MorphIconProps): ReactElement {
+    return (
+      <MorphIcon
+        icon={node}
+        reducedMotion={motionPolicy()}
+        size={typeof size === 'number' ? `${size / ICON_BASE_PX}em` : size}
+        {...props}
+      />
+    )
   }
 }
 
