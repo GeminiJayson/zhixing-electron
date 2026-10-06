@@ -508,10 +508,10 @@ export function WorkflowCanvasG6({
     }
     const g = graphRef.current
     if (!g) return
-    g.setOptions({
-      layout: { type: 'antv-dagre', rankdir, nodesep: 24, ranksep: 40, marginx: 40, marginy: 40 },
-    } as never)
-    void g.layout()
+    // **配置要直接传给 layout()**：不传参时它用的是 context.layout 里建图那一刻的
+    // presetOptions，而 setOptions 并不会更新那份 —— 于是永远按旧 rankdir 排
+    // （实测：点「横向」按钮与 state 都正常切换，节点坐标却一个都没动）。
+    void g.layout({ type: 'antv-dagre', rankdir, nodesep: 24, ranksep: 40, marginx: 40, marginy: 40 } as never)
   }, [rankdir])
 
   // 数据变化 → 增量同步（不重建图，布局会自己重跑）。
