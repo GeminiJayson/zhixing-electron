@@ -10,6 +10,10 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  /* 同 .page__body：它是滚动容器（横向恒 hidden），卡片贴边时阴影会被切 ——
+     留白给在它自己身上，撑开裁剪边界、负 margin 拉回，内容位置不变。 */
+  padding-inline: var(--radius-lg);
+  margin-inline: calc(-1 * var(--radius-lg));
   /* tab 区与卡片区之间不留缝：那段留白露出的是页面背景（与卡片不是一层），
      会在 tab 行下方显成一条横向分割带（用户截图框出的位置就是它）。 */
   margin-top: 0;
