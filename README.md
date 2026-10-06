@@ -107,7 +107,7 @@ npm run dev                           # 开发模式（HMR）
 
 进 `package.json` 的入口共 **21 条**。常用：`dev` / `build` / `typecheck` / `test`；检查类 `check:jieba` / `check:security` / `check:contrast` / `check:ctlheight` / `check:interaction`；构建发布 `dist:win` / `dist:dir` / `postdist:*` / `binding:win` / `release` / `release:dry`；图标生成 `gen:icons` / `gen:app-icons`。
 
-单元测试为 vitest：**53 个测试文件 / 630 个用例**，只覆盖纯函数（`vitest.config.ts` 明确排除涉及 SQLite / IPC / 真实窗口的部分，那部分留在 `scripts/*.mjs`）。
+单元测试为 vitest：**53 个测试文件 / 634 个用例**，只覆盖纯函数（`vitest.config.ts` 明确排除涉及 SQLite / IPC / 真实窗口的部分，那部分留在 `scripts/*.mjs`）。
 
 ## 7. 打包与发布
 
@@ -174,7 +174,7 @@ zhixing-electron/
 │   │   ├── security.ts  log.ts    # 导航三道出口 / 文件日志
 │   │   └── db/                    # 数据层 31 个 .ts（connection / schema / migrate / tasks / notes / graph / …）
 │   ├── preload/                   # index.ts（拼装）+ api/（7 个域文件）+ index.d.ts
-│   ├── renderer/                  # React 应用：pages/（9 页）components/（47 个）lib/（23 个）styles/（16 个 CSS）
+│   ├── renderer/                  # React 应用：pages/（9 页）components/（51 个）lib/（30 个）styles/（16 个 CSS）
 │   └── shared/                    # 主/渲染共用纯函数 62 文件（types / events / settings / color / …）
 ├── scripts/                       # 73 个 .mjs（顶层共 75 个文件）
 ├── CONTEXT.md                     # 术语表：只在词义会误解时收录

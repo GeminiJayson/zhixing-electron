@@ -44,7 +44,6 @@ import {
   actionKindLabel,
 } from '@shared/workflow-action'
 import {
-  branchSlotLabel,
   branchTarget,
   withBranchTarget,
   type BranchSlot,
@@ -55,15 +54,12 @@ import { WorkflowScheduleDialog } from '../components/WorkflowScheduleDialog'
 import { WorkflowRunDialog } from '../components/WorkflowRunDialog'
 import { WorkflowConditionDialog } from '../components/WorkflowConditionDialog'
 import { useDialog } from '../components/Dialogs'
-import { usePanZoom } from '../lib/usePanZoom'
-import { isMotionFull } from '../lib/presence'
 import {
   layoutBounds,
   layoutWorkflow,
   type WorkflowRankDir,
 } from '../lib/workflow-layout'
 import { quietFailure } from '@shared/quiet-failure'
-import { readTokenMs } from '../lib/motion-tokens'
 
 interface Props {
   onNotice: (message: string) => void
@@ -83,8 +79,6 @@ const SIDE_MIN = 170
 const SIDE_MAX = 460
 /** 键盘调节侧栏宽度时的步长（← → 各一格） */
 const SIDE_KEY_STEP = 16
-/** 布局飞位的位移下限（画布用户单位）：小于它的抖动不值得飞一程 */
-const FLY_MIN_SHIFT = 0.5
 
 
 /**
@@ -163,7 +157,6 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     setRunLogFor(id)
     setRunLog(await window.zhixing.db.workflowRunLog(id))
   }
-  const [pos, setPos] = useState<Map<number, { x: number; y: number }>>(new Map())
   const [selected, setSelected] = useState<number | null>(null)
   /**
    * 待定的分支出边：点了某个端口、还没点目标节点。
@@ -227,32 +220,11 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   const editingIsCondition = editing?.action_kind === CONDITION_KIND
   /** 步骤可绑定的 SOP 笔记 */
   const [noteChoices, setNoteChoices] = useState<Note[]>([])
-  const dragRef = useRef<{
-    id: number
-    dx: number
-    dy: number
-    /** 按下时的坐标：松手时比对用 —— 没真的挪动过就不要写库 */
-    from: { x: number; y: number }
-  } | null>(null)
-  /** 鼠标悬浮的步骤：与它相连的连线高亮、其余淡到几乎隐形（与知识图谱同一套交互） */
-  /**
-   * 节点悬浮预览已按用户要求移除（2026-09-29）。
-   * 原先悬停一个步骤会淡化"非直接邻居"的节点与连线、并给相关连线换成高亮箭头 ——
-   * 用户觉得那是多余的干扰。现在画布状态只由**选中**（selected）与**拖拽**（branchDrag /
-   * branchHover）驱动：这两个都是用户主动发起的，悬停不是。
-   */
-  const [branchDrag, setBranchDrag] = useState<{
-    fromId: number
-    slot: BranchSlot
-    x: number
-    y: number
-  } | null>(null)
   /**
    * 正在拖动节点。拖动期间不渲染详情浮卡 —— 浮卡画在 foreignObject 里，
    * 节点移动时它的坐标更新了但不会重绘，会在原地留下一张「拖影」。
    */
   // 画布视图（平移 / 缩放）。startDrag 定义在 hook 之前，用这个 ref 桥接。
-  const panRef = useRef<ReturnType<typeof usePanZoom> | null>(null)
 
   /** 模板分类 */
   type WfGroup = Awaited<ReturnType<typeof window.zhixing.db.workflowGroups>>[number]
@@ -301,7 +273,6 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     const tpl = await window.zhixing.db.workflowTemplate(id)
     setCurrent(tpl)
     const layout = tpl ? layoutOf(tpl.nodes, rankdirRef.current) : new Map()
-    setPos(layout)
     setCanvasSize(canvasBoundsOf(layout))
     setSelected(null)
   }, [])
@@ -397,70 +368,8 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     [ordered, selected]
   )
 
-  const onMove = (
-    _e: React.PointerEvent<SVGSVGElement>,
-    world: { x: number; y: number } | null
-  ): void => {
-    if (branchDrag) {
-      if (world) setBranchDrag((d) => (d ? { ...d, x: world.x, y: world.y } : d))
-      return
-    }
-    const drag = dragRef.current
-    if (!drag || !world) return
-    setPos((prev) => {
-      const next = new Map(prev)
-      next.set(drag.id, {
-        x: Math.max(0, world.x - drag.dx),
-        y: Math.max(0, world.y - drag.dy),
-      })
-      return next
-    })
-  }
-
-  /** 分支端点改挂：落点用命中检测 —— 拖拽期间指针被画布捕获，节点的 hover 事件不会触发。 */
-  const dropBranchAt = async (clientX: number, clientY: number): Promise<void> => {
-    const drag = branchDrag
-    setBranchDrag(null)
-    if (!drag) return
-    const hit = document.elementFromPoint(clientX, clientY)?.closest('[data-wf-node]')
-    const targetId = hit ? Number(hit.getAttribute('data-wf-node')) : NaN
-    if (!targetId || targetId === drag.fromId) return
-    await window.zhixing.db.setWorkflowBranch(drag.fromId, targetId, drag.slot)
-    const label = ordered.find((n) => n.id === targetId)?.title ?? ''
-    onNotice(`已把「${branchSlotLabel(drag.slot)}」分支连到「${label}」`)
-    await refresh()
-  }
-
-  /** 拖动结束才落库。 */
-  const endDrag = async (e?: { type?: string; clientX?: number; clientY?: number }): Promise<void> => {
-    if (branchDrag) {
-      if (e?.type === 'pointerleave' || e?.clientX == null || e?.clientY == null) setBranchDrag(null)
-      else await dropBranchAt(e.clientX, e.clientY)
-      return
-    }
-    const drag = dragRef.current
-    dragRef.current = null
-    if (!drag) return
-    const p = pos.get(drag.id)
-    if (!p) return
-    const nx = Math.round(p.x)
-    const ny = Math.round(p.y)
-    // 只是「点一下选中」、并没有真的挪动过，就别写库：写下去等于把 dagre 的临时排布
-    // 固化成手动坐标，之后再插入步骤时新旧节点会叠在同一个位置（实测踩到过）。
-    if (nx === Math.round(drag.from.x) && ny === Math.round(drag.from.y)) return
-    await window.zhixing.db.updateWorkflowNodePos(drag.id, nx, ny)
-  }
-
   // 画布级平移 / 缩放：拖背景平移、滚轮以光标为中心缩放；非平移时的移动转给节点拖拽
   const wfRef = useRef<WorkflowCanvasHandle>(null)
-
-  const pan = usePanZoom({
-    baseW: canvasSize.width,
-    baseH: canvasSize.height,
-    onMove,
-    onEnd: (e) => void endDrag(e),
-  })
-  panRef.current = pan
 
   // 侧栏分隔条：拖拽改宽度，松手才落 localStorage（避免每帧写）
   const startSideDrag = (e: React.PointerEvent<HTMLDivElement>): void => {
@@ -520,71 +429,12 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
   }
 
   // 基准尺寸一变（打开模板 / 自动布局 / 切方向）就适配一次视图。
-  // 不能直接在 handleAutoLayout 里调 pan.reset()：那时 setCanvasSize 尚未生效，
+  // 不能直接在 handleAutoLayout 里 fit：那时 setCanvasSize 尚未生效，
   // reset 用的是旧基准，视图会缩在角落（实测横向布局后节点全挤在右上角）。
   useEffect(() => {
     wfRef.current?.fit()
   }, [canvasSize])
 
-  /** 上一帧提交进 DOM 的节点坐标（飞位的起点）与还在跑的补间（同一节点先撤后飞）。 */
-  const flownPosRef = useRef<Map<number, { x: number; y: number }>>(new Map())
-  const flownAnimsRef = useRef<Map<number, Animation>>(new Map())
-
-  /**
-   * 布局飞位（消费 --dur-panel / --ease-panel）。
-   *
-   * 自动布局或切「纵向 / 横向」之后，节点的 transform 属性会整体换成新坐标；
-   * React 复用同一个 <g>，于是画面是**瞬移**。这里按上一帧记下的坐标补一段位移，
-   * 让节点「飞」过去 —— 用户看得见「谁挪到了哪儿」，而不是刷新了一下。
-   *
-   * 为什么用 Web Animations 而不是 CSS transition：定位走的是 SVG 的 transform
-   * **属性**（wfbranchcheck.mjs 直接读 getAttribute('transform')，所以也不能改成内联 style），
-   * 属性变化不参与 CSS 过渡。关键帧交给 fill:'none' —— 动画一结束元素立刻回到属性里的
-   * 最终坐标，拖拽、平移缩放与命中检测拿到的始终是权威值，不会停在补间中间。
-   *
-   * 非 full 档（data-motion 为 reduced / none）直接跳过：--dur-panel 归零只管得住 CSS，
-   * 这里得自己判档 —— 判档一律走 lib/presence 的 isMotionFull（full 档的 dataset 是空串）。
-   */
-  useEffect(() => {
-    const before = flownPosRef.current
-    const after = new Map(pos)
-    flownPosRef.current = after
-    if (!isMotionFull()) return
-    // 拖动节点时坐标是逐帧写进来的：跟手才是对的，插一段补间会让它慢半拍
-    if (dragRef.current) return
-    const svg = panRef.current?.svgRef.current
-    if (!svg || before.size === 0) return
-    const style = getComputedStyle(document.documentElement)
-    const duration = readTokenMs('--dur-panel')
-    const easing = style.getPropertyValue('--ease-panel').trim() || 'linear'
-    for (const [id, to] of after) {
-      const from = before.get(id)
-      if (!from) continue
-      if (Math.abs(to.x - from.x) < FLY_MIN_SHIFT && Math.abs(to.y - from.y) < FLY_MIN_SHIFT) continue
-      const el = svg.querySelector(`g.wf-node[data-wf-node="${id}"]`)
-      if (!el) continue
-      flownAnimsRef.current.get(id)?.cancel()
-      flownAnimsRef.current.set(
-        id,
-        el.animate(
-          [
-            { transform: `translate(${from.x}px, ${from.y}px)` },
-            { transform: `translate(${to.x}px, ${to.y}px)` },
-          ],
-          { duration, easing, fill: 'none' }
-        )
-      )
-    }
-  }, [pos])
-
-  // 卸载时把还在跑的补间收掉，别让动画对象挂在已经离开的节点上
-  useEffect(
-    () => () => {
-      for (const a of flownAnimsRef.current.values()) a.cancel()
-      flownAnimsRef.current.clear()
-    },
-    []
-  )
 
   const handleNewTemplate = async (groupId: number | null = null): Promise<void> => {
     const name = await dialog.prompt({ title: '新建工作流', label: '名称' })
@@ -916,7 +766,6 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
     // 一次提交全部坐标：逐条写的话，中途失败会留下「一半新坐标一半旧坐标」的画布
     await window.zhixing.db.batchUpdateNodePos([...next].map(([id, p]) => ({ id, x: p.x, y: p.y })))
     await refresh()
-    setPos(next)
     // 只改基准：适配视图由上面那个 effect 统一做（它等得到新基准）
     setCanvasSize(canvasBoundsOf(next))
     onNotice(dir === 'TB' ? '已按依赖关系纵向分层排布' : '已按依赖关系横向分层排布')
