@@ -612,7 +612,9 @@
   flex: 0 0 auto;
   padding: var(--space-hair) var(--space-sm);
   font-size: var(--text-aux);
-  line-height: var(--size-16);
+  /* 行高原本写死 `var(--size-16)`（16px）—— 字号一旦调大（设置页的「字号」），
+     16px 就把文字压住了。改成相对字号的 `--lh-tight`，跟着字号一起缩放。 */
+  line-height: var(--lh-tight);
   color: var(--fg-secondary);
   background: var(--glass-layer-control);
   border: var(--border-w) solid transparent;
@@ -664,7 +666,7 @@ button.chip--tag:focus-visible {
 .chip--tag--mini {
   padding: 0 var(--space-half);
   font-size: var(--text-xs);
-  line-height: var(--size-15);
+  line-height: var(--lh-tight);
   border-radius: var(--radius-pill);
 }
 /* 「加标签」是个描边按钮，不该长得像一枚已有标签 */
@@ -1244,7 +1246,7 @@ button.chip--status:focus-visible {
   padding: 0 var(--space-1);
   border-radius: var(--radius-sm);
   font-size: var(--text-sm);
-  line-height: var(--size-18);
+  line-height: var(--lh-tight);
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
@@ -1262,7 +1264,7 @@ button.chip--status:focus-visible {
   border-radius: var(--radius-sm);
   background: var(--bg-hover);
   font-size: var(--text-sm);
-  line-height: var(--size-16);
+  line-height: var(--lh-tight);
   text-align: left;
   cursor: grab;
 }

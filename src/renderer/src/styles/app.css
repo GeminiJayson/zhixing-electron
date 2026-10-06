@@ -281,7 +281,7 @@
   background: var(--accent-solid);
   color: var(--fg-on-accent);
   font-size: var(--text-sm);
-  line-height: var(--size-18);
+  line-height: var(--lh-tight);
   text-align: center;
   /* 数字变化时弹一下（Sidebar 用 key={count} 让它重建，从而重播这条动画）。
      徽标是「有新东西」的信号，一次轻微的放大足够，不要更响。 */
