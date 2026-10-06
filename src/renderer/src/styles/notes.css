@@ -57,12 +57,10 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-hair);
-  /* 滚动区**自己**的底部留白：滚到底时最后一张 card 要能整体露出来。
-     留白加在滚动容器上（而不是它的父面板）—— 父面板的 padding 在裁切边界**之外**，
-     内容滚到那里就被切掉，卡片的下半截正好卡在边界上（用户截图）。 */
-  padding-bottom: var(--radius-lg);
-  padding: var(--radius-lg);
-  padding-top: 0;
+  /* 内边距给在**滚动容器自己**身上（不是父面板）：父面板的 padding 在裁切边界**之外**，
+     内容滚到那里就被切掉，卡片的下半截会卡在边界上。上边为 0 —— 列表紧接标题，不需要留白。
+     这个值与工作流模板树的 `.wf-tree` 保持一致。 */
+  padding: 0 var(--radius-lg) var(--radius-lg);
 }
 .ntree__folder {
   display: flex;
