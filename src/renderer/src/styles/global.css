@@ -1008,8 +1008,17 @@ html[data-surface='capture'] .modal__head button {
 .flash-card,
 .set-card,
 .stat-card {
-  /* 卡片用 inset 层：比它所在的面板实一档，层次才分得出来 */
-  background: var(--glass-layer-inset);
+  /**
+   * **卡片不铺底**（用户选的方案 A）。
+   *
+   * 原来是 `--glass-layer-inset`。玻璃层是半透明的 —— 卡片铺一层、又叠在同样半透明的
+   * 页面底之上，**两层相加**就比"只有页面底"的留白区更实更白，交界处一条淡淡的色带
+   *（用户："留白背景不是透明的"）。试过把页面底提实去追平，结果反向更差。
+   *
+   * 所以把底色整层去掉：卡片的层次改由 `--card-shadow`（三层递进 + 1px 实心描边）
+   * 与圆角表达。留白与卡片从此是同一层底，色差归零。
+   */
+  background: transparent;
   /**
    * **不用描边，用羽化浅阴影**（--card-shadow，亮暗各一套见 tokens.css）。
    *

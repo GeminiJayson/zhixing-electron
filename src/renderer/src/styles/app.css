@@ -932,10 +932,19 @@
 .wf-side,
 .graph,
 .graph-side {
+  /**
+   * **面板也只留氛围光，不再铺底色**（方案 A 的另一半）。
+   *
+   * 底色（`--glass-layer-surface`）半透明，与页面底叠加后比留白区更实 ——
+   * 这正是"卡片的底和留白不是一个颜色"的来源。去掉它之后，面板与留白共用页面底，
+   * 边界由 `--panel-shadow` 表达。
+   *
+   * 氛围光保留：两条径向渐变本身就是透明的（`color-mix(…, transparent)`），
+   * 只是给面板加一层色相，不改变明度层次。
+   */
   background:
     radial-gradient(120% 90% at 12% -10%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 78%),
-    radial-gradient(100% 80% at 88% 110%, color-mix(in srgb, var(--accent) 4%, transparent), transparent 80%),
-    var(--glass-layer-surface);
+    radial-gradient(100% 80% at 88% 110%, color-mix(in srgb, var(--accent) 4%, transparent), transparent 80%);
 }
 
 /**
@@ -980,4 +989,33 @@
 .page__body > :last-child {
   margin-top: auto;
   margin-bottom: 0;
+}
+
+/**
+ * **方案 A：面板与卡片一律不铺底**（用户选定）。
+ *
+ * 玻璃层是半透明的 —— 卡片铺一层、又叠在同样半透明的页面底之上，**两层相加**
+ * 就比"只有页面底"的留白区更实更白，交界处显出一条淡淡的色带（用户截图指出
+ * "留白背景不是透明的"）。试过把页面底提实去追平，结果反向更差。
+ *
+ * 所以把这几层的底色整层去掉：它们与留白共用页面底，层次改由
+ * `--panel-shadow` / `--card-shadow`（三层递进 + 1px 实心描边）与圆角表达。
+ *
+ * 这里用覆盖而不是逐个改定义：定义分散在 notes / workflow / graph / tasks 四个文件里，
+ * 逐个改容易漏；集中一条列清楚"哪些是需要浮起、但不铺底的面"。
+ * 保留底色的只有：`.app__content`（页面底本身）、`.titlebar`（要压住下面的内容）
+ * 以及浮层（图例、菜单、弹窗 —— 它们必须比背景实才读得清）。
+ */
+.sidebar,
+.tasklists,
+.ntree,
+.sheet,
+.wf-side,
+.wf-canvas,
+.graph,
+.graph-side {
+  /* `!important` 是必要的：这些面板各自在 notes / workflow / graph / tasks 里
+     用 `background` 简写设过底，而那几个文件的加载顺序晚于本文件 —— 同权重下会被它们盖回去
+     （实测：侧栏生效了、树与笔记纸没有）。集中覆盖一处比逐文件改更不容易漏。 */
+  background-color: transparent !important;
 }
