@@ -10,7 +10,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  margin-top: var(--space-3);
+  /* tab 区与卡片区之间只留一丝。原来 14px —— 那段留白露出的是页面背景（与卡片不是一层），
+     在 tab 行下方显成一条横向分割带（用户截图框出的位置就是它）。 */
+  margin-top: var(--space-1);
   /* 不设 max-width：设置卡片要横向铺满父布局，窄窗口时自然收窄 */
   flex: 1 1 auto;
   min-height: 0;

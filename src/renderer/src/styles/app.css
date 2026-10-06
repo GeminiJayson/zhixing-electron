@@ -352,7 +352,10 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: var(--space-5);
+  /* 上下收到 12px（原 24px）：页面内边距露出的也是页面背景，太宽会在内容区上下
+     各显出一条横带（用户截图的顶部与底部两条）。左右仍保留 24px 与 .page__body 的
+     横向内边距对齐。 */
+  padding: var(--space-3) var(--space-5);
   overflow: hidden;
   animation: page-enter var(--dur-normal) var(--ease-enter);
 }
