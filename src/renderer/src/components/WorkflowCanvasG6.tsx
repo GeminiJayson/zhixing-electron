@@ -421,11 +421,27 @@ export function WorkflowCanvasG6({
     })
     graph.on('canvas:click', () => cb.current.onSelect(null))
 
-    // 同图谱画布：G6 只在建图时量一次容器，尺寸变化要自己盯
+    /**
+     * 同图谱画布：G6 只在建图时量一次容器，尺寸变化要自己盯。
+     *
+     * **必须防抖 + 比尺寸** —— 选中节点会让侧栏/滚动条变化，容器宽度高频抖动，
+     * 而每次 `resize()` 都会重建 canvas（重建期间画面是空的，看着就是白屏闪一下）。
+     * 只有静置 150ms 后尺寸确实不同才真正 resize。
+     */
+    let lastW = el.getBoundingClientRect().width
+    let lastH = el.getBoundingClientRect().height
+    let resizeTimer = 0
     const ro = new ResizeObserver(() => {
-      // **必须挡一道**：disconnect() 挡不住已经排进队列的那一次回调
-      if (dead) return
-      graph.resize()
+      window.clearTimeout(resizeTimer)
+      resizeTimer = window.setTimeout(() => {
+        // **必须挡一道**：disconnect() 挡不住已经排进队列的那一次回调
+        if (dead) return
+        const r = el.getBoundingClientRect()
+        if (Math.abs(r.width - lastW) < 1 && Math.abs(r.height - lastH) < 1) return
+        lastW = r.width
+        lastH = r.height
+        graph.resize()
+      }, 150)
     })
     ro.observe(el)
 
@@ -437,6 +453,7 @@ export function WorkflowCanvasG6({
     return () => {
       dead = true
       ro.disconnect()
+      window.clearTimeout(resizeTimer)
       stopTheme?.()
       graph.destroy()
       graphRef.current = null

@@ -305,8 +305,28 @@ export function GraphCanvasG6({
     /**
      * 跟随容器尺寸变化。**G6 只在建图时量一次容器** —— 拖大窗口后内容会锁在小画布里，
      * 试过 `canvas: { autoResize: true }`，**不在 `CanvasConfig` 类型里**，所以自己盯。
+     *
+     * ⚠️ **必须防抖 + 比尺寸**，否则这里就是「点一下整个画布白屏闪一下」的元凶：
+     * 选中节点会让侧栏变化、滚动条一出一进，容器宽度在高频抖动
+     * （实测一次点击触发 **5 次** `resize()`，尺寸在 722↔732 之间来回跳）。
+     * 而 `graph.resize()` 每次都会重建 canvas —— 重建期间画面是空的，人眼看到的就是白屏。
+     * 现在：等 150ms 静置，且**只有最终尺寸与画布当前尺寸真的不同**才 resize
+     * （抖回原尺寸时一次都不调）。
      */
-    const ro = new ResizeObserver(() => graph.resize())
+    let lastW = el.getBoundingClientRect().width
+    let lastH = el.getBoundingClientRect().height
+    let resizeTimer = 0
+    const ro = new ResizeObserver(() => {
+      window.clearTimeout(resizeTimer)
+      resizeTimer = window.setTimeout(() => {
+        if (dead) return
+        const r = el.getBoundingClientRect()
+        if (Math.abs(r.width - lastW) < 1 && Math.abs(r.height - lastH) < 1) return
+        lastW = r.width
+        lastH = r.height
+        graph.resize()
+      }, 150)
+    })
     ro.observe(el)
 
     void graph.render().then(() => {
@@ -320,6 +340,7 @@ export function GraphCanvasG6({
     return () => {
       dead = true
       ro.disconnect()
+      window.clearTimeout(resizeTimer)
       window.clearInterval(posTimer)
       // 卸载前补一次快照：刚摆好就切页时，最后那次落定不该丢
       try {
