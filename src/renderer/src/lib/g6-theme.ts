@@ -1,21 +1,37 @@
 /**
- * G6 主题桥：把 `tokens.css` 的设计令牌翻译成 G6 能吃的样式对象。
+ * G6 主题桥 —— 把本软件的设计 token 翻译成 **G6 的主题对象**。
  *
- * ## 为什么必须有这一层
+ * ## 用 G6 的主题接口，而不是自己塞样式
  *
- * 换成 G6 之后图是**画在 Canvas 上**的 —— canvas 里的像素**不认 CSS 变量**。
- * 如果不做这层桥，上一轮 token 化的成果（主题包、强调色、暗色模式、密度设置）
- * 在图谱与工作流上会**全部失效**，而且是静默失效：图照样画出来，只是颜色不再跟随主题。
+ * G6 的主题就是「Graph Options 的子集」：
  *
- * 所以规则只有一条：**G6 的每一个样式键，值都必须来自 token**。
- * 这里出现的十六进制字面量只允许有一个来源 —— `tok()`。
+ * ```
+ * { background, node: { palette, style, state, animation }, edge: {…}, combo: {…} }
+ * ```
  *
- * ## 什么时候重建
+ * 用法只有两步（见官方文档 theme/custom-theme）：
  *
- * 主题切换（`zhixing:theme` 事件 / 设置页改主题包）后 token 的值变了，
- * **已画上去的图不会自己重画**。用 `subscribeG6Theme` 订阅，回调里调 `graph.setOptions`
- * 增量更新即可，不必整图重建。
+ * ```ts
+ * register(ExtensionCategory.THEME, 'zhixing', theme)   // 注册
+ * new Graph({ theme: 'zhixing' })                        // 按名字引用
+ * ```
+ *
+ * 所以本文件产出的是**一份完整的主题对象**，画布里只需要写 `theme: THEME_NAME`；
+ * 各元素自己的样式（比如按数据变化的节点主色、图标）才留在图配置项的 style 里 ——
+ * 因为**主题只支持静态值，不支持回调**（官方明确限制）。
+ *
+ * ## 两条硬约束（都踩过）
+ *
+ * 1. **canvas 不认 CSS 变量、也不认 `color-mix()`** —— 主题里的每个色值都必须是解好的实色，
+ *    所以统一走 `tokSolid()`；它遇到 `color-mix(...)` / `calc(...)` 会退回兜底 token 并 warn 一次。
+ * 2. **主题只在建图时按名字解析一次**，`register` 同名会覆盖（G6 会打一条 warn）。
+ *    所以换主题的流程是：重新 `register` → `graph.setTheme(名字)` → `graph.draw()`，
+ *    见 `applyZhixingTheme()`。
  */
+import { ExtensionCategory, register } from '@antv/g6'
+
+/** 注册到 G6 的主题名（全局唯一，重复注册即覆盖）。 */
+export const THEME_NAME = 'zhixing'
 
 /** 读一个 CSS 自定义属性的当前计算值。 */
 function tok(name: string): string {
@@ -53,94 +69,163 @@ export function tokNum(name: string): number {
   return Number.parseFloat(tok(name)) || 0
 }
 
-interface G6Theme {
-  /**
-   * **没有 `canvas.background`** —— 实测：G6 v5 的 `GraphOptions` 里没有这个键，
-   * 传了不报错但也不生效（画布保持透明，透出容器的底色）。背景改用容器上的
-   * CSS 变量 `--bg-canvas` 设置 —— 容器是真实 DOM，CSS 天然生效且跟随主题。
-   */
-  node: Record<string, unknown>
-  edge: Record<string, unknown>
-  combo: Record<string, unknown>
-  /** 归属边（实线）—— 与引用边（虚线）是两种语义，见 docs/specs/ownership-vs-reference.md */
-  edgeOwnership: Record<string, unknown>
-  edgeReference: Record<string, unknown>
+/** 按比例混两个颜色：`a` 占 `pa`（等价于 CSS 的 `color-mix(in srgb, a pa%, b)`）。 */
+export function mix(a: string, pa: number, b: string): string {
+  const parse = (s: string): [number, number, number] | null => {
+    const m = /^#([0-9a-f]{6})$/i.exec(s.trim())
+    if (m) {
+      const n = parseInt(m[1], 16)
+      return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+    }
+    const r = /^rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/.exec(s.trim())
+    return r ? [Number(r[1]), Number(r[2]), Number(r[3])] : null
+  }
+  const ca = parse(a)
+  const cb = parse(b)
+  if (!ca || !cb) return a
+  const c = ca.map((v, i) => Math.round(v * pa + cb[i] * (1 - pa)))
+  return '#' + c.map((v) => v.toString(16).padStart(2, '0')).join('')
+}
+
+/** 图标等地方要用到的关键色值（与主题同源，避免两处各读一遍 token）。 */
+export interface ThemeTokens {
+  bgLayer: string
+  bgCanvas: string
+  fgPrimary: string
+  borderStrong: string
+  fontUi: string
+}
+
+export function themeTokens(): ThemeTokens {
+  return {
+    bgLayer: tokSolid('--bg-layer-solid', '--pack-layer'),
+    bgCanvas: tokSolid('--bg-canvas', '--pack-canvas'),
+    fgPrimary: tok('--fg-primary'),
+    borderStrong: tok('--border-strong'),
+    fontUi: tok('--font-ui'),
+  }
 }
 
 /**
- * 生成当前主题下的 G6 样式。
+ * 当前软件主题 → **G6 主题对象**。
  *
- * **每次调用都重新读一遍 token** —— 不要在模块顶层缓存成常量，那样主题切换后
- * 拿到的还是旧值。需要缓存就在主题变更时失效。
+ * 每次调用都重新读一遍 token —— 不要在模块顶层缓存，那样主题切换后拿到的还是旧值。
+ *
+ * ⚠️ G6 的限制：**主题里只能写静态值**（不支持回调），且**状态样式用到的属性要在默认样式里出现过**。
  */
-export function g6Theme(): G6Theme {
-  const fontUi = tok('--font-ui')
-  const fgPrimary = tok('--fg-primary')
+export function zhixingTheme(): Record<string, unknown> {
+  const t = themeTokens()
   const fgSecondary = tok('--fg-secondary')
-  const borderStrong = tok('--border-strong')
-  // 一律走 tokSolid：canvas 与 CSS 的取值能力不同，见 tokSolid 的注释
-  const bgLayer = tokSolid('--bg-layer-solid', '--pack-layer')
   const bgHover = tokSolid('--bg-hover', '--pack-layer')
-
-  const labelBase = {
-    labelFill: fgPrimary,
-    labelFontFamily: fontUi,
-    labelFontSize: tokNum('--text-aux'),
-    labelFontWeight: Number(tok('--fw-normal')) || 400,
-  }
+  const focusRing = tokSolid('--focus-ring', '--accent')
+  const borderW = tokNum('--border-w')
+  const focusW = tokNum('--focus-w')
+  const textAux = tokNum('--text-aux')
+  const fontWeight = Number(tok('--fw-normal')) || 400
 
   return {
+    /** 画布背景（主题里的 background 就是干这个的；早先试过 canvas.background，那个键不存在）。 */
+    background: t.bgCanvas,
+
     node: {
-      fill: bgLayer,
-      stroke: borderStrong,
-      lineWidth: tokNum('--border-w'),
-      ...labelBase,
+      style: {
+        fill: t.bgLayer,
+        stroke: t.borderStrong,
+        lineWidth: borderW,
+        labelFill: t.fgPrimary,
+        labelFontFamily: t.fontUi,
+        labelFontSize: textAux,
+        labelFontWeight: fontWeight,
+        labelPlacement: 'bottom',
+        labelOffsetY: 4,
+        portFill: t.bgLayer,
+        portStroke: t.borderStrong,
+        portLineWidth: borderW,
+        badgeFill: t.bgLayer,
+        badgeFontSize: 9,
+        halo: false,
+      },
+      state: {
+        selected: { stroke: focusRing, lineWidth: focusW },
+        active: { stroke: focusRing, lineWidth: focusW },
+        highlight: { stroke: focusRing, lineWidth: focusW },
+        inactive: { opacity: 0.15 },
+        /** 图谱搜索/悬浮时的淡化用自己的状态名，与 inactive 分开，便于独立调。 */
+        dim: { opacity: 0.15 },
+      },
     },
 
     edge: {
-      stroke: borderStrong,
-      lineWidth: tokNum('--border-w'),
-      endArrow: false,
+      style: {
+        stroke: t.borderStrong,
+        lineWidth: borderW,
+        endArrow: false,
+        labelFill: t.fgPrimary,
+        labelFontFamily: t.fontUi,
+        labelFontSize: textAux,
+        labelBackground: true,
+        labelBackgroundFill: t.bgLayer,
+        labelBackgroundOpacity: 0.85,
+        labelPadding: [0, 4],
+      },
+      state: {
+        selected: { lineWidth: focusW, stroke: focusRing },
+        active: { lineWidth: focusW },
+        inactive: { opacity: 0.08 },
+        dim: { opacity: 0.08 },
+      },
     },
 
     combo: {
-      fill: bgHover,
-      stroke: tok('--border'),
-      lineWidth: tokNum('--border-w'),
-      radius: tokNum('--radius-lg'),
-      ...labelBase,
-      labelFill: fgSecondary,
-    },
-
-    /** 归属：实线，用较强的边框色 */
-    edgeOwnership: {
-      stroke: borderStrong,
-      lineWidth: tokNum('--border-w'),
-      lineDash: [],
-    },
-
-    /** 引用：虚线，弱一档 */
-    edgeReference: {
-      stroke: tok('--border-strong'),
-      lineWidth: tokNum('--border-w'),
-      lineDash: [tokNum('--space-hair') * 2, tokNum('--space-2xs')],
+      style: {
+        fill: bgHover,
+        stroke: tok('--border'),
+        lineWidth: borderW,
+        radius: tokNum('--radius-lg'),
+        labelFill: fgSecondary,
+        labelFontFamily: t.fontUi,
+        labelFontSize: textAux,
+      },
+      state: {
+        selected: { stroke: focusRing, lineWidth: focusW },
+        inactive: { opacity: 0.15 },
+      },
     },
   }
 }
 
 /**
- * 订阅主题变更。返回取消订阅函数。
+ * 注册（或按当前主题重新注册）。
  *
- * 目前靠 `zhixing:theme` 这个 DOM 事件 —— 主题包切换时由 applyTheme 派发。
- * 另外监听系统深浅色变化（「跟随系统」模式下会走到这里）。
+ * **同名重复注册 G6 会打一条 warn** —— 这是有意的：主题对象是静态的，
+ * 换主题只能换一份新对象，而名字要保持稳定（画布、其他组件都按 THEME_NAME 引用）。
  */
-export function subscribeG6Theme(onChange: (t: G6Theme) => void): () => void {
-  const fire = (): void => onChange(g6Theme())
-  window.addEventListener('zhixing:theme', fire)
+export function registerZhixingTheme(): string {
+  register(ExtensionCategory.THEME, THEME_NAME, zhixingTheme() as never)
+  return THEME_NAME
+}
+
+/** 主题变了：重新注册 + 切换 + 重绘。 */
+export function applyZhixingTheme(graph: { setTheme(t: string): void; draw(): unknown }): void {
+  registerZhixingTheme()
+  graph.setTheme(THEME_NAME)
+  void graph.draw()
+}
+
+/**
+ * 订阅软件主题变更。返回取消订阅函数。
+ *
+ * 目前靠 `zhixing:theme` 这个 DOM 事件 —— 主题包切换时由 applyTheme 派发；
+ * 另外监听系统深浅色变化（「跟随系统」模式下会走到这里）。
+ * **回调不带参数**：调用方拿到信号后自己 `applyZhixingTheme(graph)`。
+ */
+export function subscribeG6Theme(onChange: () => void): () => void {
+  window.addEventListener('zhixing:theme', onChange)
   const mq = window.matchMedia('(prefers-color-scheme: dark)')
-  mq.addEventListener('change', fire)
+  const onMq = (): void => onChange()
+  mq.addEventListener('change', onMq)
   return () => {
-    window.removeEventListener('zhixing:theme', fire)
-    mq.removeEventListener('change', fire)
+    window.removeEventListener('zhixing:theme', onChange)
+    mq.removeEventListener('change', onMq)
   }
 }

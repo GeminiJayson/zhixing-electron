@@ -63,45 +63,11 @@
   stroke-width: 1.6;
   fill: none;
 }
-/* ---- 图谱节点图标：多色分层 ----
-   颜色全部由 --gnode-c（节点主色）派生，所以换主题包/强调色时不用改图标代码：
-     gn-s1 主色（基底）· gn-s2 向底色混合（内层/折角）· gn-s3 向文字色混合（细节）
-   描边再向画布底色混合一档，保证深色底上也能看出形状边界。 */
-.gnode__icon .gn-s1 {
-  fill: var(--gnode-c);
-}
-.gnode__icon .gn-s2 {
-  fill: color-mix(in srgb, var(--gnode-c) 38%, var(--bg-layer-solid));
-}
-.gnode__icon .gn-s3 {
-  fill: color-mix(in srgb, var(--gnode-c) 22%, var(--fg-primary));
-}
-.gnode__icon .gn-stroke {
-  stroke: color-mix(in srgb, var(--gnode-c) 40%, var(--bg-canvas));
-  stroke-width: 1;
-  stroke-linejoin: round;
-}
-/* 待建链接的虚线环：只描边不填充 */
-.gnode__icon .gn-ring {
-  fill: none;
-  stroke: var(--gnode-c);
-  stroke-width: 1.4;
-  stroke-dasharray: 3 3;
-}
-/* 待建链接中心的加号 */
-.gnode__icon .gn-plus {
-  fill: none;
-  stroke: color-mix(in srgb, var(--gnode-c) 30%, var(--fg-primary));
-  stroke-width: 1.6;
-  stroke-linecap: round;
-}
-/* 笔记的文本线 */
-.gnode__icon .gn-lines {
-  fill: none;
-  stroke: color-mix(in srgb, var(--gnode-c) 22%, var(--fg-primary));
-  stroke-width: 1;
-  stroke-linecap: round;
-}
+/* ---- 图谱节点图标 ----
+   原先是「内联 SVG + CSS 派生三档颜色」（--gnode-c 由组件注入、这里用 color-mix 算色）。
+   图谱改走 G6 原生节点后，图标由 lib/graph-icon.ts 生成**自包含** SVG（颜色内联、再转 data URL
+   交给节点的 iconSrc），canvas 上根本没有这些类名 —— 所以这一整段连同 --gnode-c 一起删了。
+   三档颜色的公式原样搬进了 lib/graph-icon.ts 的 toneAttrs()。 */
 
 /* 节点的连接手柄：hover / 选中时浮现，从这里按住拖出去即可拉出连线 */
 .gnode__link-handle {

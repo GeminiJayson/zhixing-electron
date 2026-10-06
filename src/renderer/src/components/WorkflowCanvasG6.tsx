@@ -1,27 +1,38 @@
 /**
- * 工作流画布（G6 v5 实现）—— 冒烟版，先只验证「隐式图投影 + 分层布局 + 主题」这条链路。
+ * 工作流画布（G6 v5）—— 渲染与交互**全部交给 G6**，本文件只做数据映射与业务回调。
  *
- * ## 为什么从布局切进来
+ * ## 用了 G6 的哪些能力（不重复造轮子）
  *
- * 工作流的图结构是**隐式**的（没有边表）：顺序边来自 `order_index` 相邻，分支边来自
- * `branch_node_id` / `branch_false_node_id`。这层投影已经在 `lib/workflow-layout.ts` 的
- * `workflowEdges()` 里做掉了，**与渲染无关，可以直接复用** —— 那是这次迁移最干净的接缝。
+ * | 事项 | 交给谁 |
+ * | --- | --- |
+ * | 节点外形 | 内置 `rect`（步骤）/ `diamond`（条件） |
+ * | 角标（「第 3 步 · 任务」「条件」） | 节点 `badges`（`placement: 'left-top'`） |
+ * | 标题 | 节点 `labelText`（wordWrap + maxLines + textOverflow 全由 G6 处理） |
+ * | 条件判据 | 节点 `badges`（`placement: 'bottom'`） |
+ * | 端口 | 节点 `ports`（条件节点左右各一、步骤右侧一个） |
+ * | 连线 | 内置 `polyline` + `router: { type: 'orth' }`（正交折线是内置路由） |
+ * | 分支说明 | **边的 `labelText`**（「满足 / 不满足 / 跳到」写在线上，不再挂在端口旁） |
+ * | 方向箭头 | 边 `endArrow` |
+ * | 布局 | 内置 `antv-dagre` |
+ * | 选中 / 悬停 / 拖拽 / 导航 | 内置 `click-select` / `hover-activate` / `drag-element` / `drag-canvas` / `zoom-canvas` |
+ * | 右键菜单 | 内置 `contextmenu` 插件 |
+ * | 配色与状态 | **G6 主题**（lib/g6-theme.ts 的 `zhixing`）+ 图配置里的 `node.state` |
  *
- * 所以第一刀只换 `layoutWorkflow` 的**实现**（dagre → G6 的 `antv-dagre`），
- * 节点仍用内置矩形 + 标签 —— 先把「图能不能画对、层对不对」验掉，
- * 再换 HTML 节点还原外观（图谱那次就是这么走的，P0 冒烟先于 P1 全量替换）。
- *
- * ## 与图谱画布的关系
- *
- * 主题桥（`g6-theme`）是共用的；不共用的是布局参数与
- * 边语义（这里的分支边是虚线，和图谱的「引用=虚线」不是一回事）。
+ * 自己写的只剩两处**业务语义**：分支颜色（满足绿 / 不满足红 / 跳到中性）与
+ * 「点的是端口还是节点」（用 `e.originalTarget` 与 `node.getPorts()` 做对象比对）。
  */
-import { Graph, type IEvent } from '@antv/g6'
-import { CONDITION_KIND } from '@shared/workflow-condition'
+import { Diamond, ExtensionCategory, Graph, Rect, register, type IEvent } from '@antv/g6'
 import { useEffect, useImperativeHandle, useRef, type ReactElement, type Ref } from 'react'
-import { ensureWorkflowEdge, wfEdgeStyle, type WfEdgeKind } from '@renderer/lib/g6-workflow-edge'
-import { subscribeG6Theme } from '@renderer/lib/g6-theme'
-import { NODE_H, NODE_W, NODE_TEXT_W, COND_TEXT_W, fitNodeText } from '@renderer/lib/workflow-node-box'
+import {
+  THEME_NAME,
+  applyZhixingTheme,
+  mix,
+  registerZhixingTheme,
+  subscribeG6Theme,
+  tokNum,
+  tokSolid,
+} from '@renderer/lib/g6-theme'
+import { NODE_H, NODE_W } from '@renderer/lib/workflow-node-box'
 import { workflowEdges, type LayoutNode, type WorkflowRankDir } from '@renderer/lib/workflow-layout'
 
 export interface WorkflowCanvasHandle {
@@ -31,12 +42,7 @@ export interface WorkflowCanvasHandle {
   fit(): void
 }
 
-/**
- * 节点外观需要、而布局不需要的字段。
- *
- * `LayoutNode` 刻意只有 id / 顺序 / 分支三个字段（那样才能脱离数据层单测），
- * 所以外观信息单独一层传进来，**不去把它撑肥**。
- */
+/** 节点外观需要、而布局不需要的字段（`LayoutNode` 保持三个字段，不撑肥）。 */
 interface WorkflowNodeView {
   title: string
   /** 角标：「第 3 步 · 任务」或「条件」。 */
@@ -58,146 +64,57 @@ interface WorkflowCanvasProps {
   rankdir?: WorkflowRankDir
   onSelect: (id: number | null) => void
   /**
-   * 点了某个节点的出线端口。
-   *
-   * 画布**只报告「点了谁、哪个槽位」**，落库与刷新交给页面 —— 与图谱画布同一条边界。
-   * `slot` 只有条件节点才有意义（'true' = 满足 / 'false' = 不满足）；普通步骤的
-   * 「跳到」口传 'true'，因为 `setWorkflowBranch` 的第三参默认就是 'true'。
+   * 点了某个节点的出线端口。画布**只报告「点了谁、哪个槽位」**，落库与刷新交给页面。
+   * `slot` 只有条件节点才有意义（'true' = 满足 / 'false' = 不满足）。
    */
   onBranch: (nodeId: number, slot: 'true' | 'false') => void
   /**
-   * 拖完一个节点。
-   *
-   * **坐标是节点盒的左上角，不是中心** —— 旧实现存的就是左上角（它用
-   * `transform: translate(x, y)` 且节点内容从 `(0,0)` 画起），而 G6 的
-   * `getElementPosition` 返回中心。这里替调用方转好，免得存错了下次打开节点移位。
+   * 拖完一个节点。**坐标是节点盒左上角**（旧实现的语义），G6 的 `getElementPosition`
+   * 返回中心，这里替调用方转好。
    */
   onNodeMoved: (id: number, x: number, y: number) => void
-  /**
-   * 删除某条分支出边（右键菜单触发）。
-   *
-   * **改挂端点不需要单独的回调** —— 重新走一次两段式点选就是改挂
-   * （`setWorkflowBranch(fromId, 新目标, slot)` 会覆盖旧值）。
-   */
+  /** 删除某条分支出边（右键菜单触发）。 */
   onBranchRemove: (fromId: number, slot: 'true' | 'false') => void
   /** 双击节点（打开编辑弹窗）。 */
   onOpen: (id: number) => void
   handleRef?: Ref<WorkflowCanvasHandle>
 }
 
-/**
- * 节点外观的 HTML 模板。
- *
- * **沿用 WorkflowPage 那一套类名**（`wf-node__box` / `wf-node__diamond` / `wf-node__idx` /
- * `wf-node__title` / `wf-node__cond`），所以 `workflow.css` 原样生效 ——
- * 选中、完成、当前步骤这些状态也是同一批 `--on` / `--done` / `--current` 修饰类。
- *
- * **必须自己包一层 `<svg>`**：里面的 `<rect>` / `<polygon>` / `<text>` 是 SVG 命名空间，
- * 直接塞进 HTML 的 `<div>` 不会渲染（图谱那边踩过同一个坑：`<g>` 不报错也不显示）。
- */
-function nodeSvg(n: WorkflowCanvasNode, selected: boolean): string {
-  const v = n.view
-  const title = fitNodeText(v.title, 12, 10, v.isCondition ? COND_TEXT_W : NODE_TEXT_W)
-  const parts: string[] = []
-  if (v.isCondition) {
-    parts.push(
-      '<polygon class="wf-node__diamond' +
-        (selected ? ' wf-node__diamond--on' : '') +
-        '" points="' +
-        NODE_W / 2 + ',2 ' + (NODE_W - 2) + ',' + NODE_H / 2 + ' ' + NODE_W / 2 + ',' + (NODE_H - 2) + ' 2,' + NODE_H / 2 +
-        '"></polygon>'
-    )
-  } else {
-    parts.push(
-      '<rect class="wf-node__box' +
-        (selected ? ' wf-node__box--on' : '') +
-        (v.done ? ' wf-node__box--done' : '') +
-        (v.current ? ' wf-node__box--current' : '') +
-        '" width="' + NODE_W + '" height="' + NODE_H + '" rx="8"></rect>'
-    )
+/** 出线端口的 key —— 条件节点左右各一，普通步骤右侧一个「跳到」。 */
+function portKeyOf(n: WorkflowCanvasNode, to: number): string | undefined {
+  if (n.branch_false_node_id === to) return 'false'
+  if (n.branch_node_id === to) return 'true'
+  return n.view.isCondition ? undefined : 'jump'
+}
+
+/** 边语义 → 描边与虚线（颜色现算：canvas 不认 CSS 变量与 color-mix）。 */
+function edgeStyleOf(kind: string): { stroke: string; lineWidth: number; lineDash: number[] } {
+  const base = tokSolid('--graph-edge', '--border-strong')
+  switch (kind) {
+    case 'branch-true':
+      return { stroke: mix(tokSolid('--success', '--accent'), 0.62, base), lineWidth: 1.2, lineDash: [5, 4] }
+    case 'branch-false':
+      return { stroke: mix(tokSolid('--danger', '--accent'), 0.58, base), lineWidth: 1.2, lineDash: [5, 4] }
+    case 'branch-jump':
+      return { stroke: base, lineWidth: 1.2, lineDash: [5, 4] }
+    default:
+      return { stroke: base, lineWidth: 1.2, lineDash: [] }
   }
-  const cx = v.isCondition ? NODE_W / 2 : 10
-  parts.push(
-    '<text class="wf-node__idx' + (v.isCondition ? ' wf-node__idx--center' : '') + '" x="' + cx + '" y="20">' +
-      escapeHtml(v.badge) +
-      '</text>'
-  )
-  parts.push(
-    '<text class="wf-node__title' + (v.isCondition ? ' wf-node__title--center' : '') + '" x="' + cx + '" y="40" font-size="' + title.size + '">' +
-      escapeHtml(title.text) +
-      '</text>'
-  )
-  if (v.isCondition && v.condText) {
-    const fit = fitNodeText(v.condText, 9, 8)
-    parts.push(
-      '<g class="wf-node__cond" transform="translate(0,' + (NODE_H + 5) + ')">' +
-        '<rect x="6" width="' + (NODE_W - 12) + '" height="18" rx="6"></rect>' +
-        '<text x="' + NODE_W / 2 + '" y="12.5" font-size="' + fit.size + '">' + escapeHtml(fit.text) + '</text>' +
-        '</g>'
-    )
-  }
-  /**
-   * 出线端口。
-   *
-   * 条件节点是菱形左右两个尖角（右 = 满足、左 = 不满足），普通步骤是右边中点一个「跳到」口 ——
-   * **与 `lib/workflow-anchors` 的 `nodePort` 同一套约定**，位置照它算。
-   *
-   * 端口画在**节点盒的边界上**（尖角正好在边界），所以这层 `<svg>` 要 `overflow: visible`：
-   * 圆的半径与标签都会溢到盒外。命中判定不指望 HTML 节点的点击区域能延伸出去 ——
-   * 那由画布的坐标判定负责。
-   */
-  const ports = v.isCondition
-    ? [
-        { cx: NODE_W, cy: NODE_H / 2, label: '满足', outward: 1 },
-        { cx: 0, cy: NODE_H / 2, label: '不满足', outward: -1 },
-      ]
-    : [{ cx: NODE_W, cy: NODE_H / 2, label: '跳到', outward: 1 }]
-  for (const p of ports) {
-    parts.push(
-      '<g class="wf-port">' +
-        '<circle cx="' + p.cx + '" cy="' + p.cy + '" r="5"></circle>' +
-        '<text class="wf-port__label" x="' + (p.cx + p.outward * 8) + '" y="' + (p.cy + 3) +
-        '" text-anchor="' + (p.outward > 0 ? 'start' : 'end') + '">' + escapeHtml(p.label) + '</text>' +
-        '</g>'
-    )
-  }
-  return (
-    '<svg class="wf-node__svg" width="' + NODE_W + '" height="' + NODE_H + '" viewBox="0 0 ' + NODE_W + ' ' + NODE_H +
-    '" style="overflow:visible">' +
-    parts.join('') +
-    '</svg>'
-  )
+}
+
+/** 边上的说明文字 —— 分支语义写在线上（而不是挂在端口旁边）。 */
+function edgeLabelOf(kind: string): string | undefined {
+  if (kind === 'branch-true') return '满足'
+  if (kind === 'branch-false') return '不满足'
+  if (kind === 'branch-jump') return '跳到'
+  return undefined
 }
 
 /**
- * 布局配置。
- *
- * **必须显式传给 `layout()`** —— 不传参时它用 context.layout 里**建图那一刻**的
- * presetOptions；而 `render()` 也用那一份。所以「切方向」只有把配置交进来才生效。
+ * 边的语义类别：顺序 / 满足 / 不满足 / 跳到。
+ * `workflowEdges` 只给 `branch: boolean`；「满足」还是「不满足」要看源节点的两个分支字段。
  */
-function LAYOUT_OPTS(rankdir: WorkflowRankDir): never {
-  // G6 的 LayoutOptions 联合类型没有导出可用的窄化形式，这里断言一次；
-  // 形状与建图时 layout 那段完全一致（同一份参数两处用，不该各写一遍）。
-  return { type: 'antv-dagre', rankdir, nodesep: 24, ranksep: 40, marginx: 40, marginy: 40 } as never
-}
-
-/** 标题是用户输入，进 innerHTML 前要转义 —— 否则一个 `<` 就能把节点画坏。 */
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
-
-/**
- * 边的语义类别：顺序 / 满足 / 不满足 / 跳到 —— 决定颜色与虚线样式。
- *
- * \`workflowEdges\` 只给 \`branch: boolean\`；「满足」还是「不满足」要看源节点的
- * \`branch_node_id\` / \`branch_false_node_id\` 与终点的对应关系。
- */
-function kindOfEdge(
-  nodes: readonly WorkflowCanvasNode[],
-  from: number,
-  to: number,
-  branch: boolean
-): WfEdgeKind {
+function kindOfEdge(nodes: readonly WorkflowCanvasNode[], from: number, to: number, branch: boolean): string {
   if (!branch) return 'seq'
   const src = nodes.find((n) => n.id === from)
   if (!src) return 'branch-jump'
@@ -207,6 +124,153 @@ function kindOfEdge(
   }
   return 'branch-jump'
 }
+
+/**
+ * 步骤 / 条件节点 —— 内置 `rect` / `diamond` 各加一行**角标**。
+ *
+ * 为什么不是 badge：G6 的 `Badge` 定位是"贴包围盒的某条边"（`getTextStyleByPlacement`），
+ * `top-left` 会把文字**右对齐到盒左上角**、于是整行飘到框外面去（实测）。
+ * 我们要的是"盒内左上角的小字"，所以用 G6 的图形能力补一行 `text` ——
+ * 这仍然是 G6 的 shape（`upsert('idx', 'text', …)`），不是自己造轮子。
+ */
+/** 角标那行文字的样式（盒内左上角）。 */
+function idxStyle(text: string): Record<string, unknown> {
+  return {
+    x: -(NODE_W / 2) + 10,
+    y: -(NODE_H / 2) + 13,
+    text,
+    fontSize: 9,
+    fill: tokSolid('--fg-secondary', '--fg-primary'),
+    textAlign: 'left',
+    textBaseline: 'middle',
+  }
+}
+
+class WfStepNode extends Rect {
+  render(attributes = this.parsedAttributes, container = this): void {
+    super.render(attributes, container)
+    const idx = (attributes as unknown as { idxText?: string }).idxText
+    if (idx) this.upsert('idx', 'text', idxStyle(idx), container)
+  }
+}
+
+class WfCondNode extends Diamond {
+  render(attributes = this.parsedAttributes, container = this): void {
+    super.render(attributes, container)
+    const idx = (attributes as unknown as { idxText?: string }).idxText
+    if (idx) this.upsert('idx', 'text', { ...idxStyle(idx), x: -18, y: -(NODE_H / 2) + 12 }, container)
+  }
+}
+
+/** 注册只做一次（重复注册 G6 会打 warn）。 */
+let nodesRegistered = false
+function ensureWorkflowNodes(): void {
+  if (nodesRegistered) return
+  nodesRegistered = true
+  register(ExtensionCategory.NODE, 'wf-step', WfStepNode)
+  register(ExtensionCategory.NODE, 'wf-cond', WfCondNode)
+}
+
+function nodeDataOf(n: WorkflowCanvasNode, selectedId: number | null): Record<string, unknown> {
+  const v = n.view
+  const cond = v.isCondition
+  const states: string[] = []
+  if (selectedId === n.id) states.push('selected')
+  if (v.done) states.push('done')
+  if (v.current) states.push('current')
+
+  /**
+   * 端口：条件节点左右各一（满足 / 不满足），步骤右侧一个「跳到」。
+   *
+   * ⚠️ **必须给 `r`**：G6 把「没给 r（或 r=0）」的端口当作 *simple port* ——
+   * 不画图形但仍是可连接的点（`utils/element.ts` 的 `isSimplePort`）。
+   * 第一版漏了 r，结果端口一个都看不见。颜色与对应分支的边同源，一眼能对上。
+   */
+  const gEdge = tokSolid('--graph-edge', '--border-strong')
+  const gFill = tokSolid('--bg-layer-solid', '--pack-layer')
+  const ports = cond
+    ? [
+        { key: 'true', placement: 'right' as const, r: 4, fill: gFill, stroke: mix(tokSolid('--success', '--accent'), 0.62, gEdge), lineWidth: 1.4 },
+        { key: 'false', placement: 'left' as const, r: 4, fill: gFill, stroke: mix(tokSolid('--danger', '--accent'), 0.58, gEdge), lineWidth: 1.4 },
+      ]
+    : [{ key: 'jump', placement: 'right' as const, r: 4, fill: gFill, stroke: gEdge, lineWidth: 1.4 }]
+
+  /** 角标走自定义节点里那行 `text`（badge 定不出"盒内左上角"，见 makeNodeClass 的注释）。 */
+  const badges: Record<string, unknown>[] = []
+  if (cond && v.condText) {
+    badges.push({
+      text: v.condText,
+      placement: 'bottom',
+      fontSize: 9,
+      fill: tokSolid('--fg-secondary', '--fg-primary'),
+      backgroundFill: tokSolid('--accent-warm-soft', '--bg-hover'),
+      padding: [2, 6],
+    })
+  }
+
+  return {
+    id: String(n.id),
+    type: cond ? 'wf-cond' : 'wf-step',
+    data: { id: n.id },
+    states,
+    style: {
+      size: [NODE_W, NODE_H],
+      radius: cond ? 0 : 8,
+      ports,
+      /** 自定义键：自定义节点在 render 里读它画角标。 */
+      idxText: v.badge,
+      badge: true,
+      badges,
+      labelText: v.title,
+      labelPlacement: 'center',
+      /**
+       * 左对齐要靠 `offsetX` 把锚点挪到盒左边界 —— 只设 textAlign 会让文字从盒中心向右跑出框
+       * （实测溢出 46px）。
+       */
+      labelTextAlign: cond ? 'center' : 'left',
+      labelOffsetX: cond ? 0 : -(NODE_W / 2) + 10,
+      labelWordWrap: true,
+      labelWordWrapWidth: cond ? NODE_W * 0.6 : NODE_W - 20,
+      labelMaxLines: 2,
+      labelTextOverflow: '...',
+      labelFontSize: 12,
+    },
+  }
+}
+
+function buildData(
+  nodes: readonly WorkflowCanvasNode[],
+  selectedId: number | null
+): { nodes: Record<string, unknown>[]; edges: Record<string, unknown>[] } {
+  return {
+    nodes: nodes.map((n) => nodeDataOf(n, selectedId)),
+    edges: workflowEdges(nodes).map((e) => {
+      const kind = kindOfEdge(nodes, e.from, e.to, e.branch)
+      const src = nodes.find((n) => n.id === e.from)
+      return {
+        id: e.from + '>' + e.to,
+        source: String(e.from),
+        target: String(e.to),
+        /** 从**指定端口**出发（内置边按 key 找桩）。 */
+        sourcePort: src ? portKeyOf(src, e.to) : undefined,
+        type: 'polyline',
+        style: {
+          ...edgeStyleOf(kind),
+          /** 正交折线是内置路由，不用自己算折点。 */
+          router: { type: 'orth', padding: 6 },
+          endArrow: true,
+          endArrowType: 'triangle',
+          labelText: edgeLabelOf(kind),
+          labelFontSize: 9,
+          labelBackground: true,
+          /** 正交折线有竖直段，标签默认会跟着边旋转 —— 关掉，让它始终水平可读。 */
+          labelAutoRotate: false,
+        },
+      }
+    }),
+  }
+}
+
 export function WorkflowCanvasG6({
   nodes,
   selectedId,
@@ -221,12 +285,8 @@ export function WorkflowCanvasG6({
   const box = useRef<HTMLDivElement>(null)
   const graphRef = useRef<Graph | null>(null)
   /**
-   * 回调与取标题的函数都放 ref。
-   *
-   * **不能进 effect 的依赖数组**：父组件里 `labelOf={(id) => …}` 是内联箭头函数，
-   * 每次渲染都是新引用 —— 依赖它会让「数据没变但 effect 重跑」，`setData` + `render`
-   * 又触发渲染，转成无限循环（实测：页面永不空闲，连 CDP 截图都超时）。
-   * 画布只该对**数据**变化有反应。
+   * 回调与节点表都放 ref：父组件的回调是内联箭头函数，每次渲染都是新引用 ——
+   * 依赖它会让「数据没变但 effect 重跑」，转成无限循环。画布只该对**数据**变化有反应。
    */
   const cb = useRef({
     onSelect,
@@ -238,115 +298,44 @@ export function WorkflowCanvasG6({
     nodes: [] as readonly WorkflowCanvasNode[],
   })
   cb.current = { onSelect, onBranch, onBranchRemove, onNodeMoved, onOpen, selectedId, nodes }
-  /**
-   * 边 id（"from>to"）→ 语义类别。
-   *
-   * 右键菜单要知道被点中的是哪一类边（顺序边不给菜单、分支边才给）。
-   * 每次渲染重建：边是数据的纯函数，不值得为它做记忆化。
-   */
-  const edgeKindById = useRef(new Map<string, WfEdgeKind>())
+  /** 边 id（"from>to"）→ 语义类别。右键菜单要知道被点中的是哪一类边。 */
+  const edgeKindById = useRef(new Map<string, string>())
   edgeKindById.current = new Map(
     workflowEdges(nodes).map((e) => [e.from + '>' + e.to, kindOfEdge(nodes, e.from, e.to, e.branch)])
   )
 
-  // 注册自定义边类型（只注册一次）
-  ensureWorkflowEdge()
   useEffect(() => {
     const el = box.current
     if (!el) return
     let dead = false
     let stopTheme: (() => void) | null = null
 
-    const build = (): { nodes: Record<string, unknown>[]; edges: Record<string, unknown>[] } => {
-      const ns = cb.current.nodes
-      const edges = workflowEdges(ns)
-      return {
-        nodes: ns.map((n) => ({
-          id: String(n.id),
-          data: { id: n.id },
-          style: { innerHTML: nodeSvg(n, cb.current.selectedId === n.id) },
-        })),
-        // 分支边虚线 —— 与顺序边区分，语义来自 workflowEdges 的投影，不在这里重判
-        edges: edges.map((e) => ({
-          id: e.from + '>' + e.to,
-          source: String(e.from),
-          target: String(e.to),
-          data: { kind: kindOfEdge(cb.current.nodes, e.from, e.to, e.branch) },
-          style: {
-            // 自定义边在 getKeyPath 里拿不到 data，只能从 style 读这三项
-            wfKind: kindOfEdge(cb.current.nodes, e.from, e.to, e.branch),
-            wfNodeKind: cb.current.nodes.find((n) => n.id === e.from)?.view.isCondition ? CONDITION_KIND : undefined,
-            // 条件节点的分支要带槽位（满足 / 不满足），普通步骤的「跳到」口不带 ——
-            // 不带槽位时 getKeyPath 走 directedAnchors，正是「跳到」该有的锚点
-            wfSlot: e.branch && cb.current.nodes.find((n) => n.id === e.from)?.view.isCondition
-              ? (cb.current.nodes.find((n) => n.id === e.from)?.branch_node_id === e.to ? 'true' : 'false')
-              : undefined,
-          },
-        })),
-      }
-    }
+    registerZhixingTheme()
+    ensureWorkflowNodes()
 
     const graph = new Graph({
       container: el,
+      theme: THEME_NAME,
       autoFit: 'view',
-      // setData / 构造的 data 类型对不上是 G6 的已知粗糙处，这里的形状是对的
-      data: build() as never,
-      /**
-       * HTML 节点：外观交给 `nodeSvg` 与 `workflow.css`，**选中态也画在模板里**
-       * （用同一批 `--on` 修饰类），所以这里不再需要 G6 的 state 动画。
-       */
+      data: buildData(cb.current.nodes, cb.current.selectedId) as never,
+
       node: {
-        type: 'html',
-        style: {
-          size: [NODE_W, NODE_H],
-          innerHTML: (d: { id: string }) => {
-            const n = cb.current.nodes.find((x) => String(x.id) === d.id)
-            return n ? nodeSvg(n, cb.current.selectedId === n.id) : ''
+        /** 尺寸/圆角/端口/角标/标题都在数据里逐节点给（见 nodeDataOf）。 */
+        style: { port: true, badge: true },
+        /** 工作流特有的两个业务状态：跑过这一步、正停在这一步。 */
+        state: {
+          done: { stroke: tokSolid('--success', '--accent'), lineWidth: tokNum('--focus-w') },
+          current: {
+            stroke: tokSolid('--accent', '--focus-ring'),
+            lineWidth: tokNum('--focus-w'),
+            shadowColor: tokSolid('--accent', '--focus-ring'),
+            shadowBlur: 8,
           },
         },
       },
-      /**
-       * `wf-edge`：从**端口**出发的自定义正交折线（见 lib/g6-workflow-edge.ts）。
-       *
-       * 样式按边的语义类别取（顺序实线 / 分支两色虚线 / 兜底点线），
-       * 类别走 style 上的 `wfKind` —— 自定义边在 `getKeyPath` 里拿不到 `data`。
-       */
-      edge: {
-        type: 'wf-edge',
-        style: {
-          /**
-           * `halo`：把命中区域加宽。
-           *
-           * **1.2px 的线本身点不到** —— 旧 SVG 实现为此刻意叠了一条透明的粗线
-           * （它的注释写着「热区复用图谱那边的透明粗线」）。G6 里对应的就是 halo：
-           * 不给的话右键永远命不中分支线（实测：15×10 的网格扫下来一条都没中）。
-           */
-          /**
-           * ⚠️ **实测：halo 不能扩大命中区域**（它只管视觉光晕）。
-           *
-           * 自定义边是 1.2px 的线，**右键很难命不中** —— 用 CDP 真实右键扫了两遍网格
-           * （15×10 与 28×18）都没稳定命中；换到冒烟页、用节点位置推算的探测点，
-           * 才偶尔触发到 edge:contextmenu（44 个点里中过 2 次）。
-           *
-           * 旧 SVG 实现是靠**额外叠一条透明粗线**当热区解决的（它的注释写着
-           * 「热区复用图谱那边的透明粗线：1px 的线本身点不到」）—— 同一个坑。
-           *
-           * **G6 没有公开的命中区域配置**（查过 BaseShapeStyleProps 与 edges 的类型，
-           * 没有 hit / pointerEvents / hotspot 之类的键）。要真正修好得覆写
-           * `drawKeyShape`，在 key shape 之外再画一条透明的粗路径 —— 那是一条独立的工作。
-           */
-          halo: true,
-          haloStroke: 'transparent',
-          haloLineWidth: 12,
-          endArrow: true,
-          endArrowType: 'triangle',
-          stroke: (d: { data?: { kind?: WfEdgeKind } }) => wfEdgeStyle(d.data?.kind ?? 'seq').stroke,
-          lineWidth: (d: { data?: { kind?: WfEdgeKind } }) =>
-            wfEdgeStyle(d.data?.kind ?? 'seq').lineWidth,
-          lineDash: (d: { data?: { kind?: WfEdgeKind } }) =>
-            wfEdgeStyle(d.data?.kind ?? 'seq').lineDash,
-        },
-      },
+
+      edge: { style: { labelFill: tokSolid('--fg-secondary', '--fg-primary') } },
+
       layout: {
         // AntV 自己的 dagre 实现，选项与原 @dagrejs/dagre 一致 —— 原有参数可 1:1 搬
         type: 'antv-dagre',
@@ -356,17 +345,19 @@ export function WorkflowCanvasG6({
         marginx: 40,
         marginy: 40,
       },
-      behaviors: ['drag-canvas', 'zoom-canvas', 'drag-element'],
+
+      /** 交互全部用内置 behavior；端口点击不是独立交互（见下面的 portOf）。 */
+      behaviors: [
+        'drag-canvas',
+        'zoom-canvas',
+        'drag-element',
+        { type: 'click-select', key: 'click-select', state: 'selected' },
+        'hover-activate',
+      ],
+
       /**
-       * 右键菜单，当前只挂了「删除分支」。
-       *
-       * 旧实现是「鼠标移到分支线上 → 冒出删除按钮」。G6 没有对应的悬停浮层，
-       * 右键菜单是它的惯用做法（图谱的边删除也是这么做的）。
-       *
-       * **改挂端点不需要单独做** —— 重新走一次两段式点选就是改挂
-       * （`setWorkflowBranch(fromId, 新目标, slot)` 会覆盖旧值）。
-       *
-       * 自带样式是硬编码白底，用 `className` 挂钩、由 workflow.css 用 token 覆盖。
+       * 右键菜单：节点上给「清除分支」，边上给「删除分支」。
+       * 旧实现是「悬停分支线 → 冒出删除按钮」；G6 没有对应浮层，右键菜单是它的惯用做法。
        */
       plugins: [
         {
@@ -374,14 +365,6 @@ export function WorkflowCanvasG6({
           trigger: 'contextmenu',
           className: 'g6-menu',
           offset: [4, 4],
-          /**
-           * 菜单项。
-           *
-           * **节点上的分支清除走这里，不走边** —— 边的命中区域只有 1.2px，实测
-           * 右键很难点中（见文件下方 halo 的注释）；而节点是 HTML、命中区域 150×56，
-           * 点它选中都验证过，可靠得多。旧实现的浮卡在 `<foreignObject>` 里、
-           * G6 路径下不显示，所以这里用右键代替它。
-           */
           getItems: (e: IEvent) => {
             const t = e as unknown as { target?: { id?: string }; targetType?: string }
             if (!t.target?.id) return []
@@ -402,14 +385,12 @@ export function WorkflowCanvasG6({
             return []
           },
           onClick: (value: string) => {
-            // 边来的：wf:unbranch-edge:<from>><to>
             const me = /^wf:unbranch-edge:(\d+)>(\d+)$/.exec(value)
             if (me) {
               const kind = edgeKindById.current.get(me[1] + '>' + me[2])
               cb.current.onBranchRemove(Number(me[1]), kind === 'branch-false' ? 'false' : 'true')
               return
             }
-            // 节点来的：wf:unbranch:<nodeId>:<slot>
             const mn = /^wf:unbranch:(\d+):(true|false)$/.exec(value)
             if (mn) cb.current.onBranchRemove(Number(mn[1]), mn[2] as 'true' | 'false')
           },
@@ -418,38 +399,33 @@ export function WorkflowCanvasG6({
     })
     graphRef.current = graph
 
-    const idOf = (e: IEvent): number =>
-      Number((e as unknown as { target?: { id?: string } }).target?.id)
+    const idOf = (e: IEvent): number => Number((e as unknown as { target?: { id?: string } }).target?.id)
+
     /**
      * 点的**是端口**还是节点本体？
      *
-     * HTML 节点是真实 DOM，所以直接看事件目标有没有落在 `.wf-port` 里 —— 比拿
-     * client 坐标去反算端口位置可靠（不用管画布缩放与平移）。
+     * G6 事件里 `e.target` 永远是元素（节点），要拿**原始命中图形**得看 `e.originalTarget`；
+     * 再用 `node.getPorts()`（`subObject` 已剥掉 `port-` 前缀）做一次**对象身份比对**即可 ——
+     * 实测四次点击（左桩 / 右桩 / 菱形尖角 / 节点本体）全部判断正确。
+     * 旧实现那套「closest('.wf-port') → elementFromPoint 兜底 → 按中文字面量判槽位」已删。
      */
-    const portOf = (e: IEvent): 'true' | 'false' | null => {
-      // G6 的事件对象上，原生事件与坐标的字段名没有一个稳定的公开契约 ——
-      // 逐个试，都拿不到就当没点端口（退回选中）。**这是实测踩出来的**：
-      // 只认 originalEvent 时端口点击全被当成选中节点。
+    const portOf = (e: IEvent): string | null => {
       const ev = e as unknown as {
-        originalEvent?: { target?: Element }
-        nativeEvent?: { target?: Element }
-        client?: { x: number; y: number }
+        originalTarget?: unknown
+        target?: { getPorts?: () => Record<string, unknown> }
       }
-      const domTarget = ev.originalEvent?.target ?? ev.nativeEvent?.target
-      let g = domTarget?.closest?.('.wf-port') ?? null
-      if (!g && ev.client) {
-        // 退路：按屏幕坐标反查。端口圆点会溢到节点盒外，DOM 命中比坐标换算可靠，
-        // 但坐标这条路能覆盖「HTML 节点的容器把事件吞了」的情况。
-        g = document.elementFromPoint(ev.client.x, ev.client.y)?.closest?.('.wf-port') ?? null
+      const hit = ev.originalTarget
+      const node = ev.target
+      if (!hit || !node?.getPorts) return null
+      for (const [key, shape] of Object.entries(node.getPorts())) {
+        if (shape === hit) return key
       }
-      if (!g) return null
-      // 条件节点左尖角 = 不满足；右尖角与普通步骤的「跳到」口都是 true
-      const text = g.querySelector?.('.wf-port__label')?.textContent ?? ''
-      return text.includes('不满足') ? 'false' : 'true'
+      return null
     }
+
     graph.on('node:click', (e: IEvent) => {
-      const slot = portOf(e)
-      if (slot) cb.current.onBranch(idOf(e), slot)
+      const key = portOf(e)
+      if (key) cb.current.onBranch(idOf(e), key === 'false' ? 'false' : 'true')
       else cb.current.onSelect(idOf(e))
     })
     graph.on('node:dblclick', (e: IEvent) => cb.current.onOpen(idOf(e)))
@@ -461,16 +437,13 @@ export function WorkflowCanvasG6({
       const id = idOf(e)
       const p = graph.getElementPosition(String(id)) as [number, number] | undefined
       if (!p) return
-      // 中心 → 左上角（旧实现的坐标语义）
       cb.current.onNodeMoved(id, Math.round(p[0] - NODE_W / 2), Math.round(p[1] - NODE_H / 2))
     })
     graph.on('canvas:click', () => cb.current.onSelect(null))
 
-    // 同图谱画布：G6 只在建图时量一次容器，尺寸变化要自己盯（canvas.autoResize 不在类型里）
+    // 同图谱画布：G6 只在建图时量一次容器，尺寸变化要自己盯
     const ro = new ResizeObserver(() => {
-      // **必须挡一道**：ro.disconnect() 挡不住已经排进队列的那一次回调 ——
-      // 图 destroy() 之后它照样会跑，G6 内部再读到 undefined.draw 就抛
-      // 「The graph instance has been destroyed」（实测：切纵向/横向时每次必现）。
+      // **必须挡一道**：disconnect() 挡不住已经排进队列的那一次回调
       if (dead) return
       graph.resize()
     })
@@ -478,13 +451,7 @@ export function WorkflowCanvasG6({
 
     void graph.render().then(() => {
       if (dead) return
-      stopTheme = subscribeG6Theme((next) => {
-        graph.setOptions({
-          node: { style: { ...graph.getOptions().node?.style, ...next.node } },
-          edge: { style: { ...graph.getOptions().edge?.style, ...next.edge } },
-        })
-        void graph.draw()
-      })
+      stopTheme = subscribeG6Theme(() => applyZhixingTheme(graph))
     })
 
     return () => {
@@ -494,90 +461,40 @@ export function WorkflowCanvasG6({
       graph.destroy()
       graphRef.current = null
     }
-    // 依赖是**空**：图只建一次。方向变化改走下面那个 effect（改布局配置重跑 layout）——
-    // 早先依赖 rankdir，切方向会整图重建，而 G6 内部的异步任务会在 destroy 之后才完成，
-    // 每次都抛 "The graph instance has been destroyed"（实测，堆栈里全是 @antv/g6 的帧）。
+    // 依赖是**空**：图只建一次。方向变化改走下面那个 effect（改布局配置重跑 layout）
   }, [])
 
-  /**
-   * 布局方向变化：改配置 + 重跑一次布局，**不重建图**。
-   *
-   * 首帧也会跑一次（与建图时那份配置等价，幂等）。这样切「纵向 / 横向」时
-   * 图实例始终是同一个，没有「销毁后异步任务才回来」的窗口。
-   */
-  /** 当前方向 —— 数据同步那个 effect 也要用它（render() 只认建图时的 options）。 */
-  const dirSeenRankdir = useRef(rankdir)
-  dirSeenRankdir.current = rankdir
+  /** 布局方向变化：改配置 + 重跑一次布局，**不重建图**（首帧那次与建图配置等价、幂等）。 */
   const dirSeen = useRef(false)
   useEffect(() => {
-    // **跳过首帧**：建图时那份配置已经带着当时的 rankdir，此时 render() 还没完成，
-    // 这会儿调 layout() 会炸（实测堆栈落在 @antv/g6 的 layout 里）。
     if (!dirSeen.current) {
       dirSeen.current = true
       return
     }
     const g = graphRef.current
     if (!g) return
-    // **配置要直接传给 layout()**：不传参时它用的是 context.layout 里建图那一刻的
-    // presetOptions，而 setOptions 并不会更新那份 —— 于是永远按旧 rankdir 排
-    // （实测：点「横向」按钮与 state 都正常切换，节点坐标却一个都没动）。
-    //
-    // **不要在这里自己写回元素位置**：G6 的 postLayout 会 model.updateData +
-    // element.draw({ animation })，节点位移动画与 HTML 节点的 DOM 刷新都由渲染循环驱动，
-    // 会自己跟上（实测：切方向后 dom 逐帧跟随 elem，约 1.2s 到位）。
-    // 早先那个 syncPositions() 补丁是基于「窗口不可见时 DOM 不动」的假象加的，已删 ——
-    // 见 docs/specs/g6-migration-status.md「验证环境」一节。
-    void g.layout(LAYOUT_OPTS(rankdir) as never)
+    // **配置要直接传给 layout()**：不传参时它用建图那一刻的 presetOptions，setOptions 不会更新那份
+    void g.layout({ type: 'antv-dagre', rankdir, nodesep: 24, ranksep: 40, marginx: 40, marginy: 40 } as never)
   }, [rankdir])
 
-  // 数据变化 → 增量同步（不重建图，布局会自己重跑）。
-  // 依赖只有 nodes —— 取标题走 ref，见 cb 的注释。
+  // 数据变化 → 增量同步（不重建图，布局会自己重跑）
   useEffect(() => {
     const g = graphRef.current
     if (!g) return
-    g.setData({
-      nodes: nodes.map((n) => ({
-        id: String(n.id),
-        data: { id: n.id },
-        style: { innerHTML: nodeSvg(n, cb.current.selectedId === n.id) },
-      })),
-      edges: workflowEdges(nodes).map((e) => ({
-        id: e.from + '>' + e.to,
-        source: String(e.from),
-        target: String(e.to),
-        data: { kind: kindOfEdge(nodes, e.from, e.to, e.branch) },
-        style: {
-            // 自定义边在 getKeyPath 里拿不到 data，只能从 style 读这三项
-            wfKind: kindOfEdge(nodes, e.from, e.to, e.branch),
-            wfNodeKind: nodes.find((n) => n.id === e.from)?.view.isCondition ? CONDITION_KIND : undefined,
-            // 条件节点的分支要带槽位（满足 / 不满足），普通步骤的「跳到」口不带 ——
-            // 不带槽位时 getKeyPath 走 directedAnchors，正是「跳到」该有的锚点
-            wfSlot: e.branch && nodes.find((n) => n.id === e.from)?.view.isCondition
-              ? (nodes.find((n) => n.id === e.from)?.branch_node_id === e.to ? 'true' : 'false')
-              : undefined,
-          },
-      })),
-    } as never)
-    // **不能只 render()** —— 它用的是建图那一刻的 options，会把方向覆盖回初始值
-    // （实测：切方向时 effect 明明跑了、rankdir 也确实变成了 LR，节点坐标却一点没动；
-    //  而在页面里手动调 layout({rankdir:'LR'}) 立刻就变了）。
-    // 所以这里也把当前方向一起交给 layout()。
-    void g.layout(LAYOUT_OPTS(dirSeenRankdir.current))
-  }, [nodes])
+    g.setData(buildData(nodes, cb.current.selectedId) as never)
+    void g.layout({ type: 'antv-dagre', rankdir, nodesep: 24, ranksep: 40, marginx: 40, marginy: 40 } as never)
+  }, [nodes, rankdir])
 
   /**
-   * 选中态。
-   *
-   * **重写节点内容、而不是切 G6 的 state** —— 选中是画在 `nodeSvg` 里的（用了 workflow.css
-   * 原有的 `--on` 修饰类），这样外观与旧 SVG 实现逐像素一致；用 state 就得再维护一份样式映射。
+   * 选中态：**由 G6 的 `click-select` 负责**（点节点即加 `selected`，样式走主题/图配置），
+   * 这里只同步「页面侧发起的那一份」（侧栏点选、关闭弹窗后清空）。
    */
   useEffect(() => {
     const g = graphRef.current
     if (!g) return
     for (const n of nodes) {
-      g.updateNodeData([{ id: String(n.id), style: { innerHTML: nodeSvg(n, selectedId === n.id) } }])
+      g.setElementState(String(n.id), selectedId === n.id ? ['selected'] : [])
     }
-    void g.draw()
   }, [nodes, selectedId])
 
   useImperativeHandle(handleRef, () => ({

@@ -1,5 +1,5 @@
 /**
- * 图谱画布（G6 v5 实现）—— 替换原来手写 SVG + d3-force 的那一层。
+ * 图谱画布（G6 v5）—— 渲染与交互**全部交给 G6**，本文件只做数据映射与业务回调。
  *
  * ## 职责边界
  *
@@ -7,28 +7,41 @@
  * 能不能连、连了写哪张表、双击该干什么，全部由 `GraphPage` 决定并通过回调传进来 ——
  * 见 docs/specs/g6-migration.md 的保留清单。
  *
- * ## 为什么节点用 HTML 而不是内置形状
+ * ## 用了 G6 的哪些能力（不重复造轮子）
  *
- * 节点图标（`GraphNodeIcon`）是**多层 SVG + CSS 变量**画的，三档颜色全在
- * `graph.css` 的 `.gnode__icon` 规则里。用 G6 内置形状（circle/star/…）等于重画一遍图标，
- * 而且**丢掉 CSS** —— 主题包一换就得再补一套映射。
+ * | 事项 | 交给谁 |
+ * | --- | --- |
+ * | 节点外形与命中 | 内置 `circle`（keyShape 就是命中区域） |
+ * | 节点图标 | `iconSrc` + 自包含 SVG data URL（见 lib/graph-icon.ts） |
+ * | 边 | 内置 `cubic` 三次贝塞尔 + `endArrow` 方向箭头 |
+ * | 布局 | 内置 `d3-force` |
+ * | 配色/状态 | **G6 主题**（lib/g6-theme.ts 注册的 `zhixing` 主题）+ `state.selected/active/dim` |
+ * | 选中 | 内置 `click-select` |
+ * | 悬停高亮 | 内置 `hover-activate` |
+ * | 拖拽（力导向） | 内置 `drag-element-force` |
+ * | 画布平移缩放 | 内置 `drag-canvas` / `zoom-canvas` |
+ * | 右键菜单 | 内置 `contextmenu` 插件 |
  *
- * HTML 节点是**真实 DOM**：`GraphNodeIcon` 原样复用，`var(--accent-warm)` 这类
- * 值由浏览器解析，主题切换天然跟随。代价是 251 个 DOM 节点比纯 canvas 慢，
- * 但实测（P0）这个量级完全够用。
+ * 自己写的只剩「按业务态给元素打 `dim`（搜索命中之外淡化）」，因为那是业务语义，不是通用交互。
  *
  * ## 位置持久化
  *
- * 布局由 G6 拥有，但**用户的拖动结果要跨页面存活**（原实现走模块级 `POS_CACHE`）：
- * 初始位置从 `positions` 读，拖完通过 `onPositions` 交回去。
+ * 布局由 G6 拥有，但**用户的拖动结果要跨页面存活**：
+ * 初始位置从 `positions` 读，拖完/定时通过 `onPositions` 交回去。
  */
 import { Graph, type IEvent } from '@antv/g6'
 import { useEffect, useImperativeHandle, useRef, type ReactElement, type Ref } from 'react'
-import { renderToStaticMarkup } from 'react-dom/server'
-import { GraphNodeIcon } from '@renderer/components/GraphNodeIcon'
 import { NODE_R } from '@renderer/lib/graph-colors'
 import { toG6Data } from '@renderer/lib/g6-adapt'
-import { g6Theme, subscribeG6Theme, tokNum, tokSolid } from '@renderer/lib/g6-theme'
+import { iconDataUrl } from '@renderer/lib/graph-icon'
+import {
+  THEME_NAME,
+  applyZhixingTheme,
+  registerZhixingTheme,
+  subscribeG6Theme,
+  themeTokens,
+  tokNum,
+} from '@renderer/lib/g6-theme'
 import type { GraphNodePayload, GraphPayload } from '@shared/types'
 
 export interface GraphCanvasHandle {
@@ -75,30 +88,8 @@ interface GraphCanvasProps {
   handleRef?: Ref<GraphCanvasHandle>
 }
 
-/**
- * 生成节点图标的 HTML。
- *
- * **必须自己包一层 `<svg>`**：`GraphNodeIcon` 返回的是 `<g class="gnode__icon">` ——
- * 一个 **SVG 片段**，它的尺寸在原实现里由外层 `<svg>` 给。直接塞进 HTML 的 `<div>` 里，
- * `<g>` 不是 HTML 图形元素，**不渲染也不报错**：容器有 17×17，图标却是 0×0，
- * 于是「254 个节点都在 DOM 里、一个都看不见」。
- *
- * 图标以原点为中心、半径 r 画，所以 viewBox 取 `-r -r 2r 2r` 正好框住。
- */
-function iconHtml(n: GraphNodePayload, color: string, size: number): string {
-  const box = size * 2
-  return renderToStaticMarkup(
-    <svg
-      className="gnode"
-      width={box}
-      height={box}
-      viewBox={-size + ' ' + -size + ' ' + box + ' ' + box}
-      style={{ overflow: 'visible' }}
-    >
-      <GraphNodeIcon kind={n.kind} r={size} color={color} />
-    </svg>
-  )
-}
+/** 透明色：canvas 不认 `transparent` 关键字，用 rgba 全零。 */
+const NONE = 'rgba(0,0,0,0)'
 
 export function GraphCanvasG6({
   data,
@@ -138,62 +129,69 @@ export function GraphCanvasG6({
     let dead = false
     let stopTheme: (() => void) | null = null
 
-    const t = g6Theme()
+    // 主题必须先注册，G6 只会按名字去注册表里取（见 lib/g6-theme.ts）
+    registerZhixingTheme()
+    const tokens = themeTokens()
     const size = tokNum('--size-18')
+    const iconBox = size * 2
 
     const graph = new Graph({
       container: el,
 
+      /** 主题：背景、节点/边/combo 的默认样式与状态样式全在 lib/g6-theme.ts 里，这里只引用名字。 */
+      theme: THEME_NAME,
+
       /**
        * `'view'` 即「渲染后适配视图」。
        *
-       * **不要给它加内边距**：试过顶层 `padding: 32`（`ViewportOptions.padding`，
-       * 类型上合法、tsc 通过），结果是**布局彻底不跑** —— 251 个节点全叠在同一个点上，
-       * 不报错、不警告。去掉之后立刻恢复（内容 2290×2292 → 稳定 2536×2515）。
-       * 想要留边只能另找办法（如 fitView 前手动留白），别走 `padding`。
+       * **不要给它加内边距**：试过顶层 `padding: 32`，结果是**布局彻底不跑** ——
+       * 251 个节点全叠在同一个点上，不报错、不警告。去掉之后立刻恢复。
        */
       autoFit: 'view',
-      /**
-       * 画布内边距。
-       *
-       * **不能写在 `autoFit.options` 里** —— `FitViewOptions` 只有 `when` / `direction`，
-       * 传 `padding` 会直接编译不过（踩过一次）。它是 `ViewportOptions` 的字段，
-       * 放在顶层，`autoFit` 时会按它留边。
-       *
-       * 不留的话贴边节点会被画布边缘裁掉半个图标。
-       */
 
       data: toG6Data(data),
+
       node: {
-        type: 'html',
+        /** 内置圆形节点：keyShape 既是命中区域也是选中环的载体。 */
+        type: 'circle',
         style: {
-          size: [size * 2, size * 2],
-          innerHTML: (d: { id: string }) => {
+          size: [iconBox, iconBox],
+          /**
+           * keyShape 默认**透明**：视觉主体是图标本身，圆只负责命中与状态反馈
+           * （选中/悬停时由主题的 state 把 stroke 换成焦点色）。
+           */
+          fill: NONE,
+          stroke: NONE,
+          /** 图标：自包含 SVG（颜色已在 TS 里算好）—— G6 负责画，我们只提供资产。 */
+          iconSrc: (d: { id: string }): string => {
             const n = payloadById.current.get(Number(d.id))
             if (!n) return ''
-            return iconHtml(n, colorRef.current(n), size)
+            return iconDataUrl(n.kind, NODE_R, { color: colorRef.current(n), ...tokens })
           },
-          ...t.node,
-        },
-        state: {
-          selected: { lineWidth: tokNum('--focus-w'), stroke: tokSolid('--focus-ring', '--accent') },
-          dim: { opacity: 0.15 },
+          iconWidth: iconBox,
+          iconHeight: iconBox,
+          /** 图标即节点，不再叠一层文字标签（标题在侧栏与悬停提示里）。 */
+          label: false,
         },
       },
+
       edge: {
+        /** 三次贝塞尔 + 方向箭头：关系图的通用画法（官方推荐用于任意方向连接）。 */
+        type: 'cubic',
         style: {
-          ...t.edge,
+          endArrow: true,
+          endArrowType: 'triangle',
+          /** 归属=实线、引用=虚线，语义见 docs/specs/ownership-vs-reference.md。 */
           lineDash: (d: { data?: { kind?: string } }): number[] =>
-            d.data?.kind === 'ownership' ? [] : (t.edgeReference.lineDash as number[]),
+            d.data?.kind === 'ownership' ? [] : [tokNum('--space-hair') * 2, tokNum('--space-2xs')],
         },
-        state: { dim: { opacity: 0.08 }, active: { lineWidth: tokNum('--focus-w') } },
       },
+
       /**
-       * 力参数**照搬原 d3 模拟**（GraphPage 里那套），不是随手填的：
+       * 力参数**照搬原 d3 模拟**，不是随手填的：
        *   link.distance 100 / strength 0.12、manyBody -320 / distanceMax 420、
        *   collide 半径 = NODE_R + 8 = 17、alphaDecay 0.018。
-       * 这套值是调出来的 —— 换个数字图就会散开或者挤成一团（第一版只给 link.distance，
-       * 结果外围挂着一圈孤立节点，见 P1 的第一张实测截图）。
+       * 这套值是调出来的 —— 换个数字图就会散开或者挤成一团。
        */
       layout: {
         type: 'd3-force',
@@ -202,12 +200,26 @@ export function GraphCanvasG6({
         collide: { radius: NODE_R + 8, strength: 0.7 },
         alphaDecay: 0.018,
       },
-      behaviors: ['drag-canvas', 'zoom-canvas', 'drag-element'],
+
       /**
-       * 右键菜单，当前只挂了「删除连线」。
+       * 交互全部用内置 behavior（官方 behavior 章节那一批）：
+       *   click-select（选中）· hover-activate（悬停高亮）· drag-element-force（力导向里拖节点）
+       *   · drag-canvas / zoom-canvas（导航）
        *
-       * 旧实现是「悬停边 → 冒出端点手柄与删除按钮」。G6 没有对应的悬停浮层，
-       * 而右键菜单是它的惯用做法 —— **改挂端点（拖端点）暂未迁移**，见 docs/specs/g6-migration.md。
+       * **不加 focus-element**：它会把「点击」和「镜头飞到元素」绑在一起，
+       * 而图谱的点击已经用于选中/连线，每次点都移动视口很打扰；聚焦改由
+       * `focusNode()` 命令式调用（搜索命中时），见下面的 handle。
+       */
+      behaviors: [
+        'drag-canvas',
+        'zoom-canvas',
+        { type: 'click-select', key: 'click-select', state: 'selected' },
+        'hover-activate',
+        'drag-element-force',
+      ],
+
+      /**
+       * 右键菜单，当前只挂了「改挂端点 / 删除连线」。
        *
        * 注意：插件自带的 `CONTEXTMENU_CSS` 是**硬编码的白底、圆角 4px**，不跟主题；
        * 所以传了 `className`，由 graph.css 用 token 覆盖。
@@ -243,7 +255,6 @@ export function GraphCanvasG6({
     })
     graphRef.current = graph
 
-    // 事件只登记一次；用 ref 取最新回调
     /**
      * 取事件里的元素 id。
      *
@@ -252,6 +263,11 @@ export function GraphCanvasG6({
      */
     const idOf = (e: IEvent): number =>
       Number((e as unknown as { target?: { id?: string } }).target?.id)
+
+    /**
+     * 选中态**由 G6 的 click-select 自己维护**，我们只把结果转告页面（侧栏要跟着变）。
+     * 页面的 `selected` prop 再回来时是幂等的（setElementState 同一状态），不会打架。
+     */
     graph.on('node:click', (e: IEvent) => cb.current.onSelect(idOf(e)))
     graph.on('node:dblclick', (e: IEvent) => {
       const n = payloadById.current.get(idOf(e))
@@ -260,6 +276,7 @@ export function GraphCanvasG6({
     graph.on('node:pointerenter', (e: IEvent) => cb.current.onHover(idOf(e)))
     graph.on('node:pointerleave', () => cb.current.onHover(null))
     graph.on('canvas:click', () => cb.current.onSelect(null))
+
     /** 把当前所有节点的落位读出来，交给坐标缓存。 */
     const snapshotPositions = (): void => {
       const next = new Map<number, { x: number; y: number }>()
@@ -273,35 +290,23 @@ export function GraphCanvasG6({
 
     /**
      * 定时回写落位，**替代原实现里 d3 模拟每 tick 的回写**。
-     *
-     * 原实现靠 `sim.on('tick', …)` 把坐标写进缓存，所以离开图谱页再回来时布局是稳定的。
-     * 换成 G6 之后布局归 G6 拥有，而**力导向是异步迭代的、没有可靠的「布局结束」事件** ——
-     * 与其猜时间，不如定期快照：这份缓存在下次挂载时才被读，**写中间值无害，最后一次写就是最终布局**。
-     *
-     * 卸载时再补一次，避免「刚摆好就切页」丢掉最后的落定位置。
+     * 力导向是异步迭代的、没有可靠的「布局结束」事件 —— 与其猜时间，不如定期快照：
+     * 这份缓存在下次挂载时才被读，**写中间值无害，最后一次写就是最终布局**。
      */
     const posTimer = window.setInterval(snapshotPositions, 1000)
 
     /**
-     * 跟随容器尺寸变化。
-     *
-     * **G6 只在建图时量一次容器** —— 用户拖大窗口，画布还是原尺寸、内容锁在小画布里
-     * （实测：视口从 704 改到 1280 后容器 1280×771，而 canvas 仍是 204×4）。
-     * 试过 `canvas: { autoResize: true }`，**不在 `CanvasConfig` 类型里**，编译不过，
-     * 所以自己盯容器。
+     * 跟随容器尺寸变化。**G6 只在建图时量一次容器** —— 拖大窗口后内容会锁在小画布里，
+     * 试过 `canvas: { autoResize: true }`，**不在 `CanvasConfig` 类型里**，所以自己盯。
      */
     const ro = new ResizeObserver(() => graph.resize())
     ro.observe(el)
 
     void graph.render().then(() => {
       if (dead) return
-      // 主题变更：只换样式，不重建图
-      stopTheme = subscribeG6Theme((next) => {
-        graph.setOptions({
-          node: { style: { ...graph.getOptions().node?.style, ...next.node } },
-          edge: { style: { ...graph.getOptions().edge?.style, ...next.edge } },
-        })
-        void graph.draw()
+      // 主题变更：重新注册主题对象并切换，不重建图（见 lib/g6-theme.ts 的注释）
+      stopTheme = subscribeG6Theme(() => {
+        applyZhixingTheme(graph)
       })
     })
 
@@ -333,7 +338,9 @@ export function GraphCanvasG6({
     void g.render()
   }, [data])
 
-  // ---- 选中 / 悬浮 / 搜索淡化 / 连线起点：状态同步 ----
+  // ---- 业务态同步：选中 / 搜索结果淡化 / 连线起点 ----
+  // 选中由 click-select 负责，这里同步的是「页面侧发起的那一份」（侧栏点选、搜索聚焦），
+  // 以及 G6 不该知道的业务语义：搜索未命中、连线态之外的节点淡化。
   useEffect(() => {
     const g = graphRef.current
     if (!g) return
@@ -370,7 +377,6 @@ export function GraphCanvasG6({
   /**
    * **必须有确定的高度**：G6 建图时按容器量尺寸，容器高度为 0 会让画布塌成一条线，
    * 而 `autoFit` 又会把整张图缩到那个高度里 —— 结果是「251 个节点都在、但一个也看不见」。
-   * 实测过一次（容器 1141×4、缩放 0.01），所以这里显式撑满父容器。
    */
   return (
     <div

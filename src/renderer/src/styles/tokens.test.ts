@@ -21,7 +21,9 @@ const STYLES = join(SRC, 'src', 'styles')
 
 /** JS 内联注入的令牌：它们不在 CSS 里定义，但由组件按元素写入。 */
 const JS_INJECTED = [
-  '--gnode-c', // components/GraphNodeIcon.tsx
+  // 原来这里还有 '--gnode-c'（components/GraphNodeIcon.tsx 内联注入）——
+  // 图谱改走 G6 原生节点（lib/graph-icon.ts 把颜色算进 SVG data URL）之后没人注入它了，
+  // 断言 #2 立刻报出来，于是删掉（这正是它存在的意义）。
   '--link-a', // pages/NotesPage.tsx
   '--link-b', // pages/NotesPage.tsx
   '--row-indent', // components/TaskRow.tsx
