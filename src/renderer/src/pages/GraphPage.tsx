@@ -1,4 +1,5 @@
 import { subscribeDomain } from '@shared/events'
+import { Select } from '../components/Select'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link2 } from '@renderer/lib/icons'
 
@@ -485,34 +486,28 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
           </div>
         )}
         filters={[
-          <select
+          <Select
             key="folder"
             className="field field--compact"
-            aria-label="按文件夹过滤"
-            value={folderId ?? ''}
-            onChange={(e) => setFolderId(e.target.value === '' ? null : Number(e.target.value))}
-          >
-            <option value="">全部文件夹</option>
-            {folders.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.name}
-              </option>
-            ))}
-          </select>,
-          <select
+            ariaLabel="按文件夹过滤"
+            value={folderId == null ? '' : String(folderId)}
+            onChange={(v) => setFolderId(v === '' ? null : Number(v))}
+            options={[
+              { value: '', label: '全部文件夹' },
+              ...folders.map((f) => ({ value: String(f.id), label: f.name })),
+            ]}
+          />,
+          <Select
             key="tag"
             className="field field--compact"
-            aria-label="按标签过滤"
-            value={tagId ?? ''}
-            onChange={(e) => setTagId(e.target.value === '' ? null : Number(e.target.value))}
-          >
-            <option value="">全部标签</option>
-            {tags.map((tg) => (
-              <option key={tg.id} value={tg.id}>
-                {tg.name}
-              </option>
-            ))}
-          </select>,
+            ariaLabel="按标签过滤"
+            value={tagId == null ? '' : String(tagId)}
+            onChange={(v) => setTagId(v === '' ? null : Number(v))}
+            options={[
+              { value: '', label: '全部标签' },
+              ...tags.map((tg) => ({ value: String(tg.id), label: tg.name })),
+            ]}
+          />,
         ]}
         search={(
           <input
@@ -651,15 +646,16 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
                 {linkFrom != null && (
                   <label className="u-aux">
                     任务↔笔记可选用关系：
-                    <select
+                    <Select
                       className="field field--compact"
+                      ariaLabel="关系类型"
                       value={linkMode}
-                      onChange={(e) => setLinkMode(e.target.value as 'ownership' | 'reference')}
-                      aria-label="关系类型"
-                    >
-                      <option value="ownership">归属（实线）</option>
-                      <option value="reference">引用（虚线）</option>
-                    </select>
+                      onChange={(v) => setLinkMode(v as 'ownership' | 'reference')}
+                      options={[
+                        { value: 'ownership', label: '归属（实线）' },
+                        { value: 'reference', label: '引用（虚线）' },
+                      ]}
+                    />
                   </label>
                 )}
               </div>

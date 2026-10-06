@@ -1170,3 +1170,57 @@ html:not([data-tree-guide='off'])
   background: var(--border-strong);
   pointer-events: none;
 }
+
+/* ---- 下拉选择器（components/Select.tsx）----
+   触发器沿用 .field 的尺寸与描边（与输入框同款，所以一行里的控件是齐的）；
+   浮层复用 .popmenu —— 下拉与右键菜单、优先级菜单是同一种浮层。 */
+.select__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  text-align: left;
+  cursor: pointer;
+}
+.select__trigger.is-open {
+  border-color: var(--accent);
+}
+.select__value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 小三角用伪元素画：不占额外 DOM，颜色跟随文字 */
+.select__caret {
+  flex: 0 0 auto;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid currentColor;
+  opacity: 0.55;
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+.select__trigger.is-open .select__caret {
+  transform: rotate(180deg);
+}
+.select__list {
+  min-width: var(--size-120);
+}
+.select__option {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+/* 键盘高亮（aria-activedescendant 指向的那一项）：与 hover 同一套观感 */
+.select__option.is-active {
+  background: var(--bg-hover);
+}
+.select__option.is-selected {
+  color: var(--accent-text);
+  font-weight: var(--fw-medium);
+}
+.select__option.is-disabled {
+  color: var(--fg-tertiary);
+  cursor: default;
+}
