@@ -488,12 +488,17 @@ export function spawnStepTask(
   reindexTask(taskId)
   // 与父任务同一个标记：任务页上能一眼看出这一串是流程派生的
   setTaskTags(taskId, [WORKFLOW_TAG])
-  c.prepare('INSERT INTO workflow_step_task (instance_id, node_id, task_id, created_at) VALUES (?, ?, ?, ?)').run(
-    instanceId,
-    node.id,
-    taskId,
-    stamp
-  )
+  /**
+   * 表上有 `UNIQUE (instance_id, node_id)` —— 一个实例的同一个节点只留一条绑定记录。
+   * **回边重入时要用 UPSERT 换绑到新任务**，否则第二次走到同一节点会撞唯一约束、
+   * 直接把派发打断（旧任务已经完成，还挂在上面没有意义）。
+   * 取舍：这一步的**执行历史只保留最后一次** —— 要去掉这个限制得改表约束，
+   * 那是迁移级别的事，先按「回边 = 重新执行这一步」的语义修好功能。
+   */
+  c.prepare(
+    `INSERT INTO workflow_step_task (instance_id, node_id, task_id, created_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(instance_id, node_id) DO UPDATE SET task_id = excluded.task_id, created_at = excluded.created_at`
+  ).run(instanceId, node.id, taskId, stamp)
   return taskId
 }
 
@@ -820,8 +825,20 @@ async function advanceInstance(
     return { next: null }
   }
   if (needsTask(nxt)) {
+    /**
+     * 「这一步已经有待办了」——**只看还没完成的那些**。
+     *
+     * 回边（例如模板里的「满足 → 回到第 1 步」）会让同一个节点被**再次走到**：
+     * 上一次的待办早已勾完（`status = 'done'`），可原来这里不看任务状态，
+     * 于是判定成"已有待办"、**不再派新任务** —— 实例的 `current_node_id` 指着这一步，
+     * 但没有任何待办可做，后面的命令 / 脚本自然也一个都不跑，看起来就是「整个流程卡住，什么也不触发」。
+     */
     const has = c
-      .prepare('SELECT 1 FROM workflow_step_task WHERE instance_id = ? AND node_id = ?')
+      .prepare(
+        `SELECT 1 FROM workflow_step_task st
+           JOIN task t ON t.id = st.task_id
+          WHERE st.instance_id = ? AND st.node_id = ? AND t.status != 'done'`
+      )
       .get(instanceId, nxt.id)
     if (!has) spawnStepTask(instanceId, nxt, tpl.name, inst.origin_task_id)
     logRun(instanceId, nxt.id, 'enter', has ? '等待这一步完成' : '已派发待办')
