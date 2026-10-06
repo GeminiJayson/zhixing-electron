@@ -14,8 +14,6 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  /* 四边留白 = 布局圆角半径（`--radius-lg`）：留白与圆角同一个量，几何上才是一套。 */
-  padding: var(--radius-lg);
   /* 与卡片/侧栏同一层玻璃 + 羽化阴影（原来更实 + 硬描边，和旁边的卡片不是一种面板）。 */
   background: var(--bg-layer);
   border: none;
@@ -63,6 +61,8 @@
      留白加在滚动容器上（而不是它的父面板）—— 父面板的 padding 在裁切边界**之外**，
      内容滚到那里就被切掉，卡片的下半截正好卡在边界上（用户截图）。 */
   padding-bottom: var(--radius-lg);
+  padding: var(--radius-lg);
+  padding-top: 0;
 }
 .ntree__folder {
   display: flex;
