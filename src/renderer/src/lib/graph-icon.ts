@@ -25,10 +25,10 @@
 import { mix, tokSolid } from './g6-theme'
 
 /**
- * 把 `var(--x)` 形式的颜色解成实色。
+ * 把「CSS 变量引用」形式的颜色（`tok('--x')` 那种字符串）解成实色。
  *
- * `lib/graph-colors.ts` 的 `knowledgeColor()` 会返回 `var(--danger)` / `var(--accent-warm)`
- * 这类**CSS 变量字符串** —— 它们在 HTML/CSS 里没问题，可一旦写进 data URL 的 SVG 里，
+ * `lib/graph-colors.ts` 的 `knowledgeColor()` 会返回 `var(--danger)` 这类
+ * **CSS 变量字符串**（写成 var 加括号加变量名的形式）—— 它们在 HTML/CSS 里没问题，可一旦写进 data URL 的 SVG 里，
  * 浏览器解析不了就**静默退回黑色**（实测：笔记类节点的图标全黑，星形/菱形却是好的，
  * 因为后者的颜色来自具体色值的 KIND_COLOR）。所以进 SVG 之前必须解一遍。
  */
