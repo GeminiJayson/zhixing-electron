@@ -460,7 +460,13 @@ export function WorkflowCanvasG6({
     graph.on('canvas:click', () => cb.current.onSelect(null))
 
     // 同图谱画布：G6 只在建图时量一次容器，尺寸变化要自己盯（canvas.autoResize 不在类型里）
-    const ro = new ResizeObserver(() => graph.resize())
+    const ro = new ResizeObserver(() => {
+      // **必须挡一道**：ro.disconnect() 挡不住已经排进队列的那一次回调 ——
+      // 图 destroy() 之后它照样会跑，G6 内部再读到 undefined.draw 就抛
+      // 「The graph instance has been destroyed」（实测：切纵向/横向时每次必现）。
+      if (dead) return
+      graph.resize()
+    })
     ro.observe(el)
 
     void graph.render().then(() => {
@@ -481,6 +487,31 @@ export function WorkflowCanvasG6({
       graph.destroy()
       graphRef.current = null
     }
+    // 依赖是**空**：图只建一次。方向变化改走下面那个 effect（改布局配置重跑 layout）——
+    // 早先依赖 rankdir，切方向会整图重建，而 G6 内部的异步任务会在 destroy 之后才完成，
+    // 每次都抛 "The graph instance has been destroyed"（实测，堆栈里全是 @antv/g6 的帧）。
+  }, [])
+
+  /**
+   * 布局方向变化：改配置 + 重跑一次布局，**不重建图**。
+   *
+   * 首帧也会跑一次（与建图时那份配置等价，幂等）。这样切「纵向 / 横向」时
+   * 图实例始终是同一个，没有「销毁后异步任务才回来」的窗口。
+   */
+  const dirSeen = useRef(false)
+  useEffect(() => {
+    // **跳过首帧**：建图时那份配置已经带着当时的 rankdir，此时 render() 还没完成，
+    // 这会儿调 layout() 会炸（实测堆栈落在 @antv/g6 的 layout 里）。
+    if (!dirSeen.current) {
+      dirSeen.current = true
+      return
+    }
+    const g = graphRef.current
+    if (!g) return
+    g.setOptions({
+      layout: { type: 'antv-dagre', rankdir, nodesep: 24, ranksep: 40, marginx: 40, marginy: 40 },
+    } as never)
+    void g.layout()
   }, [rankdir])
 
   // 数据变化 → 增量同步（不重建图，布局会自己重跑）。

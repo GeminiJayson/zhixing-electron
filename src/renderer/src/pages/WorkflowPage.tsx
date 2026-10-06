@@ -1204,6 +1204,11 @@ export function WorkflowPage({ onNotice, onChanged }: Props) {
             <WorkflowCanvasG6
               nodes={g6Nodes}
               handleRef={wfRef}
+              /**
+               * **必须传** —— 早先漏了这一行，画布一直用默认的 'TB'，
+               * 点「横向」时画布毫无反应（布局没重跑）。实测：切方向后节点坐标一个都没动。
+               */
+              rankdir={rankdir}
               selectedId={selected}
               onSelect={async (id) => {
                 // 待定分支态下，点到的节点就是分支目标
