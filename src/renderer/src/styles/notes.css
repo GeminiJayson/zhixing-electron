@@ -23,10 +23,11 @@
 }
 /* 右边缘的分隔条：拖它调整笔记树宽度。
    与工作流的模板树分隔条（workflow.css 的 .wf-splitter）同一套做法与数值：
-   12px 命中区 + 伪元素画的 2px 细线（线用伪元素才腾得出够宽的命中区），
-   hover / 聚焦 / 拖拽中细线变强调色。差别只在定位 —— 工作流的侧栏是 flex 列，
-   分隔条自己占位；笔记树是张卡片，手柄贴它的右边缘，12px 恰好落在
-   .notes-wrap 那道 12px 的间隙里。 */
+   12px 命中区、光标变左右箭头、拖拽中给容器挂 is-resizing。
+   **只是不画那条线**（用户要求"不用显示"）—— 原先这里用伪元素画一条 2px 细线，
+   hover / 拖动时变强调色；去掉之后功能一点没少，能拖的地方鼠标移上去仍是 col-resize。
+   差别只在定位 —— 工作流的侧栏是 flex 列，分隔条自己占位；
+   笔记树是张卡片，手柄贴它的右边缘，12px 恰好落在 .notes-wrap 那道 12px 的间隙里。 */
 .ntree__resizer {
   position: absolute;
   top: 0;
@@ -36,19 +37,6 @@
   cursor: col-resize;
   touch-action: none;
   outline: none;
-}
-.ntree__resizer::after {
-  content: '';
-  position: absolute;
-  inset: var(--size-8) var(--size-5);
-  border-radius: var(--radius-pill);
-  background: var(--border);
-  transition: background var(--dur-fast);
-}
-.ntree__resizer:hover::after,
-.ntree__resizer:focus-visible::after,
-.ntree.is-resizing .ntree__resizer::after {
-  background: var(--accent);
 }
 /* 拖动期间：整块禁止选中文本，否则会把树里的行拖成蓝底
    （与工作流 .wf-wrap.is-resizing 同一件事） */

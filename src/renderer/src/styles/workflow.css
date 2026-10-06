@@ -462,27 +462,14 @@
   font-size: var(--text-aux);
 }
 
-/* 侧栏分隔条：12px 的命中区，中间是一条 2px 的细线
-   （细线用伪元素画，命中区才够宽、好拖） */
+/* 侧栏分隔条：12px 的命中区，**不画线**（用户要求"不用显示"）。
+   功能全留着 —— 光标变左右箭头、拖它改宽度、拖动中给容器挂 is-resizing。 */
 .wf-splitter {
   flex: 0 0 12px;
   position: relative;
   cursor: col-resize;
   touch-action: none;
   outline: none;
-}
-.wf-splitter::after {
-  content: '';
-  position: absolute;
-  inset: var(--size-8) var(--size-5);
-  border-radius: var(--radius-pill);
-  background: var(--border);
-  transition: background var(--dur-fast);
-}
-.wf-splitter:hover::after,
-.wf-splitter:focus-visible::after,
-.wf-wrap.is-resizing .wf-splitter::after {
-  background: var(--accent);
 }
 
 /* 条件内容条：贴在条件菱形的下方，把判据直接写在节点上
