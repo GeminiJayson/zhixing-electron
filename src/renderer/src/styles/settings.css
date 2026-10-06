@@ -20,8 +20,6 @@
   overscroll-behavior: contain;
   /* 同 .page__body：滚动容器的横向是 hidden，会把贴边卡片的阴影切掉 ——
      padding 撑开裁剪边界、负 margin 把布局拉回，内容位置不变而阴影有地方落。 */
-  padding-inline: 24px;
-  margin-inline: -24px;
 }
 .set-card {
   display: flex;

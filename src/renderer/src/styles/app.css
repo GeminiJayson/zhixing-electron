@@ -357,7 +357,9 @@
    * 上下留出的任何空隙都会显成一条横向"分割带"（截图里框出来的就是它）。
    * 左右保留 24px：横向的空间由 `.page__body` 的内边距提供，两侧不涉及"切割"。
    */
-  padding: 0 var(--space-5);
+  /* 四边留白 = **布局圆角半径**（`--radius-lg`，12px）——
+     留白与圆角同一个量，视觉上才是"同一套几何"。留白本身透明，不设任何背景。 */
+  padding: var(--radius-lg);
   overflow: hidden;
   animation: page-enter var(--dur-normal) var(--ease-enter);
 }
@@ -388,8 +390,6 @@
    * **padding 把裁剪边界向外撑 12px**（阴影落进 padding 区，不会被裁），
    * **负 margin 再把布局拉回来**（内容视觉位置分毫不动）。
    */
-  padding-inline: 24px;
-  margin-inline: -24px;
   /**
    * ⚠️ **这里不能用 `overflow-x: clip` + `overflow-clip-margin`**。
    *

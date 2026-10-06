@@ -11,8 +11,6 @@
   overflow: auto;
   /* 同 .page__body：滚动容器的横向是 hidden，贴边的闪念卡片阴影会被切掉 ——
      padding 撑开裁剪边界、负 margin 把布局拉回（实测卡片到该边界原本只有 0/10px）。 */
-  padding-inline: 24px;
-  margin-inline: -24px;
 }
 
 .flash-list {
