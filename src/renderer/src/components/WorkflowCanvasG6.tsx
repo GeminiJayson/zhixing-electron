@@ -192,6 +192,15 @@ function nodeDataOf(n: WorkflowCanvasNode, selectedId: number | null): Record<st
       fill: tokSolid('--fg-secondary', '--fg-primary'),
       backgroundFill: tokSolid('--accent-warm-soft', '--bg-hover'),
       padding: [2, 6],
+      /**
+       * **限宽**：判据比菱形还宽时，胶囊的左右两端都突到菱形投影外面 ——
+       * 实测宽度 202 对菱形 150，看着就像「没跟节点对齐、偏左」（用户反馈）。
+       * 压到比菱形窄一点，单行 + 省略号。
+       */
+      wordWrap: true,
+      wordWrapWidth: NODE_W - 26,
+      maxLines: 1,
+      textOverflow: '...',
     })
   }
 
@@ -216,10 +225,18 @@ function nodeDataOf(n: WorkflowCanvasNode, selectedId: number | null): Record<st
       labelTextAlign: cond ? 'center' : 'left',
       labelOffsetX: cond ? 0 : -(NODE_W / 2) + 10,
       labelWordWrap: true,
-      labelWordWrapWidth: cond ? NODE_W * 0.6 : NODE_W - 20,
+      /**
+       * 条件节点的标题在**菱形内部**，可用宽度随行位置收窄：
+       * 菱形半宽 = 75 × (1 − |y|/28)，两行文字（行高 13）跨度 y ∈ [−13, 13]，
+       * 在 y=13 处只剩 80px —— 所以 wrap 宽度取 72，字号降到 10。
+       * （之前用 NODE_W*0.6 = 90 + 12px 字号，第二行实测量到 43 的半宽，
+       *   正好越过该处的菱形边界，看着就是「第二行顶出菱形」。）
+       */
+      labelWordWrapWidth: cond ? 72 : NODE_W - 20,
       labelMaxLines: 2,
       labelTextOverflow: '...',
-      labelFontSize: 12,
+      labelFontSize: cond ? 10 : 12,
+      labelLineHeight: cond ? 13 : 16,
     },
   }
 }
