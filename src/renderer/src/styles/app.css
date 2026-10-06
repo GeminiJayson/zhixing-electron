@@ -933,4 +933,12 @@
  */
 .page--review .page__body {
   padding-block: var(--space-1);
+  /* 内容比容器矮时，`flex: 1` 会让底部空出一段（实测 41px）—— 那正是用户说的"底部留白太多"。
+     让分区之间**均分**这点余量：卡片间距稍微舒展，底边不再空着。 */
+  justify-content: space-between;
+}
+/* 底部不再叠加 `.page` 的那 12px：内容已经正好一屏，底边再留一段空白就显得空荡。
+   顶部保留（要跟页面标题拉开）。 */
+.page.page--review {
+  padding-bottom: 0;
 }
