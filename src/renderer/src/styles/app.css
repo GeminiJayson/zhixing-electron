@@ -920,3 +920,17 @@
     radial-gradient(100% 80% at 88% 110%, color-mix(in srgb, var(--accent) 4%, transparent), transparent 80%),
     var(--glass-layer-surface);
 }
+
+/**
+ * **回顾页：纵向留白收到 4px**，为的是**去掉这一页的滚动条**。
+ *
+ * 内容天然比视口高：四块统计卡片各 ~200px，其中两块图表的高度由 SVG 的 viewBox 比例与
+ * 卡片宽度定死，压不动。把 section 的纵向内边距（14→8）与分区间距（8→4）压过一轮之后
+ * 还差 15px，只能从内容区的上下留白里拿 —— 12 → 4px 刚好放下。
+ *
+ * 代价：纵向只有 4px 余量，卡片阴影在这一轴会被削掉一部分（横向仍有完整的 12px）。
+ * 用户明确要求这一页不要滚动条，所以取这个取舍。
+ */
+.page--review .page__body {
+  padding-block: var(--space-1);
+}

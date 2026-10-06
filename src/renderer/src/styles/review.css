@@ -14,7 +14,7 @@
  * 省出来的正好把 67px 覆盖掉，且没有一项紧到读起来发挤。
  */
 .page--review .section {
-  padding: var(--space-3);
+  padding: var(--space-2) var(--space-3);
   /* 归到 global.css 的「页面级卡片」规范：inset 底 + --card-shadow（自带内高光），不用描边。
      注释里本来就写着"与设置页 .set-card 同一套视觉语言"—— 那条规范就是这么定的。 */
   background: var(--glass-layer-inset);
@@ -24,7 +24,7 @@
 }
 .page--review .section + .section,
 .page--review .review-pair {
-  margin-top: var(--space-2);
+  margin-top: var(--space-1);
 }
 /* 并排的两块已经在同一行里，不需要再各留上边距 */
 .page--review .review-pair > .section + .section {
