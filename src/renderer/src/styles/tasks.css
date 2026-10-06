@@ -1113,15 +1113,20 @@ button.chip--status:focus-visible {
   flex: 1;
   /* 原来是 `min-height: var(--size-460)` —— 内容多时顶着下限长高，把主布局顶出滚动条 */
   min-height: 0;
-  /* 溢出由每个象限内部的 .quad-box__body 承担（它本来就是 overflow: auto） */
-  overflow: hidden;
+  /* 溢出由每个象限内部的 .quad-box__body 承担（它本来就是 overflow: auto）。
+     `clip` + `clip-margin` 而不是 `hidden`：普通 hidden 会把贴着网格边缘的卡片阴影一起切掉，
+     而 box-shadow 是装饰、不该被"内容溢出"这条理由裁掉。 */
+  overflow: clip;
+  overflow-clip-margin: 24px;
 }
 .quad-box {
   display: flex;
   flex-direction: column;
   /* 能被网格行压住（min-height 下限会让它在内容多时顶开网格） */
-  min-height: 0;
-  overflow: hidden;
+  /* 裁内容，但给 box-shadow 留余量：普通 `overflow: hidden` 会把贴着边缘的卡片阴影一并切掉
+     （用户反馈"card 紧贴布局边界时阴影会被切割"）。`clip` + `clip-margin` 只裁内容。 */
+  overflow: clip;
+  overflow-clip-margin: 24px;
   padding: var(--space-3);
   background: var(--glass-layer-inset);
   border: none;
@@ -1357,7 +1362,10 @@ button.chip--status:focus-visible {
  * 关掉之后，闪一下的物理条件不存在。
  */
 .page--tasks .page__body {
-  overflow: hidden;
+  /* 裁内容，但给 box-shadow 留余量：普通 `overflow: hidden` 会把贴着边缘的卡片阴影一并切掉
+     （用户反馈"card 紧贴布局边界时阴影会被切割"）。`clip` + `clip-margin` 只裁内容。 */
+  overflow: clip;
+  overflow-clip-margin: 24px;
 }
 
 /* 看板 */
@@ -1374,13 +1382,16 @@ button.chip--status:focus-visible {
    * 1. 原先 `min-height: var(--size-260)`：卡片一多就顶着下限长高，把 `.page__body` 顶出滚动条；
    * 2. 光把 min-height 改成 0 还不够 —— `display: grid` 的**行高由内容决定**，
    *    容器虽然被 flex 压到 622px，网格内容仍是 865px，照样溢出。
-   *    所以还要 `grid-template-rows: minmax(0, 1fr)` 把行高钉在容器高度上 + `overflow: hidden` 收边。
+   *    所以还要 `grid-template-rows: minmax(0, 1fr)` 把行高钉在容器高度上 + 收边。
    *
    * 溢出至此交给每一列的 `.kcol__body`（本来就是 `overflow: auto`）—— 任务页主布局不再滚动。
+   * 收边用 `clip` + `clip-margin` 而非 `hidden`：卡片列贴着网格边缘，普通 hidden 会把它们的
+   * box-shadow 一起切掉（用户反馈"card 紧贴布局边界时阴影会被切割"）。
    */
   min-height: 0;
   grid-template-rows: minmax(0, 1fr);
-  overflow: hidden;
+  overflow: clip;
+  overflow-clip-margin: 24px;
 }
 .kcol {
   display: flex;
@@ -1388,8 +1399,10 @@ button.chip--status:focus-visible {
   gap: var(--space-2);
   /* 列要能被网格行压住（`max-height: 100%` 在 grid 里不保证生效），
      溢出再往下交给 .kcol__body */
-  min-height: 0;
-  overflow: hidden;
+  /* 裁内容，但给 box-shadow 留余量：普通 `overflow: hidden` 会把贴着边缘的卡片阴影一并切掉
+     （用户反馈"card 紧贴布局边界时阴影会被切割"）。`clip` + `clip-margin` 只裁内容。 */
+  overflow: clip;
+  overflow-clip-margin: 24px;
   padding: var(--space-2);
   background: var(--glass-layer-inset);
   border: none;
