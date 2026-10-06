@@ -342,12 +342,27 @@ export function GraphCanvasG6({
     if (!g) return
     // setData 返回 void（只有 render/布局是异步的），不能链 .then
     g.setData(toG6Data(data))
-    void g.render()
+    /**
+     * **不要用 `render()` 做数据同步**：`autoFit: 'view'` 是「每次 render 后都 fitView」，
+     * 于是数据一刷新视图就被重置回自适应 —— 用户看到的就是「整个画布闪一下」。
+     * 这里改成 `layout()` + `draw()`：布局照跑、画面照重绘，但**不碰视口**。
+     * （首次的 autoFit 仍然发生在建图那次 render 里。）
+     */
+    void Promise.resolve(g.layout()).then(() => g.draw())
   }, [data])
 
   // ---- 业务态同步：选中 / 搜索结果淡化 / 连线起点 ----
   // 选中由 click-select 负责，这里同步的是「页面侧发起的那一份」（侧栏点选、搜索聚焦），
   // 以及 G6 不该知道的业务语义：搜索未命中、连线态之外的节点淡化。
+  /**
+   * 上一次提交给 G6 的状态（差分用，见下）。
+   *
+   * 这个 effect 曾经每次都把全部 251 个节点的状态提交一遍，而 G6 每收到一次状态变更就要重绘
+   * 整张画布（实测单次 40ms 上下 —— 人眼能看出"整个画布闪一下"）。现在只提交**真正变了**的元素：
+   * 点一个节点通常只有两个（旧的选中、新的选中）。
+   */
+  const stateSeen = useRef(new Map<string, string>())
+
   useEffect(() => {
     const g = graphRef.current
     if (!g) return
@@ -355,23 +370,36 @@ export function GraphCanvasG6({
     /**
      * **只有「连线起点」会淡化其他节点，悬停不再淡化**。
      *
-     * 之前把 `hover` 也算进来，结果鼠标一停在某个节点上，其余 250 个一起变淡 ——
-     * 看起来就是「整张图被置灰」（用户反馈）。悬停的高亮交给内置的 `hover-activate`
-     * （主题里配的是 halo 光晕），不抢别的节点的存在感。
+     * 之前把 `hover` 也算进来：鼠标一停/一移，其余 250 个节点就跟着变淡，
+     * 既"整张图被置灰"，又让**每一次鼠标移动都触发一次全画布重绘**。
+     * 悬停的高亮交给内置 `hover-activate`（主题里配的是 halo 光晕）。
+     * 这也是依赖数组里没有 `hover` 的原因 —— 悬停变化不该走到这里。
      */
     const active = linkFrom
-    const states: Record<string, string[]> = {}
+    const next = new Map<string, string[]>()
     for (const n of data.nodes) {
       const id = String(n.id)
       const st: string[] = []
       if (n.id === selected || n.id === focused) st.push('selected')
-      // 搜索是显式动作，优先于悬浮；两者都无命中才淡化
+      // 搜索/连线是显式动作，未命中的淡化
       if (dimmed && !dimmed.has(n.id)) st.push('dim')
       else if (!dimmed && active != null && n.id !== active) st.push('dim')
-      states[id] = st
+      next.set(id, st)
     }
-    void g.setElementState(states)
-  }, [data, selected, hover, focused, searchHits, linkFrom])
+    const changed: Record<string, string[]> = {}
+    for (const [id, st] of next) {
+      const key = st.join(',')
+      if (stateSeen.current.get(id) !== key) {
+        changed[id] = st
+        stateSeen.current.set(id, key)
+      }
+    }
+    // 元素被删掉也要清缓存，否则同名 id 回来时会被误判成"没变"
+    if (stateSeen.current.size > next.size) {
+      for (const id of [...stateSeen.current.keys()]) if (!next.has(id)) stateSeen.current.delete(id)
+    }
+    if (Object.keys(changed).length) void g.setElementState(changed)
+  }, [data, selected, focused, searchHits, linkFrom])
 
   useImperativeHandle(handleRef, () => ({
     relayout: () => {
