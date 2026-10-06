@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Select } from './Select'
 import type { Note, WorkflowNodePayload } from '@shared/types'
 import {
   DEFAULT_EXPECT_CODE,
@@ -166,45 +167,42 @@ export function WorkflowStepDialog({
                 })}
                 {draft.note_ids.length === 0 && <span className="u-aux">（未绑定）</span>}
               </div>
-              <select
-                className="field field--compact"
-                value=""
-                onChange={(e) => {
-                  const id = Number(e.target.value)
-                  if (Number.isFinite(id) && id > 0) toggleNote(id)
-                }}
-              >
-                <option value="">＋ 添加文档…</option>
-                {noteChoices
-                  .filter((n) => !draft.note_ids.includes(n.id))
-                  .map((n) => (
-                    <option key={n.id} value={n.id}>
-                      {n.title || '（无标题）'}
-                    </option>
-                  ))}
-              </select>
+              <Select
+                  className="field field--compact"
+                  ariaLabel="添加文档"
+                  value=""
+                  onChange={(v) => {
+                    const id = Number(v)
+                    if (Number.isFinite(id) && id > 0) toggleNote(id)
+                  }}
+                  options={[
+                    { value: '', label: '＋ 添加文档…' },
+                    ...noteChoices
+                      .filter((x) => !draft.note_ids.includes(x.id))
+                      .map((x) => ({ value: String(x.id), label: x.title || '（无标题）' })),
+                  ]}
+                />
             </div>
           </div>
 
           {isNew && selectedTitle != null && selectedIsCondition && (
             <label className="form-row">
               <span>挂到「{selectedTitle}」的</span>
-              <select
+              /* 在条件节点上新增只可能是分支步骤：这里不给「不挂分支」这一项 ——
+                  选了它会落进顺序链，条件节点等于被绕过 */
+              <Select
                 className="field"
+                ariaLabel="挂到哪个分支"
                 value={asBranch ?? ''}
-                onChange={(e) => setAsBranch((e.target.value || null) as BranchSlot | null)}
-              >
-                {/* 在条件节点上新增只可能是分支步骤：这里不给「不挂分支」这一项 ——
-                    选了它会落进顺序链，条件节点等于被绕过 */}
-                <option value="" disabled>
-                  （请选择满足或不满足分支）
-                </option>
-                {BRANCH_SLOTS.map((s) => (
-                  <option key={s.value} value={s.value}>
-                    {s.label}分支 —— 条件{s.value === 'true' ? '成立' : '不成立'}时跳到此步
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setAsBranch((v || null) as BranchSlot | null)}
+                options={[
+                  { value: '', label: '（请选择满足或不满足分支）', disabled: true },
+                  ...BRANCH_SLOTS.map((s) => ({
+                    value: s.value,
+                    label: s.label + '分支 —— 条件' + (s.value === 'true' ? '成立' : '不成立') + '时跳到此步',
+                  })),
+                ]}
+              />
             </label>
           )}
 
@@ -213,26 +211,26 @@ export function WorkflowStepDialog({
           <div className="u-grid u-grid--2">
             <label className="form-row">
               <span>动作</span>
-              <select
+              <Select
                 className="field"
+                ariaLabel="动作"
                 value={legacy ? '__legacy' : kind}
-                onChange={(e) => {
-                  const v = e.target.value
+                onChange={(v) => {
                   if (v === '__legacy') return
                   changeKind(v as StepActionKind)
                 }}
-              >
-                {legacy && (
-                  <option value="__legacy">
-                    历史动作：{LEGACY_ACTION_LABELS[draft.action_kind] ?? draft.action_kind}
-                  </option>
-                )}
-                {STEP_ACTION_KINDS.map((a) => (
-                  <option key={a.value} value={a.value}>
-                    {a.label}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  ...(legacy
+                    ? [
+                        {
+                          value: '__legacy',
+                          label: '历史动作：' + (LEGACY_ACTION_LABELS[draft.action_kind] ?? draft.action_kind),
+                        },
+                      ]
+                    : []),
+                  ...STEP_ACTION_KINDS.map((a) => ({ value: a.value, label: a.label })),
+                ]}
+              />
             </label>
             {kind !== 'task' && (
               <label className="form-row">
@@ -252,15 +250,17 @@ export function WorkflowStepDialog({
             <div className="form-block">
               <div className="form-row">
                 <span>日志判定</span>
-                <select
+                <Select
                   className="field"
+                  ariaLabel="日志判定"
                   value={logRules.judge}
-                  onChange={(e) => applyLogRules({ ...logRules, judge: e.target.value as LogRules['judge'] })}
-                >
-                  <option value="exit">只看退出码（默认）</option>
-                  <option value="both">日志优先，没命中再看退出码</option>
-                  <option value="log">只看日志，没命中算失败</option>
-                </select>
+                  onChange={(v) => applyLogRules({ ...logRules, judge: v as LogRules['judge'] })}
+                  options={[
+                    { value: 'exit', label: '只看退出码（默认）' },
+                    { value: 'both', label: '日志优先，没命中再看退出码' },
+                    { value: 'log', label: '只看日志，没命中算失败' },
+                  ]}
+                />
               </div>
               {logRules.rules.map((rule, i) => (
                 <div key={i} className="form-row wf-rule">
@@ -271,25 +271,27 @@ export function WorkflowStepDialog({
                     aria-label={'第 ' + (i + 1) + ' 条关键字'}
                     onChange={(e) => patchRule(i, { pattern: e.target.value })}
                   />
-                  <select
+                  <Select
                     className="field"
+                    ariaLabel={'第 ' + (i + 1) + ' 条匹配方式'}
                     value={rule.mode}
-                    aria-label={'第 ' + (i + 1) + ' 条匹配方式'}
-                    onChange={(e) => patchRule(i, { mode: e.target.value as LogRule['mode'] })}
-                  >
-                    <option value="contains">包含</option>
-                    <option value="regex">正则</option>
-                  </select>
-                  <select
+                    onChange={(v) => patchRule(i, { mode: v as LogRule['mode'] })}
+                    options={[
+                      { value: 'contains', label: '包含' },
+                      { value: 'regex', label: '正则' },
+                    ]}
+                  />
+                  <Select
                     className="field"
+                    ariaLabel={'第 ' + (i + 1) + ' 条判定'}
                     value={rule.result}
-                    aria-label={'第 ' + (i + 1) + ' 条判定'}
-                    onChange={(e) => patchRule(i, { result: e.target.value as LogRule['result'] })}
-                  >
-                    <option value="ok">算成功</option>
-                    <option value="fail">算失败</option>
-                    <option value="wait_input">等待输入</option>
-                  </select>
+                    onChange={(v) => patchRule(i, { result: v as LogRule['result'] })}
+                    options={[
+                      { value: 'ok', label: '算成功' },
+                      { value: 'fail', label: '算失败' },
+                      { value: 'wait_input', label: '等待输入' },
+                    ]}
+                  />
                   {rule.result === 'wait_input' && (
                     <input
                       className="field"
@@ -340,18 +342,16 @@ export function WorkflowStepDialog({
           {kind === 'subflow' && (
             <label className="form-row">
               <span>接续哪个流程</span>
-              <select
+              <Select
                 className="field"
+                ariaLabel="接续哪个流程"
                 value={draft.action_value}
-                onChange={(e) => setDraft({ ...draft, action_value: e.target.value })}
-              >
-                <option value="">（请选择）</option>
-                {subflowChoices.map((t) => (
-                  <option key={t.id} value={String(t.id)}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setDraft({ ...draft, action_value: v })}
+                options={[
+                  { value: '', label: '（请选择）' },
+                  ...subflowChoices.map((t) => ({ value: String(t.id), label: t.name })),
+                ]}
+              />
             </label>
           )}
 
@@ -371,20 +371,16 @@ export function WorkflowStepDialog({
               {/* 运行环境必须显式选：同一段内容在 PowerShell / cmd / Python / Node 下含义完全不同 */}
               <label className="form-row">
                 <span>运行环境</span>
-                <select
+                <Select
                   className="field"
+                  ariaLabel="运行环境"
                   value={runtime}
-                  onChange={(e) =>
+                  onChange={(v) =>
                     // 换语言等价于换脚本：旧内容留着多半是错的，直接清掉
-                    setDraft({ ...draft, action_runtime: e.target.value, action_value: '' })
+                    setDraft({ ...draft, action_runtime: v, action_value: '' })
                   }
-                >
-                  {SCRIPT_RUNTIMES.map((r) => (
-                    <option key={r.value} value={r.value}>
-                      {r.label}
-                    </option>
-                  ))}
-                </select>
+                  options={SCRIPT_RUNTIMES.map((r) => ({ value: r.value, label: r.label }))}
+                />
               </label>
               <p className="u-aux">{runtimeSpec.hint}</p>
               <label className="form-row">
