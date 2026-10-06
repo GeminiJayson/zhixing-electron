@@ -15,9 +15,11 @@
   flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-2);
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--border);
+  /* 与卡片/侧栏同一层玻璃 + 羽化阴影（原来更实 + 硬描边，和旁边的卡片不是一种面板）。 */
+  background: var(--bg-layer);
+  border: none;
   border-radius: var(--radius-lg);
+  box-shadow: var(--panel-shadow);
 }
 /* 右边缘的分隔条：拖它调整笔记树宽度。
    与工作流的模板树分隔条（workflow.css 的 .wf-splitter）同一套做法与数值：
@@ -257,9 +259,11 @@
   display: flex;
   flex-direction: column;
   padding: var(--space-3) var(--space-4) var(--space-2);
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--border);
+  /* 同类面板统一：玻璃层 + 羽化阴影。 */
+  background: var(--bg-layer);
+  border: none;
   border-radius: var(--radius-lg);
+  box-shadow: var(--panel-shadow);
 }
 /* 元信息行已并入标题行：标签 / 归属 / 保存状态现在与标题同行。
    头部因此从「标题行 + 工具行 + 元信息行」三层收成两层，正文多出 32px。

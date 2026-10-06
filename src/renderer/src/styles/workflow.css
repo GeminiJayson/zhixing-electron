@@ -25,9 +25,11 @@
   flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-3);
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--border);
+  /* 与卡片/侧栏同一层玻璃 + 羽化阴影（原来是更实的 --bg-layer-solid + 硬描边）。 */
+  background: var(--bg-layer);
+  border: none;
   border-radius: var(--radius-lg);
+  box-shadow: var(--panel-shadow);
   overflow: auto;
 }
 .wf-side__head {

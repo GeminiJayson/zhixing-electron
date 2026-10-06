@@ -112,9 +112,13 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--border);
+  /* 与卡片/侧栏同一层玻璃 + 羽化阴影（原来用的是更实的 --bg-layer-solid + 硬描边，
+     跟旁边的卡片一比就是"两种面板"）。见 app.css 里 .sidebar 的注释：并排的面板，
+     层级与外形要对称。 */
+  background: var(--bg-layer);
+  border: none;
   border-radius: var(--radius-lg);
+  box-shadow: var(--panel-shadow);
   overflow: hidden;
 }
 .tasklists__head {
