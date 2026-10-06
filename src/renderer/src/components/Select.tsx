@@ -113,13 +113,21 @@ export function Select({
     [current, options]
   )
 
-  // 定位在提交前完成，避免首帧闪一下（与 PopMenu 同一处理）
+  /**
+   * 定位。**依赖里必须有 `mounted`**。
+   *
+   * `usePresence` 的 `mounted` 比 `open` 晚一帧（它有内部状态要过渡）：
+   * `open` 变 true 时浮层还没挂到 DOM 上、`listRef.current` 是 null，这一次 effect 直接返回；
+   * 等 `mounted` 变 true、元素真的在了，如果依赖没变就**不会重跑** —— 浮层于是停在
+   * `position: fixed` 的默认位置（留在文档流里），看起来"吸附在左上角"而不是贴着触发器
+   *（用户报的"设置页几个都吸附在左侧"就是这个）。
+   */
   useLayoutEffect(() => {
     const el = listRef.current
     if (!el || !open) return
     placeAnchored(el, { left: pos.x, top: pos.y, bottom: pos.y })
     el.style.transformOrigin = pos.x > window.innerWidth / 2 ? 'right top' : 'left top'
-  }, [open, pos, options.length])
+  }, [open, pos, options.length, mounted])
 
   // 打开时把高亮项滚进视野
   useEffect(() => {
