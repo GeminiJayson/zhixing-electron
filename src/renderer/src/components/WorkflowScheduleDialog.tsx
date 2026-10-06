@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Select } from './Select'
 import type { WorkflowTemplateSummary } from '@shared/types'
 import {
   describeSchedule,
@@ -76,11 +77,12 @@ export function WorkflowScheduleDialog({
         <div className="modal__body">
           <label className="form-row">
             <span>定时计划</span>
-            <select
+            <Select
               className="field"
+              ariaLabel="自动运行方式"
               value={schedule.kind}
-              onChange={(e) => {
-                const kind = e.target.value as WorkflowSchedule['kind']
+              onChange={(v) => {
+                const kind = v as WorkflowSchedule['kind']
                 setSchedule(
                   kind === 'interval'
                     ? { kind, everyMin: schedule.everyMin ?? 30 }
@@ -89,11 +91,12 @@ export function WorkflowScheduleDialog({
                       : { kind: 'manual' }
                 )
               }}
-            >
-              <option value="manual">不自动跑（只手动启动）</option>
-              <option value="interval">每隔一段时间</option>
-              <option value="daily">每天固定时刻</option>
-            </select>
+              options={[
+                { value: 'manual', label: '不自动跑（只手动启动）' },
+                { value: 'interval', label: '每隔一段时间' },
+                { value: 'daily', label: '每天固定时刻' },
+              ]}
+            />
           </label>
 
           {schedule.kind === 'interval' && (
@@ -150,32 +153,24 @@ export function WorkflowScheduleDialog({
             {triggers.map((t, i) =>
               t.kind === 'task_status' ? (
                 <div key={i} className="form-row wf-rule">
-                  <select
+                  <Select
                     className="field"
+                    ariaLabel="盯哪个任务"
                     value={String(t.taskId ?? '')}
-                    aria-label="盯哪个任务"
-                    onChange={(e) => setTriggers((prev) => prev.map((x, j) => (j === i ? { ...x, taskId: Number(e.target.value) } : x)))}
-                  >
-                    <option value="">（选一个任务）</option>
-                    {taskChoices.map((tk) => (
-                      <option key={tk.id} value={String(tk.id)}>
-                        {tk.title}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => setTriggers((prev) => prev.map((x, j) => (j === i ? { ...x, taskId: Number(v) } : x)))}
+                    options={[
+                      { value: '', label: '（选一个任务）' },
+                      ...taskChoices.map((tk) => ({ value: String(tk.id), label: tk.title })),
+                    ]}
+                  />
                   <span className="u-aux">变成</span>
-                  <select
+                  <Select
                     className="field"
+                    ariaLabel="变成什么状态"
                     value={t.status ?? 'done'}
-                    aria-label="变成什么状态"
-                    onChange={(e) => setTriggers((prev) => prev.map((x, j) => (j === i ? { ...x, status: e.target.value } : x)))}
-                  >
-                    {STATUS_OPTIONS.map((s) => (
-                      <option key={s.value} value={s.value}>
-                        {s.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => setTriggers((prev) => prev.map((x, j) => (j === i ? { ...x, status: v } : x)))}
+                    options={STATUS_OPTIONS.map((x) => ({ value: x.value, label: x.label }))}
+                  />
                   <button
                     className="icon-btn icon-btn--danger"
                     title="删掉这个触发"
