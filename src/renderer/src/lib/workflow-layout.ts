@@ -14,7 +14,6 @@
  * 这三个字段，收窄之后既可以脱离数据层单测，也不会因为 payload 长出字段而跟着变。
  */
 import dagre from '@dagrejs/dagre'
-import type { Anchor } from './edge-path'
 import { NODE_H, NODE_W } from './workflow-node-box'
 
 /** 布局只需要这三个字段（WorkflowNodePayload 结构上兼容）。 */
@@ -119,50 +118,14 @@ export function layoutWorkflow(
   return out
 }
 
-/**
- * 两个节点盒之间的连线锚点：**按相对位置挑边**，而不是写死「从底部连到顶部」。
+/*
+ * 这里原来还有一个 `directedAnchors` —— 按相对位置在两个节点盒之间挑连线边（上/下/左/右）。
  *
- * 纵向布局时走上下边、横向布局时走左右边、斜向时取主方向 —— 这样同一条连线在
- * TB / LR 两种排布下都贴边，而不是从节点侧面穿出去。
- *
- * 返回的不只是坐标，还带**边方向**：正交路由要靠它决定折法，
- * 否则折线会贴着节点边框走（见 edge-path.ts 的 orthogonalPath）。
+ * 它连同 lib/edge-path.ts 的 `orthogonalPath`、lib/workflow-anchors.ts 一起删掉了：
+ * 那是「自己算正交折线」的那套轮子，现在连线交给 G6 内置的
+ * `polyline` 边 + `router: { type: 'shortest-path' }`（A* 避障）——
+ * 节点上不留固定连接点，端点由 G6 按连线方向自动取边框交点。
  */
-export function directedAnchors(
-  from: { x: number; y: number },
-  to: { x: number; y: number },
-  nodeWidth = NODE_W,
-  nodeHeight = NODE_H
-): { from: Anchor; to: Anchor } {
-  const fx = from.x + nodeWidth / 2
-  const fy = from.y + nodeHeight / 2
-  const tx = to.x + nodeWidth / 2
-  const ty = to.y + nodeHeight / 2
-  const dx = tx - fx
-  const dy = ty - fy
-  if (Math.abs(dy) >= Math.abs(dx)) {
-    // 纵向为主：下边 → 上边（反之亦然）
-    return dy >= 0
-      ? {
-          from: { x: fx, y: from.y + nodeHeight, side: 'bottom' },
-          to: { x: tx, y: to.y, side: 'top' },
-        }
-      : {
-          from: { x: fx, y: from.y, side: 'top' },
-          to: { x: tx, y: to.y + nodeHeight, side: 'bottom' },
-        }
-  }
-  // 横向为主：右边 → 左边（反之亦然）
-  return dx >= 0
-    ? {
-        from: { x: from.x + nodeWidth, y: fy, side: 'right' },
-        to: { x: to.x, y: ty, side: 'left' },
-      }
-    : {
-        from: { x: from.x, y: fy, side: 'left' },
-        to: { x: to.x + nodeWidth, y: ty, side: 'right' },
-      }
-}
 
 /**
  * 布局结果的包围盒（含节点尺寸与 padding）。

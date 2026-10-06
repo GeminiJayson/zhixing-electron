@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { NODE_H, NODE_W } from './workflow-node-box'
-import {
-  directedAnchors,
-  layoutBounds,
-  layoutWorkflow,
-  workflowEdges,
-  type LayoutNode,
-} from './workflow-layout'
+import { layoutBounds, layoutWorkflow, workflowEdges, type LayoutNode } from './workflow-layout'
 
 /** 造一个最小节点：只带布局关心的字段。 */
 const node = (
@@ -130,29 +124,6 @@ describe('layoutWorkflow —— dagre 分层', () => {
     const pos = layoutWorkflow([node(1, 0)], { nodeWidth: NODE_W, nodeHeight: NODE_H })
     // 单节点时 dagre 的中心等于自身中心，左上角应落在 margin 上
     expect(pos.get(1)).toEqual({ x: 40, y: 40 })
-  })
-})
-
-describe('directedAnchors —— 带边方向的锚点（正交路由靠它决定折法）', () => {
-  const at = (x: number, y: number) => ({ x, y })
-
-  it('纵向相邻：从下边出去、从上边进入', () => {
-    const a = directedAnchors(at(0, 0), at(0, 200))
-    expect(a.from).toEqual({ x: NODE_W / 2, y: NODE_H, side: 'bottom' })
-    expect(a.to).toEqual({ x: NODE_W / 2, y: 200, side: 'top' })
-  })
-
-  it('横向相邻：从右边出去、从左边进入', () => {
-    const a = directedAnchors(at(0, 0), at(300, 0))
-    expect(a.from.side).toBe('right')
-    expect(a.to.side).toBe('left')
-  })
-
-  it('目标在上方 / 左侧时方向随之反向', () => {
-    expect(directedAnchors(at(0, 200), at(0, 0)).from.side).toBe('top')
-    expect(directedAnchors(at(0, 200), at(0, 0)).to.side).toBe('bottom')
-    expect(directedAnchors(at(300, 0), at(0, 0)).from.side).toBe('left')
-    expect(directedAnchors(at(300, 0), at(0, 0)).to.side).toBe('right')
   })
 })
 

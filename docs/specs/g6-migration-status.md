@@ -2,11 +2,14 @@
 
 > **方案见 [`g6-migration.md`](./g6-migration.md)** —— 那份是调研与方案（已成文于迁移前），本文记录**实施进程**：现状、与迁移前的差异、剩余工作、踩过的坑。
 >
-> 最后更新：2026-10-06（第二轮收尾：切方向刷新的真相、孤儿导出清理、验证环境）。
+> 最后更新：2026-10-06（第三轮：节点 / 边 / 布局 / 交互全部交回 G6，主题走 G6 主题接口，见 §9）。
 
 ## 一、一句话现状
 
-**两个页面都已切到 G6，两套手写 SVG 画布与其依赖（`usePanZoom`、`d3-force`）已删除，P3 收尾已完成。**
+**两个页面都已切到 G6，而且已经把「G6 当画布用」推进到「渲染与交互都交给 G6」** ——
+节点是内置 `circle` / `rect` / `diamond`，边是内置 `cubic` / `polyline`（A\* 避障路由），
+布局是内置 `d3-force` / `antv-dagre`，选中 / 悬停 / 拖拽 / 右键菜单是内置行为，配色走 G6 主题对象。
+手写 SVG 画布与其依赖（`usePanZoom`、`d3-force`）以及一批自研几何工具均已删除（见 §9）。
 
 原先挂账的三件事都有了结论：
 
@@ -241,3 +244,50 @@ const raf = await new Promise((res) => {
 | 拖拽式连线 | **判定不值得做**，改点选式 |
 | `fitView` 内边距 | **不可行** —— G6 顶层的 `padding` 会让布局把所有节点堆到一点 |
 | 改挂端点 | ✅ 已接入右键菜单 |
+
+---
+
+## 九、第三轮：把渲染与交互交回 G6（2026-10-06）
+
+前两轮完成的是「**画布换成 G6**」，但节点还是 HTML、边还是自定义 `BaseEdge`、端口靠 DOM 命中判断 ——
+等于只把 G6 当画布用，其余照旧自己写。第三轮按「**能用 G6 能力的绝不重复造轮子**」重做：
+
+| 事项 | 原先 | 现在 |
+| --- | --- | --- |
+| 图谱节点 | HTML 节点 + `iconHtml()` 里塞 `renderToStaticMarkup(<GraphNodeIcon/>)` | 内置 `circle` + `iconSrc` 传**自包含 SVG data URL**（`lib/graph-icon.ts`） |
+| 图谱边 | 内置 `line` | 内置 `cubic` 三次贝塞尔 + `endArrow` |
+| 图谱交互 | 手写 `pointerenter/leave` + 自己 `setElementState` | `click-select` / `hover-activate` / `drag-element-force` / `drag-canvas` / `zoom-canvas` |
+| 工作流节点 | HTML 节点 + `nodeSvg()` 手绘 | 内置 `rect` / `diamond` + `badges`（条件判据）+ `labelText`（+ 一行 `upsert` 的角标） |
+| 工作流边 | 自定义 `BaseEdge`（`wf-edge`）+ 自研正交折线 | 内置 `polyline` + `router: { type: 'shortest-path' }` + **边上的分支标签** |
+| 工作流端口 | DOM 命中（`closest('.wf-port')` → `elementFromPoint` 兜底 → 按中文字面量判槽位） | **取消固定连接点**，端点由 G6 按方向自动取交点；建分支改走节点右键菜单 |
+| 主题 | 组件里零散拼 style | **G6 主题对象**：`register(ExtensionCategory.THEME, 'zhixing', …)` + `theme: 'zhixing'` |
+
+**随之删掉的自研件**（这些正是「重复造的轮子」）：
+`components/GraphNodeIcon.tsx`、`lib/g6-workflow-edge.ts`、`lib/edge-path.ts`（含单测）、
+`lib/workflow-anchors.ts`、`workflow-node-box.ts` 的 `fitNodeText` / `NODE_TEXT_W` / `COND_TEXT_W`、
+`workflow-layout.ts` 的 `directedAnchors`、`graph.css` 的 `.gnode__icon` 配色段。
+测试数相应从 52 文件 / 604 用例变为 **51 / 593**。
+
+### 9.1 第三轮踩到的坑（全部靠读源码 + 实测定位）
+
+| 现象 | 真因 | 处置 |
+| --- | --- | --- |
+| 端口一个都看不见 | G6 把「没给 `r`（或 r=0）」的端口当 *simple port*（`isSimplePort`）：不画图形，但仍是可连接的点 | 给 `r`；后来干脆取消固定连接点 |
+| 角标飘到框外 | `getTextStyleByPlacement` 对 `top-left` 会把文字**右对齐**到包围盒左上角，于是整行向外延伸 | 角标改由自定义节点 `upsert('idx','text',…)` 画 |
+| 标题从盒中心向右跑出框（实测溢出 46px） | 只设 `labelTextAlign: 'left'` 不够，还要用 `labelOffsetX` 把锚点挪到盒左边界 | 加 `labelOffsetX` |
+| 边上的「满足 / 不满足」竖排 | 正交折线有竖直段，边标签默认跟着边旋转 | `labelAutoRotate: false` |
+| 笔记类节点图标**全黑** | `knowledgeColor()` 返回 CSS 变量字符串，写进 data URL 的 SVG 解析失败 → **静默退回黑色** | `resolveColor()` 先解成实色 |
+| 修完上一条后主图形仍全黑 | 原 CSS 里主图形挂的是 `gn-stroke gn-s1` **两个类**；只照字面写 stroke 时，SVG 的缺省 `fill` 就是黑 | 描边那一档同时给 `fill` |
+| 整张图被置灰 | 状态同步把 `hover` 也算作活跃元素，鼠标一停其余 250 个降到 `opacity .15` | 只保留「连线起点」淡化；悬停高亮交给 `hover-activate` |
+| **点一下整个画布白屏闪** | 选中节点 → 侧栏 / 滚动条抖动 → ResizeObserver 一次点击触发 **5 次 `graph.resize()`**，而每次 resize 都会**重建 canvas**（重建期间画面是空的） | 防抖 150ms + 与画布当前尺寸比较：抖回原值就一次都不调 |
+| 同上，更早一层 | 状态 effect 每次提交全部 251 个节点，G6 每收一次变更就重绘整图（单次 40ms 级）；依赖里还有 `hover`，鼠标一动再来一次 | 差分提交（只发改了的）+ 数据同步改用 `layout()` + `draw()`，不用 `render()`（后者每次都 autoFit、重置视口） |
+
+### 9.2 这轮靠什么定位（方法留档）
+
+- **逐帧采样**：在 `requestAnimationFrame` 里对 canvas `getImageData` 统计非空像素比例 ——
+  用来判断「白屏」到底是不是绘制环节。实测点击前后稳定在 12–13%，主 canvas 从未被清空，
+  于是把方向转向 resize。
+- **hook 实例方法**：把 `graph.resize` / `graph.draw` 换成计数器，一次交互就数得清调了几次。
+- **读内部包围盒**：`getShape('label').getLocalBounds()`、`getShape('key').getLocalBounds()`、
+  `badge.getRenderBounds()` —— 标题是否越界、胶囊是否居中，一律按数值判定，不靠眼睛。
+- **尺寸抖动模拟**：直接改容器 `style.width` 再改回来，验证「防抖后一次 resize 都不触发」。
