@@ -1101,16 +1101,27 @@ button.chip--status:focus-visible {
 /* 四象限 */
 .quad-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
+  /**
+   * `minmax(0, 1fr)` 不是 `1fr`：`1fr` 的最小值是 `auto`，会被**内容的固有宽度**顶开 ——
+   * 实测四象限这一档横向溢出 22px（`.page__body` 976 → 998），于是任务页出现横向滚动条。
+   * 写成 `minmax(0, …)` 才能让两列真的等分、由内容去换行。
+   */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  /* 同理：行也要能被容器压住（原本写 `1fr 1fr`，且下面还有 460px 的下限） */
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--space-3);
   flex: 1;
-  min-height: var(--size-460);
+  /* 原来是 `min-height: var(--size-460)` —— 内容多时顶着下限长高，把主布局顶出滚动条 */
+  min-height: 0;
+  /* 溢出由每个象限内部的 .quad-box__body 承担（它本来就是 overflow: auto） */
+  overflow: hidden;
 }
 .quad-box {
   display: flex;
   flex-direction: column;
-  min-height: var(--size-220);
+  /* 能被网格行压住（min-height 下限会让它在内容多时顶开网格） */
+  min-height: 0;
+  overflow: hidden;
   padding: var(--space-3);
   background: var(--glass-layer-inset);
   border: none;
@@ -1133,6 +1144,8 @@ button.chip--status:focus-visible {
   display: flex;
   flex-direction: column;
   gap: var(--space-hair);
+  /* 象限内的滚动就发生在这里；min-height: 0 是 flex 子项真能被压缩的前提 */
+  min-height: 0;
   overflow: auto;
 }
 .quad-box__empty {
@@ -1332,6 +1345,19 @@ button.chip--status:focus-visible {
   white-space: nowrap;
   text-align: left;
   color: var(--fg-primary);
+}
+
+/**
+ * **任务页的主布局自己不滚动**（含页头：页头本来就不在滚动容器里）。
+ *
+ * 四个视图的滚动职责都已经下放到内部：列表 `.vlist`、看板 `.kcol__body`、
+ * 四象限 `.quad-box__body`、日历 `.cal-side` —— 主布局没有任何需要滚的东西。
+ * 而 `.page__body` 留着 `overflow: auto` 就会在**切 tab 的那一瞬间闪一下滚动条**：
+ * 新视图挂载、旧视图还没卸载，两边的内容高度叠在同一帧里，这一帧就溢出了。
+ * 关掉之后，闪一下的物理条件不存在。
+ */
+.page--tasks .page__body {
+  overflow: hidden;
 }
 
 /* 看板 */
