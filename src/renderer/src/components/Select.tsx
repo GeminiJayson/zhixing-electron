@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { isMotionFull, usePresence } from '../lib/presence'
 import { placeAnchored } from '../lib/anchored-position'
 
@@ -242,14 +243,23 @@ export function Select({
         <span className="select__value">{currentLabel}</span>
         <span className="select__caret" aria-hidden />
       </button>
-      {mounted && (
-        <div
-          ref={listRef}
-          id={listId}
-          role="listbox"
-          aria-label={ariaLabel}
-          className={'popmenu popmenu--pop select__list' + (leaving ? ' is-leaving' : '')}
-        >
+      {/*
+        浮层**挂到 body**（Portal），而不是留在原地。
+        弹窗/抽屉这类祖先常常带 `transform`、`filter`、`backdrop-filter`、`container-type` ——
+        它们会**创建新的包含块**，于是 `position: fixed` 的浮层不再相对视口定位，
+        `placeAnchored` 算出来的视口坐标就被当成了相对那个祖先的坐标，位置整个偏掉
+        （用户报"任务项编辑页的状态/优先级/循环下拉位置都不对"——那三个就在弹窗里）。
+        Portal 到 body 之后，浮层的坐标系恒等于视口，与祖先无关。
+      */}
+      {mounted &&
+        createPortal(
+          <div
+            ref={listRef}
+            id={listId}
+            role="listbox"
+            aria-label={ariaLabel}
+            className={'popmenu popmenu--pop select__list' + (leaving ? ' is-leaving' : '')}
+          >
           {options.map((o, i) => (
             <div
               key={o.value}
@@ -274,9 +284,10 @@ export function Select({
               <span className={'popmenu__tick' + (o.value === value ? ' popmenu__tick--on' : '')} />
               {o.label}
             </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>,
+          document.body
+        )}
     </>
   )
 }
