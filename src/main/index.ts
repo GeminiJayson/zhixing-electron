@@ -1415,7 +1415,13 @@ app.whenReady().then(() => {
 
   // 改键流程：设置页进入捕获态前注销全部热键，避免被系统层吞掉按键；
   // 捕获完成或取消后统一重注册并回传状态。
-  ipcMain.handle('app:hotkeyMod.getHotkeyStatus()', () => ({ ...hotkeyMod.getHotkeyStatus() }))
+  /**
+   * ⚠️ 通道名必须是 `app:hotkeyStatus` —— 与 preload 的 `hotkeyStatus()` 对应。
+   * 这里原本写成了 `'app:hotkeyMod.getHotkeyStatus()'`（某个方法名被当成字符串拼了进来），
+   * 于是渲染层每次调用都报 `No handler registered for 'app:hotkeyStatus'`，
+   * 设置页的快捷键分区拿不到状态、只显示空白。
+   */
+  ipcMain.handle('app:hotkeyStatus', () => ({ ...hotkeyMod.getHotkeyStatus() }))
   ipcMain.handle('app:suspendHotkeys', () => {
     globalShortcut.unregisterAll()
   })

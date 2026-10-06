@@ -23,10 +23,11 @@
   flex-direction: column;
   gap: var(--space-1);
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
+  border: none;
   border-radius: var(--radius-md);
-  background: var(--bg-layer-solid);
-  box-shadow: var(--shadow-sm);
+  /* 浮在画布上的小面板：与其它面板同一层玻璃，边界用卡片阴影（自带内高光）。 */
+  background: var(--bg-layer);
+  box-shadow: var(--card-shadow);
   /* 纯展示，不抢画布的指针事件（按住图例也能拖画布） */
   pointer-events: none;
   font-size: var(--text-2xs);
@@ -45,9 +46,12 @@
   flex: 1;
   min-width: 0;
   min-height: 0;
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--border);
+  /* 与侧栏 / 主区同一层玻璃 + 羽化阴影（原来是更实的 --bg-layer-solid + 硬描边）——
+     它们是并排的面板，见 app.css 里 .sidebar 的注释。 */
+  background: var(--bg-layer);
+  border: none;
   border-radius: var(--radius-lg);
+  box-shadow: var(--panel-shadow);
   touch-action: none;
 }
 /* 连线（Obsidian 风）：默认极细、暗到几乎隐没 —— 整张图读起来是骨架，不是网格 */
@@ -204,9 +208,11 @@
   flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-3);
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--border);
+  /* 与主区同一层玻璃 + 羽化阴影（原来更实 + 硬描边）。 */
+  background: var(--bg-layer);
+  border: none;
   border-radius: var(--radius-lg);
+  box-shadow: var(--panel-shadow);
 }
 .graph-side__title {
   margin: 0 0 var(--space-2);
@@ -273,9 +279,10 @@
 .graph--g6 .tooltip,
 .wf-canvas--g6 .tooltip {
   padding: var(--space-2) var(--space-3) !important;
-  border: 1px solid var(--border) !important;
+  /* 边框宽度也走 --border-w（全仓的边框都用它，别在这里写死 1px）。 */
+  border: var(--border-w) solid var(--border) !important;
   border-radius: var(--radius-md) !important;
-  background: var(--bg-layer-solid) !important;
+  background: var(--glass-layer-control) !important;
   box-shadow: var(--shadow-md) !important;
   color: var(--fg-primary) !important;
   font-family: var(--font-ui) !important;

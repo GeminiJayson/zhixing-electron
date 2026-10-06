@@ -8,9 +8,12 @@
    此前几块图表只有标题，分区之间没有边界，读起来是连成一片的。 */
 .page--review .section {
   padding: var(--space-4);
-  background: var(--bg-layer-solid);
-  border: var(--border-w) solid var(--border);
-  border-radius: var(--radius-lg);
+  /* 归到 global.css 的「页面级卡片」规范：inset 底 + --card-shadow（自带内高光），不用描边。
+     注释里本来就写着"与设置页 .set-card 同一套视觉语言"—— 那条规范就是这么定的。 */
+  background: var(--glass-layer-inset);
+  border: none;
+  border-radius: var(--radius-md);
+  box-shadow: var(--card-shadow);
 }
 .page--review .section + .section,
 .page--review .review-pair {
