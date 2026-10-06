@@ -164,7 +164,11 @@ function ensureWorkflowNodes(): void {
   register(ExtensionCategory.NODE, 'wf-cond', WfCondNode)
 }
 
-function nodeDataOf(n: WorkflowCanvasNode, selectedId: number | null): Record<string, unknown> {
+function nodeDataOf(
+  n: WorkflowCanvasNode,
+  selectedId: number | null,
+  xy?: [number, number]
+): Record<string, unknown> {
   const v = n.view
   const cond = v.isCondition
   const states: string[] = []
@@ -211,6 +215,8 @@ function nodeDataOf(n: WorkflowCanvasNode, selectedId: number | null): Record<st
     states,
     style: {
       size: [NODE_W, NODE_H],
+      /** 布局算出来的坐标：**必须写回数据**，否则下一次 setData 会把它们清掉（见 applyLayout）。 */
+      ...(xy ? { x: xy[0], y: xy[1] } : {}),
       radius: cond ? 0 : 8,
       /** 自定义键：自定义节点在 render 里读它画角标。 */
       idxText: v.badge,
@@ -241,13 +247,63 @@ function nodeDataOf(n: WorkflowCanvasNode, selectedId: number | null): Record<st
   }
 }
 
+/**
+ * **回边**：连到流程顺序更靠前的节点（例如「满足 → 回到第 1 步」）。
+ *
+ * 这类边会在 dagre 里形成环，而 dagre **消环的办法是反转其中一条边** —— 实测它反转的是主干边：
+ * 「第 1 步 → 第 2 步 → 条件 → 第 1 步」这个环里它反转了「第 2 步 → 条件」，
+ * 于是**条件被排到最上层**、整张图自上而下的顺序与流程设计正好相反（用户反馈）。
+ * 试过 `ranker` / `acyclicer` / 边的 `weight`、`minlen`，实测**都改不动它**。
+ *
+ * 所以布局数据里**只放前进边**，回边等布局跑完再把坐标写回、连同它一起画（见 `applyLayout`）。
+ */
+function isBackEdge(nodes: readonly WorkflowCanvasNode[], from: number, to: number): boolean {
+  const a = nodes.find((n) => n.id === from)
+  const b = nodes.find((n) => n.id === to)
+  if (!a || !b) return false
+  return b.order_index <= a.order_index
+}
+
+function layoutCfg(rankdir: WorkflowRankDir): Record<string, unknown> {
+  return { type: 'antv-dagre', rankdir, nodesep: 24, ranksep: 40, marginx: 40, marginy: 40 }
+}
+
+/**
+ * 一次完整的「布局 → 写回坐标 → 补齐回边并绘制」。
+ *
+ * 分两趟是必须的：喂给 dagre 的数据**不能含回边**（否则它会反转主干边、层级反过来），
+ * 但回边又得画出来。所以第一趟只放前进边跑布局，把算出来的坐标记下来，
+ * 第二趟带着坐标和全部边重设数据 —— **坐标必须写进数据**，
+ * 因为 `setData` 会把没有 x/y 的元素位置清掉。
+ */
+async function syncLayout(
+  g: Graph,
+  nodes: readonly WorkflowCanvasNode[],
+  selectedId: number | null,
+  rankdir: WorkflowRankDir
+): Promise<void> {
+  g.setData(buildData(nodes, selectedId, { forwardOnly: true }) as never)
+  await g.layout(layoutCfg(rankdir) as never)
+  const pos = new Map<string, [number, number]>()
+  for (const n of nodes) {
+    const p = g.getElementPosition(String(n.id)) as [number, number] | undefined
+    if (p) pos.set(String(n.id), [p[0], p[1]])
+  }
+  g.setData(buildData(nodes, selectedId, { pos }) as never)
+  await g.draw()
+}
+
 function buildData(
   nodes: readonly WorkflowCanvasNode[],
-  selectedId: number | null
+  selectedId: number | null,
+  opts: { forwardOnly?: boolean; pos?: Map<string, [number, number]> } = {}
 ): { nodes: Record<string, unknown>[]; edges: Record<string, unknown>[] } {
+  const { forwardOnly = false, pos } = opts
   return {
-    nodes: nodes.map((n) => nodeDataOf(n, selectedId)),
-    edges: workflowEdges(nodes).map((e) => {
+    nodes: nodes.map((n) => nodeDataOf(n, selectedId, pos?.get(String(n.id)))),
+    edges: workflowEdges(nodes)
+      .filter((e) => !forwardOnly || !isBackEdge(nodes, e.from, e.to))
+      .map((e) => {
       const kind = kindOfEdge(nodes, e.from, e.to, e.branch)
       return {
         id: e.from + '>' + e.to,
@@ -336,7 +392,11 @@ export function WorkflowCanvasG6({
       container: el,
       theme: THEME_NAME,
       autoFit: 'view',
-      data: buildData(cb.current.nodes, cb.current.selectedId) as never,
+      /**
+       * 首屏数据**只放前进边** —— 回边会让 dagre 反转主干边、把层级排反（见 isBackEdge）。
+       * 回边由 render 之后的 syncLayout 补齐（那时坐标已经算好了）。
+       */
+      data: buildData(cb.current.nodes, cb.current.selectedId, { forwardOnly: true }) as never,
 
       node: {
         /** 尺寸/圆角/端口/角标/标题都在数据里逐节点给（见 nodeDataOf）。 */
@@ -477,7 +537,10 @@ export function WorkflowCanvasG6({
     })
     ro.observe(el)
 
-    void graph.render().then(() => {
+    void graph.render().then(async () => {
+      if (dead) return
+      // 首屏布局已由 render 跑完（数据里只有前进边），这里把回边连同坐标补上
+      await syncLayout(graph, cb.current.nodes, cb.current.selectedId, rankdir)
       if (dead) return
       stopTheme = subscribeG6Theme(() => applyZhixingTheme(graph))
     })
@@ -502,16 +565,14 @@ export function WorkflowCanvasG6({
     }
     const g = graphRef.current
     if (!g) return
-    // **配置要直接传给 layout()**：不传参时它用建图那一刻的 presetOptions，setOptions 不会更新那份
-    void g.layout({ type: 'antv-dagre', rankdir, nodesep: 24, ranksep: 40, marginx: 40, marginy: 40 } as never)
+    void syncLayout(g, cb.current.nodes, cb.current.selectedId, rankdir)
   }, [rankdir])
 
   // 数据变化 → 增量同步（不重建图，布局会自己重跑）
   useEffect(() => {
     const g = graphRef.current
     if (!g) return
-    g.setData(buildData(nodes, cb.current.selectedId) as never)
-    void g.layout({ type: 'antv-dagre', rankdir, nodesep: 24, ranksep: 40, marginx: 40, marginy: 40 } as never)
+    void syncLayout(g, nodes, cb.current.selectedId, rankdir)
   }, [nodes, rankdir])
 
   /**
