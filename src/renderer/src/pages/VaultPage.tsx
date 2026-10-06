@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Select } from '../components/Select'
 import {
   Archive,
   ArrowLeft,
@@ -527,18 +528,13 @@ export function VaultPage({
           )}
           <label className="vault-autolock">
             <span className="u-aux">无操作后锁定</span>
-            <select
+            <Select
               className="vault-select"
-              value={autoLock}
-              onChange={(e) => void setAutoLockAndSave(Number(e.target.value))}
-              aria-label="自动锁定时间"
-            >
-              {AUTO_LOCK_CHOICES.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
+              ariaLabel="自动锁定时间"
+              value={String(autoLock)}
+              onChange={(v) => void setAutoLockAndSave(Number(v))}
+              options={AUTO_LOCK_CHOICES.map((c) => ({ value: String(c.value), label: c.label }))}
+            />
           </label>
         </footer>
       </aside>

@@ -17,6 +17,7 @@ import {
   Trash2,
 } from '@renderer/lib/icons'
 import { subscribeDomain } from '@shared/events'
+import { Select } from '../components/Select'
 import { useDialog } from '../components/Dialogs'
 import type { Note, NoteFolder } from '@shared/types'
 import { parseLinkItems, type NoteLinkItem } from '@shared/note-links'
@@ -1419,21 +1420,18 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
             >
               <Morph icon={treeHidden ? IconData.PanelLeftOpen : IconData.PanelLeftClose} size={15} />
             </button>
-          <select
+          <Select
             className="notes-filter__select"
+            ariaLabel="按类型筛选"
             value={kindFilter}
-            aria-label="按类型筛选"
-            onChange={(e) => setKindFilter(e.target.value)}
-          >
-            {/* 「所有类型」而不是「全部」—— 右边状态那一组也有个"全部"，
-                两个都叫"全部"会让人不知道在筛什么 */}
-            <option value="all">所有类型</option>
-            {KNOWLEDGE_KINDS.map((k) => (
-              <option key={k.key} value={k.key}>
-                {k.label}
-              </option>
-            ))}
-          </select>
+            onChange={setKindFilter}
+            /* 「所有类型」而不是「全部」—— 右边状态那一组也有个"全部"，
+               两个都叫"全部"会让人不知道在筛什么 */
+            options={[
+              { value: 'all', label: '所有类型' },
+              ...KNOWLEDGE_KINDS.map((k) => ({ value: k.key, label: k.label })),
+            ]}
+          />
             {/*
               筛选档位。每一档都带条数 —— 这样"有多少待确认"和"点进去看什么"
               是同一个数字，不必再在旁边摆一组待办胶囊（那组数字与这里的重复，

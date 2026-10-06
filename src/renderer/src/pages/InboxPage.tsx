@@ -14,6 +14,7 @@ import {
 import { buildTaskTree, effectiveDoneMap, type TaskNode } from '@shared/task'
 import type { Flash, NoteFolder, Task } from '@shared/types'
 import { Toolbar } from '../components/Toolbar'
+import { Select } from '../components/Select'
 import { useDialog } from '../components/Dialogs'
 import { TaskRow } from '../components/TaskRow'
 import { TargetSelector } from '../components/TargetSelector'
@@ -527,21 +528,18 @@ export function InboxPage({ onNotice, onChanged }: Props) {
                   )}
                   {folderFor === f.id && (
                     <div className="flash-card__actions">
-                      <select
+                      {/* 原来是 defaultValue="" 的非受控 select（选完就执行、不保留选中态）；
+                          换成受控的 Select 后固定显示 value=""，行为不变。 */}
+                      <Select
                         className="field field--mini"
-                        aria-label="目标笔记目录"
-                        defaultValue=""
-                        onChange={(e) =>
-                          void handleToNoteInto(f, e.target.value ? Number(e.target.value) : null)
-                        }
-                      >
-                        <option value="">（默认目录）</option>
-                        {noteFolders.map((nf) => (
-                          <option key={nf.id} value={nf.id}>
-                            {nf.name}
-                          </option>
-                        ))}
-                      </select>
+                        ariaLabel="目标笔记目录"
+                        value=""
+                        onChange={(v) => void handleToNoteInto(f, v ? Number(v) : null)}
+                        options={[
+                          { value: '', label: '（默认目录）' },
+                          ...noteFolders.map((nf) => ({ value: String(nf.id), label: nf.name })),
+                        ]}
+                      />
                       <button className="text-btn" onClick={() => setFolderFor(null)}>
                         取消
                       </button>
