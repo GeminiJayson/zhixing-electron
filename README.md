@@ -107,7 +107,7 @@ npm run dev                           # 开发模式（HMR）
 
 进 `package.json` 的入口共 **21 条**。常用：`dev` / `build` / `typecheck` / `test`；检查类 `check:jieba` / `check:security` / `check:contrast` / `check:ctlheight` / `check:interaction`；构建发布 `dist:win` / `dist:dir` / `postdist:*` / `binding:win` / `release` / `release:dry`；图标生成 `gen:icons` / `gen:app-icons`。
 
-单元测试为 vitest：**53 个测试文件 / 634 个用例**，只覆盖纯函数（`vitest.config.ts` 明确排除涉及 SQLite / IPC / 真实窗口的部分，那部分留在 `scripts/*.mjs`）。
+单元测试为 vitest：**52 个测试文件 / 604 个用例**，只覆盖纯函数（`vitest.config.ts` 明确排除涉及 SQLite / IPC / 真实窗口的部分，那部分留在 `scripts/*.mjs`）。
 
 ## 7. 打包与发布
 

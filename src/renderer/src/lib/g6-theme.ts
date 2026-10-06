@@ -18,7 +18,7 @@
  */
 
 /** 读一个 CSS 自定义属性的当前计算值。 */
-export function tok(name: string): string {
+function tok(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 }
 
@@ -53,7 +53,7 @@ export function tokNum(name: string): number {
   return Number.parseFloat(tok(name)) || 0
 }
 
-export interface G6Theme {
+interface G6Theme {
   /**
    * **没有 `canvas.background`** —— 实测：G6 v5 的 `GraphOptions` 里没有这个键，
    * 传了不报错但也不生效（画布保持透明，透出容器的底色）。背景改用容器上的

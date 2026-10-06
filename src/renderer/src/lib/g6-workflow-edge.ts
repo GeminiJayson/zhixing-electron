@@ -39,7 +39,7 @@ function hexRgb(s: string): [number, number, number] | null {
 }
 
 /** 按比例混两个颜色：`a` 占 `pa`。任一解析不了就回退到 `a`。 */
-export function mix(a: string, pa: number, b: string): string {
+function mix(a: string, pa: number, b: string): string {
   const ca = hexRgb(a)
   const cb = hexRgb(b)
   if (!ca || !cb) return a
@@ -77,7 +77,7 @@ export function wfEdgeStyle(kind: WfEdgeKind): { stroke: string; lineWidth: numb
 }
 
 /** SVG `d` 字符串 → PathArray（只认 M / L，恰好是 orthogonalPath 的全部指令）。 */
-export function svgPathToArray(d: string): PathArray {
+function svgPathToArray(d: string): PathArray {
   const out: unknown[] = []
   for (const seg of d.split(/(?=[ML])/)) {
     const m = /^([ML])\s*(-?[\d.]+)[ ,]+(-?[\d.]+)/.exec(seg.trim())

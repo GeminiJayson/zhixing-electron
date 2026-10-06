@@ -15,6 +15,7 @@
  */
 import dagre from '@dagrejs/dagre'
 import type { Anchor } from './edge-path'
+import { NODE_H, NODE_W } from './workflow-node-box'
 
 /** 布局只需要这三个字段（WorkflowNodePayload 结构上兼容）。 */
 export interface LayoutNode {
@@ -28,7 +29,7 @@ export interface LayoutNode {
 /** 布局方向：TB 纵向（步骤自上而下）/ LR 横向（步骤自左而右）。 */
 export type WorkflowRankDir = 'TB' | 'LR'
 
-export interface WorkflowLayoutOptions {
+interface WorkflowLayoutOptions {
   rankdir?: WorkflowRankDir
   /** 同层节点间距 */
   nodesep?: number
@@ -38,14 +39,17 @@ export interface WorkflowLayoutOptions {
   nodeHeight?: number
 }
 
-/** 画布基准尺寸与节点盒尺寸（与 WorkflowPage 的 NODE_W / NODE_H 保持一致）。 */
-export const LAYOUT_NODE_W = 150
-export const LAYOUT_NODE_H = 56
-/** 布局四周留白（喂给 dagre 的 marginx / marginy）。 */
-export const LAYOUT_MARGIN = 40
+/**
+ * 布局四周留白（喂给 dagre 的 marginx / marginy）。
+ *
+ * 节点盒尺寸**不在本文件定义** —— 它只有一处来源（`workflow-node-box` 的
+ * NODE_W / NODE_H）。这里曾经有一对 LAYOUT_NODE_W / LAYOUT_NODE_H，靠一句
+ * 「与 WorkflowPage 保持一致」的注释维持同步，换 G6 时已经收掉了。
+ */
+const LAYOUT_MARGIN = 40
 
 /** 投影出来的边。branch=true 表示条件分支边（页面用虚线画）。 */
-export interface LayoutEdge {
+interface LayoutEdge {
   from: number
   to: number
   branch: boolean
@@ -90,8 +94,8 @@ export function layoutWorkflow(
     rankdir = 'TB',
     nodesep = 48,
     ranksep = 64,
-    nodeWidth = LAYOUT_NODE_W,
-    nodeHeight = LAYOUT_NODE_H,
+    nodeWidth = NODE_W,
+    nodeHeight = NODE_H,
   } = options
   const out = new Map<number, { x: number; y: number }>()
   if (!nodes.length) return out
@@ -127,8 +131,8 @@ export function layoutWorkflow(
 export function directedAnchors(
   from: { x: number; y: number },
   to: { x: number; y: number },
-  nodeWidth = LAYOUT_NODE_W,
-  nodeHeight = LAYOUT_NODE_H
+  nodeWidth = NODE_W,
+  nodeHeight = NODE_H
 ): { from: Anchor; to: Anchor } {
   const fx = from.x + nodeWidth / 2
   const fy = from.y + nodeHeight / 2
@@ -160,25 +164,14 @@ export function directedAnchors(
       }
 }
 
-/** 只要两个端点坐标的老接口（保留给调用方与单测）。 */
-export function edgeAnchors(
-  from: { x: number; y: number },
-  to: { x: number; y: number },
-  nodeWidth = LAYOUT_NODE_W,
-  nodeHeight = LAYOUT_NODE_H
-): { x1: number; y1: number; x2: number; y2: number } {
-  const a = directedAnchors(from, to, nodeWidth, nodeHeight)
-  return { x1: a.from.x, y1: a.from.y, x2: a.to.x, y2: a.to.y }
-}
-
 /**
  * 布局结果的包围盒（含节点尺寸与 padding）。
  * 画布基准尺寸要用它 —— 否则自动布局把步骤铺开后，fitView 仍按旧基准适配，会显示不全。
  */
 export function layoutBounds(
   pos: Map<number, { x: number; y: number }>,
-  nodeWidth = LAYOUT_NODE_W,
-  nodeHeight = LAYOUT_NODE_H,
+  nodeWidth = NODE_W,
+  nodeHeight = NODE_H,
   padding = LAYOUT_MARGIN
 ): { width: number; height: number } {
   if (!pos.size) return { width: nodeWidth + padding * 2, height: nodeHeight + padding * 2 }

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { ORTHO_STUB, orthogonalPath, type Anchor, type AnchorSide } from './edge-path'
+import { orthogonalPath, type Anchor, type AnchorSide } from './edge-path'
+
+/** 几何常量：连接点先沿法线走出的那一小段（与实现里的默认值一致，测试钉死它）。 */
+const ORTHO_STUB = 14
 
 /** 把 d 串解析回点列表，方便断言「垂直出入」这类几何性质。 */
 const parse = (d: string): { x: number; y: number }[] =>

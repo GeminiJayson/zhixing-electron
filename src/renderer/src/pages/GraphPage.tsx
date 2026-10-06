@@ -7,6 +7,9 @@ import { Maximize2, RefreshCw } from '@renderer/lib/icons'
 import type { GraphDelta, GraphNodePayload, GraphPayload, NoteFolder } from '@shared/types'
 import { Toolbar } from '../components/Toolbar'
 import { GraphCanvasG6, type GraphCanvasHandle } from '../components/GraphCanvasG6'
+// 配色只有一处来源（lib/graph-colors）：页面与 G6 画布必须用同一套规则，
+// 否则会出现「侧栏是一种颜色、画布上是另一种」这种很难查的错位。
+import { KIND_CN, colorOf } from '../lib/graph-colors'
 
 interface Props {
   onOpenNote: (id: number) => void
@@ -15,30 +18,6 @@ interface Props {
 }
 
 type Scope = 'all' | 'n1' | 'n2'
-
-/** 文件夹色板与根目录专属色。 */
-const FOLDER_PALETTE = [
-  '#0D9488', '#2563EB', '#7C3AED', '#DB2777', '#EA580C', '#16A34A',
-  '#D97706', '#0891B2', '#4F46E5', '#65A30D', '#B45309', '#0EA5E9',
-]
-const ROOT_NOTE_COLOR = '#64748B'
-const KIND_COLOR: Record<string, string> = {
-  folder: '#7C3AED',
-  task: '#16A34A',
-  flash: '#EA580C',
-  dangling: '#94A3B8',
-  anchor: '#0891B2',
-}
-
-/** 六类节点的中文名。 */
-const KIND_CN: Record<string, string> = {
-  note: '笔记',
-  flash: '闪念',
-  dangling: '待建链接',
-  task: '任务',
-  folder: '文件夹',
-  anchor: '段落引用',
-}
 
 /** 图谱节点。曾是 d3 的 `SimulationNodeDatum`，d3 移除后就只剩业务字段。 */
 type SimNode = GraphNodePayload
@@ -285,44 +264,6 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
     dst: b,
     kind: (data?.edgeKinds[a + ',' + b] ?? 'ownership') as 'ownership' | 'reference',
   }))
-
-  const folderColor = useMemo(() => {
-    const cache = new Map<string, string>()
-    return (hint: string): string => {
-      if (hint === 'root') return ROOT_NOTE_COLOR
-      if (KIND_COLOR[hint]) return KIND_COLOR[hint]
-      if (!cache.has(hint)) cache.set(hint, FOLDER_PALETTE[cache.size % FOLDER_PALETTE.length])
-      return cache.get(hint)!
-    }
-  }, [])
-
-  /**
-   * 知识类型的色位。
-   *
-   * 只给知识区的几类独立颜色，且刻意只分四档 —— 八种颜色挤在一张图上反而什么都看不出来。
-   * 笔记 / 项目记录仍用文件夹色：对它们来说"属于哪个项目"比"它是什么类型"更有信息量。
-   */
-  const knowledgeColor = (sub: string | undefined): string | null => {
-    switch (sub) {
-      case 'pitfall':
-        return 'var(--danger)' // 踩坑：警示色，最该一眼认出来
-      case 'method':
-        return 'var(--accent)' // 方法论：能拿来做事的东西
-      case 'concept':
-      case 'summary':
-      case 'synthesis':
-        return 'var(--accent-warm)' // 三类资料型知识共用一个色位
-      case 'output':
-        return 'var(--accent-text)'
-      default:
-        return null // note / project 走文件夹色
-    }
-  }
-
-  const colorOf = (n: GraphNodePayload): string =>
-    n.kind === 'note'
-      ? (knowledgeColor(n.subKind) ?? folderColor(n.colorHint))
-      : (KIND_COLOR[n.kind] ?? ROOT_NOTE_COLOR)
 
   const selectedNode = nodes.find((n) => n.id === selected) ?? null
 

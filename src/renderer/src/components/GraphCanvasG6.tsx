@@ -40,9 +40,9 @@ export interface GraphCanvasHandle {
   focusNode(id: number): void
 }
 
-export interface GraphCanvasProps {
+interface GraphCanvasProps {
   data: GraphPayload
-  /** 节点主色（note 走知识类型/文件夹色，其余走 kind 色）—— 由 GraphPage 的 colorOf 决定。 */
+  /** 节点主色（note 走知识类型/文件夹色，其余走 kind 色）—— 由 lib/graph-colors 的 colorOf 决定。 */
   colorOf: (n: GraphNodePayload) => string
   /** 已存在的坐标（模块级缓存），有则沿用，没有交给布局。 */
   positions: Map<number, { x: number; y: number }>

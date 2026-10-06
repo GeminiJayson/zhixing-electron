@@ -1,89 +1,15 @@
 /**
- * 连线路径：三次贝塞尔。
+ * 连线路径：**按边方向的正交折线**。
  *
- * 控制点沿**连线法线**方向偏移，于是曲线中段微微鼓起、两端贴住节点 ——
- * 这是 Obsidian 那种「轻微自然弧度」的来源，而不是大弧线或死板直线。
- * 弧高与长度挂钩但有上限：短线几乎笔直，长线也不会甩出夸张的弯。
+ * 工作流画布用它代替流体弧 —— 流程图更像工程图：「谁连到谁、从哪条边出入」
+ * 一眼可辨，而贝塞尔弧线在节点密集时会糊成一片。
  *
  * 单独成文件是为了能在 vitest 里直接钉住几何（页面里跑不了单测）。
- */
-
-/** 弧高上限（px）—— 保证「微弱、优雅」，不是大弧。 */
-export const MAX_BULGE = 18
-
-/** 弧高相对长度的比例。 */
-const BULGE_RATIO = 0.12
-
-/** 控制点相对端点的位置（0.25 / 0.75 是标准三次贝塞尔对称取法）。 */
-const C1_T = 0.25
-const C2_T = 0.75
-
-/** 一条连线的两个端点。 */
-export interface EdgeEnds {
-  x1: number
-  y1: number
-  x2: number
-  y2: number
-}
-
-/** 弧高：length 的 12%，封顶 MAX_BULGE。极短的边按接近直线处理。 */
-export function bulgeOf(len: number): number {
-  if (!Number.isFinite(len) || len <= 0) return 0
-  return Math.min(MAX_BULGE, len * BULGE_RATIO)
-}
-
-/** 控制点（两个，对称分布在法线同侧）。零长度时退化为端点本身。 */
-export function controlPoints({ x1, y1, x2, y2 }: EdgeEnds): [number, number, number, number] {
-  const dx = x2 - x1
-  const dy = y2 - y1
-  const len = Math.hypot(dx, dy)
-  const bulge = bulgeOf(len)
-  if (len < 0.5) return [x1, y1, x2, y2]
-  // 法线方向（连线逆时针旋转 90°）
-  const nx = -dy / len
-  const ny = dx / len
-  return [
-    x1 + dx * C1_T + nx * bulge,
-    y1 + dy * C1_T + ny * bulge,
-    x1 + dx * C2_T + nx * bulge,
-    y1 + dy * C2_T + ny * bulge
-  ]
-}
-
-/** 供 <path d=…> 使用的路径串。 */
-export function edgePath(ends: EdgeEnds): string {
-  const { x1, y1, x2, y2 } = ends
-  const [c1x, c1y, c2x, c2y] = controlPoints(ends)
-  // 太短的边直接画直线：贝塞尔在这种尺度上只会显得抖
-  if (Math.hypot(x2 - x1, y2 - y1) < 0.5) return `M${x1},${y1} L${x2},${y2}`
-  return `M${x1},${y1} C${c1x},${c1y} ${c2x},${c2y} ${x2},${y2}`
-}
-
-/**
- * 正交折线（H-V-H / V-H-V）：从起点沿主方向走、在中间拐两次、直角进入目标。
  *
- * 工作流画布用它代替流体弧 —— 流程图（F6 的 Dagre 示例也是这种）更像工程图：
- * 「谁连到谁、从哪条边出入」一眼可辨，而贝塞尔弧线在节点密集时会糊成一片。
- * 知识图谱仍用 edgePath 的流体弧（那边追求的是「网络感」，不是流程感）。
+ * 早先这里还有图谱那边的贝塞尔弧（`edgePath` / `elbowPath` / `bulgeOf` /
+ * `controlPoints` / `MAX_BULGE` / `EdgeEnds`）—— 图谱换 G6 后用内置的 cubic 边，
+ * 那几条连同它们的常量一起删了；`SIDE_NORMAL` / `ORTHO_STUB` 收成模块内部常量。
  */
-export function elbowPath(ends: EdgeEnds): string {
-  const { x1, y1, x2, y2 } = ends
-  const dx = x2 - x1
-  const dy = y2 - y1
-  // 几乎正对时直接一条直线，别为 1px 的错位拐两次
-  if (Math.abs(dx) < 1) return `M${x1},${y1} L${x2},${y2}`
-  if (Math.abs(dy) < 1) return `M${x1},${y1} L${x2},${y2}`
-  if (Math.abs(dy) >= Math.abs(dx)) {
-    // 纵向为主：先竖到中线，横过去，再竖到目标
-    const my = y1 + dy / 2
-    return `M${x1},${y1} L${x1},${my} L${x2},${my} L${x2},${y2}`
-  }
-  // 横向为主：先横到中线，竖过去，再横到目标
-  const mx = x1 + dx / 2
-  return `M${x1},${y1} L${mx},${y1} L${mx},${y2} L${x2},${y2}`
-}
-
-// ---------------------------------------------------------------- 按边方向的正交路由
 
 /** 锚点所在的边（也是连线的出入方向基准）。 */
 export type AnchorSide = 'top' | 'bottom' | 'left' | 'right'
@@ -95,8 +21,8 @@ export interface Anchor {
   side: AnchorSide
 }
 
-/** 各边**朝外**的法线方向（调用方要沿它把按钮 / 手柄退到节点外时用得上）。 */
-export const SIDE_NORMAL: Record<AnchorSide, { x: number; y: number }> = {
+/** 各边**朝外**的法线方向。 */
+const SIDE_NORMAL: Record<AnchorSide, { x: number; y: number }> = {
   top: { x: 0, y: -1 },
   bottom: { x: 0, y: 1 },
   left: { x: -1, y: 0 },
@@ -133,15 +59,14 @@ function polyline(points: { x: number; y: number }[]): string {
 }
 
 /** 连接点先沿法线走出的这一小段（px）：让末段落在节点之外，不与边框重合。 */
-export const ORTHO_STUB = 14
+const ORTHO_STUB = 14
 
 /**
  * 正交连线：从 from 沿它所在边的**法线**出发、逆着 to 所在边的法线**垂直进入**。
  *
- * 与 elbowPath 的关键差别在「按什么决定折法」。elbowPath 用 |dx| / |dy| 猜主方向，
- * 于是出现这种坏情况：条件节点从菱形尖角**水平**出线，却要接到目标**上边** ——
- * 它按 |dy| 更大走了「竖—横—竖」，末段竖直正好落在目标右边缘上，
- * 整条线贴着目标边框往下走，看上去就是「线和节点的边重合了」。
+ * 与「按 |dx| / |dy| 猜主方向」的老写法（已删的 elbowPath）的关键差别：
+ * 那种写法在「条件节点从菱形尖角水平出线、却要接到目标上边」时会走「竖—横—竖」，
+ * 末段竖直正好落在目标右边缘上，整条线贴着目标边框往下走，看上去就像线和节点的边重合了。
  *
  * 这里改用锚点自带的边方向：首段一定垂直于出发的那条边，末段一定垂直于进入的那条边，
  * 中间的过渡段落在节点外侧（而不是节点边上）。

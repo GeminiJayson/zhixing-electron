@@ -22,11 +22,11 @@ export const COND_TEXT_W = Math.round(NODE_W * 0.6)
  * 汉字与全角标点接近一个字号宽，西文约 0.56。系数**刻意保守**：
  * 宁可早一点出现省略号，也不要让文字画到框外 —— SVG 的 `<text>` 既不会换行也不会缩小。
  */
-export const charWidth = (ch: string): number =>
+const charWidth = (ch: string): number =>
   /[\u1100-\u9fff\uff00-\uffef\u3000-\u303f]/.test(ch) ? 1.02 : 0.56
 
 /** 一段文字在给定字号下的估算宽度。 */
-export const textWidth = (text: string, size: number): number =>
+const textWidth = (text: string, size: number): number =>
   [...text].reduce((w, ch) => w + charWidth(ch) * size, 0)
 
 /**

@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { NODE_H, NODE_W } from './workflow-node-box'
 import {
-  LAYOUT_NODE_H,
-  LAYOUT_NODE_W,
   directedAnchors,
-  edgeAnchors,
   layoutBounds,
   layoutWorkflow,
   workflowEdges,
@@ -110,7 +108,7 @@ describe('layoutWorkflow —— dagre 分层', () => {
 
   it('节点尺寸参与布局：任意两个节点都不重叠', () => {
     const pos = layoutWorkflow([node(1, 0, 4), node(2, 1), node(3, 2, 5), node(4, 3), node(5, 4)])
-    expect(minCenterGap(pos)).toBeGreaterThanOrEqual(LAYOUT_NODE_H)
+    expect(minCenterGap(pos)).toBeGreaterThanOrEqual(NODE_H)
   })
 
   it('多根无连线也不会叠在一起', () => {
@@ -129,44 +127,9 @@ describe('layoutWorkflow —— dagre 分层', () => {
   })
 
   it('返回的是左上角，而不是 dagre 的中心点', () => {
-    const pos = layoutWorkflow([node(1, 0)], { nodeWidth: LAYOUT_NODE_W, nodeHeight: LAYOUT_NODE_H })
+    const pos = layoutWorkflow([node(1, 0)], { nodeWidth: NODE_W, nodeHeight: NODE_H })
     // 单节点时 dagre 的中心等于自身中心，左上角应落在 margin 上
     expect(pos.get(1)).toEqual({ x: 40, y: 40 })
-  })
-})
-
-describe('edgeAnchors —— 按相对位置选边', () => {
-  const at = (x: number, y: number) => ({ x, y })
-
-  it('纵向相邻：从下边连到上边', () => {
-    expect(edgeAnchors(at(0, 0), at(0, 200))).toEqual({
-      x1: LAYOUT_NODE_W / 2,
-      y1: LAYOUT_NODE_H,
-      x2: LAYOUT_NODE_W / 2,
-      y2: 200,
-    })
-  })
-
-  it('横向相邻：从右边连到左边（LR 布局的关键）', () => {
-    expect(edgeAnchors(at(0, 0), at(300, 0))).toEqual({
-      x1: LAYOUT_NODE_W,
-      y1: LAYOUT_NODE_H / 2,
-      x2: 300,
-      y2: LAYOUT_NODE_H / 2,
-    })
-  })
-
-  it('目标在上方 / 左侧时锚点反向，不会从背面穿出去', () => {
-    expect(edgeAnchors(at(0, 200), at(0, 0)).y1).toBe(200)
-    expect(edgeAnchors(at(0, 200), at(0, 0)).y2).toBe(LAYOUT_NODE_H)
-    expect(edgeAnchors(at(300, 0), at(0, 0)).x1).toBe(300)
-    expect(edgeAnchors(at(300, 0), at(0, 0)).x2).toBe(LAYOUT_NODE_W)
-  })
-
-  it('斜向时取主方向：纵向差更大就走上下边', () => {
-    const a = edgeAnchors(at(0, 0), at(40, 300))
-    expect(a.y1).toBe(LAYOUT_NODE_H)
-    expect(a.y2).toBe(300)
   })
 })
 
@@ -175,8 +138,8 @@ describe('directedAnchors —— 带边方向的锚点（正交路由靠它决�
 
   it('纵向相邻：从下边出去、从上边进入', () => {
     const a = directedAnchors(at(0, 0), at(0, 200))
-    expect(a.from).toEqual({ x: LAYOUT_NODE_W / 2, y: LAYOUT_NODE_H, side: 'bottom' })
-    expect(a.to).toEqual({ x: LAYOUT_NODE_W / 2, y: 200, side: 'top' })
+    expect(a.from).toEqual({ x: NODE_W / 2, y: NODE_H, side: 'bottom' })
+    expect(a.to).toEqual({ x: NODE_W / 2, y: 200, side: 'top' })
   })
 
   it('横向相邻：从右边出去、从左边进入', () => {
@@ -191,37 +154,18 @@ describe('directedAnchors —— 带边方向的锚点（正交路由靠它决�
     expect(directedAnchors(at(300, 0), at(0, 0)).from.side).toBe('left')
     expect(directedAnchors(at(300, 0), at(0, 0)).to.side).toBe('right')
   })
-
-  it('与 edgeAnchors 的坐标逐例一致（老接口只是它的投影）', () => {
-    const cases: [{ x: number; y: number }, { x: number; y: number }][] = [
-      [at(0, 0), at(0, 200)],
-      [at(0, 0), at(300, 0)],
-      [at(0, 200), at(0, 0)],
-      [at(300, 0), at(0, 0)],
-      [at(0, 0), at(40, 300)],
-    ]
-    for (const [from, to] of cases) {
-      const d = directedAnchors(from, to)
-      expect(edgeAnchors(from, to)).toEqual({
-        x1: d.from.x,
-        y1: d.from.y,
-        x2: d.to.x,
-        y2: d.to.y,
-      })
-    }
-  })
 })
 
 describe('layoutBounds —— 画布基准尺寸', () => {
   it('空布局退化为一个节点盒', () => {
     const b = layoutBounds(new Map())
-    expect(b.width).toBe(LAYOUT_NODE_W + 80)
-    expect(b.height).toBe(LAYOUT_NODE_H + 80)
+    expect(b.width).toBe(NODE_W + 80)
+    expect(b.height).toBe(NODE_H + 80)
   })
 
   it('装得下右下角那个节点（含尺寸与 padding）', () => {
     const b = layoutBounds(new Map([[1, { x: 500, y: 300 }]]))
-    expect(b.width).toBe(500 + LAYOUT_NODE_W + 40)
-    expect(b.height).toBe(300 + LAYOUT_NODE_H + 40)
+    expect(b.width).toBe(500 + NODE_W + 40)
+    expect(b.height).toBe(300 + NODE_H + 40)
   })
 })

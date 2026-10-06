@@ -11,43 +11,43 @@
 import type { GraphNodePayload, GraphPayload } from '@shared/types'
 
 /** 边类别：归属（实线）/ 引用（虚线）。与 `GraphPayload.edgeKinds` 的取值一致。 */
-export type GraphEdgeKind = 'ownership' | 'reference'
+type GraphEdgeKind = 'ownership' | 'reference'
 
 /** G6 节点上的自定义数据（透传原始 payload，交互回调里要用）。 */
-export interface G6NodeData extends Record<string, unknown> {
+interface G6NodeData extends Record<string, unknown> {
   payload: GraphNodePayload
   label: string
   kind: GraphNodePayload['kind']
 }
 
 /** G6 边上的自定义数据。 */
-export interface G6EdgeData extends Record<string, unknown> {
+interface G6EdgeData extends Record<string, unknown> {
   kind: GraphEdgeKind
 }
 
 /** G6 的 NodeData / EdgeData 带字符串索引签名，适配产物要跟它对齐。 */
-export interface G6Node extends Record<string, unknown> {
+interface G6Node extends Record<string, unknown> {
   id: string
   data: G6NodeData
 }
 
-export interface G6Edge extends Record<string, unknown> {
+interface G6Edge extends Record<string, unknown> {
   id: string
   source: string
   target: string
   data: G6EdgeData
 }
 
-export interface G6GraphData {
+interface G6GraphData {
   nodes: G6Node[]
   edges: G6Edge[]
 }
 
 /** 边的稳定键 —— 与主进程 `edgeKinds` 的键格式一致（"src,dst"）。 */
-export const edgeKey = (source: number, target: number): string => source + ',' + target
+const edgeKey = (source: number, target: number): string => source + ',' + target
 
 /** 节点 id 统一成字符串：G6 内部按字符串处理，混用数字会匹配不上边。 */
-export const nodeId = (id: number): string => String(id)
+const nodeId = (id: number): string => String(id)
 
 /**
  * `GraphPayload` → G6 data。
