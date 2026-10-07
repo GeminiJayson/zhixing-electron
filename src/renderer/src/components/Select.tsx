@@ -145,8 +145,11 @@ export function Select({
       if (listRef.current?.contains(t) || btnRef.current?.contains(t)) return
       requestClose(false)
     }
-    document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
+    // **捕获阶段**：弹窗为了"点内部不关自己"会在冒泡路上 stopPropagation，
+    // 挂在冒泡阶段就永远收不到 —— 表现为"弹窗里的下拉点别处不关"（用户反馈）。
+    // DatePicker / NotePicker 一开始就用的捕获，这里补齐。
+    document.addEventListener('mousedown', onDown, true)
+    return () => document.removeEventListener('mousedown', onDown, true)
   }, [open, requestClose])
 
   const step = (dir: 1 | -1): void => {
@@ -279,7 +282,24 @@ export function Select({
               style={o.depth ? { paddingLeft: 'calc(var(--space-3) + ' + o.depth * 14 + 'px)' } : undefined}
               onMouseEnter={() => !o.disabled && setActive(i)}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => commit(i)}
+              /**
+               * **preventDefault + stopPropagation，两个都要。**
+               *
+               * 选择器大量用在 `<label className="form-row">` 里，而 label 的默认行为是
+               * "点它就聚焦/激活它关联的控件"：选项的 click 之后，浏览器会**再合成一次
+               * 针对触发器的 click** —— 浮层刚关就被它重新打开（用户看到"选完了浮层还在"）。
+               *
+               * · `preventDefault` 挡的是**默认行为**（那次合成的点击）—— 这才是关键；
+               * · `stopPropagation` 挡的是冒泡（别让外层的点击处理也跟着跑）。
+               *
+               * 实测（事件探针）：只写 stopPropagation 时，选项上仍会出现
+               * `click(option)` 之后紧跟 `click(trigger)` 两条记录。
+               */
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                commit(i)
+              }}
             >
               <span className={'popmenu__tick' + (o.value === value ? ' popmenu__tick--on' : '')} />
               {o.label}

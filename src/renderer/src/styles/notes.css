@@ -540,6 +540,14 @@
   flex: 1 1 auto;
   min-width: var(--size-80);
 }
+/* 脚本的运行环境下拉：贴在类型胶囊旁边。宽度按内容走 —— 它的选项只有几个短词
+   （PowerShell / CMD / Python / Node），跟着 .field 铺满会把标题挤没。 */
+.editor__runtime {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: var(--size-120);
+  max-width: var(--size-160);
+}
 .editor__title {
   flex: 1;
   min-width: 0;
@@ -1749,26 +1757,113 @@ span.links__pill-text {
   min-height: var(--size-240);
 }
 
-/* =============================================================================
-   全屏编辑（.page--zen / .notes-main--zen）
-   页面标题、笔记树、信息区一起让位，只留正文。
-   左侧主导航由 App 层的 .app--zen 收起（状态在 App，见 App.tsx）——
-   只有提到 App 那一层才能连导航一起让位；标题栏保留，窗口按钮还要用。
-   Esc 退出（笔记页里监听）。
-   ============================================================================= */
-.page--zen {
-  padding: 0;
+/* ---- 用户脚本：树上的固定文件夹 + 编辑区（2026-10-07） ---- */
+
+/* 脚本行图标：与笔记那五种类型（格式色）区分开，用强调色 */
+.ntree__type--script {
+  color: var(--accent-text);
 }
-.page--zen .page__head {
-  display: none;
+/* 脚本行里的说明（来自脚本头部的 desc 注释）：一行省略号，不 hover 也能看出这是干什么的 */
+.ntree__desc {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-aux);
+  color: var(--fg-secondary);
 }
-.page--zen .notes-wrap {
-  gap: 0;
+/* 树上内联新建脚本的输入行 */
+.ntree__note--input {
+  padding-right: var(--space-2);
 }
-.page--zen .ntree {
-  display: none;
+.ntree__note--input .field {
+  flex: 1;
+  min-width: 0;
 }
-.notes-main--zen {
-  padding: var(--space-3) var(--space-4);
+.ntree__hint {
+  margin: var(--space-2) 0 var(--space-2) var(--space-5);
+  font-size: var(--text-aux);
+  color: var(--fg-secondary);
 }
 
+/* 脚本正文：与 markdown / 富文本 / Office 正文是**同一个位置、同一套外壳** ——
+   标题栏、工具栏、底部四栏信息区都由 NotesPage 提供，这里只管"怎么编辑这一段"。 */
+.scripted {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.scripted__edit {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  background: var(--bg-layer-solid);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+/**
+ * 行号列与代码区**必须同字号同行高**，否则行号会逐行错开。
+ * 所以两边都用 --text-body 与 1.6 —— 行号只是颜色淡一点，不是小一号。
+ */
+.scripted__gutter {
+  flex: 0 0 auto;
+  padding: var(--space-3) var(--space-2);
+  overflow: hidden;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--text-body);
+  line-height: var(--lh-comfy);
+  color: var(--fg-secondary);
+  background: var(--bg-hover);
+  user-select: none;
+}
+.scripted__code {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-3);
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--fg-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-body);
+  line-height: var(--lh-comfy);
+  tab-size: 2;
+}
+.scripted__status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-aux);
+  color: var(--fg-secondary);
+}
+.scripted__status.is-ok {
+  color: var(--accent-text);
+}
+.scripted__status.is-bad {
+  color: var(--danger);
+}
+.scripted__note {
+  margin-left: auto;
+}
+/* 状态条里的语法问题：点一条跳到那一行，所以要看得像能点的 */
+.scripted__problem {
+  padding: 0 var(--space-1);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.scripted__problem:hover {
+  background: var(--bg-hover);
+}

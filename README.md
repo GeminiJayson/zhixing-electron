@@ -2,7 +2,7 @@
 
 **知行 ZhiXing**：一个本地优先的个人待办 + 知识图谱桌面客户端（Electron + React + TypeScript）。
 
-- 仓库：`zhixing-electron`（GitHub: [GeminiJayson/zhixing-electron](https://github.com/GeminiJayson/zhixing-electron)），当前版本 **`1.19.1`**（`package.json`），安装包与便携版见仓库 Releases。
+- 仓库：`zhixing-electron`（GitHub: [GeminiJayson/zhixing-electron](https://github.com/GeminiJayson/zhixing-electron)），当前版本 **`1.23.0`**（`package.json`），安装包与便携版见仓库 Releases。
 - **九个页面的功能面已全部实现**（`src/renderer/src/nav.ts` / `App.tsx`），分域与逐项状态见 §2；已决策不做的方向不计入缺口（见 §15）。
 - 本地优先：核心功能零网络依赖、无遥测、无账号（NFR-01）。
 - 数据全部落在本机一个 SQLite 文件里，可直接备份 / 恢复 / 整库导出导入。
@@ -16,16 +16,16 @@
 | 项 | 约定 | 证据 |
 | --- | --- | --- |
 | 数据目录 | 默认 `%APPDATA%/ZhiXing`，`ZHIXING_HOME` 可整体覆盖（便携模式） | `src/main/db/connection.ts` |
-| schema | `SCHEMA_VERSION = 18`，建库 DDL 集中在 `schema.ts` | `src/main/db/schema.ts` |
-| 表规模 | 25 张业务表 + 3 张 FTS5 虚拟表 | `docs/02` §6.1 |
-| 迁移链 | v1–v18 逐号升级（缺号显式报错，不跳级） | `src/main/db/migrate.ts` |
+| schema | `SCHEMA_VERSION = 19`，建库 DDL 集中在 `schema.ts` | `src/main/db/schema.ts` |
+| 表规模 | 27 张业务表 + 3 张 FTS5 虚拟表 | `docs/02` §6.1 |
+| 迁移链 | v1–v19 逐号升级（缺号显式报错，不跳级） | `src/main/db/migrate.ts` |
 | 分词 | jieba `cut_for_search` 写入索引，查询侧走 `unicode61` | `src/main/db/fts-query.ts`、`fts-query.test.ts` |
 | 时间戳 | 统一 `YYYY-MM-DD HH:MM:SS.ffffff`（微秒 6 位） | `src/main/db/connection.ts` |
 | 连接 | `journal_mode=WAL`、`foreign_keys=ON`、`busy_timeout=4000` | `src/main/db/connection.ts` |
 
 库文件不存在时，首次运行会自建数据目录与库文件，并按 `SCHEMA_VERSION` 逐号执行迁移链。
 
-## 2. 功能实现进度（2026-10-04 重核）
+## 2. 功能实现进度（2026-10-07 重核）
 
 口径：按**主链可用 / 写路径接通 / UI 入口 / 护栏**四项加权，不是按条数比例。
 **已决策不做的方向**（云同步、代码签名、自动更新、mica 等，见 §15）不计入缺口。
@@ -33,17 +33,18 @@
 | 域 | 完成度 | 主要缺口 |
 | --- | ---: | --- |
 | 任务 | ~97% | 日历口径的可配置项（目前固定 `start_date` 逐日展开） |
-| 笔记 | ~97% | 笔记数据库视图（按属性筛成表格）未做 |
-| 图谱 / 搜索 / 回顾 | ~95% | 无（引用边、anchor 入图、图内过滤与搜索、节点预览、检索 MRU 都已具备） |
-| 收件箱 / 工作流 / 捕获 | ~95% | 工作流触发器只做了任务状态触发，定时 / 文件变化 / 剪贴板匹配未做 |
+| 笔记 | ~99% | 无（**数据库视图已具备**：属性列 / 表达式筛选 / 存为视图，见 §17.1） |
+| 图谱 / 搜索 / 回顾 | ~97% | 无（引用边、anchor 入图、图内过滤与搜索、节点预览、检索 MRU、**按任务累计用时**都已具备） |
+| 收件箱 / 工作流 / 捕获 | ~98% | 无（触发齐了：手动 / 定时 / 任务状态 / 外部 HTTP / **目录变化** / **剪贴板匹配**） |
 | 设置 / 平台 / 窗口 | ~93% | — |
-| 数据 / 统计 / 维护 | ~93% | 习惯打卡与按任务累计用时未做 |
+| 数据 / 统计 / 维护 | ~97% | 无（**习惯打卡**已具备：连续天数 / 近 7 天 / 完成率） |
 | 打包与发布 | ~80% | 代码签名、自动更新（均按决定不做）；仅 Windows 目标 |
 | 渲染与交互 | ~97% | 无（虚拟滚动、pan/zoom、对比度校正都有脚本或单测守护；**i18n 骨架已整套移除**） |
-| **综合（按域功能面加权）** | **~95%** | 剩余结构性缺口收敛为三项：**工作流触发器（定时/事件）**、**笔记数据库视图**、**习惯打卡** |
+| **综合（按域功能面加权）** | **~97%** | 结构性缺口只剩一项：**日历口径的可配置项**（是"可选精化"，不是没做的功能） |
 
 > 逐项状态以 `docs/01-需求规格说明书.md` 为准 —— 那份文档的每一条都在 2026-10-04 对着代码复核过，
-> 状态分布为：**已实现 121 / 部分实现 0 / 未实现 2（代码签名与自动更新）/ 有意简化 19**。
+> 状态分布为：**已实现 121 / 部分实现 0 / 未实现 2（代码签名与自动更新）/ 有意简化 19**；
+> 2026-10-07 补齐了当时列在 §11 的四项缺口（触发器补全、笔记数据库视图、习惯打卡与用时统计、用户脚本）。
 
 ## 3. 技术选型
 
@@ -51,12 +52,15 @@
 | --- | --- | --- |
 | 壳 | Electron `^33.3.1` | 无边框窗口 + 自定义标题栏（`titleBarStyle: hiddenInset`） |
 | 构建 | electron-vite `^2.3.0` + Vite `^5.4.11` | main / preload / renderer 一次构建到 `out/` |
-| UI | React `^18.3.1` + TypeScript `^5.7.2` | 无 UI 框架，样式全走 CSS 语义 token（16 个 CSS 文件） |
+| UI | React `^18.3.1` + TypeScript `^5.7.2` | 无 UI 框架，样式全走 CSS 语义 token（17 个 CSS 文件） |
 | 数据 | better-sqlite3 `^11.10.0` | 原生模块，直接读写本机 `zhixing.db` |
 | 分词 | @node-rs/jieba `^2.0.3` | `cut_for_search` 分词，未装 binding 时自动降级 |
-| 编辑器 | CodeMirror 6（7 个包） | Markdown 高亮、`[[` 补全、撤销栈 |
-| 图谱 | d3-force `^3.0.0` | 力导向布局；连线几何为自研纯函数 |
-| 文档解析 | mammoth `^1.12.3`、xlsx `^0.18.5` | Office 只读预览（主进程解析 + HTML 清洗） |
+| 编辑器 | CodeMirror 6（7 个包）+ tiptap `^3.31.3`（6 个扩展包） | Markdown 高亮、`[[` 补全、撤销栈；rich 格式笔记走 tiptap |
+| 图谱 | @antv/g6 `^5.1.1` + d3-force `^3.0.0` + @dagrejs/dagre `^3.1.1` | G6 负责渲染与交互，力导向 / 分层布局各取所长；连线几何为自研纯函数 |
+| 表格 | ag-grid-community / ag-grid-react `^36.2.0` | Excel 网格（可编辑）与笔记数据库视图（只读筛选）；**都走懒加载**，不开表不下载 |
+| 图标 | lucide `^0.468.0` + morphicons `^1.7.1` | 图标统一从 `src/renderer/src/lib/icons.tsx` 出，不在组件里直接引包 |
+| Markdown | marked `^18.0.13` | 渲染笔记正文（渲染前过一遍 `sanitize-html`） |
+| 文档解析 | mammoth `^1.12.3`、xlsx `^0.18.5`、docx `^9.7.1`（导出）、@mozilla/readability（剪藏） | Office 只读预览 + Word 写回；网页剪藏先用 Readability 清一遍 |
 | 打包 | electron-builder `^26.15.3` | NSIS + portable，`asarUnpack` 原生模块 |
 | 单测 | vitest `^2.1.9` | 只覆盖 `src/**/*.test.ts` 纯函数 |
 
@@ -81,7 +85,7 @@ npm run dev                           # 开发模式（HMR）
 
 ## 6. 验证脚本体系
 
-`scripts/` 顶层 **73 个 `.mjs`**（另有 `verify-seed.cjs`）验证与构建脚本，以及 `scripts/fixtures/gen-office-fixtures.py` 夹具生成器。
+`scripts/` 顶层 **72 个 `.mjs`**（另有 `verify-seed.cjs` 与 `lib/`）验证与构建脚本，以及 `scripts/fixtures/gen-office-fixtures.py` 夹具生成器。
 
 统一方法论：**拷贝备份库到临时 `ZHIXING_HOME` → 启动真实 Electron（`--remote-debugging-port`）+ WebSocket/CDP → 经 IPC 操作 → 用 `sqlite3` CLI 校验落库**；多数脚本只在副本库上跑，绝不碰真实库。
 
@@ -107,7 +111,7 @@ npm run dev                           # 开发模式（HMR）
 
 进 `package.json` 的入口共 **21 条**。常用：`dev` / `build` / `typecheck` / `test`；检查类 `check:jieba` / `check:security` / `check:contrast` / `check:ctlheight` / `check:interaction`；构建发布 `dist:win` / `dist:dir` / `postdist:*` / `binding:win` / `release` / `release:dry`；图标生成 `gen:icons` / `gen:app-icons`。
 
-单元测试为 vitest：**51 个测试文件 / 593 个用例**，只覆盖纯函数（`vitest.config.ts` 明确排除涉及 SQLite / IPC / 真实窗口的部分，那部分留在 `scripts/*.mjs`）。
+单元测试为 vitest：**56 个测试文件 / 720 个用例**，只覆盖纯函数（`vitest.config.ts` 明确排除涉及 SQLite / IPC / 真实窗口的部分，那部分留在 `scripts/*.mjs`）。
 
 ## 7. 打包与发布
 
@@ -166,29 +170,39 @@ zhixing-electron/
 ├── tsconfig.json  tsconfig.node.json  tsconfig.web.json  vitest.config.ts
 ├── resources/                     # icon.ico、trayTemplate.png
 ├── src/
-│   ├── main/                      # 主进程（20 个顶层 .ts）
+│   ├── main/                      # 主进程（24 个顶层 .ts，含 5 个单测）
 │   │   ├── index.ts               # 入口：生命周期 / IPC 注册 / 深链 / 菜单 / 广播
 │   │   ├── widget.ts              # 悬浮球与浮窗（状态在闭包里）
 │   │   ├── window.ts              # 主窗与启动欢迎页
 │   │   ├── tray.ts  hotkey.ts     # 系统托盘 / 全局热键
 │   │   ├── security.ts  log.ts    # 导航三道出口 / 文件日志
-│   │   └── db/                    # 数据层 31 个 .ts（connection / schema / migrate / tasks / notes / graph / …）
-│   ├── preload/                   # index.ts（拼装）+ api/（7 个域文件）+ index.d.ts
-│   ├── renderer/                  # React 应用：pages/（9 页）components/（51 个）lib/（30 个）styles/（16 个 CSS）
-│   └── shared/                    # 主/渲染共用纯函数 62 文件（types / events / settings / color / …）
-├── scripts/                       # 73 个 .mjs（顶层共 75 个文件）
+│   │   ├── http-trigger.ts        # 外部触发端点（127.0.0.1 + 令牌）
+│   │   ├── folder-trigger.ts      # 目录变化触发（fs.watch）+ folder-watch-plan.ts（纯逻辑）
+│   │   ├── user-scripts.ts        # 用户脚本：扫描 <数据目录>/scripts/ 并执行
+│   │   └── db/                    # 数据层 33 个 .ts（connection / schema / migrate / tasks / notes / graph / workflow / habit / note-table / …）
+│   ├── preload/                   # index.ts（拼装）+ api/（8 个域文件）+ index.d.ts
+│   ├── renderer/                  # React 应用：pages/（9 页）components/（54 个）lib/（27 个）styles/（17 个 CSS）
+│   └── shared/                    # 主/渲染共用纯函数 75 个 .ts（含 38 个单测；types / events / settings / query / habit / …）
+├── scripts/                       # 72 个 .mjs（顶层共 74 个文件）
 ├── CONTEXT.md                     # 术语表：只在词义会误解时收录
 └── docs/                          # 01–03 主文档 + 方案/审计/调研/发布说明
 ```
 
 ## 11. 已知缺口与后续行动
 
-仍然缺的（不含 §15 已决策不做的方向）：
+**2026-10-07：下表四项已全部落地**（当时列在这里的四项结构性缺口，逐项见 §17.1）。
 
-1. **工作流触发器（定时 / 系统事件）** —— 节点编排已经就绪，缺的是「自动开始」的触发模型（见 §17）。
-2. **笔记数据库视图** —— 依赖「保存的查询」与「笔记属性」（两项都已具备），把笔记按属性筛成看板 / 表格。
-3. **习惯打卡 / 按任务累计用时** —— 习惯可用「重复任务 + 连续天数」近似；用时统计在 `ReviewStats` 基础上补「按任务聚合」。
-4. **用户脚本扩展点** —— `<数据目录>/scripts/` 里的脚本作为命令面板 / 工作流动作（离线版 Extension API）。
+| 项 | 落点 | 状态 |
+| --- | --- | --- |
+| 工作流触发器（定时 / 系统事件） | 定时 / 任务状态 / 外部 HTTP / **目录变化** / **剪贴板匹配** 五类入口 | ✅ 已完成 |
+| 笔记数据库视图 | 笔记页「数据库视图」：属性列 + 表达式筛选 + 存为视图（`saved_query` 的 `kind='note'`） | ✅ 已完成 |
+| 习惯打卡 / 按任务累计用时 | 今日页「习惯打卡」卡片；回顾页「任务用时」排行榜（近 30 天番茄） | ✅ 已完成 |
+| 用户脚本扩展点 | `<数据目录>/scripts/` 里的脚本 → 命令面板命令 / 工作流「用户脚本」动作 / 设置页「集成」入口 | ✅ 已完成 |
+
+**仍然缺的**（不含 §15 已决策不做的方向）：
+
+1. **日历口径的可配置项** —— 任务页日历视图目前固定按 `start_date` 逐日展开，没有"按截止日 / 跨天显示"的开关。
+2. **更多触发器种类** —— 目前没有再扩（开机自启、进程启动、网络变化都没做），够用为先；加一种要先想清它的失效方式。
 
 > **已从缺口里移出的**：块级引用（`block_key` 已用于段落级关联与深链定位，不再另做语法，见 §15）；
 > Word / Excel 笔记（**已可编辑并自动写回 `.docx` / `.xlsx`**，见 `NotesPage.tsx` 的 `commitWord`）。
@@ -207,7 +221,7 @@ zhixing-electron/
 | [specs/](docs/specs) | 方案与规范：知识库重组、归属 vs 引用、第三期调研、保险箱设计、**G6 迁移（[方案](docs/specs/g6-migration.md) + [进程](docs/specs/g6-migration-status.md) + [原生节点调研](docs/specs/g6-native-nodes.md) + [能力审计](docs/specs/g6-capability-audit.md)）** |
 | [audit/gaps-2026-10-04.md](docs/audit/gaps-2026-10-04.md) | 全库缺口审计（本轮的起点） |
 | [research/product-comparison-2026.md](docs/research/product-comparison-2026.md) | 竞品对比调研 |
-| [release-notes-v*.md](docs/release-notes-v1.20.0.md) | 逐版本发布说明（v1.0.0 – v1.20.0） |
+| [release-notes-v*.md](docs/release-notes-v1.23.0.md) | 逐版本发布说明（v1.0.0 – v1.23.0） |
 | [adr/](docs/adr) | 架构决策记录 —— 一个决定一份，写清否掉了什么与代价 |
 | [agents/](docs/agents) | Agent 工作流：issue 跟踪、triage 标签、领域文档 |
 | [CONTEXT.md](CONTEXT.md) | 术语表：归属 vs 引用、清单/分组/文件夹同表、软删除等容易误解的词 |
@@ -234,6 +248,17 @@ zhixing-electron/
 | 整库整理专用默认提示词 | 批量场景更克制：只规整排版、不重写句子 | `DEFAULT_AI_LIBRARY_PROMPT`（`src/shared/ai-note.ts`） |
 
 全流程冒烟见 `scripts/seedmonitor.mjs`：56 步，覆盖任务 / 笔记 / 工作流 / AI / 设置 / 右键菜单 / 拖拽 / 主题包。
+
+### 14.1 又一批（2026-10，见 §17）
+
+| 能力 | 说明 | 关键实现 |
+| --- | --- | --- |
+| 目录变化触发 | 盯一个目录，出现匹配的新文件就启动流程；中间文件与重复事件被挡掉 | `src/main/folder-trigger.ts`、`src/main/folder-watch-plan.ts` |
+| 剪贴板匹配触发 | 复制到匹配文本就启动流程（包含 / 正则）；与本机内存比对，不落库 | `src/shared/workflow-trigger.ts` 的 `matchesClipboard` |
+| 笔记数据库视图 | 属性列自动推导 + 表达式筛选 + 存为视图 | `src/shared/note-view.ts`、`src/renderer/src/components/NoteTable.tsx` |
+| 习惯打卡 | 连续天数 / 近 7 天 / 完成率，全部由打卡记录推导，不另存状态 | `src/shared/habit.ts`、`src/main/db/habit.ts` |
+| 任务用时排行 | 近 30 天番茄按任务聚合，未挂任务的分钟单列 | `src/shared/task-time.ts` |
+| 用户脚本 | `<数据目录>/scripts/` 里的脚本 → 命令面板 / 工作流动作；路径校验（纯文件名 + realpath） | `src/main/user-scripts.ts` |
 
 ## 15. 已决策不做（2026-10-04 复核）
 
@@ -266,16 +291,18 @@ zhixing-electron/
 duplicateWorkflowTemplate、「版本回滚」实际叫 restoreNoteRevision、「字号」的键名是 font_size。
 **先列出模块实际导出的符号，再对照文档**，才靠得住。
 
-## 17. 待办清单（已确认、未排期）
+## 17. 这一批补齐的缺口（2026-10-07）
 
-来自[竞品对比调研](docs/research/product-comparison-2026.md) §5 与内部讨论：
+来自[竞品对比调研](docs/research/product-comparison-2026.md) §5 与内部讨论；**这四项本轮全部落地**。
 
-| 项 | 说明 | 状态 |
+| 项 | 说明 | 落点 |
 | --- | --- | --- |
-| **工作流触发器（定时 / 系统事件）** | 给模板加触发器：每天定时、开机后、文件夹变化、剪贴板匹配 —— 把已有的节点编排接上「自动开始」。对标 Alfred Workflows / Apple 快捷指令的触发模型 | **未做（本轮明确推迟，落盘在此）** |
-| 笔记的数据库视图 | 依赖「保存的查询」与「笔记属性」（两项均已完成），让笔记按属性筛成看板 / 表格 | 未做 |
-| 习惯打卡 / 按任务累计用时 | 习惯可用「重复任务 + 连续天数」近似；用时统计在 `ReviewStats` 基础上补「按任务聚合」 | 未做 |
-| 用户脚本扩展点 | `<数据目录>/scripts/` 里的脚本作为命令面板 / 工作流动作（离线版 Extension API） | 未做 |
+| **工作流触发器补全** | 在既有的定时 / 任务状态 / 外部 HTTP 之外，补「目录里出现文件」与「剪贴板出现匹配文本」两类入口 | `shared/workflow-trigger.ts`、`main/folder-trigger.ts` + `folder-watch-plan.ts`、`WorkflowScheduleDialog` |
+| 笔记的数据库视图 | 把笔记按属性铺成表格：属性列自动推导（出现 ≥2 次的键才成列）+ 表达式筛选 + 存为视图 | `shared/note-view.ts`、`main/db/note-table.ts`、`components/NoteTable.tsx` |
+| 习惯打卡 | 独立的习惯条目 + 每日打卡：连续天数、近 7 天、完成率（分母按"创建以来"算，不是固定 30 天） | `shared/habit.ts`、`main/db/habit.ts`（schema v19）、`components/HabitCard.tsx` |
+| 按任务累计用时 | 回顾页「任务用时」：近 30 天番茄按任务聚合，没挂任务的分钟单列（它常常占比不小） | `shared/task-time.ts` 的 `summarizeTaskTime`，数据由 `main/db/review.ts` 的 `reviewStats` 带出 |
+| 用户脚本 | **脚本是知识库里的一种笔记类型**（`note.format = 'script'`，运行环境在私有列 `script_runtime`）：可打链、可被引用、有属性、能归到文件夹（含子文件夹分类）；新建走笔记树的类型菜单，编辑区的标题栏 / 工具栏 / 底部四栏信息区与其他笔记**完全一样**，只把正文换成代码编辑器 + 实时语法校验（只解析不执行） | `src/main/db/notes.ts`、`components/ScriptEditor.tsx`、`components/WorkflowStepDialog.tsx` |
+| 外部脚本目录 | `<数据目录>/scripts/` 里的 `.ps1/.cmd/.py/.js` 仍可被命令面板列出并运行（工作流动作也兼容旧的按文件名写法） | `main/user-scripts.ts`、设置页「集成 → 用户脚本」 |
 
 ### 17.1 已发布的能力
 
@@ -284,3 +311,8 @@ duplicateWorkflowTemplate、「版本回滚」实际叫 restoreNoteRevision、�
 | **保存的查询（智能清单）** | 任务页「智能清单…」下拉 + 「存为智能清单」按钮；表达式解析 `src/shared/query.ts`（`text:` / `tag:` / `list:` / `!done` / `priority>=n` / `due<=today` / `due=overdue` / `due=none`），存表 `saved_query`（私有表） |
 | **笔记结构化属性** | 笔记页右栏「属性」卡片（每行一条 `key: value`），落库 `note.props`（JSON 字符串，私有列） |
 | **系统级到点提醒** | 主进程 30 秒轮询 + Electron `Notification`（设置 → 任务与提醒里可关）；此前只有窗口内提醒卡片，主窗口收进托盘就等于没有提醒 |
+| **目录变化触发** | 工作流模板可盯一个目录（文件名通配，如 `*.md`）；中间文件（`~$` / `.tmp` / `.swp`）与 1.5 秒内的重复事件会被忽略 | 触发器对话框「目录变化触发」 |
+| **剪贴板匹配触发** | 复制到匹配的文本就启动流程（包含 / 正则两种模式），只看本机内存里的文本，不落库 | 触发器对话框「剪贴板匹配触发」 |
+| **笔记数据库视图** | 笔记页工具栏「数据库视图」：ag-grid 表格 + 表达式筛选（`text:` / `tag:` / `folder:` / `kind:` / `prop:键=值`），可存为视图 | `components/NoteTable.tsx` |
+| **习惯打卡** | 今日页卡片：一键记今天、点周条补记前几天、连续天数与近 30 天完成率 | `components/HabitCard.tsx` |
+| **用户脚本** | 脚本放进 `<数据目录>/scripts/` 即可在命令面板搜到并运行，也能作为工作流步骤；输出与退出码回到提示里 | 设置 → 集成 → 用户脚本 |

@@ -111,6 +111,53 @@
   height: 100%;
   border-radius: var(--radius-pill);
 }
+/* 任务用时排行：与标签分布同构（条 + 数值），但第一列要放任务标题、
+   末列要放「1 小时 20 分 · 3 次」，所以列宽不能沿用 .tagdist 的 72px —— 那会把标题切成两个字。 */
+/* 铺满卡片宽度：这里是"排名 + 条 + 数值"三列，条的绝对长度就是它在比的东西，
+   限宽会让最长的那条也只剩一小截，反而看不出差距。 */
+.timetop {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+.timetop__row {
+  display: grid;
+  /* 标题列**封顶**、条吃剩余：条的长度就是它在比的东西，被标题按比例分走就失去意义了。
+     标题超长走省略号（下面 .timetop__name 已经写了 ellipsis）。 */
+  grid-template-columns: minmax(90px, 200px) 1fr auto;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-aux);
+  border-radius: var(--radius-ctl);
+  transition: background-color var(--dur-instant) var(--ease-standard);
+}
+.timetop__row:hover {
+  background: var(--bg-hover);
+}
+.timetop__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.timetop__bar {
+  height: var(--size-8);
+  background: var(--bg-hover);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+.timetop__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+.timetop__meta {
+  white-space: nowrap;
+}
+
 .achv {
   list-style: none;
   margin: 0;

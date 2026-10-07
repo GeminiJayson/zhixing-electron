@@ -16,6 +16,8 @@ export * from './task-activity'
 export * from './notes'
 export * from './preview'
 export * from './review'
+export * from './habit'
+export * from './note-table'
 export * from './settings'
 export * from './task-ops'
 export * from './tasks'
@@ -41,6 +43,9 @@ import {
   createBlankOfficeFile,
 } from './preview'
 import { dayOf, todayRoots, reviewStats } from './review'
+import { ensureScriptsFolder } from './notes'
+import { archiveHabit, deleteHabit, listHabits, saveHabit, setHabitDay, toggleHabitDay } from './habit'
+import { noteTableRows } from './note-table'
 import { listSettings, setSetting, setSettings, backupDatabase } from './settings'
 import { autoBackup, listBackups, restoreBackup } from './backup'
 import { globalSearch, searchTouch } from './search'
@@ -183,6 +188,13 @@ const WRITE_DOMAINS: Record<string, DataDomain | DataDomain[]> = {
   'db:rollRecurringToday': 'task',
   'db:resumeDueToday': 'task',
   'db:recordPomodoro': 'task',
+  // 习惯打卡挂在 task 域：今日页本来就订阅 task，多开一个域只会多一条没有独立订阅者的
+  // 广播通道（DataDomain 是联合类型，加一个值要动 shared/events 与所有 switch）
+  'db:saveHabit': 'task',
+  'db:archiveHabit': 'task',
+  'db:deleteHabit': 'task',
+  'db:toggleHabitDay': 'task',
+  'db:setHabitDay': 'task',
   'db:dismissReminder': 'task',
   'db:snoozeReminder': 'task',
   // 导入是整库替换：只广播 task 会留下
@@ -193,9 +205,14 @@ const WRITE_DOMAINS: Record<string, DataDomain | DataDomain[]> = {
   'db:importMarkdownFromPath': 'note',
 }
 
-/** 数据变更后的额外通知（托盘标题等主进程侧 UI 用），由 main 注入，避免反向依赖。 */
-let dataChangedHook: (() => void) | null = null
-export function setDataChangedHook(fn: () => void): void {
+/**
+ * 数据变更后的额外通知（托盘标题、目录监视等主进程侧反应），由 main 注入，避免反向依赖。
+ *
+ * 带上 domain：调用方常只关心某一域（例如只有工作流模板变了才需要重建目录监视），
+ * 没有它就只能"每次变更都重算一遍"。
+ */
+let dataChangedHook: ((domain: DataDomain) => void) | null = null
+export function setDataChangedHook(fn: (domain: DataDomain) => void): void {
   dataChangedHook = fn
 }
 
@@ -214,7 +231,7 @@ export function broadcastDataChanged(domain: DataDomain): void {
     }
   }
   try {
-    dataChangedHook?.()
+    dataChangedHook?.(domain)
   } catch (err) {
     console.error('[db] 数据变更钩子失败', err)
   }
@@ -331,6 +348,19 @@ export function registerDbHandlers(): void {
       recordPomodoro(taskId, minutes, completed, reason ?? null)
   )
   handle('db:pomodoroToday', () => pomodoroToday())
+  // 习惯打卡：读一次给整个视图（连续天数与完成率由 shared/habit.ts 推导）
+  handle('db:listHabits', () => listHabits())
+  // 笔记数据库视图：表格要的列一次取齐（属性 / 知识类型 / 标签 / 文件夹）
+  handle('db:noteTableRows', () => noteTableRows())
+  // 新建脚本笔记时给它一个默认落点（幂等：已有同名顶层文件夹就复用）
+  handle('db:ensureScriptsFolder', () => ensureScriptsFolder())
+  handle('db:saveHabit', (_e, input: { id?: number; name: string; icon?: string; color?: string }) =>
+    saveHabit(input ?? { name: '' })
+  )
+  handle('db:archiveHabit', (_e, id: number, archived: boolean) => archiveHabit(id, archived))
+  handle('db:deleteHabit', (_e, id: number) => deleteHabit(id))
+  handle('db:toggleHabitDay', (_e, id: number, day: string) => toggleHabitDay(id, day))
+  handle('db:setHabitDay', (_e, id: number, day: string, done: boolean) => setHabitDay(id, day, done))
   /**
    * 到点提醒的**只读**查询。
    *

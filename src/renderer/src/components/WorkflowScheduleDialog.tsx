@@ -11,7 +11,7 @@ import {
   type WorkflowSchedule,
   type WorkflowTrigger,
 } from '@shared/workflow-trigger'
-import { Copy, Plus, Timer, Trash2, X } from '@renderer/lib/icons'
+import { ClipboardList, Copy, FolderPlus, Plus, Timer, Trash2, X } from '@renderer/lib/icons'
 
 /** 任务状态的可选项：与任务模块的取值一一对应 */
 const STATUS_OPTIONS = [
@@ -57,6 +57,13 @@ export function WorkflowScheduleDialog({
   const httpTokens = triggers.filter((t) => t.kind === 'http').map((t) => t.token ?? '')
   const hookUrl = (token: string): string =>
     triggerPort ? `http://127.0.0.1:${triggerPort}/hook/${token}` : `http://127.0.0.1:<端口>/hook/${token}`
+
+  /** 目录只能走系统对话框选：手敲盘符路径既容易错，也没法当场验证存在性 */
+  const pickFolder = async (index: number): Promise<void> => {
+    const dir = await window.zhixing.db.pickDirectory()
+    if (!dir) return
+    setTriggers((prev) => prev.map((x, j) => (j === index ? { ...x, path: dir } : x)))
+  }
 
   useEffect(() => {
     if (!copied) return
@@ -147,6 +154,22 @@ export function WorkflowScheduleDialog({
                 <button className="text-btn" onClick={addHttp} title="生成一个外部调用令牌">
                   <Plus size={13} /> 外部触发令牌
                 </button>
+                <button
+                  className="text-btn"
+                  onClick={() => setTriggers((prev) => [...prev, { kind: 'folder', path: '', pattern: '' }])}
+                  title="盯一个目录：里面出现匹配的文件就启动本流程"
+                >
+                  <FolderPlus size={13} /> 目录变化触发
+                </button>
+                <button
+                  className="text-btn"
+                  onClick={() =>
+                    setTriggers((prev) => [...prev, { kind: 'clipboard', pattern: '', mode: 'contains' }])
+                  }
+                  title="复制到匹配的文本就启动本流程"
+                >
+                  <ClipboardList size={13} /> 剪贴板匹配触发
+                </button>
               </span>
             </div>
 
@@ -203,6 +226,70 @@ export function WorkflowScheduleDialog({
                     <Trash2 size={13} />
                   </button>
                 </div>
+              ) : t.kind === 'folder' ? (
+                <div key={i} className="form-row wf-rule">
+                  <input
+                    className="field"
+                    readOnly
+                    value={t.path ?? ''}
+                    placeholder="（还没选目录 —— 保存时会被丢掉）"
+                    aria-label="盯哪个目录"
+                  />
+                  <button className="text-btn" onClick={() => void pickFolder(i)}>
+                    选目录
+                  </button>
+                  <input
+                    className="field"
+                    value={t.pattern ?? ''}
+                    placeholder="*.md（留空 = 任何文件）"
+                    aria-label="文件名匹配"
+                    onChange={(e) =>
+                      setTriggers((prev) => prev.map((x, j) => (j === i ? { ...x, pattern: e.target.value } : x)))
+                    }
+                  />
+                  <button
+                    className="icon-btn icon-btn--danger"
+                    title="删掉这个触发"
+                    aria-label="删掉这个触发"
+                    onClick={() => setTriggers((prev) => prev.filter((_, j) => j !== i))}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ) : t.kind === 'clipboard' ? (
+                <div key={i} className="form-row wf-rule">
+                  <Select
+                    className="field"
+                    ariaLabel="怎么匹配剪贴板"
+                    value={t.mode ?? 'contains'}
+                    onChange={(v) =>
+                      setTriggers((prev) =>
+                        prev.map((x, j) => (j === i ? { ...x, mode: v as 'contains' | 'regex' } : x))
+                      )
+                    }
+                    options={[
+                      { value: 'contains', label: '包含' },
+                      { value: 'regex', label: '匹配正则' },
+                    ]}
+                  />
+                  <input
+                    className="field"
+                    value={t.pattern ?? ''}
+                    placeholder={t.mode === 'regex' ? '^#\\d+\\s' : '复制的内容里有它就启动'}
+                    aria-label="剪贴板匹配内容"
+                    onChange={(e) =>
+                      setTriggers((prev) => prev.map((x, j) => (j === i ? { ...x, pattern: e.target.value } : x)))
+                    }
+                  />
+                  <button
+                    className="icon-btn icon-btn--danger"
+                    title="删掉这个触发"
+                    aria-label="删掉这个触发"
+                    onClick={() => setTriggers((prev) => prev.filter((_, j) => j !== i))}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
               ) : null
             )}
 
@@ -217,8 +304,11 @@ export function WorkflowScheduleDialog({
           </div>
 
           <p className="u-aux">
-            任务状态触发与外部令牌是「启动本流程」的入口；要拿流程**内部**某一步的结果做关卡，
+            这四种触发都是「启动本流程」的入口；要拿流程**内部**某一步的结果做关卡，
             用画布上那个条件节点（它可以按上一步的结果或日志判定）。
+            <br />
+            目录变化只看文件名（中间文件如 <code>~$</code> / <code>.tmp</code> 会被忽略），
+            应用没运行时不会补触发；剪贴板匹配在本机内存里比对，复制的内容不会落库。
           </p>
         </div>
         <footer className="modal__foot">

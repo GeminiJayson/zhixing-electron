@@ -76,6 +76,20 @@ function boltPoints(r: number, scale = 1): string {
  * 段落引用双菱形、待建链接是虚线环加号、文件夹是深浅两片。
  */
 export function iconShapes(kind: string, r: number): IconShape[] {
+  /**
+   * 用户脚本：一个终端窗口（外框 + 三行"输入"）。
+   *
+   * 脚本是 note 表里的一种格式，图谱上理应一眼可辨 —— 与笔记树上那个终端图标同一个意象，
+   * 两处的"这是脚本"长得一样。
+   */
+  if (kind === 'script') {
+    return [
+      { tag: 'rect', x: -r * 0.95, y: -r * 0.72, width: r * 1.9, height: r * 1.44, rx: r * 0.26, tone: 's1' },
+      { tag: 'rect', x: -r * 0.6, y: -r * 0.36, width: r * 0.72, height: r * 0.14, rx: r * 0.07, tone: 's3' },
+      { tag: 'rect', x: -r * 0.6, y: -r * 0.02, width: r * 1.2, height: r * 0.14, rx: r * 0.07, tone: 's2' },
+      { tag: 'rect', x: -r * 0.6, y: r * 0.32, width: r * 0.9, height: r * 0.14, rx: r * 0.07, tone: 's2' },
+    ]
+  }
   if (kind === 'task') {
     return [
       { tag: 'polygon', points: starPoints(r), tone: 's1' },

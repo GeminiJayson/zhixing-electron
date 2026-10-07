@@ -1,8 +1,31 @@
-/** 主进程与渲染进程共享的类型定义。字段与现有 SQLite schema v12 对齐。 */
+/** 主进程与渲染进程共享的类型定义。字段与现有 SQLite schema v18 对齐。 */
+
+import type { TaskTimeSummary } from './task-time'
 
 export type TaskStatus = 'todo' | 'doing' | 'waiting' | 'done' | 'abandoned'
 export type RepeatPeriod = 'none' | 'daily' | 'weekly' | 'monthly' | 'custom'
-export type NoteFormat = 'markdown' | 'richtext' | 'word' | 'excel' | 'link'
+export type NoteFormat = 'markdown' | 'richtext' | 'word' | 'excel' | 'link' | 'script'
+
+/** 脚本笔记的运行环境（只有 format === 'script' 时有意义） */
+/**
+ * 番茄钟上报给浮窗的状态。
+ *
+ * 计时宿主是番茄钟小窗（见 PomodoroWindowApp）—— 浮窗只是**显示方**：
+ * 小窗收起后用户看不到它，倒计时就落到悬浮表情（球）或浮窗标题行上。
+ */
+export interface PomodoroTick {
+  phase: 'focus' | 'break'
+  /** 这一段是长休息 */
+  long?: boolean
+  /** 剩余秒数 */
+  remain: number
+  running: boolean
+  title: string
+  /** 小窗是否收起：只有收起时浮窗才显示倒计时（展开后它自己就看得见，浮窗让位） */
+  collapsed: boolean
+}
+
+export type ScriptNoteRuntime = 'powershell' | 'cmd' | 'python' | 'node'
 export type FlashStatus = 'inbox' | 'archived' | 'converted'
 
 export interface Task {
@@ -46,6 +69,8 @@ export interface Note {
   title: string
   content_md: string
   format: NoteFormat
+  /** 脚本笔记的运行环境（其余格式为空）；见 ScriptNoteRuntime */
+  script_runtime?: ScriptNoteRuntime | null
   pinned: boolean
   word_count: number
   created_at: string
@@ -72,6 +97,8 @@ export interface ReviewStats {
   streak: number
   achievements: { name: string; desc: string; unlocked: boolean }[]
   tagDistribution: { name: string; color: string; count: number }[]
+  /** 近 30 天按任务聚合的番茄用时（没挂任务的分钟单列出来） */
+  taskTime: TaskTimeSummary
 }
 
 export interface WorkflowNodePayload {

@@ -25,6 +25,7 @@ function rememberCommand(id: string): void {
   }
 }
 import { Hash, Inbox, NotebookPen, Plus, Search, SquareCheck, TerminalSquare } from '@renderer/lib/icons'
+import type { UserScript } from '@shared/user-scripts'
 import { NAV_ITEMS, type PageKey } from '../nav'
 
 interface Props {
@@ -60,7 +61,7 @@ interface Item {
   key: string
   label: string
   hint: string
-  icon: 'page' | 'note' | 'action' | 'task' | 'flash' | 'tag' | 'command'
+  icon: 'page' | 'note' | 'action' | 'task' | 'flash' | 'tag' | 'command' | 'script'
   run: () => void | Promise<void>
   /** 命中记录（MRU）：非命令的数据条目才有 */
   mru?: { kind: string; id: number }
@@ -91,8 +92,26 @@ function backupsDirOf(dbPath: string): string {
 export function CommandPalette({ open, onClose, onNavigate, onOpenNote, onQuickAdd, onNotice }: Props) {
   const [q, setQ] = useState('')
   const [hits, setHits] = useState<SearchResult | null>(null)
+  const [scripts, setScripts] = useState<UserScript[]>([])
   const [active, setActive] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  // 用户脚本每次打开面板重扫一次：往目录里丢个脚本就能立刻搜到，不用重启应用
+  useEffect(() => {
+    if (!open) return
+    let alive = true
+    void window.zhixing.db
+      .listUserScripts()
+      .then((list) => {
+        if (alive) setScripts(list)
+      })
+      .catch(() => {
+        if (alive) setScripts([])
+      })
+    return () => {
+      alive = false
+    }
+  }, [open])
 
   useEffect(() => {
     if (!open) return
@@ -149,6 +168,18 @@ export function CommandPalette({ open, onClose, onNavigate, onOpenNote, onQuickA
     }
   }
 
+  /** 跑一个用户脚本：输出截最后几行提示 —— 刷屏的脚本不该把 Toast 撑爆 */
+  const runScript = async (s: UserScript): Promise<void> => {
+    onNotice?.('正在运行「' + s.name + '」…')
+    try {
+      const res = await window.zhixing.db.runUserScript(s.file)
+      const tail = res.output.trim().split('\n').slice(-3).join(' / ').slice(0, 200)
+      onNotice?.(s.name + '：' + res.message + (tail ? ' · ' + tail : ''))
+    } catch (err) {
+      onNotice?.('运行失败：' + (err as Error).message)
+    }
+  }
+
   const items = useMemo<Item[]>(() => {
     const query = q.trim().toLowerCase()
     const out: Item[] = []
@@ -196,6 +227,31 @@ export function CommandPalette({ open, onClose, onNavigate, onOpenNote, onQuickA
       })
     }
 
+    // 2) 用户脚本：文件放进 <数据目录>/scripts/ 就会出现在这里
+    for (const s of scripts) {
+      const hay = (s.name + ' ' + s.description + ' ' + s.runtime).toLowerCase()
+      if (query && !hay.includes(query)) continue
+      out.push({
+        key: 'script-' + s.file,
+        label: s.name,
+        hint: '脚本 · ' + (s.description || s.runtime),
+        icon: 'script',
+        run: () => runScript(s),
+      })
+    }
+    if (!query || '打开用户脚本目录'.includes(query)) {
+      out.push({
+        key: 'open-scripts-dir',
+        label: '打开用户脚本目录',
+        hint: '脚本 · 把 .ps1 / .cmd / .py / .js 放进去就能在这里搜到',
+        icon: 'script',
+        run: async () => {
+          const r = await window.zhixing.db.openScriptsDir()
+          onNotice?.(r.ok ? '已打开 ' + r.message : r.message)
+        },
+      })
+    }
+
     if (hits) {
       for (const h of hits.task) {
         out.push({
@@ -239,7 +295,7 @@ export function CommandPalette({ open, onClose, onNavigate, onOpenNote, onQuickA
     }
     return out.slice(0, 30)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, hits, onNavigate, onOpenNote, onQuickAdd, onNotice])
+  }, [q, hits, scripts, onNavigate, onOpenNote, onQuickAdd, onNotice])
 
   // 退场：关闭时先播 150ms 淡出再卸载；动效关闭时 usePresence 会同步卸载（不等动画）
   const { mounted, leaving } = usePresence(open, 150)
@@ -312,7 +368,7 @@ export function CommandPalette({ open, onClose, onNavigate, onOpenNote, onQuickA
                     <GroupIcon size={14} aria-hidden />
                   ) : it.icon === 'note' ? (
                     <NotebookPen size={14} aria-hidden />
-                  ) : it.icon === 'command' ? (
+                  ) : it.icon === 'command' || it.icon === 'script' ? (
                     <TerminalSquare size={14} aria-hidden />
                   ) : it.icon === 'action' ? (
                     <Plus size={14} aria-hidden />

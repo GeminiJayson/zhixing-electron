@@ -5,6 +5,7 @@ import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as Reac
 import {
   Database,
   ExternalLink,
+  LayoutGrid,
   FilePlus2,
   FileText,
   Link2,
@@ -18,6 +19,9 @@ import {
 } from '@renderer/lib/icons'
 import { subscribeDomain } from '@shared/events'
 import { Select } from '../components/Select'
+import { ScriptEditor } from '../components/ScriptEditor'
+import { scriptTemplate, type ScriptProblem } from '@shared/user-scripts'
+import { SCRIPT_RUNTIMES, normalizeScriptRuntime } from '@shared/workflow-action'
 import { useDialog } from '../components/Dialogs'
 import type { Note, NoteFolder } from '@shared/types'
 import { parseLinkItems, type NoteLinkItem } from '@shared/note-links'
@@ -26,6 +30,8 @@ import { MarkdownView } from '../components/MarkdownView'
 import { isMotionFull } from '../lib/presence'
 // Excel 网格懒加载：ag-grid 体积可观，只有真的打开 Excel 笔记才下载
 const XlsxGrid = lazy(() => import('../components/XlsxGrid'))
+// 数据库视图同理：ag-grid 只在用户真的切过去时才下载
+const NoteTable = lazy(() => import('../components/NoteTable'))
 import { NoteHistory } from '../components/NoteHistory'
 import { NoteLinksPanel } from '../components/NoteLinksPanel'
 import { NotePicker } from '../components/NotePicker'
@@ -83,13 +89,19 @@ const TABS_KEY = 'zhixing.noteTabs'
  * 残留、可能记着一个已经不存在的笔记 id。所以一律过滤成合法形态 ——
  * 只留正整数、去重、截到上限，`active` 必须真的在列表里。
  */
-function readStoredTabs(): { ids: number[]; active: number | null } {
+/** 合法的 tab id：笔记是正整数，脚本是 `script:<文件名>`。其余一律丢掉。 */
+function isTabId(x: unknown): x is number | string {
+  if (Number.isInteger(x) && (x as number) > 0) return true
+  return typeof x === 'string' && x.startsWith('script:') && x.length > 'script:'.length
+}
+
+function readStoredTabs(): { ids: (number | string)[]; active: number | string | null } {
   try {
     const raw = JSON.parse(localStorage.getItem(TABS_KEY) ?? '') as { ids?: unknown; active?: unknown }
     const ids = Array.isArray(raw?.ids)
-      ? [...new Set(raw.ids.filter((x): x is number => Number.isInteger(x) && (x as number) > 0))].slice(-TAB_MAX)
+      ? [...new Set(raw.ids.filter(isTabId))].slice(-TAB_MAX)
       : []
-    const active = Number.isInteger(raw?.active) && ids.includes(raw.active as number) ? (raw.active as number) : null
+    const active = isTabId(raw?.active) && ids.includes(raw.active) ? raw.active : null
     return { ids, active }
   } catch {
     return { ids: [], active: null }
@@ -123,8 +135,14 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     // 只在首次渲染算一次：此后 initialNoteId 的变化由下面的 effect 处理
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  const [openTabs, setOpenTabs] = useState<number[]>(bootTabs.ids)
-  const [selectedId, setSelectedId] = useState<number | null>(bootTabs.active)
+  const [openTabs, setOpenTabs] = useState<(number | string)[]>(bootTabs.ids)
+  /**
+   * 当前 tab：笔记是数字 id，脚本是 `script:<文件名>`。两种混在同一份列表里，
+   * 下面两个派生值把"当前到底是什么"分开 —— 笔记那套逻辑（自动保存、双链、属性）只认 noteId。
+   */
+  const [selectedId, setSelectedId] = useState<number | string | null>(bootTabs.active)
+  /** 当前选中的**笔记** id；选中脚本时是 null。当作笔记用的地方一律走它。 */
+  const noteId = typeof selectedId === 'number' ? selectedId : null
   /** 笔记列表是否已经拉过一次：tab 收敛要等它，否则会把恢复出来的 id 全当「已删除」清掉。 */
   const [notesLoaded, setNotesLoaded] = useState(false)
   const [current, setCurrent] = useState<Note | null>(null)
@@ -167,6 +185,18 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   const [linksExpanded, setLinksExpanded] = useState(false)
   /** 全屏编辑：只留笔记正文（隐藏页面标题、笔记树、信息区，App 侧同时收起导航） */
   const [zen, setZen] = useState(false)
+  // 数据库视图（把笔记铺成表格按属性筛）：与编辑器互斥显示，但**不卸载**编辑器 ——
+  // 切回来时未保存的草稿与滚动位置都还在
+  const [dbView, setDbView] = useState(false)
+  /** 脚本笔记的语法校验结果（只解析不执行）；由下面那个防抖 effect 统一跑 */
+  const [scriptProblems, setScriptProblems] = useState<ScriptProblem[]>([])
+  const [scriptChecking, setScriptChecking] = useState(false)
+  /**
+   * 脚本笔记：正文是代码，**其余一切与别的笔记相同** —— 标题栏（类型 / 语法 / 保存三个胶囊）、
+   * 工具栏、底部的四栏信息区（属性 / 反链 / 引用 / 归属）都走同一套。
+   * 这正是「脚本是知识库的一种类型」的意思：它不是另一种页面。
+   */
+  const scriptEditing = current?.format === 'script'
   /**
    * 笔记树是否收起。与任务页、工作流页同一个约定：纯界面偏好，
    * 存 localStorage（不该跟着数据一起被导出 / 同步）。
@@ -249,7 +279,8 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   const sheetBodyRef = useRef<HTMLDivElement | null>(null)
   const bodyFadeRef = useRef<Animation | null>(null)
   /** 上一次做淡入的笔记 id，null 表示还没进过这篇（首次进入不播，页面本身已有进场动画） */
-  const fadeFromRef = useRef<number | null>(null)
+  /** 上一个激活的 tab id（笔记数字 / 脚本字符串都算）——只用来判断"是不是换了一篇" */
+  const fadeFromRef = useRef<number | string | null>(null)
   const [dirty, setDirty] = useState(false)
   /**
    * 装载时的正文基线。
@@ -432,6 +463,48 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     void window.zhixing.db.noteTemplates().then(setTemplates)
   }, [load])
 
+  /**
+   * 脚本笔记的语法校验：停手 600ms 跑一次（每次都要起一个解析进程，所以要等用户停下来）。
+   *
+   * 由**页面**统一发起，而不是编辑器自己跑：标题栏的胶囊与正文底部的状态条读的是同一份结果，
+   * 各跑一次就会出现"胶囊说通过、状态条说过不去"这种两条时间线。
+   */
+  /**
+   * 切换这篇脚本的运行环境。
+   *
+   * 运行时**不是**"笔记类型"（那在新建时定死），它随时可能改：先写 PowerShell 试，
+   * 发现要调 python 再换过去。所以它落在编辑区、即时保存，并立刻按新运行时重跑校验。
+   */
+  const changeScriptRuntime = async (next: string): Promise<void> => {
+    if (noteId == null) return
+    const runtime = normalizeScriptRuntime(next)
+    await window.zhixing.db.saveNote(noteId, { script_runtime: runtime })
+    setCurrent((prev) => (prev ? { ...prev, script_runtime: runtime } : prev))
+    onNotice('运行环境已切换为 ' + (SCRIPT_RUNTIMES.find((r) => r.value === runtime)?.label ?? runtime))
+  }
+
+  const scriptCheckSeq = useRef(0)
+  useEffect(() => {
+    if (!scriptEditing || noteId == null) {
+      setScriptProblems([])
+      setScriptChecking(false)
+      return
+    }
+    setScriptChecking(true)
+    const seq = ++scriptCheckSeq.current
+    const t = window.setTimeout(() => {
+      void window.zhixing.db.checkNoteScript(noteId, content).then((r) => {
+        // 慢的那次不该覆盖快的那次（连续输入时总有先后）
+        if (seq !== scriptCheckSeq.current) return
+        setScriptProblems(r.problems)
+        setScriptChecking(false)
+      })
+    }, 600)
+    return () => window.clearTimeout(t)
+    // 依赖里带上 script_runtime：换了运行环境就是用另一个解析器，必须重跑
+  }, [scriptEditing, noteId, content, current?.script_runtime])
+
+  // ---------------------------------------------------------------- 用户脚本
   // 跨页跳转：带着笔记 id 进来时打开（或激活）它。首次挂载那一次已经并进 bootTabs，
   // 这里负责「人已经在笔记页、又被别处跳过来」的情况。
   useEffect(() => {
@@ -440,9 +513,11 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialNoteId])
 
-  // 打开笔记：装载正文、出链、反链与归属任务
+  // 打开笔记：装载正文、出链、反链与归属任务。
+  // 用 noteId 而不是 selectedId：选中的是脚本时这里应当走"清空"分支，
+  // 而不是拿脚本的字符串 id 去查笔记。
   useEffect(() => {
-    if (selectedId == null) {
+    if (noteId == null) {
       setCurrent(null)
       setTitle('')
       setContent('')
@@ -452,8 +527,8 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     }
     let alive = true
     void (async () => {
-      const note = await window.zhixing.db.note(selectedId)
-      void loadLinks(selectedId)
+      const note = await window.zhixing.db.note(noteId)
+      void loadLinks(noteId)
       if (!alive || !note) return
       setCurrent(note)
       setTitle(note.title)
@@ -501,10 +576,10 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   // 别的页面改了笔记（新建/删除/改标题）会影响反链；这里只更新反链与归属，
   // 不重载正文 —— 当前笔记可能正在编辑，整篇重载会覆盖输入。
   useEffect(() => {
-    if (selectedId == null) return
+    if (noteId == null) return
     return subscribeDomain(['note'], () => {
-      void reloadBacklinks(selectedId)
-      void reloadAttachedTasks(selectedId)
+      void reloadBacklinks(noteId)
+      void reloadAttachedTasks(noteId)
       // 标签是 note 域的数据（note_tag）：别的页面改了标签颜色 / 关联，这里要跟着换
       void loadNoteTags()
     })
@@ -587,22 +662,22 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
    */
   /** 附件：选文件 → 主进程复制进数据目录并落库 → 在正文末尾补一条链接 */
   const handleAddAttachment = async (): Promise<void> => {
-    if (selectedId == null) {
+    if (noteId == null) {
       onNotice('先在左侧选一篇笔记')
       return
     }
-    const res = await window.zhixing.db.pickAttachment(selectedId)
+    const res = await window.zhixing.db.pickAttachment(noteId)
     if (!res.ok) {
       onNotice(res.message)
       return
     }
-    const note = notes.find((n) => n.id === selectedId)
+    const note = notes.find((n) => n.id === noteId)
     const lines = res.paths.map((p) => {
       const name = p.split(/[\\/]/).pop() ?? p
       return `📎 [${name}](file:///${p.replace(/\\/g, '/')})`
     })
     const next = `${note?.content_md ?? ''}\n\n${lines.join('\n')}\n`
-    await window.zhixing.db.saveNote(selectedId, { content_md: next })
+    await window.zhixing.db.saveNote(noteId, { content_md: next })
     setContent(next)
     setDirty(false)
     await load()
@@ -621,6 +696,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   const selectNote = useCallback(
     async (id: number | null): Promise<void> => {
       await flushPending()
+      // 选中笔记就把当前 tab 切成它（脚本 tab 自然让位，不用另外清理）
       if (id == null) {
         setSelectedId(null)
         return
@@ -642,12 +718,13 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
    * 的输入），**删除笔记时必须传 false** —— 那篇已经从库里没了，落盘会写一篇本不该存在的笔记。
    */
   const dropTab = useCallback(
-    async (id: number, flush: boolean): Promise<void> => {
+    async (id: number | string, flush: boolean): Promise<void> => {
       const idx = openTabs.indexOf(id)
       if (idx < 0) return
       const next = openTabs.filter((x) => x !== id)
       if (id === selectedId) {
-        if (flush) await flushPending()
+        // 只有笔记需要落盘：脚本是改完就自动保存的，没有"未落盘的正文"这回事
+        if (flush && typeof id === 'number') await flushPending()
         setSelectedId(next[idx] ?? next[idx - 1] ?? null)
       }
       setOpenTabs(next)
@@ -657,7 +734,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
 
   /** 给 tab 条用的关闭入口（事件回调不 await，包一层）。 */
   const handleCloseTab = useCallback(
-    (id: number): void => {
+    (id: number | string): void => {
       void dropTab(id, true)
     },
     [dropTab]
@@ -669,7 +746,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     if (!notesLoaded) return
     const alive = new Set(notes.map((n) => n.id))
     setOpenTabs((prev) => {
-      const next = prev.filter((id) => alive.has(id))
+      const next = prev.filter((id) => alive.has(Number(id)))
       return next.length === prev.length ? prev : next
     })
   }, [notes, notesLoaded])
@@ -831,6 +908,9 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
         })
         if (target === null) return
         body = target.trim()
+      } else if (createFormat === 'script') {
+        // 脚本笔记：正文就是脚本本身。给一段能直接跑的骨架（第一行是 desc）
+        body = scriptTemplate('powershell')
       } else if (createFormat === 'word' || createFormat === 'excel') {
         const target = await dialog.prompt({
           title: createFormat === 'word' ? '新建 Word 笔记' : '新建 Excel 笔记',
@@ -846,7 +926,14 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
           else onNotice(blank.message)
         }
       }
-      const n = await window.zhixing.db.createNote(title, folderId, body, createFormat)
+      // 脚本默认落在「用户脚本」文件夹（顶层、没有就建一个）——
+      // 用户从「全部笔记」的 + 新建时也能一眼找到它；它就是个普通文件夹，随便挪。
+      let target = folderId
+      if (createFormat === 'script' && folderId === null) {
+        const folder = await window.zhixing.db.ensureScriptsFolder()
+        target = folder?.id ?? null
+      }
+      const n = await window.zhixing.db.createNote(title, target, body, createFormat)
       if (!n) return
       await load()
       setSelectedId(n.id)
@@ -871,24 +958,24 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
 
   /** 点击悬空 [[标题]]：按标题新建并绑定该引用。 */
   const handleCreateFromLink = async (linkTitle: string): Promise<void> => {
-    if (selectedId == null) return
-    const dst = await window.zhixing.db.materializeDangling(selectedId, linkTitle)
+    if (noteId == null) return
+    const dst = await window.zhixing.db.materializeDangling(noteId, linkTitle)
     if (dst == null) return
     onNotice(`已创建并绑定「${linkTitle}」`)
     await load()
-    reloadOutLinks(selectedId)
+    reloadOutLinks(noteId)
     await selectNote(dst)
   }
 
   /** 主动建引用。 */
   const handleAddReference = async (): Promise<void> => {
-    if (selectedId == null) return
+    if (noteId == null) return
     const target = await dialog.prompt({
       title: '添加引用链接',
       label: '笔记标题（不存在则建「待建」链接）',
     })
     if (!target?.trim()) return
-    const status = await window.zhixing.db.addReferenceLink(selectedId, target.trim())
+    const status = await window.zhixing.db.addReferenceLink(noteId, target.trim())
     const msg =
       status === 'added'
         ? `已建立引用 →「${target.trim()}」`
@@ -902,15 +989,15 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                 ? '不能链接到笔记自身'
                 : '目标不可用（不存在或已删除）'
     onNotice(msg)
-    reloadOutLinks(selectedId)
+    reloadOutLinks(noteId)
   }
 
   /** 关联到任务。这是**引用**关系，不是归属 —— 见 docs/specs/ownership-vs-reference.md */
   const handleAttachTask = async (taskId: number, taskTitle: string): Promise<void> => {
-    if (selectedId == null) return
-    const added = await window.zhixing.db.linkTaskNote(taskId, selectedId)
+    if (noteId == null) return
+    const added = await window.zhixing.db.linkTaskNote(taskId, noteId)
     onNotice(added ? `已把本笔记关联到任务「${taskTitle}」` : `本笔记已关联任务「${taskTitle}」，未重复归属`)
-    reloadAttachedTasks(selectedId)
+    reloadAttachedTasks(noteId)
   }
 
   /**
@@ -923,11 +1010,11 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     x: number
     y: number
   }): Promise<void> => {
-    if (selectedId == null) return
-    const links = await window.zhixing.db.contextsForNote(selectedId)
+    if (noteId == null) return
+    const links = await window.zhixing.db.contextsForNote(noteId)
     const hit = links.find((l) => l.block_key === info.blockKey)
     if (hit) {
-      const n = await window.zhixing.db.unlinkTaskNoteBlock(hit.task_id, selectedId, info.blockKey)
+      const n = await window.zhixing.db.unlinkTaskNoteBlock(hit.task_id, noteId, info.blockKey)
       onNotice(n ? '已解除这段文字与任务的关联' : '这段文字没有关联任务')
       setReloadToken((t) => t + 1)
       return
@@ -938,10 +1025,10 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
 
   /** 把右键选中的那一段挂到任务上。 */
   const handleAttachBlock = async (taskId: number, taskTitle: string): Promise<void> => {
-    if (selectedId == null || !blockDraft) return
+    if (noteId == null || !blockDraft) return
     const res = await window.zhixing.db.linkTaskNoteBlock(
       taskId,
-      selectedId,
+      noteId,
       blockDraft.blockKey,
       blockDraft.text.slice(0, 120)
     )
@@ -1084,7 +1171,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     放在这里而不是组件开头：它要用到 load，而 load 是后面才定义的 const。
   */
   const { propItems, propCount, propNew, setPropNew, addProp, removeProp } = useNoteProps({
-    noteId: selectedId,
+    noteId,
     rawProps: current?.props,
     onSaved: load,
     onNotice,
@@ -1208,6 +1295,27 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
 
   /** 编辑区的操作组：回答「怎么编辑这一篇」，所以归工具栏，且一律排在左侧。 */
   const editorActions: ReactNode[] = [
+    // 脚本笔记：语法检查是这一篇特有的动作，与「预览 / 整理」并列同一组
+    ...(scriptEditing
+      ? [
+          <button
+            key="check"
+            className="text-btn"
+            title="只解析，不执行：PowerShell / Python / Node 各用各自的解析器，cmd 走引号与括号检查"
+            onClick={() => {
+              if (noteId == null) return
+              setScriptChecking(true)
+              void window.zhixing.db.checkNoteScript(noteId, content).then((r) => {
+                setScriptProblems(r.problems)
+                setScriptChecking(false)
+                onNotice(r.message)
+              })
+            }}
+          >
+            <Morph icon={IconData.Check} size={13} /> <span className="tb-label">检查语法</span>
+          </button>,
+        ]
+      : []),
     <button key="preview" className="text-btn" aria-pressed={preview} onClick={() => setPreview((v) => !v)}>
       <Morph icon={preview ? IconData.Pencil : IconData.Eye} size={13} />
       <span className="tb-label">{preview ? '编辑' : '预览'}</span>
@@ -1252,6 +1360,10 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   const tabItems: NoteTab[] = useMemo(
     () =>
       openTabs.map((id) => {
+        // 脚本 tab：标题就是文件名（扩展名也算信息，用户靠它认类型）
+        if (typeof id === 'string') {
+          return { id, title: id.slice(7), format: 'script' as const, unsaved: false }
+        }
         const n = notes.find((x) => x.id === id)
         return {
           id,
@@ -1516,6 +1628,15 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
             <FilePlus2 size={14} /> 添加附件
           </button>,
           <button
+            key="dbtable"
+            className={'text-btn' + (dbView ? ' is-on' : '')}
+            aria-pressed={dbView}
+            title="数据库视图：把笔记铺成表格，按属性 / 标签 / 类型筛（双击一行回到编辑器）"
+            onClick={() => setDbView((v) => !v)}
+          >
+            <LayoutGrid size={14} /> 数据库视图
+          </button>,
+          <button
             key="audit"
             className="text-btn"
             title="链接体检：没有入链的孤儿笔记 / 指向不存在笔记的失效链接"
@@ -1542,7 +1663,18 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
       />
       )}
       <div className="page__body">
-      <div className="notes-wrap">
+      {/* 数据库视图与笔记区互斥：隐藏而不是卸载（见 dbView 的 state 注释） */}
+      {dbView ? (
+        <Suspense fallback={<p className="u-aux">正在加载表格…</p>}>
+          <NoteTable
+            onOpenNote={(id) => {
+              setDbView(false)
+              void selectNote(id)
+            }}
+          />
+        </Suspense>
+      ) : null}
+      <div className={'notes-wrap' + (dbView ? ' is-hidden' : '')}>
         {/* 笔记树：收起时整块不渲染（而不是藏起来），宽度全部让给编辑区。
             收放按钮在页面副标题旁边；全屏编辑时页面头整体让位，树也随之不显示。 */}
         {!treeHidden && !zen ? (
@@ -1550,7 +1682,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
         queryProp={treeQuery}
             notes={visibleNotes}
             folders={folders}
-            selectedId={selectedId}
+            selectedId={noteId}
             onSelect={(id) => void selectNote(id)}
             onCreateNote={handleCreateNote}
             onCreateFolder={handleCreateFolder}
@@ -1575,11 +1707,12 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
         {zen ? null : (
           <NoteTabs
             tabs={tabItems}
-            activeId={selectedId}
-            onActivate={(id) => void selectNote(id)}
+            activeId={selectedId /* 笔记是数字、脚本是 script: 前缀，两种共用这一排 */}
+            onActivate={(id) => void selectNote(Number(id))}
             onClose={handleCloseTab}
           />
         )}
+
         <div className="editor">
           {current ? (
             /* 一张「笔记纸」装下头部、标签与正文：卡片只标记容器，不再标记分区 */
@@ -1607,12 +1740,24 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                         <FormatIcon size={12} className={'ntree__type--' + formatTone} aria-hidden />
                         {formatName}
                       </span>
+                      {/* 脚本的运行环境：贴在类型胶囊旁边 —— 它也回答"这一篇是什么"。
+                          可改（不同于类型）：先写 PowerShell 试，要调 python 就换过去，改完立刻按新运行时重校验。 */}
+                      {scriptEditing && current ? (
+                        <Select
+                          className="field field--compact editor__runtime"
+                          ariaLabel="脚本运行环境"
+                          title="这篇脚本用哪个解释器跑（工作流执行时用的就是它）"
+                          value={normalizeScriptRuntime(current.script_runtime)}
+                          onChange={(v) => void changeScriptRuntime(v)}
+                          options={SCRIPT_RUNTIMES.map((r) => ({ value: r.value, label: r.label, title: r.hint }))}
+                        />
+                      ) : null}
                       {/* 知识徽标：这一篇是什么类型、可信吗。点开才能改类型与核对。
                           放在格式胶囊之后 —— 两者回答的都是「这一篇是什么」。 */}
-                      {selectedId !== null && (
+                      {noteId !== null && (
                         <KnowledgeChip
-                          noteId={selectedId}
-                          meta={metaById[selectedId]}
+                          noteId={noteId}
+                          meta={metaById[noteId]}
                           onChanged={reloadMeta}
                           onNotice={onNotice}
                           onInsertTemplate={insertTemplate}
@@ -1630,6 +1775,45 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                         <Morph icon={unsaved ? IconData.CircleAlert : IconData.Check} size={12} />
                         {unsaved ? '未保存' : '已保存'}
                       </span>
+                      {/* 脚本笔记的语法状态：与类型、保存状态并排在同一行 ——
+                          三个胶囊回答的是同一类问题（这一篇是什么、对不对、存没存）。
+                          详细问题列表在底部状态条与正文里，这里只给结论。 */}
+                      {scriptEditing ? (
+                        <span
+                          className={
+                            'chip chip--save' +
+                            (!scriptChecking && scriptProblems.length > 0 ? ' chip--save-dirty' : '')
+                          }
+                          role="status"
+                          aria-label={
+                            scriptChecking
+                              ? '正在检查语法'
+                              : scriptProblems.length > 0
+                                ? scriptProblems.length + ' 处语法问题'
+                                : '语法检查通过'
+                          }
+                          title={
+                            scriptChecking
+                              ? '只解析，不执行'
+                              : scriptProblems.length > 0
+                                ? scriptProblems
+                                    .slice(0, 3)
+                                    .map((x) => (x.line > 0 ? '第 ' + x.line + ' 行 ' + x.message : x.message))
+                                    .join('；')
+                                : '语法检查通过（只解析，不执行）'
+                          }
+                        >
+                          <Morph
+                            icon={scriptChecking ? IconData.CircleAlert : IconData.Check}
+                            size={12}
+                          />
+                          {scriptChecking
+                            ? '检查中'
+                            : scriptProblems.length > 0
+                              ? scriptProblems.length + ' 处问题'
+                              : '语法通过'}
+                        </span>
+                      ) : null}
                       {/* 链接笔记的条数从编辑区头部搬到标题行：它回答的是「这一篇有多少条」，
                           与保存状态、标签、归属同属一行身份信息，不该另占一条 40px 的行。 */}
                       {linkEditing ? (
@@ -1797,6 +1981,18 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                     </div>
                   </div>
                 ))(linkItems)
+              ) : scriptEditing && current ? (
+                /* 脚本正文：只换"怎么编辑这一段"，外面那层（标题栏 / 工具栏 / 底部信息区）与别的笔记完全一样 */
+                <ScriptEditor
+                  noteId={current.id}
+                  value={content}
+                  onChange={(v) => {
+                    setContent(v)
+                    setDirty(true)
+                  }}
+                  problems={scriptProblems}
+                  checking={scriptChecking}
+                />
               ) : isOffice ? (
                 // Word/Excel 直接可编辑并自动写回原文件
                 <div className="editor__office">
@@ -2120,7 +2316,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
               key: 'folder',
               label: '移动到文件夹…',
               onPick: () =>
-                selectedId != null && setMoveMenu({ noteId: selectedId, x: attachMenu.x, y: attachMenu.y }),
+                noteId != null && setMoveMenu({ noteId, x: attachMenu.x, y: attachMenu.y }),
             },
           ]}
         />

@@ -47,6 +47,16 @@ import {
 } from '@renderer/lib/g6-theme'
 import type { GraphNodePayload, GraphPayload } from '@shared/types'
 
+/**
+ * 图谱节点的图标种类：**脚本笔记有自己的图标**，其余笔记共用「便签」那一套。
+ *
+ * 节点 kind 只有 note / folder / task / flash / anchor / dangling，
+ * 而"脚本"是 note 的一种 format —— 所以细分发生在这里，而不是给 kind 加一个值。
+ */
+function shapeKindOf(n: { kind: string; format?: string }): string {
+  return n.kind === 'note' && n.format === 'script' ? 'script' : n.kind
+}
+
 export interface GraphCanvasHandle {
   /** 「重新布局」：把力导向重新加热。 */
   relayout(): void
@@ -214,7 +224,7 @@ export function GraphCanvasG6({
           iconSrc: (d: { id: string }): string => {
             const n = payloadById.current.get(Number(d.id))
             if (!n) return ''
-            return iconDataUrl(n.kind, iconR, { color: colorRef.current(n), ...tokens })
+            return iconDataUrl(shapeKindOf(n), iconR, { color: colorRef.current(n), ...tokens })
           },
           iconWidth: iconBox,
           iconHeight: iconBox,
@@ -639,4 +649,4 @@ export function GraphCanvasG6({
 }
 
 /** 图例里列哪几类（笔记的颜色随文件夹/知识类型变，放进图例反而误导，所以只列固定色的五类 + 笔记）。 */
-const LEGEND_KINDS = ['note', 'folder', 'task', 'flash', 'anchor', 'dangling']
+const LEGEND_KINDS = ['note', 'script', 'folder', 'task', 'flash', 'anchor', 'dangling']

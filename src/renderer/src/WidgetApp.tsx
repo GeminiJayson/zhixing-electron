@@ -4,7 +4,7 @@ import { buildTaskTree, effectiveDoneMap, type TaskNode } from '@shared/task'
 import { bindHostEvents, subscribeDomain } from '@shared/events'
 import { parseSettings } from '@shared/settings'
 import { BLOUB_DEFAULT_SHAPE } from '@shared/bloub'
-import type { TaskNoteContext, TaskStatus } from '@shared/types'
+import type { PomodoroTick, TaskNoteContext, TaskStatus } from '@shared/types'
 import { applyAppearance } from './theme'
 import { TaskRow } from './components/TaskRow'
 import { WidgetBall } from './components/WidgetBall'
@@ -45,6 +45,14 @@ export function WidgetApp() {
    * 名字避开浮窗自有的 notice（那是一条提示文案），两者不是一回事。
    */
   const [reminderCount, setReminderCount] = useState(0)
+  /**
+   * 番茄钟状态（主进程推 widget:pomodoro）。
+   *
+   * 计时宿主是番茄钟小窗；它**收起**之后用户就看不见了，倒计时显示到这里 ——
+   * 球形态叠在悬浮表情上，卡片形态挂在标题行。只在 collapsed 时显示：
+   * 小窗还开着的时候，浮窗上再多一份重复的数字没有意义。
+   */
+  const [pomo, setPomo] = useState<PomodoroTick | null>(null)
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const [notice, setNotice] = useState('')
   const [priorityMenu, setPriorityMenu] = useState<{ id: number; anchor: HTMLElement } | null>(null)
@@ -56,6 +64,15 @@ export function WidgetApp() {
   const [snippet, setSnippet] = useState<{ id: number; text: string } | null>(null)
   /** 浮窗内的删除撤销 */
   const [undo, setUndo] = useState<{ id: number; title: string } | null>(null)
+
+  // 番茄钟倒计时：小窗收起后显示在球 / 标题行上（点它把小窗叫回来）
+  useEffect(() => window.zhixing.pomodoro.onState(setPomo), [])
+
+  /** 倒计时文本：mm:ss（与番茄钟小窗同一口径） */
+  const pomoText = (t: PomodoroTick): string =>
+    String(Math.floor(Math.max(0, t.remain) / 60)).padStart(2, '0') +
+    ':' +
+    String(Math.max(0, t.remain) % 60).padStart(2, '0')
 
   const load = useCallback(async () => {
     const [today, tgs] = await Promise.all([
@@ -385,11 +402,31 @@ export function WidgetApp() {
   // 贴边收缩态：整个窗口交给悬浮球（点击球自身即展开）
   if (mode === 'ball') {
     return (
-      <WidgetBall
-        shape={ballShape}
-        notice={reminderCount}
-        onRestore={() => void window.zhixing.widget.undock()}
-      />
+      /* 包一层：倒计时胶囊是球的**兄弟**而不是子节点 —— 球本身是 <button>，
+         按钮里不能再嵌按钮。叠在球的下缘，不占窗口以外的空间（窗口尺寸=球+padding，
+         超出会被透明窗口硬裁）。 */
+      <div className="wball-wrap">
+        <WidgetBall
+          shape={ballShape}
+          notice={reminderCount}
+          onRestore={() => void window.zhixing.widget.undock()}
+        />
+        {pomo?.collapsed ? (
+          <button
+            className={'wball__pomo' + (pomo.running ? '' : ' is-paused')}
+            title={
+              (pomo.phase === 'break' ? (pomo.long ? '长休息' : '休息') : '专注') +
+              ' · 点一下展开番茄钟' +
+              (pomo.title ? '（' + pomo.title + '）' : '')
+            }
+            onClick={() => window.zhixing.pomodoro.expand()}
+          >
+            {pomo.phase === 'break' ? '☕ ' : ''}
+            {pomoText(pomo)}
+            {pomo.running ? '' : ' ⏸'}
+          </button>
+        ) : null}
+      </div>
     )
   }
 
@@ -398,7 +435,19 @@ export function WidgetApp() {
       <div className="widget__card drag-region">
         <div className="widget__head no-drag">
           <span className="widget__title">今日待办</span>
-          <span className="u-aux">{tasks?.roots.length ?? 0} 项</span>
+          {/* 番茄钟收起后，倒计时挂在标题行右侧（卡片形态下没有球可叠） */}
+          {pomo?.collapsed ? (
+            <button
+              className="chip chip--accent widget__pomo"
+              title="番茄钟已收起 · 点一下展开"
+              onClick={() => window.zhixing.pomodoro.expand()}
+            >
+              {pomo.phase === 'break' ? '☕ ' : ''}
+              {pomoText(pomo)}
+            </button>
+          ) : (
+            <span className="u-aux">{tasks?.roots.length ?? 0} 项</span>
+          )}
         </div>
         <div className="widget__input no-drag">
           <input

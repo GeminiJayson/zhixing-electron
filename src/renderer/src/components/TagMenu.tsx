@@ -63,10 +63,11 @@ export function TagMenu({ x, y, title = '标签', tags, selectedIds, onToggle, o
     const onEsc = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') onClose()
     }
-    document.addEventListener('mousedown', onDocDown)
+    // 捕获阶段：弹窗内部会 stopPropagation 掉冒泡事件，冒泡监听收不到（见 Select 里的说明）
+    document.addEventListener('mousedown', onDocDown, true)
     document.addEventListener('keydown', onEsc)
     return () => {
-      document.removeEventListener('mousedown', onDocDown)
+      document.removeEventListener('mousedown', onDocDown, true)
       document.removeEventListener('keydown', onEsc)
     }
   }, [x, y, editing, onClose])

@@ -436,6 +436,15 @@ html[data-surface='quicknote'] .qn {
   flex-direction: column;
   padding: 0;
 }
+/* 无边框小窗的拖动：**标题栏就是手柄**。
+   页脚那几个按钮在 head 之外，所以不会被拖拽吞掉点击；head 里只有图标与标题，没有可交互元素。 */
+.modal--pomodoro .modal__head {
+  -webkit-app-region: drag;
+  cursor: grab;
+}
+.modal--pomodoro .modal__head:active {
+  cursor: grabbing;
+}
 html[data-surface='pomodoro'] .modal--pomodoro {
   width: 100%;
   max-width: none;
@@ -474,6 +483,25 @@ html[data-surface='pomodoro'] .modal--pomodoro {
   /* 每秒推进一格：时长取数据节拍令牌（它有意不参与 data-motion 归零） */
   transition: width var(--dur-tick) linear;
 }
+/* 番茄钟的设置面板：小窗很窄，四项各占一行（标签 / 数字 / 单位）。
+   只在展开时占高度 —— 窗口高度是量出来回报主进程的（fitHeight），折叠时不占位。 */
+.pomo-card__cfg {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: var(--border-w) solid var(--border);
+}
+.pomo-card__cfg-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-aux);
+}
+.pomo-card__cfg-row > span:first-child {
+  flex: 1;
+  color: var(--fg-secondary);
+}
 .pomo-card__hint {
   margin: 0 0 var(--space-1);
 }
@@ -482,7 +510,16 @@ html[data-surface='pomodoro'] .modal--pomodoro {
   flex-wrap: wrap;
   gap: var(--space-2);
 }
+/* 番茄钟页脚：**一行到底**。
+   小窗宽度固定 300px，四个按钮本来就在临界上 —— 字号一变、文字一长就折行，
+   所以这里显式禁止折行，并把次要动作收成纯图标（见 PomodoroWindowApp）。 */
+.modal--pomodoro .modal__foot {
+  flex-wrap: nowrap;
+  gap: var(--space-1);
+}
 .modal--pomodoro .modal__foot button {
+  flex: 0 0 auto;
+  white-space: nowrap;
   /* 与弹框按钮组一致：靠后的主操作晚 60ms 进场 */
   animation: pop-in var(--dur-fast) var(--ease-enter) backwards;
 }

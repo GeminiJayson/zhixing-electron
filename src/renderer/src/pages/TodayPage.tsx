@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarClock, CheckCircle2, CircleAlert, NotebookPen, Sparkles, Trash2 } from '@renderer/lib/icons'
+import { CalendarClock, CheckCircle2, CircleAlert, NotebookPen, Plus, Sparkles, Trash2 } from '@renderer/lib/icons'
 import { isMotionFull } from '../lib/presence'
 import { useDialog } from '../components/Dialogs'
 import { buildTaskTree, effectiveDoneMap, type TaskNode } from '@shared/task'
@@ -8,6 +8,7 @@ import { PriorityMenu } from '../components/PriorityMenu'
 import { StatusMenu } from '../components/StatusMenu'
 import { TaskRow } from '../components/TaskRow'
 import { TaskEditor } from '../components/TaskEditor'
+import { HabitCard } from '../components/HabitCard'
 import { readTokenMs } from '../lib/motion-tokens'
 
 interface Props {
@@ -316,8 +317,9 @@ export function TodayPage({ overview, onChanged, onNotice, onOpenNote, onFocusTa
               if (e.key === 'Enter') void handleQuickAdd()
             }}
           />
+          {/* 图标与习惯卡片的「添加」一致：同一页上两个"添加"长成同一个样子 */}
           <button className="text-btn text-btn--accent" onClick={() => void handleQuickAdd()}>
-            添加
+            <Plus size={13} /> 添加
           </button>
         </div>
 
@@ -368,7 +370,11 @@ export function TodayPage({ overview, onChanged, onNotice, onOpenNote, onFocusTa
           </div>
         </section>
 
-        <section className="section section--grow" aria-label="最近笔记">
+        {/* 习惯打卡排在今日待办与最近笔记之间：它是「今天要做的另一类事」，
+          贴着待办比贴着笔记更符合读的顺序；不用 --grow，高度让给下面两块 */}
+      <HabitCard onChanged={refresh} />
+
+      <section className="section section--grow" aria-label="最近笔记">
           <header className="section__head">
             <h2>最近笔记</h2>
             <span className="u-aux">{recent.length} 篇</span>

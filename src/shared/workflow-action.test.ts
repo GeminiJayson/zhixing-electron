@@ -8,6 +8,7 @@ import {
   SCRIPT_RUNTIMES,
   STEP_ACTION_KINDS,
   TASK_KIND,
+  USER_SCRIPT_KIND,
   actionKindLabel,
   isAutoActionKind,
   isLegacyActionKind,
@@ -31,9 +32,10 @@ describe('步骤动作 —— 三类 + 历史值归一', () => {
     }
   })
 
-  it('只有命令与脚本是自动执行型', () => {
+  it('命令 / 脚本 / 用户脚本 / 子流程是自动执行型，任务不是', () => {
     expect(isAutoActionKind(COMMAND_KIND)).toBe(true)
     expect(isAutoActionKind(SCRIPT_KIND)).toBe(true)
+    expect(isAutoActionKind(USER_SCRIPT_KIND)).toBe(true)
     expect(isAutoActionKind(TASK_KIND)).toBe(false)
     expect(isAutoActionKind('none')).toBe(false)
     expect(isAutoActionKind(null)).toBe(false)
@@ -47,7 +49,9 @@ describe('步骤动作 —— 三类 + 历史值归一', () => {
     expect(isLegacyActionKind('none')).toBe(false)
     expect(isLegacyActionKind('')).toBe(false)
     expect(isLegacyActionKind('   ')).toBe(false)
-    for (const k of [TASK_KIND, COMMAND_KIND, SCRIPT_KIND]) expect(isLegacyActionKind(k)).toBe(false)
+    for (const k of [TASK_KIND, COMMAND_KIND, SCRIPT_KIND, USER_SCRIPT_KIND]) {
+      expect(isLegacyActionKind(k)).toBe(false)
+    }
   })
 
   it('期望退出码：空 / 非数字都回落到 0，数字原样', () => {
@@ -69,8 +73,14 @@ describe('步骤动作 —— 三类 + 历史值归一', () => {
     expect(actionKindLabel('open_url')).toBe(LEGACY_ACTION_LABELS.open_url)
   })
 
-  it('四类动作的清单与联合类型一一对应，且都有说明', () => {
-    expect(STEP_ACTION_KINDS.map((a) => a.value)).toEqual(['task', 'command', 'script', 'subflow'])
+  it('五类动作的清单与联合类型一一对应，且都有说明', () => {
+    expect(STEP_ACTION_KINDS.map((a) => a.value)).toEqual([
+      'task',
+      'command',
+      'script',
+      'user_script',
+      'subflow',
+    ])
     for (const a of STEP_ACTION_KINDS) expect(a.hint.length).toBeGreaterThan(0)
   })
 

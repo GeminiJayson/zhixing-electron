@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { CircleAlert, Database, Download, FileText, Info, Link2, Palette, RefreshCw, SlidersHorizontal, Sparkles, Tag, Timer, Trash2 } from '@renderer/lib/icons'
+import { CircleAlert, Database, Download, FileText, FolderInput, Info, Link2, Palette, RefreshCw, SlidersHorizontal, Sparkles, Tag, TerminalSquare, Timer, Trash2 } from '@renderer/lib/icons'
 import { parseSettings, type AppSettings } from '@shared/settings'
 import {
   AI_PROTOCOLS,
@@ -24,6 +24,7 @@ import type { AppInfo } from '@shared/types'
 import { RecycleBin } from '../components/RecycleBin'
 import { TagManager } from '../components/TagManager'
 import { quietFailure } from '@shared/quiet-failure'
+import type { UserScript } from '@shared/user-scripts'
 
 interface Props {
   onNotice: (message: string) => void
@@ -308,6 +309,25 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
 
   /** 外部任务同步：状态 + 手动触发。改完地址/开关/间隔后让主进程重排定时器。 */
   const [syncStatus, setSyncStatus] = useState<{ lastAt: string; lastResult: string } | null>(null)
+  /** 用户脚本目录的清单（进「集成」分区时读一次） */
+  const [userScripts, setUserScripts] = useState<UserScript[]>([])
+  const [scriptsDir, setScriptsDir] = useState('')
+  useEffect(() => {
+    if (tab !== 'integrations') return
+    let alive = true
+    void Promise.all([window.zhixing.db.listUserScripts(), window.zhixing.db.scriptsDir()])
+      .then(([list, dir]) => {
+        if (!alive) return
+        setUserScripts(list)
+        setScriptsDir(dir)
+      })
+      .catch(() => {
+        // 读不到就当没有：这张卡片本身还能用（打开目录那条路不依赖清单）
+      })
+    return () => {
+      alive = false
+    }
+  }, [tab])
   const [syncing, setSyncing] = useState(false)
   /**
    * 暂存区里没人引用的附件。
@@ -933,6 +953,36 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
           </>
         )}
 
+        {/* 用户脚本归「集成」：脚本是"本机上的另一个程序"，与浏览器扩展、外部任务同步
+            同属"和外部系统对接"——它既不是外观，也不是任务行为。 */}
+        {tab === 'integrations' && (
+          <section className="set-card">
+            <header className="set-card__head">
+              <TerminalSquare size={15} /> 用户脚本
+            </header>
+            <p className="u-aux">
+              把 <b>.ps1</b> / <b>.cmd</b> / <b>.py</b> / <b>.js</b> 放进数据目录的 <b>scripts</b>{' '}
+              子目录，就能在命令面板（Ctrl/Cmd+K）里搜到并直接运行，也可以作为工作流步骤的动作
+              （步骤里选「用户脚本」）。脚本以当前用户身份运行，超时 60 秒。
+            </p>
+            <div className="set-row">
+              <span>脚本目录</span>
+              <span className="u-aux field--grow">{scriptsDir || '（读取中…）'}</span>
+              <button className="text-btn" onClick={() => void window.zhixing.db.openScriptsDir()}>
+                <FolderInput size={14} /> 打开目录
+              </button>
+            </div>
+            <div className="set-row">
+              <span>已识别</span>
+              <span className="u-aux">
+                {userScripts.length
+                  ? userScripts.map((s) => s.name).join(' · ')
+                  : '还没有脚本 —— 目录里的 README.txt 写了格式与说明的写法'}
+              </span>
+            </div>
+          </section>
+        )}
+
         {/* 外部任务同步归「集成」：与「浏览器扩展」同属"和外部系统对接"，
             此前一个在外观、一个在任务与提醒，分居两处。 */}
         {tab === 'integrations' && (
@@ -1095,6 +1145,30 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                 onChange={(e) => void update('pomodoro_break_min', e.target.value)}
               />
               <span className="u-aux">分钟</span>
+            </label>
+            <label className="set-row">
+              <span>番茄钟长休息间隔</span>
+              <input
+                type="number"
+                className="field field--num"
+                min={1}
+                max={12}
+                value={settings.pomodoro_interval}
+                onChange={(e) => void update('pomodoro_interval', e.target.value)}
+              />
+              <span className="u-aux">每几个番茄进一次长休息</span>
+            </label>
+            <label className="set-row">
+              <span>番茄钟长休息</span>
+              <input
+                type="number"
+                className="field field--num"
+                min={1}
+                max={60}
+                value={settings.pomodoro_long_break_min}
+                onChange={(e) => void update('pomodoro_long_break_min', e.target.value)}
+              />
+              <span className="u-aux">分钟（其余休息用上面的「番茄钟休息」）</span>
             </label>
             <label className="set-row">
               <span>专注结束自动休息</span>

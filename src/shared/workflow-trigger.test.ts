@@ -2,10 +2,14 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_SCHEDULE,
   describeSchedule,
+  describeTrigger,
   describeTriggers,
   dueByDaily,
   dueByInterval,
+  isWatchedFileName,
   makeTriggerToken,
+  matchFileName,
+  matchesClipboard,
   parseSchedule,
   parseTriggers,
   serializeSchedule,
@@ -216,5 +220,128 @@ describe('makeTriggerToken', () => {
 
   it('两次不同（随机）', () => {
     expect(makeTriggerToken()).not.toBe(makeTriggerToken())
+  })
+})
+
+describe('parseTriggers —— 目录与剪贴板触发', () => {
+  const parseOne = (t: unknown): ReturnType<typeof parseTriggers> => parseTriggers(JSON.stringify([t]))
+
+  it('目录触发：有路径才留，pattern 可空（空 = 任何文件）', () => {
+    expect(parseOne({ kind: 'folder', path: 'D:\\收件箱' })).toEqual([
+      { kind: 'folder', path: 'D:\\收件箱', pattern: '' },
+    ])
+    expect(parseOne({ kind: 'folder', path: 'D:\\a', pattern: '*.md' })).toEqual([
+      { kind: 'folder', path: 'D:\\a', pattern: '*.md' },
+    ])
+  })
+
+  it('目录触发：没路径的丢掉（留着就是一个永远不响的条件）', () => {
+    expect(parseOne({ kind: 'folder' })).toEqual([])
+    expect(parseOne({ kind: 'folder', path: '   ' })).toEqual([])
+  })
+
+  it('剪贴板触发：空模式丢掉 —— 否则复制任何东西都会启动流程', () => {
+    expect(parseOne({ kind: 'clipboard' })).toEqual([])
+    expect(parseOne({ kind: 'clipboard', pattern: '  ' })).toEqual([])
+  })
+
+  it('剪贴板触发：默认 contains，显式 regex 保留', () => {
+    expect(parseOne({ kind: 'clipboard', pattern: 'https://' })).toEqual([
+      { kind: 'clipboard', pattern: 'https://', mode: 'contains' },
+    ])
+    expect(parseOne({ kind: 'clipboard', pattern: '^#\\d+', mode: 'regex' })).toEqual([
+      { kind: 'clipboard', pattern: '^#\\d+', mode: 'regex' },
+    ])
+  })
+
+  it('剪贴板触发：坏正则与超长模式在保存时就丢掉', () => {
+    expect(parseOne({ kind: 'clipboard', pattern: '([', mode: 'regex' })).toEqual([])
+    expect(parseOne({ kind: 'clipboard', pattern: 'x'.repeat(201) })).toEqual([])
+  })
+
+  it('四种触发可以混在一条数组里，坏的那条单独丢', () => {
+    const list = parseTriggers(
+      JSON.stringify([
+        { kind: 'task_status', taskId: 7, status: 'done' },
+        { kind: 'folder' },
+        { kind: 'http', token: 'abc' },
+        { kind: 'clipboard', pattern: '备忘' },
+      ])
+    )
+    expect(list.map((t) => t.kind)).toEqual(['task_status', 'http', 'clipboard'])
+  })
+
+  it('序列化往返：新类型能原样出去再回来', () => {
+    const list = parseTriggers(
+      JSON.stringify([
+        { kind: 'folder', path: 'D:\\收件箱', pattern: '*.pdf' },
+        { kind: 'clipboard', pattern: 'invoice', mode: 'regex' },
+      ])
+    )
+    expect(parseTriggers(serializeTriggers(list))).toEqual(list)
+  })
+
+  it('describeTrigger 说人话', () => {
+    expect(describeTrigger({ kind: 'folder', path: 'D:\\收件箱', pattern: '*.md' })).toContain('*.md')
+    expect(describeTrigger({ kind: 'folder', path: 'D:\\收件箱', pattern: '' })).toContain('任何文件')
+    expect(describeTrigger({ kind: 'clipboard', pattern: 'http', mode: 'contains' })).toContain('包含')
+    expect(describeTrigger({ kind: 'clipboard', pattern: '^#', mode: 'regex' })).toContain('正则')
+    expect(describeTriggers([{ kind: 'http', token: 'a' }, { kind: 'folder', path: 'D:\\x', pattern: '' }])).toContain(' · ')
+  })
+})
+
+describe('matchFileName —— 只认 * 与 ? 的通配', () => {
+  it('空模式匹配任何文件名', () => {
+    expect(matchFileName('a.md', '')).toBe(true)
+    expect(matchFileName('任意.txt', '   ')).toBe(true)
+  })
+
+  it('* 与 ? 的基本语义', () => {
+    expect(matchFileName('笔记.md', '*.md')).toBe(true)
+    expect(matchFileName('笔记.markdown', '*.md')).toBe(false)
+    expect(matchFileName('a1.txt', 'a?.txt')).toBe(true)
+    expect(matchFileName('a12.txt', 'a?.txt')).toBe(false)
+  })
+
+  it('大小写不敏感', () => {
+    expect(matchFileName('Report.PDF', '*.pdf')).toBe(true)
+  })
+
+  it('正则元字符按字面处理（文件名里的 + 不该被当量词）', () => {
+    expect(matchFileName('a+b.md', 'a+b.md')).toBe(true)
+    expect(matchFileName('aab.md', 'a+b.md')).toBe(false)
+    expect(matchFileName('x(1).md', 'x(1).md')).toBe(true)
+  })
+})
+
+describe('isWatchedFileName —— 中间文件不该触发', () => {
+  it.each(['~$报告.docx', '.hidden.md', '草稿.tmp', 'x.swp', 'big.part', 'x~'])(
+    '%s 不算',
+    (name) => expect(isWatchedFileName(name)).toBe(false)
+  )
+
+  it.each(['报告.docx', '笔记.md', 'a.txt'])('%s 算', (name) => expect(isWatchedFileName(name)).toBe(true))
+})
+
+describe('matchesClipboard', () => {
+  const contains = { kind: 'clipboard', pattern: 'https://', mode: 'contains' } as const
+  it('包含匹配、大小写不敏感', () => {
+    expect(matchesClipboard(contains, '看这个 HTTPS://example.com')).toBe(true)
+    expect(matchesClipboard(contains, '没有链接')).toBe(false)
+  })
+
+  it('正则模式', () => {
+    const rx = { kind: 'clipboard', pattern: '^#\\d+\\s', mode: 'regex' } as const
+    expect(matchesClipboard(rx, '#42 修一下')).toBe(true)
+    expect(matchesClipboard(rx, '见 #42')).toBe(false)
+  })
+
+  it('坏正则不抛异常，只算不匹配', () => {
+    expect(matchesClipboard({ kind: 'clipboard', pattern: '([', mode: 'regex' }, 'x')).toBe(false)
+  })
+
+  it('空文本与非剪贴板触发一律不匹配', () => {
+    expect(matchesClipboard(contains, '')).toBe(false)
+    expect(matchesClipboard({ kind: 'http', token: 'a' }, 'https://')).toBe(false)
   })
 })

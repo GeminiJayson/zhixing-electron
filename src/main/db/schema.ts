@@ -4,13 +4,14 @@
  *
  * 这里是建库 DDL 的**唯一真源**，随功能直接维护：改 `SCHEMA_SQL` 后要同步升
  * `SCHEMA_VERSION`，并在 migrate.ts 的迁移链里补上同号步骤，旧库才会跟着补齐。
- * 当前 SCHEMA_VERSION = 18，共 28 张表。
+ * 当前 SCHEMA_VERSION = 19，共 30 张表。
  * v15 加了密码保险箱的 vault_meta / vault_entry；
  * v16 给 note 加了知识库需要的 kind / verified_at / archived_at / verify_note；
  * v17 给 flash 加了 content_format（网页剪藏保留原格式时存 HTML）。
  * v18 把 task_note_ref 的数据并入 task_note_link（见 migrate.ts 的说明）。
+ * v19 加了习惯打卡的 habit / habit_log。
  */
-export const SCHEMA_VERSION = 18
+export const SCHEMA_VERSION = 19
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS attachment (
@@ -296,4 +297,23 @@ CREATE TABLE IF NOT EXISTS vault_entry (
 	updated_at DATETIME
 );
 CREATE INDEX IF NOT EXISTS idx_vault_entry_updated ON vault_entry (updated_at DESC);
+CREATE TABLE IF NOT EXISTS habit (
+	id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, 
+	name VARCHAR NOT NULL, 
+	icon VARCHAR, 
+	color VARCHAR, 
+	archived_at DATETIME, 
+	sort_key FLOAT, 
+	created_at DATETIME
+);
+-- 一天一次：主键就是 (habit_id, day)，重复打卡天然幂等，不需要"先查再写"。
+-- 连续天数与完成率都由这张表推导（见 shared/habit.ts），不另存状态。
+CREATE TABLE IF NOT EXISTS habit_log (
+	habit_id INTEGER NOT NULL, 
+	day DATE NOT NULL, 
+	created_at DATETIME, 
+	PRIMARY KEY (habit_id, day), 
+	FOREIGN KEY(habit_id) REFERENCES habit (id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_habit_log_day ON habit_log (day);
 `

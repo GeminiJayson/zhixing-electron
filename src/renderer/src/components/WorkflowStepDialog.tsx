@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { NotePicker } from './NotePicker'
 import { Select } from './Select'
 import type {NoteFolder,  Note, WorkflowNodePayload } from '@shared/types'
@@ -98,6 +98,31 @@ export function WorkflowStepDialog({
 
   const kind = normalizeActionKind(draft.action_kind)
   const legacy = isLegacyActionKind(draft.action_kind)
+  /**
+   * 可选脚本：**知识库里 format='script' 的笔记**（只有选了「用户脚本」才去读）。
+   *
+   * 挂在笔记上而不是磁盘目录上：脚本现在就是笔记的一种类型，选择器自然应当列库里的那些。
+   */
+  const [scripts, setScripts] = useState<{ id: number; title: string }[]>([])
+  useEffect(() => {
+    if (kind !== 'user_script') return
+    let alive = true
+    void window.zhixing.db
+      .notes()
+      .then((list) => {
+        if (alive) {
+          setScripts(
+            list.filter((n) => n.format === 'script').map((n) => ({ id: n.id, title: n.title }))
+          )
+        }
+      })
+      .catch(() => {
+        if (alive) setScripts([])
+      })
+    return () => {
+      alive = false
+    }
+  }, [kind])
   const runtime = normalizeScriptRuntime(draft.action_runtime)
   const runtimeSpec = scriptRuntimeSpec(draft.action_runtime)
   const chosen = noteChoices.filter((n) => draft.note_ids.includes(n.id))
@@ -418,6 +443,38 @@ export function WorkflowStepDialog({
                   onChange={(e) => setDraft({ ...draft, action_value: e.target.value })}
                 />
               </label>
+            </>
+          )}
+          {kind === 'user_script' && (
+            <>
+              {/* 只存文件名，不存路径：脚本目录本身就是约定，存全路径的话
+                  数据目录一换（便携模式 / 换机器）这些步骤就全废了 */}
+              <label className="form-row">
+                <span>脚本</span>
+                <Select
+                  className="field"
+                  ariaLabel="选择用户脚本"
+                  value={draft.action_value}
+                  onChange={(v) => setDraft({ ...draft, action_value: v })}
+                  options={[
+                    {
+                      value: '',
+                      label: scripts.length ? '（选一个脚本）' : '（知识库里还没有脚本笔记）',
+                    },
+                    // 旧模板里存的是文件名（不是 id）：留一项，免得打开就变成空白
+                    ...(/^\d+$/.test(draft.action_value)
+                      ? []
+                      : draft.action_value
+                        ? [{ value: draft.action_value, label: draft.action_value + '（旧的文件脚本）' }]
+                        : []),
+                    ...scripts.map((s) => ({ value: String(s.id), label: s.title })),
+                  ]}
+                />
+              </label>
+              <p className="u-aux">
+                脚本是知识库里的一种笔记（format = script）：在知识库页的「用户脚本」文件夹里新建、
+                编辑与分类。写完之后回到这里选它即可 —— 改脚本不用回来改流程。
+              </p>
             </>
           )}
           {kind === 'task' && (

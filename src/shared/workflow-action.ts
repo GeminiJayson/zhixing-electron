@@ -17,15 +17,28 @@ export const TASK_KIND = 'task'
 export const COMMAND_KIND = 'command'
 export const SCRIPT_KIND = 'script'
 export const SUBFLOW_KIND = 'subflow'
+/**
+ * 用户脚本：跑 `<数据目录>/scripts/` 里的文件。
+ *
+ * 与 script 的区别是"内容存在哪"：script 把脚本正文存在节点上（改脚本要回来编辑流程），
+ * user_script 只存文件名（脚本本体归用户自己维护，改完立刻生效，流程一个字都不用动）。
+ * 两者都是等待型，都按退出码判定 —— 区别只在维护方式。
+ */
+export const USER_SCRIPT_KIND = 'user_script'
 
 /** 归一后的动作类型（库里的历史值不在此列，见 normalizeActionKind）。 */
-export type StepActionKind = 'task' | 'command' | 'script' | 'subflow'
+export type StepActionKind = 'task' | 'command' | 'script' | 'subflow' | 'user_script'
 
 /** 四类动作的界面文案与说明（编辑弹窗的下拉与提示共用）。 */
 export const STEP_ACTION_KINDS: { value: StepActionKind; label: string; hint: string }[] = [
   { value: TASK_KIND, label: '任务', hint: '实例化时生成一条待办任务，人工完成后自动推进' },
   { value: COMMAND_KIND, label: '命令', hint: '直接执行一条命令并等待退出，退出码正确才算完成' },
   { value: SCRIPT_KIND, label: '脚本', hint: '执行一段脚本并等待退出码；运行环境在下面选（PowerShell / cmd / Python / Node）' },
+  {
+    value: USER_SCRIPT_KIND,
+    label: '用户脚本',
+    hint: '运行 <数据目录>/scripts/ 里的脚本并等待退出码；脚本放在那里也能在命令面板里直接跑',
+  },
   {
     value: SUBFLOW_KIND,
     label: '子流程',
@@ -51,7 +64,13 @@ export const LEGACY_ACTION_LABELS: Record<string, string> = {
 export function isLegacyActionKind(raw: string | null | undefined): boolean {
   const k = (raw ?? '').trim()
   if (!k || k === 'none') return false
-  return k !== TASK_KIND && k !== COMMAND_KIND && k !== SCRIPT_KIND && k !== SUBFLOW_KIND
+  return (
+    k !== TASK_KIND &&
+    k !== COMMAND_KIND &&
+    k !== SCRIPT_KIND &&
+    k !== SUBFLOW_KIND &&
+    k !== USER_SCRIPT_KIND
+  )
 }
 
 /**
@@ -64,6 +83,7 @@ export function normalizeActionKind(raw: string | null | undefined): StepActionK
   if (k === COMMAND_KIND) return COMMAND_KIND
   if (k === SCRIPT_KIND) return SCRIPT_KIND
   if (k === SUBFLOW_KIND) return SUBFLOW_KIND
+  if (k === USER_SCRIPT_KIND) return USER_SCRIPT_KIND
   return TASK_KIND
 }
 
@@ -75,7 +95,7 @@ export function normalizeActionKind(raw: string | null | undefined): StepActionK
  */
 export function isAutoActionKind(raw: string | null | undefined): boolean {
   const k = normalizeActionKind(raw)
-  return k === COMMAND_KIND || k === SCRIPT_KIND || k === SUBFLOW_KIND
+  return k === COMMAND_KIND || k === SCRIPT_KIND || k === SUBFLOW_KIND || k === USER_SCRIPT_KIND
 }
 
 // ---------------------------------------------------------------- 脚本的运行环境

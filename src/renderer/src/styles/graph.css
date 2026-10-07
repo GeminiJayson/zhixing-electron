@@ -218,10 +218,16 @@
   border: none;
   border-radius: var(--radius-lg);
   box-shadow: var(--panel-shadow);
-  /* 滚动区**自己**的底部留白：滚到底时最后一张 card 要能整体露出来。
-     留白加在滚动容器上（而不是它的父面板）—— 父面板的 padding 在裁切边界**之外**，
-     内容滚到那里就被切掉，卡片的下半截正好卡在边界上（用户截图）。 */
-  padding-bottom: var(--radius-lg);
+  /**
+   * 内边距：四周都要有。此前只写了 padding-bottom，左右与上都是 0 ——
+   * 标题、摘要、按钮整排贴着卡片边缘（用户反馈）。
+   *
+   * 底部单独给大一点：滚动区**自己**的底部留白决定"滚到底时最后一张 card
+   * 能不能整体露出来"。留白必须加在这个滚动容器上（而不是它的父面板）——
+   * 父面板的 padding 在裁切边界**之外**，内容滚到那里就被切掉。
+   */
+  padding: var(--space-3);
+  padding-bottom: var(--space-5);
 }
 .graph-side__title {
   margin: 0 0 var(--space-2);

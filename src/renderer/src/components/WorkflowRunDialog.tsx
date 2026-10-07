@@ -30,6 +30,8 @@ const TRIGGER_LABELS: Record<string, string> = {
   task_status: '任务状态触发',
   http: '外部调用',
   subflow: '父流程调用',
+  folder: '目录变化',
+  clipboard: '剪贴板匹配',
 }
 
 /**

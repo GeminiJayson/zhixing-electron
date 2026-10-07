@@ -51,6 +51,10 @@ export interface AppSettings {
   vault_auto_lock_min: number
   pomodoro_focus_min: number
   pomodoro_break_min: number
+  /** 每完成几个番茄进一次长休息（1 = 每次都长休息） */
+  pomodoro_interval: number
+  /** 长休息的分钟数：休息间隔到了就用它，其余用 pomodoro_break_min */
+  pomodoro_long_break_min: number
   pomodoro_auto_break: boolean
   reminder_enabled: boolean
   /** 到点时是否发**系统通知**（主窗口收进托盘时也能提醒） */
@@ -186,6 +190,8 @@ export function parseSettings(raw: Record<string, string> = {}): AppSettings {
   tree_guide: bool(raw.tree_guide, true),
     pomodoro_focus_min: num(raw.pomodoro_focus_min, 25, 5, 90),
     pomodoro_break_min: num(raw.pomodoro_break_min, 5, 1, 30),
+    pomodoro_interval: num(raw.pomodoro_interval, 4, 1, 12),
+    pomodoro_long_break_min: num(raw.pomodoro_long_break_min, 15, 1, 60),
     pomodoro_auto_break: bool(raw.pomodoro_auto_break, false),
     reminder_enabled: bool(raw.reminder_enabled, true),
     reminder_notify: bool(raw.reminder_notify, true),
@@ -265,6 +271,8 @@ export const DEFAULT_SETTINGS: Record<string, string> = {
   tree_guide: '1',
   pomodoro_focus_min: '25',
   pomodoro_break_min: '5',
+  pomodoro_interval: '4',
+  pomodoro_long_break_min: '15',
   reminder_enabled: '1',
   reminder_lead_minutes: '0',
   reminder_rule_due_time: '1',

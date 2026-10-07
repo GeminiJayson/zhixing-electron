@@ -16,7 +16,7 @@ import {
   shell,
 } from 'electron'
 import { basename, dirname, join } from 'node:path'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx'
 import {
   buildDocxParagraphs,
@@ -60,7 +60,23 @@ import {
   ballWindowPx,
   clampBallSize,
 } from './widget-geometry'
-import { recoverStuckInstances, setConditionAsker } from './db/workflow'
+import { findClipboardTriggers, listFolderTriggerTargets, recoverStuckInstances, setConditionAsker } from './db/workflow'
+import { refreshFolderWatches, stopFolderWatches } from './folder-trigger'
+import {
+  checkNoteScript,
+  checkUserScript,
+  createUserScript,
+  deleteUserScript,
+  ensureScriptsDir,
+  listUserScripts,
+  readUserScript,
+  renameUserScript,
+  runUserScript,
+  scriptReferences,
+  scriptsDir,
+  setScriptPinned,
+  writeUserScript,
+} from './user-scripts'
 import { importAttachment, importAttachmentData, importAttachmentDataBatch } from './db/attachments'
 import { syncExternalTasks, taskSyncStatus } from './task-sync'
 import { readSelectedText } from './selection'
@@ -445,6 +461,42 @@ export function openQuickNoteWindow(): void {
 
 let pomodoroWindow: BrowserWindow | null = null
 let pomodoroShowOnce: (() => void) | null = null
+/** 拖动后的位置写库防抖：moved 事件一次拖动能触发几十次 */
+let pomodoroMovedTimer: ReturnType<typeof setTimeout> | null = null
+
+/**
+ * 番茄钟窗口位置：与浮窗几何同一个约定 —— 存在 `settings.ui_state` 这个 JSON 里。
+ *
+ * 读的时候要**校验还在不在可见工作区**：显示器拔掉/换分辨率之后，老坐标可能落在屏幕外，
+ * 那样窗口会跑到看不见的地方（用户以为"番茄钟打不开了"）。
+ */
+function readPomodoroPos(): { x: number; y: number } | null {
+  try {
+    const raw = listSettings().ui_state ?? ''
+    const state = JSON.parse(raw) as { pomodoro_pos?: { x?: number; y?: number } }
+    const pos = state.pomodoro_pos
+    if (typeof pos?.x !== 'number' || typeof pos.y !== 'number') return null
+    const visible = screen.getAllDisplays().some((d) => {
+      const a = d.workArea
+      return pos.x! >= a.x - 40 && pos.x! < a.x + a.width - 40 && pos.y! >= a.y - 40 && pos.y! < a.y + a.height - 40
+    })
+    return visible ? { x: pos.x, y: pos.y } : null
+  } catch {
+    return null
+  }
+}
+
+/** 记住番茄钟窗口位置（拖动后调用，已防抖）。存不下就算了 —— 它只是个顺手的偏好。 */
+function savePomodoroPos(x: number, y: number): void {
+  try {
+    const raw = listSettings().ui_state ?? ''
+    const state = raw ? (JSON.parse(raw) as Record<string, unknown>) : {}
+    state.pomodoro_pos = { x, y }
+    setSetting('ui_state', JSON.stringify(state))
+  } catch {
+    // 忽略：位置记不住不影响专注
+  }
+}
 
 /** 番茄钟卡片宽度：内容是一行时间 + 一行任务名 + 两个按钮，240 以下会挤。 */
 const POMODORO_W = 300
@@ -467,12 +519,14 @@ function openPomodoroWindow(payload: { taskId: number | null; title: string }): 
   }
   // 贴工作区右下角（不是屏幕右下角）：多显示器与任务栏位置都按当前显示器算
   const area = screen.getPrimaryDisplay().workArea
+  // 位置优先用上次拖动后的（用户把它拖到哪儿，下次就在哪儿），没有才贴右下角
+  const saved = readPomodoroPos()
   const win = new BrowserWindow({
     width: POMODORO_W,
     height: 200,
     useContentSize: true,
-    x: area.x + area.width - POMODORO_W - 24,
-    y: area.y + area.height - 200 - 24,
+    x: saved?.x ?? area.x + area.width - POMODORO_W - 24,
+    y: saved?.y ?? area.y + area.height - 200 - 24,
     // 与捕获窗 / 条件窗一致：无边框 + 透明，只显示卡片；高度随后由 window:fitHeight 贴合
     frame: false,
     transparent: true,
@@ -494,9 +548,23 @@ function openPomodoroWindow(payload: { taskId: number | null; title: string }): 
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // **隐藏后计时不能被节流**：收起（hide）时窗口仍在跑 setInterval，
+      // 默认的后台节流会把它压到约一分钟一次，倒计时当场失真。
+      backgroundThrottling: false,
     },
   })
   pomodoroWindow = win
+  // 拖动之后记住位置：下一次发起专注回到用户放的地方（不再永远贴右下角）。
+  // moved 事件触发很密，防抖后再写库。
+  win.on('moved', () => {
+    if (pomodoroMovedTimer) clearTimeout(pomodoroMovedTimer)
+    pomodoroMovedTimer = setTimeout(() => {
+      pomodoroMovedTimer = null
+      if (win.isDestroyed()) return
+      const [x, y] = win.getPosition()
+      savePomodoroPos(x, y)
+    }, 600)
+  })
   let shown = false
   const showOnce = (): void => {
     if (shown || win.isDestroyed()) return
@@ -814,6 +882,9 @@ function startWorkflowScheduler(): void {
   const tick = (): void => {
     try {
       const hits = dueTargets(listScheduleTargets(), new Date())
+      // 顺带核对一次目录监视的目标：模板编辑走 IPC 时会立刻刷新（见 setDataChangedHook），
+      // 这里兜住"库被外部改了 / 首次启动"这类没有广播可听的情况
+      refreshFolderWatches(listFolderTriggerTargets())
       for (const hit of hits) {
         // 不 await：长流程会跑很久，调度器不能被它卡住（下一分钟还要扫）
         void instantiateWorkflow(hit.id, null, null, undefined, 'schedule').then((inst) => {
@@ -930,6 +1001,73 @@ function registerReminderHandlers(): void {
   })
 }
 
+/**
+ * 目录选择与路径探测。
+ *
+ * 目录变化触发只认绝对路径 —— 让用户手敲一个带盘符的路径既容易错，
+ * 也没法验证存在性；走系统对话框是唯一靠谱的入口。
+ */
+function registerDirectoryHandlers(): void {
+  ipcMain.handle('app:pickDirectory', async (e) => {
+    const win = BrowserWindow.fromWebContents(e.sender)
+    const options = { properties: ['openDirectory' as const] }
+    const picked = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
+    if (picked.canceled || !picked.filePaths.length) return ''
+    return picked.filePaths[0]
+  })
+  ipcMain.handle('app:pathExists', (_e, path: string) => {
+    try {
+      return existsSync(String(path ?? ''))
+    } catch {
+      return false
+    }
+  })
+}
+
+/**
+ * 用户脚本：列清单、跑一个、打开目录。
+ *
+ * 执行只走主进程 —— 渲染层没有 Node 能力（sandbox: true），
+ * 而"能跑本机程序"这种权限不该被摊到界面进程里。
+ */
+function registerUserScriptHandlers(): void {
+  ipcMain.handle('app:listUserScripts', () => listUserScripts())
+  ipcMain.handle('app:runUserScript', (_e, file: string) => runUserScript(String(file ?? '')))
+  ipcMain.handle('app:scriptsDir', () => ensureScriptsDir())
+  ipcMain.handle('app:openScriptsDir', async () => {
+    const dir = ensureScriptsDir()
+    const err = await shell.openPath(dir)
+    return err ? { ok: false, message: err } : { ok: true, message: dir }
+  })
+  // 知识库页的脚本站（树上的固定文件夹 + 编辑区）：读 / 写 / 新建 / 改名 / 删除
+  ipcMain.handle('app:readUserScript', (_e, file: string) => readUserScript(String(file ?? '')))
+  ipcMain.handle('app:writeUserScript', (_e, file: string, content: string) =>
+    writeUserScript(String(file ?? ''), String(content ?? ''))
+  )
+  ipcMain.handle('app:createUserScript', (_e, name: string, runtime: string) =>
+    createUserScript(String(name ?? ''), runtime as 'powershell' | 'cmd' | 'python' | 'node')
+  )
+  ipcMain.handle('app:renameUserScript', (_e, file: string, newName: string) =>
+    renameUserScript(String(file ?? ''), String(newName ?? ''))
+  )
+  ipcMain.handle('app:deleteUserScript', (_e, file: string) => deleteUserScript(String(file ?? '')))
+  ipcMain.handle('app:setScriptPinned', (_e, file: string, pinned: boolean) =>
+    setScriptPinned(String(file ?? ''), Boolean(pinned))
+  )
+  ipcMain.handle('app:scriptReferences', (_e, file: string) => scriptReferences(String(file ?? '')))
+  // 脚本笔记的语法校验：正文存在库里，运行时看 note.script_runtime
+  ipcMain.handle('app:checkNoteScript', (_e, noteId: number, content: string) =>
+    checkNoteScript(Number(noteId), String(content ?? ''))
+  )
+  // 语法校验：只解析不执行（判断在 main/user-scripts.ts 里，纯解析部分在 shared）
+  ipcMain.handle('app:checkUserScript', (_e, file: string, content?: string) =>
+    checkUserScript(String(file ?? ''), content === undefined ? undefined : String(content))
+  )
+  // 启动时就把目录与说明文件准备好：用户第一次去找它时它已经在了
+  ensureScriptsDir()
+  console.log('[scripts] 用户脚本目录：' + scriptsDir())
+}
+
 /** 附件：选文件 → 复制进数据目录 → 落库，返回归档后的路径给渲染层写进正文。 */
 function registerAttachmentHandlers(): void {
   ipcMain.handle('attachment:pick', async (e, noteId: number) => {
@@ -1040,8 +1178,28 @@ function registerCaptureWindow(): void {
     })
     return true
   })
+  // 小窗每秒上报一次当前状态：主进程只转发给浮窗（收起后倒计时显示在悬浮表情上）
+  ipcMain.on('pomodoro:state', (_e, state: unknown) => {
+    widget.sendPomodoro((state ?? null) as never)
+  })
+  // 收起 / 展开：窗口是**隐藏**而不是关闭 —— 计时宿主在它里面，关掉计时就没了
+  ipcMain.on('pomodoro:collapse', () => {
+    if (pomodoroWindow && !pomodoroWindow.isDestroyed()) pomodoroWindow.hide()
+  })
+  ipcMain.on('pomodoro:expand', () => {
+    if (pomodoroWindow && !pomodoroWindow.isDestroyed()) {
+      pomodoroWindow.show()
+      pomodoroWindow.focus()
+      // 告诉小窗"你已经展开了"：它据此把上报里的 collapsed 置回 false，浮窗上那行倒计时才会收掉
+      pomodoroWindow.webContents.send('pomodoro:expanded')
+    }
+  })
   ipcMain.on('pomodoro:ready', () => pomodoroShowOnce?.())
-  ipcMain.on('pomodoro:close', () => pomodoroWindow?.close())
+  ipcMain.on('pomodoro:close', () => {
+    // 窗口没了就没有正在跑的番茄钟：把浮窗上的倒计时收掉，别让它挂着一个不动的数字
+    widget.sendPomodoro(null)
+    pomodoroWindow?.close()
+  })
   ipcMain.on('pomodoro:done', (_e, message: string) => {
     // 一轮结束/中断：提示与「统计变了」都回给主窗口（它不因此被显示出来）
     if (winState.main && !winState.main.isDestroyed()) {
@@ -1301,6 +1459,8 @@ app.whenReady().then(() => {
   registerCaptureWindow()
   registerShellHandlers()
   registerAttachmentHandlers()
+  registerDirectoryHandlers()
+  registerUserScriptHandlers()
   registerWindowFit()
   registerQuickNote()
   startReminderDispatch()
@@ -1337,10 +1497,20 @@ app.whenReady().then(() => {
   let lastClip = clipboard.readText()
   setInterval(() => {
     try {
-      if (!currentSettings().clipboard_monitor) return
       const text = clipboard.readText()
       if (!text || text === lastClip) return
       lastClip = text
+      // 剪贴板触发器**不看 clipboard_monitor 开关**：那是"复制后提示我捕获"的开关，
+      // 而"复制到某段文本就启动流程"是用户自己配的触发器，没道理被它连坐。
+      // 超长文本直接跳过：正则跑在几万字的剪贴上既慢又几乎不可能是用户的本意。
+      if (text.length <= 20000) {
+        for (const hit of findClipboardTriggers(text)) {
+          void instantiateWorkflow(hit.id, null, null, undefined, 'clipboard').then((inst) => {
+            if (inst) console.log(`[wf] 剪贴板命中 → 启动「${hit.name}」→ 实例 #${inst.id}`)
+          })
+        }
+      }
+      if (!currentSettings().clipboard_monitor) return
       if (text.trim().length < 8 || text.length > 2000) return
       sendAction('clipboard-notice')
     } catch (err) {
@@ -1358,11 +1528,13 @@ app.whenReady().then(() => {
   trayMod.createTray()
   // 任何写操作后刷新托盘标题（今日待办数）；主题/主题包改动会走同一条链路，
   // trayMod.refreshTrayIcon 内部按最后一次配色去重，因此不会每次勾选任务都重着色。
-  setDataChangedHook(() => {
+  setDataChangedHook((domain) => {
     trayMod.updateTrayTooltip()
     trayMod.refreshTrayIcon()
     // widget_enabled / close_to_widget 改动后浮窗显隐立刻跟着变，不必重启
     widget.syncWidgetVisibility()
+    // 工作流模板的触发器刚改过：目录监视立刻重建，不必等下一次分钟级扫描
+    if (domain === 'workflow') refreshFolderWatches(listFolderTriggerTargets())
   })
   // 浮窗随应用启动创建，但**不显示**：
   // 启动只露主窗，之后由主窗显隐联动浮窗。
@@ -1599,6 +1771,9 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   stopVaultTimers()
   stopVaultServer()
+  // 目录监视不主动关也行（fs.watch 是 persistent:false），但显式关掉更干净：
+  // 退出过程中目录里再落文件时不该还去启动流程
+  stopFolderWatches()
 })
 
 app.on('window-all-closed', () => {

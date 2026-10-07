@@ -97,7 +97,8 @@ export function PopMenu({
     const onEsc = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') requestClose()
     }
-    document.addEventListener('mousedown', onDocDown)
+    // 捕获阶段：见 Select 里同一条说明（弹窗内部 stopPropagation 会挡住冒泡监听）
+    document.addEventListener('mousedown', onDocDown, true)
     document.addEventListener('keydown', onEsc)
     return () => {
       document.removeEventListener('mousedown', onDocDown)

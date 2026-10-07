@@ -4,7 +4,9 @@ import { getNote } from './notes'
 import { reindexTask } from './fts'
 import { openExternalSafely } from '../security'
 import { decodeReply, matchLogRules, parseLogRules, type LogMatch } from '../../shared/workflow-log-rules'
-import { parseTriggers } from '../../shared/workflow-trigger'
+import { matchesClipboard, parseTriggers } from '../../shared/workflow-trigger'
+import { runNoteScript, runUserScript } from '../user-scripts'
+import { folderTargetsOf, type FolderTarget } from '../folder-watch-plan'
 import { spawn } from 'node:child_process'
 import { writeFileSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -32,6 +34,7 @@ import {
   COMMAND_KIND,
   SCRIPT_KIND,
   SUBFLOW_KIND,
+  USER_SCRIPT_KIND,
   TASK_KIND,
   isAutoActionKind,
   normalizeActionKind,
@@ -45,7 +48,14 @@ import { BRANCH_FIELD, findBranchCycle, nextNodeOf, type BranchSlot } from '../.
 // ---------------------------------------------------------------- 工作流
 
 /** 实例的触发来源（存 workflow_instance.trigger_kind） */
-export type TriggerKind = 'manual' | 'schedule' | 'task_status' | 'http' | 'subflow'
+export type TriggerKind =
+  | 'manual'
+  | 'schedule'
+  | 'task_status'
+  | 'http'
+  | 'subflow'
+  | 'folder'
+  | 'clipboard'
 
 /** 触发来源的中文名（启动日志与实例列表共用） */
 export const TRIGGER_LABELS: Record<TriggerKind, string> = {
@@ -54,6 +64,8 @@ export const TRIGGER_LABELS: Record<TriggerKind, string> = {
   task_status: '任务状态触发',
   http: '外部调用',
   subflow: '父流程调用',
+  folder: '目录变化',
+  clipboard: '剪贴板匹配',
 }
 
 export const NODE_COLUMNS =
@@ -599,6 +611,36 @@ export function findTaskStatusTriggers(taskId: number, status: string): { id: nu
     if (matched) hits.push({ id: r.id, name: r.name })
   }
   return hits
+}
+
+/**
+ * 剪贴板触发：找出"盯着这段文本"的模板。
+ *
+ * 与 findTaskStatusTriggers 一样只返回 id/name，不在这里启动 —— 调用方是主进程的
+ * 剪贴板轮询，那里能 await，也不至于让一次复制把工作流的启动开销带进来。
+ */
+export function findClipboardTriggers(text: string): { id: number; name: string }[] {
+  const rows = conn()
+    .prepare("SELECT id, name, triggers FROM workflow_template WHERE triggers IS NOT NULL AND triggers != ''")
+    .all() as { id: number; name: string; triggers: string }[]
+  const hits: { id: number; name: string }[] = []
+  for (const r of rows) {
+    if (parseTriggers(r.triggers).some((t) => matchesClipboard(t, text))) hits.push({ id: r.id, name: r.name })
+  }
+  return hits
+}
+
+/**
+ * 目录触发要盯的目标清单（一个目录一条）。
+ *
+ * 由主进程的 watcher 管理器按签名比对后重建 —— 这里只负责把库里的 JSON
+ * 摊平成它认得的形状，不碰 fs。
+ */
+export function listFolderTriggerTargets(): FolderTarget[] {
+  const rows = conn()
+    .prepare("SELECT id, name, triggers FROM workflow_template WHERE triggers IS NOT NULL AND triggers != ''")
+    .all() as { id: number; name: string; triggers: string }[]
+  return folderTargetsOf(rows.map((r) => ({ id: r.id, name: r.name, triggers: parseTriggers(r.triggers) })))
 }
 
 export function listScheduleTargets(): {
@@ -1419,6 +1461,38 @@ async function executeNodeAction(
     }
   }
 
+  // ---------------------------------------------------------------- 用户脚本
+  // 值只存文件名，脚本本体在脚本目录里 —— 走 runUserScript 那条已经做过路径校验的路
+  // （纯文件名 + realpath 必须落在脚本目录内），不在这里另开一条执行通道。
+  if (kind === USER_SCRIPT_KIND) {
+    if (!raw) {
+      return { state: 'failed', code: null, output: '', logMatch: null, message: '没有选择要运行的脚本' }
+    }
+    // 值有两种形态：**数字 = 脚本笔记的 id**（现在的主路径，脚本就是知识库里的笔记），
+    // 其余按文件名走 <数据目录>/scripts/（早期模板里存的是文件名，保留兼容）。
+    const noteId = Number(raw)
+    const run =
+      Number.isInteger(noteId) && noteId > 0 ? await runNoteScript(noteId) : await runUserScript(raw)
+    // 日志与消息里说人话：笔记版报标题，文件版报文件名
+    const label = Number.isInteger(noteId) && noteId > 0 ? getNote(noteId)?.title ?? ('#' + noteId) : raw
+    // 脚本是整段返回的（没有流式输出），跑完一次性把日志给出去，
+    // 实例详情里照样能看到它吐了什么
+    if (run.output) onLog?.(run.output)
+    if (run.code === null) {
+      return { state: 'failed', code: null, output: run.output, logMatch: null, message: run.message }
+    }
+    const ok = run.code === expect
+    return {
+      state: ok ? 'ok' : 'failed',
+      code: run.code,
+      output: run.output,
+      logMatch: null,
+      message: ok
+        ? `用户脚本 ${label} 运行完成`
+        : `用户脚本 ${label} 退出码 ${run.code}（期望 ${expect}）`,
+    }
+  }
+
   // 命令只有「一个可执行文件」这一种候选；脚本按运行环境选解释器（见 runScript）
   let candidates: string[] = []
   let args: string[] = []
@@ -1890,6 +1964,12 @@ export function describeWorkflowAction(
     const brief = first.trim().slice(0, 48)
     return `运行 ${scriptRuntimeLabel(actionRuntime)} 脚本：${brief}${brief ? '…' : '（空）'}（等待退出，期望退出码 ${parseExpectCode(actionExpect)}）`
   }
+  if (kind === USER_SCRIPT_KIND) {
+    // 值是脚本笔记的 id（新）或文件名（旧）：两种都说清"跑的是哪一个"
+    const id = Number(actionValue)
+    const title = Number.isInteger(id) && id > 0 ? getNote(id)?.title ?? ('#' + id) : actionValue
+    return `运行用户脚本 ${title || '（未选择）'}（等待退出，期望退出码 ${parseExpectCode(actionExpect)}）`
+  }
   if (kind === 'open_note') {
     // 值全为数字时按笔记 id 处理
     const title = /^\d+$/.test(actionValue || '') ? getNote(Number(actionValue))?.title ?? '' : ''
@@ -1927,7 +2007,7 @@ export async function runWorkflowAction(
 
   // 命令 / 脚本：这里走的是与实例推进**同一个**执行器，手动试跑与自动跑结果口径一致。
   // 注意它是等待型（要等进程退出、核对退出码），不再是历史 run_command 那种发完即忘。
-  if (kind === COMMAND_KIND || kind === SCRIPT_KIND) {
+  if (kind === COMMAND_KIND || kind === SCRIPT_KIND || kind === USER_SCRIPT_KIND) {
     const r = await executeNodeAction({
       action_kind: kind,
       action_value: actionValue,

@@ -11,15 +11,21 @@ import {
   NotebookPen,
   Pencil,
   Pin,
+  TerminalSquare,
   Trash2,
 } from '@renderer/lib/icons'
 import { useCollapsedSet } from '@renderer/lib/use-collapsed'
-import type { Note, NoteFolder } from '@shared/types'
+import type { Note, NoteFolder, NoteFormat } from '@shared/types'
 import type { AiLibraryProgress } from '@shared/ai-note'
 import { PopMenu } from './PopMenu'
 
-/** 新建笔记时可选的类型：原先在工具栏里选，现在放到「新建」动作里选 */
-export type NoteFormat = 'markdown' | 'richtext' | 'word' | 'excel' | 'link'
+/**
+ * 新建笔记时可选的类型：原先在工具栏里选，现在放到「新建」动作里选。
+ *
+ * 从 shared 复用而不是本地再写一份 —— 本地那份一度漏掉了 script，
+ * 于是「用户脚本」这个类型在树上直接类型不通过。
+ */
+export type { NoteFormat }
 
 /**
  * 每种笔记一个图标 + 一个色阶。
@@ -55,6 +61,8 @@ const FORMAT_ICON: Record<string, { Comp: typeof FileText; tone: string }> = {
   word: { Comp: FileText, tone: 'word' },
   excel: { Comp: LayoutGrid, tone: 'excel' },
   link: { Comp: Link2, tone: 'link' },
+  // 脚本也是笔记的一种：同一套图标表、同一套行样式，树上不该有第二种「项」
+  script: { Comp: TerminalSquare, tone: 'script' },
 }
 
 /** 格式 → 图标 + 色调：笔记树与笔记多标签页共用同一套，两处的图标不会分叉。 */
@@ -67,6 +75,7 @@ export const NOTE_FORMATS: { key: NoteFormat; label: string }[] = [
   { key: 'word', label: 'Word 笔记' },
   { key: 'excel', label: 'Excel 笔记' },
   { key: 'link', label: '链接笔记' },
+  { key: 'script', label: '用户脚本' },
 ]
 
 interface Props {
@@ -104,6 +113,10 @@ interface Props {
   ) => void
   /** 每篇笔记的标签：行内显示小胶囊（最多两个，其余折成 +N） */
   tagsOf?: (noteId: number) => { id: number; name: string; color: string }[]
+  /**
+   * 用户脚本不再是树上的一种特殊项：它已经是 note 表里 format='script' 的笔记，
+   * 与 markdown / Word 走同一套行、同一套文件夹操作、同一套右键菜单。
+   */
 }
 
 /** 笔记树：文件夹层级 + 文件夹内笔记。 */
@@ -400,6 +413,7 @@ export function NoteTree({
     )
   }
 
+  /** 脚本行：与笔记行同构（同一套类名与缩进），图标与描述换成脚本的。 */
   const rootNotes = notesOf(null)
   const menuFolder = folderMenu ? folders.find((f) => f.id === folderMenu.id) : undefined
   /** 可作为新父级的文件夹：排除自己（子孙由主进程 moveNoteFolder 做环校验） */

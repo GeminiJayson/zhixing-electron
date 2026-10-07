@@ -1,13 +1,18 @@
 import { ipcRenderer } from 'electron'
-import type { Backlink, Flash, Note, NoteLink, NoteRevision, TaskNoteContext } from '../../shared/types'
+import type { Backlink, Flash, Note, NoteFolder, NoteLink, NoteRevision, TaskNoteContext } from '../../shared/types'
+import type { NoteRow as NoteTableRow } from '../../shared/note-view'
 /**
- * note 域的渲染进程 API（53 项）。
+ * note 域的渲染进程 API（54 项）。
  *
  * 从 preload/index.ts 拆出来：db 一个对象原有 600 行 / 173 个方法，
  * 找一处调用要先在六百行里翻。index.ts 现在只负责拼装与暴露。
  */
 export const noteApi = {
     recentNotes: (limit?: number): Promise<Note[]> => ipcRenderer.invoke('db:recentNotes', limit),
+    /** 数据库视图的一整张表：标题 / 文件夹 / 知识类型 / 标签 / 属性 / 字数 / 更新时间 */
+    noteTableRows: (): Promise<NoteTableRow[]> => ipcRenderer.invoke('db:noteTableRows'),
+    /** 「用户脚本」顶层文件夹（没有就建一个）—— 新建脚本笔记时的默认落点 */
+    ensureScriptsFolder: (): Promise<NoteFolder | null> => ipcRenderer.invoke('db:ensureScriptsFolder'),
     notes: (limit?: number): Promise<Note[]> => ipcRenderer.invoke('db:notes', limit),
     flashes: (status: string | null = 'inbox'): Promise<Flash[]> =>
       ipcRenderer.invoke('db:flashes', status),
@@ -62,8 +67,10 @@ export const noteApi = {
         content_md?: string
         folder_id?: number | null
         pinned?: boolean
-        /** 改笔记格式（markdown/richtext/word/excel/link） */
+        /** 改笔记格式（markdown/richtext/word/excel/link/script） */
         format?: string
+        /** 脚本笔记（format='script'）的运行环境：powershell / cmd / python / node */
+        script_runtime?: string | null
         /** 结构化属性（JSON 对象字符串：{ "来源": "书籍" }） */
         props?: string | null
       }

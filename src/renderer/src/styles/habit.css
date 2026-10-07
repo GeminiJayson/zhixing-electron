@@ -1,0 +1,87 @@
+/* ---- 习惯打卡（今日页） ----
+   一行 = 今日圆点 · 名字 · 近 7 天 · 连续天数 · 完成率 · 归档 · 删除。
+   列用 grid 固定，而不是 flex 随内容走：多行的周条与百分比要能对齐成一列，扫一眼才能比。 */
+.habit__list {
+  list-style: none;
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.habit__row {
+  display: grid;
+  grid-template-columns: 20px minmax(90px, 1fr) auto auto 42px 26px 26px;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-ctl);
+  transition: background-color var(--dur-instant) var(--ease-standard);
+}
+.habit__row:hover {
+  background: var(--bg-hover);
+}
+.habit__row.is-archived {
+  opacity: 0.55;
+}
+.habit__check {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--fg-on-accent);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.habit__check.is-done {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.habit__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.habit__week {
+  display: inline-flex;
+  gap: 4px;
+}
+/* 小格：浅色主题下 --bg-hover 与卡片底色几乎同色，靠 --edge-light 的内高光把格子描出来 */
+.habit__day {
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: var(--bg-hover);
+  box-shadow: var(--edge-light);
+  cursor: pointer;
+}
+.habit__day.is-done {
+  background: var(--accent);
+}
+.habit__streak {
+  font-size: var(--text-aux);
+  white-space: nowrap;
+}
+.habit__rate {
+  text-align: right;
+}
+/* 输入行与今日页顶部的「快速添加」同一规格：输入框吃掉剩余宽度，按钮不参与伸缩。
+   此前这里有个 max-width（460），于是右边空出一大截、看着像"输入框没铺开"。 */
+.habit__add {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+.habit__add .field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.habit__add .text-btn {
+  flex: 0 0 auto;
+}

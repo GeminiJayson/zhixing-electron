@@ -13,7 +13,9 @@ import { reindexNote, removeFromIndex } from './fts'
 
 // ---------------------------------------------------------------- 笔记
 
-export const NOTE_COLUMNS = `id, folder_id, title, content_md, format, pinned, word_count, created_at, updated_at`
+// script_runtime 是私有列（ensureAppExtensions 加的）：脚本笔记要用它决定解释器，
+// 不查出来就会永远按默认的 powershell 跑。props 仍按需单独读（那是个大 JSON，列表用不上）。
+export const NOTE_COLUMNS = `id, folder_id, title, content_md, format, script_runtime, pinned, word_count, created_at, updated_at`
 
 export function listNoteFolders(): NoteFolder[] {
   return conn()
@@ -140,6 +142,8 @@ export function saveNote(
     format?: string
     /** 结构化属性（JSON 对象字符串） */
     props?: string | null
+    /** 脚本笔记的运行环境（只有 format='script' 时有意义） */
+    script_runtime?: string | null
   }
 ): Note | null {
   const c = conn()
@@ -157,6 +161,10 @@ export function saveNote(
   if ('props' in fields) {
     sets.push('props = ?')
     args.push(fields.props ?? null)
+  }
+  if ('script_runtime' in fields) {
+    sets.push('script_runtime = ?')
+    args.push(fields.script_runtime ?? null)
   }
   if ('content_md' in fields) {
     const md = fields.content_md ?? ''
@@ -208,7 +216,15 @@ export function saveNote(
 }
 
 /** 五种笔记格式。word/excel 的 content_md 存本地路径，link 存 URL。 */
-export const NOTE_FORMATS = ['markdown', 'richtext', 'word', 'excel', 'link'] as const
+/**
+ * 笔记的五种格式 + **用户脚本**。
+ *
+ * 脚本放进 note 表，而不是另起一套「脚本文件清单」：它要能被打链、被引用、有属性、
+ * 归到文件夹里 —— 这些能力全都长在 note 上，另起一套就得把它们各实现一遍，
+ * 而且两套迟早对不上（正文改了、磁盘那份没改之类）。
+ * 运行时不在这里，在 note.script_runtime 私有列上。
+ */
+export const NOTE_FORMATS = ['markdown', 'richtext', 'word', 'excel', 'link', 'script'] as const
 export type NoteFormat = (typeof NOTE_FORMATS)[number]
 
 /** 非法或缺失格式一律回退 markdown，避免脏值进库。 */
@@ -224,12 +240,23 @@ export function createNote(
 ): Note | null {
   const stamp = nowStamp()
   const clean = title.trim() || '未命名笔记'
+  const fmt = validFormat(format)
   const info = conn()
     .prepare(
-      `INSERT INTO note (folder_id, title, content_md, format, pinned, word_count, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 0, ?, ?, ?)`
+      `INSERT INTO note (folder_id, title, content_md, format, script_runtime, pinned, word_count, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)`
     )
-    .run(folderId, clean, contentMd, validFormat(format), countWords(contentMd), stamp, stamp)
+    .run(
+      folderId,
+      clean,
+      contentMd,
+      fmt,
+      // 脚本笔记没有运行环境就跑不起来：新建时先给默认值，编辑器里可以换
+      fmt === 'script' ? 'powershell' : null,
+      countWords(contentMd),
+      stamp,
+      stamp
+    )
   const id = Number(info.lastInsertRowid)
   if (contentMd) syncNoteLinks(id, contentMd)
   reindexNote(id)
@@ -351,6 +378,22 @@ export function ensureDefaultFolder(): NoteFolder | null {
   const row = c.prepare('SELECT COUNT(*) n FROM note_folder').get() as { n: number }
   if (row.n > 0) return null
   return createNoteFolder('我的笔记', null)
+}
+
+/**
+ * 默认的「用户脚本」文件夹（顶层），没有就建一个 —— 幂等。
+ *
+ * 它**只是一个普通文件夹**：能改名、能在它下面建子文件夹分类、能整个删掉。
+ * 这里只在「新建脚本」时用来决定默认落在哪，不构成任何硬约束 ——
+ * 脚本就是笔记，放哪个文件夹都行。
+ */
+export function ensureScriptsFolder(): NoteFolder | null {
+  const c = conn()
+  const row = c
+    .prepare("SELECT id, parent_id, name, sort FROM note_folder WHERE parent_id IS NULL AND name = '用户脚本' LIMIT 1")
+    .get() as NoteFolder | undefined
+  if (row) return row
+  return createNoteFolder('用户脚本', null)
 }
 
 /**

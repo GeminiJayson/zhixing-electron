@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { PomodoroTick } from '../shared/types'
 import type { DeepLink } from '../shared/deep-link'
 import type { AiLibraryOutcome, AiLibraryProgress, AiOrganizeOutcome } from '../shared/ai-note'
 import type {
@@ -12,6 +13,7 @@ import { workflowApi } from './api/workflow'
 import { reviewApi } from './api/review'
 import { attachmentApi } from './api/attachment'
 import { systemApi } from './api/system'
+import { habitApi } from './api/habit'
 
 /** 渲染进程唯一的特权入口：只暴露显式列出的调用，不透传 ipcRenderer。 */
 const api = {
@@ -28,6 +30,7 @@ const api = {
     ...reviewApi,
     ...attachmentApi,
     ...systemApi,
+    ...habitApi,
   },
   /**
    * 全局热键唤出的捕获面板（独立小窗口）：主进程推 payload、渲染层回执。
@@ -88,6 +91,24 @@ const api = {
     },
     ready: (): void => ipcRenderer.send('pomodoro:ready'),
     close: (): void => ipcRenderer.send('pomodoro:close'),
+    /** 小窗每秒上报当前状态（浮窗要靠它显示倒计时）；传 null 表示没有在跑的番茄钟 */
+    report: (state: PomodoroTick | null): void => ipcRenderer.send('pomodoro:state', state),
+    /** 收起成悬浮表情上的一行倒计时（窗口隐藏但计时继续） */
+    collapse: (): void => ipcRenderer.send('pomodoro:collapse'),
+    /** 从悬浮表情的倒计时点回来 */
+    expand: (): void => ipcRenderer.send('pomodoro:expand'),
+    /** 小窗侧订阅"已被展开"（主进程在 expand 时通知） */
+    onExpanded: (cb: () => void): (() => void) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('pomodoro:expanded', handler)
+      return () => ipcRenderer.removeListener('pomodoro:expanded', handler)
+    },
+    /** 浮窗侧订阅倒计时状态 */
+    onState: (cb: (state: PomodoroTick | null) => void): (() => void) => {
+      const handler = (_e: unknown, state: PomodoroTick | null): void => cb(state)
+      ipcRenderer.on('widget:pomodoro', handler)
+      return () => ipcRenderer.removeListener('widget:pomodoro', handler)
+    },
     /** 一轮结束/中断：把提示语与「数据变了」带给主窗口（它去刷新统计并弹提示） */
     done: (message: string): void => ipcRenderer.send('pomodoro:done', message),
     onDone: (cb: (message: string) => void): (() => void) => {

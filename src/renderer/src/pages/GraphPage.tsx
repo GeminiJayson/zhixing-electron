@@ -11,6 +11,7 @@ import { GraphCanvasG6, type GraphCanvasHandle } from '../components/GraphCanvas
 // 配色只有一处来源（lib/graph-colors）：页面与 G6 画布必须用同一套规则，
 // 否则会出现「侧栏是一种颜色、画布上是另一种」这种很难查的错位。
 import { KIND_CN, colorOf } from '../lib/graph-colors'
+import { NOTE_FORMATS } from '../components/NoteTree'
 
 interface Props {
   onOpenNote: (id: number) => void
@@ -627,7 +628,8 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
                 {selectedNode.format && (
                   <>
                     <dt>格式</dt>
-                    <dd>{selectedNode.format}</dd>
+                    {/* 脚本是 format='script' 的笔记：面板上说中文名，与树上/标签页一致 */}
+                    <dd>{NOTE_FORMATS.find((f) => f.key === selectedNode.format)?.label ?? selectedNode.format}</dd>
                   </>
                 )}
               </dl>

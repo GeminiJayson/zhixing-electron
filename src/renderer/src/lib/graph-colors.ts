@@ -24,6 +24,8 @@ const FOLDER_PALETTE = [
 const ROOT_NOTE_COLOR = '#64748B'
 /** 非笔记类节点的固定色（图谱图例也要用，所以导出）。 */
 export const KIND_COLOR: Record<string, string> = {
+  // 图例里脚本那一项的示意色（画布上的脚本节点仍按知识类型上色，与笔记一致）
+  script: '#0D9488',
   folder: '#7C3AED',
   task: '#16A34A',
   flash: '#EA580C',
@@ -34,6 +36,8 @@ export const KIND_COLOR: Record<string, string> = {
 /** 六类节点的中文名。 */
 export const KIND_CN: Record<string, string> = {
   note: '笔记',
+  // 脚本是 note 的一种 format，图例里单列一项（图标不同、名字也该不同）
+  script: '用户脚本',
   flash: '闪念',
   dangling: '待建链接',
   task: '任务',

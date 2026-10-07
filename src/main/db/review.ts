@@ -1,4 +1,5 @@
 import { effectiveDoneMap as effectiveDoneMapMain } from '../../shared/task'
+import { summarizeTaskTime, type PomodoroRow } from '../../shared/task-time'
 import type {
   Task,
   ReviewStats,
@@ -149,6 +150,21 @@ export function reviewStats(weeks = 12, days = 7): ReviewStats {
     cursor.setUTCDate(cursor.getUTCDate() - 1)
   }
 
+  // 按任务累计用时：近 30 天的已完成番茄。
+  // 只计 completed —— 中途放弃的番茄算进"这个任务花了多久"会把打开又关掉也算成投入。
+  // LEFT JOIN 而不是 JOIN：任务被删后 pomodoro_session.task_id 会置空（FK ON DELETE SET NULL），
+  // 那些分钟仍然存在，用 JOIN 会让它们整条消失、合计数对不上。
+  const timeStart = new Date()
+  timeStart.setDate(timeStart.getDate() - 29)
+  const timeRows = c
+    .prepare(
+      `SELECT p.task_id AS task_id, t.title AS title, p.minutes AS minutes, p.started_at AS started_at
+         FROM pomodoro_session p LEFT JOIN task t ON t.id = p.task_id
+        WHERE p.completed = 1 AND p.started_at IS NOT NULL AND p.started_at >= ?`
+    )
+    .all(dayStartStamp(timeStart.toLocaleDateString('sv-SE'))) as PomodoroRow[]
+  const taskTime = summarizeTaskTime(timeRows, 8)
+
   const doneTotal = tasks.filter((t) => t.status === 'done' || t.status === 'abandoned').length
   const noteCount = (
     c.prepare('SELECT COUNT(*) AS c FROM note WHERE deleted_at IS NULL').get() as { c: number }
@@ -194,5 +210,6 @@ export function reviewStats(weeks = 12, days = 7): ReviewStats {
     streak,
     achievements,
     tagDistribution,
+    taskTime,
   }
 }

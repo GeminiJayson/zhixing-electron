@@ -236,4 +236,36 @@ export const MIGRATIONS: Record<number, (c: Database.Database) => void> = {
     )
     // 表保留不删：旧版本的导出文件里还有它，import 时要能落库。
   },
+  19: (c) => {
+    // V19：习惯打卡。
+    //
+    // 两张表而不是一张带 completed 列的表：打卡是"某天有没有"，天然是
+    // (habit_id, day) 的主键；把它做成 habit 上的一列就没法记历史，
+    // 而连续天数与完成率正是靠历史推出来的。
+    //
+    // 与「循环子任务的 streak」（task.streak，跨天重置时累加）是两回事：
+    // 那个属于任务，这个属于独立的习惯条目 —— 两者都在维护各自的连续性，
+    // 但一个习惯不需要建任务、也不需要出现在任务列表里。
+    c.exec(
+      `CREATE TABLE IF NOT EXISTS habit (
+        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        name VARCHAR NOT NULL,
+        icon VARCHAR,
+        color VARCHAR,
+        archived_at DATETIME,
+        sort_key FLOAT,
+        created_at DATETIME
+      )`
+    )
+    c.exec(
+      `CREATE TABLE IF NOT EXISTS habit_log (
+        habit_id INTEGER NOT NULL,
+        day DATE NOT NULL,
+        created_at DATETIME,
+        PRIMARY KEY (habit_id, day),
+        FOREIGN KEY(habit_id) REFERENCES habit (id) ON DELETE CASCADE
+      )`
+    )
+    c.exec('CREATE INDEX IF NOT EXISTS idx_habit_log_day ON habit_log (day)')
+  },
 }

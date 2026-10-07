@@ -1,6 +1,7 @@
 import { BrowserWindow, screen } from 'electron'
 import { join } from 'node:path'
 import { BLOUB_DEFAULT_SHAPE, normalizeBloubShape } from '../shared/bloub'
+import type { PomodoroTick } from '../shared/types'
 import { hardenWindow } from './security'
 import { saveWidgetBall, saveWidgetGeometry } from './db/maintenance'
 import {
@@ -629,6 +630,16 @@ function applyWidgetOpacity(value: number): void {
   }
 }
 
+/**
+ * 把番茄钟的倒计时状态转给浮窗。
+ *
+ * 番茄钟收起后用户看不见它了，倒计时就落在悬浮表情（球）或浮窗标题行上 ——
+ * 计时宿主仍是那个小窗，这里只做转发；传 null 表示"没有正在跑的番茄钟"，浮窗据此收起显示。
+ */
+function sendPomodoro(state: PomodoroTick | null): void {
+  if (S.window && !S.window.isDestroyed()) S.window.webContents.send('widget:pomodoro', state)
+}
+
 /** 鼠标穿透：开启后浮窗不挡操作，改用热键/托盘隐藏。 */
 function applyWidgetClickThrough(enabled: boolean): void {
   S.window?.setIgnoreMouseEvents(enabled, { forward: true })
@@ -664,6 +675,8 @@ function applyWidgetClickThrough(enabled: boolean): void {
     // 外观
     applyWidgetOpacity,
     applyWidgetClickThrough,
+    // 番茄钟倒计时转发（收起后显示在球 / 标题行上）
+    sendPomodoro,
     // 只读访问器
     /** 'full' | 'ball' —— 渲染层与托盘都要用它决定显示形态 */
     getMode: () => S.mode,

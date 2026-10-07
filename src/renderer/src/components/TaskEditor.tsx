@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { cellKey, isCellRef, isSheetName, listNoteBlocks, type NoteBlock } from '@renderer/lib/block-fingerprint'
 import { NotePicker } from './NotePicker'
 import { Select } from './Select'
@@ -74,6 +74,13 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
   const [cellRef, setCellRef] = useState('')
   /** 笔记选择器：原生 select 放不下图标与缩进，改成自绘弹层 */
   const [pickerOpen, setPickerOpen] = useState(false)
+  /**
+   * 本次刚建立的那条"整篇"关联（笔记 id）。
+   *
+   * 只在"选完笔记 → 又改钉到某一节/某一格"这一小段交互里用：那时要把刚建的那条撤掉，
+   * 让同一篇只留一行。用户以前手动关联的整篇**不能**被它牵连。
+   */
+  const justWholeRef = useRef<number | null>(null)
   const [pickerAnchor, setPickerAnchor] = useState<DOMRect | null>(null)
   const [folders, setFolders] = useState<NoteFolder[]>([])
   const [saving, setSaving] = useState(false)
@@ -85,6 +92,19 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
     setContexts(await window.zhixing.db.linkedContexts(task.id))
     setLinkedNotes(await window.zhixing.db.linkedNotes(task.id))
   }, [task.id])
+
+  /**
+   * 选完笔记：**先按整篇建立关联**（这一步立刻可见，也是"不选段落"时的最终结果），
+   * 再把这篇的可关联项列出来，供"其实我想钉到某一节"的场合改精度。
+   */
+  const attachWholeNote = async (noteId: number): Promise<void> => {
+    if (!Number.isFinite(noteId) || noteId <= 0) return
+    await window.zhixing.db.linkTaskNote(task.id, noteId)
+    // 记住"这条整篇是本次刚建的"：下面改钉到某一节时只撤它，不动用户以前手动关联的整篇
+    justWholeRef.current = noteId
+    await loadContexts()
+    setPickNote(String(noteId))
+  }
 
   /** 解除整篇级关联：两张表都清一次（哪张有就删哪张） */
   const detachLinkedNote = async (noteId: number): Promise<void> => {
@@ -127,9 +147,16 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
     const noteId = Number(pickNote)
     const block = blocks.find((b) => b.key === pickBlock)
     if (!noteId || !block) return
+    // 改钉到某一节：把"本次刚建的那条整篇"撤掉 —— 精度由段落表达，
+    // 同一篇不该同时挂着"整篇"和"第 N 节"两行（仅撤本次刚建的，见 justWholeRef）
+    if (justWholeRef.current === noteId) {
+      await window.zhixing.db.unlinkTaskNote(task.id, noteId)
+      justWholeRef.current = null
+    }
     // 引文快照自动取段落原文（前 200 字）：用户不必再手抄一遍，而且它本来就是"当时的原文"
     await window.zhixing.db.linkTaskNoteBlock(task.id, noteId, block.key, block.text.slice(0, 200))
     setPickBlock('')
+    setPickNote('')
     await loadContexts()
   }
 
@@ -142,8 +169,14 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
     const key = cellKey(cellSheet, ref)
     if (!key) return
     const label = cellSheet.trim() ? `${cellSheet.trim()}!${ref}` : ref
+    // 与 attachContext 同一条规则：改钉到单元格就撤掉本次刚建的整篇
+    if (justWholeRef.current === noteId) {
+      await window.zhixing.db.unlinkTaskNote(task.id, noteId)
+      justWholeRef.current = null
+    }
     await window.zhixing.db.linkTaskNoteBlock(task.id, noteId, key, label)
     setCellRef('')
+    setPickNote('')
     await loadContexts()
   }
 
@@ -301,20 +334,25 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
             （task_note_context）。按 docs/specs/ownership-vs-reference.md，
             任务对笔记的关联本质是引用，与"归属"（属于哪个清单）不是一回事。
           */}
+          {/*
+            已关联笔记 —— 整篇与段落**合并成同一块**。
+
+            两处入口原先各有一套"先选笔记"的流程，用户得先想清"我要整篇还是某一段"再点对应按钮；
+            现在只有一个入口：**选完笔记先按整篇关联**（不选段落时这就是最终结果），
+            想更精确就在下面那行选一项 —— 精度由这一步决定，而不是由入口决定。
+          */}
           <section className="form-row">
-            <span>已关联笔记（{linkedNotes.length}）</span>
-            {linkedNotes.length === 0 ? (
-              <p className="u-aux">还没有关联整篇笔记。</p>
+            <span>已关联笔记（{linkedNotes.length + contexts.length}）</span>
+            {linkedNotes.length + contexts.length === 0 ? (
+              <p className="u-aux">还没有关联笔记。</p>
             ) : (
               <ul className="ctx-list">
                 {linkedNotes.map((n) => (
-                  <li key={n.id} className="ctx-row">
+                  <li key={'note-' + n.id} className="ctx-row">
                     <button
                       className="text-btn"
                       onClick={() =>
-                        window.dispatchEvent(
-                          new CustomEvent('zhixing:open-note', { detail: n.id })
-                        )
+                        window.dispatchEvent(new CustomEvent('zhixing:open-note', { detail: n.id }))
                       }
                     >
                       {n.title}
@@ -326,42 +364,18 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
                     </button>
                   </li>
                 ))}
-              </ul>
-            )}
-            <div className="ctx-add">
-              <button
-                type="button"
-                className="text-btn"
-                onClick={(e) => {
-                  setPickerAnchor((e.currentTarget as HTMLElement).getBoundingClientRect())
-                  setPickerOpen(true)
-                }}
-              >
-                关联整篇笔记…
-              </button>
-            </div>
-          </section>
-
-          <section className="form-row">
-            <span>关联笔记段落（{contexts.length}）</span>
-            {contexts.length === 0 ? (
-              <p className="u-aux">暂无段落上下文。</p>
-            ) : (
-              <ul className="ctx-list">
                 {contexts.map((c) => (
-                  <li key={c.id} className="ctx-row">
+                  <li key={'ctx-' + c.id} className="ctx-row">
                     <button
                       className="text-btn"
                       onClick={() =>
-                        window.dispatchEvent(
-                          new CustomEvent('zhixing:open-note', { detail: c.note_id })
-                        )
+                        window.dispatchEvent(new CustomEvent('zhixing:open-note', { detail: c.note_id }))
                       }
                     >
                       {noteTitle(c.note_id)}
                     </button>
-                    {/* 显示人看得懂的引文快照；键只在 tooltip 里留着备查 */}
-                    <span className="u-aux" title={`${c.snippet || '（无引文）'}\n${c.block_key}`}>
+                    {/* 显示人看得懂的引文快照；块键只在 tooltip 里留着备查 */}
+                    <span className="u-aux" title={(c.snippet || '（无引文）') + '\n' + c.block_key}>
                       {c.snippet ? c.snippet.slice(0, 40) : c.block_key}
                       {c.snippet && c.snippet.length > 40 ? '…' : ''}
                     </span>
@@ -373,6 +387,7 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
                 ))}
               </ul>
             )}
+
             <div className="ctx-add">
               {/*
                 笔记选择器：**带类型图标 + 文件夹分组**。
@@ -390,7 +405,7 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
                   setPickerOpen((v) => !v)
                 }}
               >
-                {pickNote ? noteTitle(Number(pickNote)) : '1. 选择笔记…'}
+                {pickNote ? noteTitle(Number(pickNote)) : '关联笔记…'}
                 <span className="note-pick-btn__caret" aria-hidden>
                   ▾
                 </span>
@@ -402,23 +417,22 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
                   value={pickNote}
                   anchor={pickerAnchor}
                   onPick={(id) => {
-                    setPickNote(id)
                     setPickerOpen(false)
+                    // 选完即按"整篇"关联（用户不选段落时这就是最终结果），并列出可提升精度的项
+                    void attachWholeNote(Number(id))
                   }}
                   onClose={() => setPickerOpen(false)}
                 />
               )}
-              {/*
-                可关联项随笔记格式而异：
-                  · markdown / 富文本 / Word —— 解析出段落，从列表里挑；
-                  · 链接笔记 —— content_md 就是 [{title,target}]，**每条链接一项**，
-                    同样进这个下拉（listNoteBlocks 的 link 分支）；
-                  · Excel —— 应用里看不到内容（正文在本地 .xlsx），只能照着填工作表与坐标。
+            </div>
 
-                旧版这里是一个让用户手填「段落块键」的输入框 —— 键是内容指纹，
-                纯内部标识符，用户无从得知该填什么，所以"关联笔记段落"实际上没法用。
-              */}
-              {pickedFormat === 'excel' ? (
+            {/*
+              第二步（可选）：把精度从"整篇"提到"某一节"。
+              可关联项随格式而异：markdown / 富文本 / Word 解析出段落，链接笔记每条链接一项；
+              Excel 应用里读不到内容，只能照着填工作表与坐标。
+            */}
+            {pickNote &&
+              (pickedFormat === 'excel' ? (
                 <>
                   <input
                     className="field"
@@ -437,10 +451,14 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
                   <button
                     className="text-btn"
                     onClick={() => void attachCellContext()}
-                    disabled={!pickNote || !isCellRef(cellRef)}
+                    disabled={!isCellRef(cellRef)}
                   >
-                    关联
+                    改钉到这一格
                   </button>
+                  <p className="u-aux">
+                    「{pickedNoteTitle}」的正文在本地表格文件里，应用内读不到内容 ——
+                    用「{pickedNoteTitle}」旁边的打开按钮看一眼，再照着填工作表与单元格（如 B3、A1:C9 的起点）。
+                  </p>
                 </>
               ) : (
                 <>
@@ -448,16 +466,15 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
                     className="field"
                     ariaLabel="选择段落"
                     value={pickBlock}
-                    disabled={!pickNote || blocks.length === 0}
+                    disabled={blocks.length === 0}
                     onChange={setPickBlock}
                     options={[
                       {
                         value: '',
-                        label: !pickNote
-                          ? '2. 先选笔记'
-                          : blocks.length === 0
-                            ? '这篇笔记没有可关联项'
-                            : `2. 选择关联项（共 ${blocks.length} 项）…`,
+                        label:
+                          blocks.length === 0
+                            ? '这篇没有可关联的段落（保持整篇）'
+                            : '想只钉住某一节？选一项…',
                       },
                       ...blocks.map((b) => ({
                         value: b.key,
@@ -467,28 +484,11 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
                       })),
                     ]}
                   />
-                  <button
-                    className="text-btn"
-                    onClick={() => void attachContext()}
-                    disabled={!pickNote || !pickBlock}
-                  >
-                    关联
+                  <button className="text-btn" onClick={() => void attachContext()} disabled={!pickBlock}>
+                    改钉到这一节
                   </button>
                 </>
-              )}
-            </div>
-            {pickNote && pickedFormat === 'excel' && (
-              <p className="u-aux">
-                「{pickedNoteTitle}」的正文在本地表格文件里，应用内读不到内容 ——
-                用「{pickedNoteTitle}」旁边的打开按钮看一眼，再照着填工作表与单元格（如 B3、A1:C9 的起点）。
-              </p>
-            )}
-            {pickNote && pickedFormat !== 'excel' && blocks.length === 0 && (
-              <p className="u-aux">
-                「{pickedNoteTitle}」里没有可关联项
-                {pickedFormat === 'link' ? '（这条链接笔记还没有条目）' : '（内容为空，或只含空白行）'}。
-              </p>
-            )}
+              ))}
           </section>
 
           {/* 自定义循环：可视化选择。旧版要求手写 RRULE 串（FREQ=…;INTERVAL=…），

@@ -1,23 +1,28 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
-import { ChevronDown, X } from '../lib/icons'
+import { ChevronDown, TerminalSquare, X } from '../lib/icons'
 import { noteIcon, type NoteFormat } from './NoteTree'
 import { PopMenu } from './PopMenu'
 
 /** 一个已打开的笔记。tab 条只吃这份数据，自己不碰数据库。 */
 export interface NoteTab {
-  id: number
+  /**
+   * 笔记是数字 id；用户脚本是 `script:<文件名>` 这样的字符串。
+   * 两种可以混在同一份列表里 —— 用户要的正是"笔记与脚本在同一排 tab 上切换"。
+   */
+  id: number | string
   title: string
-  format: NoteFormat
+  /** 笔记的五种格式，或脚本 */
+  format: NoteFormat | 'script'
   /** 正文还没落盘。只有当前 tab 可能是 true —— 切换/关闭前都会 flush。 */
   unsaved: boolean
 }
 
 interface Props {
   tabs: NoteTab[]
-  activeId: number | null
-  onActivate: (id: number) => void
-  onClose: (id: number) => void
+  activeId: number | string | null
+  onActivate: (id: number | string) => void
+  onClose: (id: number | string) => void
 }
 
 /**
@@ -62,11 +67,15 @@ export function NoteTabs({ tabs, activeId, onActivate, onClose }: Props): ReactE
     <div className="note-tabs">
       <div className="note-tabs__list" role="tablist" aria-label="已打开的笔记" ref={listRef}>
         {tabs.map((t) => {
-          const { Comp, tone } = noteIcon(t.format)
+          // 脚本没有"格式色"，用一个固定的类型色 —— 与树上的脚本行是同一个图标
+          const isScript = t.format === 'script'
+          const { Comp, tone } = isScript
+            ? { Comp: TerminalSquare, tone: 'script' }
+            : noteIcon(t.format as NoteFormat)
           const active = t.id === activeId
           return (
             <div
-              key={t.id}
+              key={String(t.id)}
               role="tab"
               aria-selected={active}
               tabIndex={active ? 0 : -1}

@@ -38,6 +38,12 @@ html[data-surface='widget'] #root {
   font-weight: var(--fw-semibold);
   font-size: var(--text-body);
 }
+/* 番茄钟收起后挂在标题行右侧的倒计时（卡片形态下没有球可叠） */
+.widget__pomo {
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
 .widget__input {
   display: flex;
   align-items: center;
@@ -79,6 +85,39 @@ html[data-surface='widget'] #root {
 /* ---- 悬浮球（bloub 引擎绘制，见 components/BloubAvatar.tsx）----
    窗口边长 = 球体边长 + 16（四周各 8px）：留给 hover 放大到 1.06 与投影 —— 窗口是透明
    的，一旦碰到边界就会被硬裁成直角。球体边长由主进程控制（默认 96，可调 88~160）。 */
+/* 球 + 番茄钟倒计时的包裹层：胶囊是球的**兄弟**（球本身是 button，按钮里不能再嵌按钮） */
+.wball-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+/**
+ * 番茄钟收起后叠在悬浮表情下缘的倒计时。
+ *
+ * 位置只能**压在球面上**：窗口边长 = 球边长 + 16（四周各 8px 留白），
+ * 悬到窗口之外的任何内容都会被透明窗口硬裁掉。
+ */
+.wball__pomo {
+  position: absolute;
+  left: 50%;
+  bottom: var(--space-3xs);
+  transform: translateX(-50%);
+  padding: var(--space-hair) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--bg-layer-solid);
+  color: var(--fg-primary);
+  font-size: var(--text-aux);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--lh-tight);
+  box-shadow: var(--panel-shadow);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+/* 暂停时压暗一点：数字不再走，"停着"要看得出来 */
+.wball__pomo.is-paused {
+  opacity: 0.72;
+}
 .wball {
   display: grid;
   place-items: center;

@@ -176,6 +176,9 @@ function ensureAppExtensions(d: Database.Database): void {
   add('task', 'reminder_base', 'reminder_base TEXT')
   // 笔记的结构化属性（JSON 对象：{ "来源": "书籍", "评分": "5" }）
   add('note', 'props', 'props TEXT')
+  // 脚本笔记（format = 'script'）的运行环境：powershell / cmd / python / node。
+  // 单独一列而不是塞进 props：它是**执行语义**（决定用哪个解释器），不是用户随手记的属性。
+  add('note', 'script_runtime', 'script_runtime TEXT')
   // 任务↔笔记关联的**来源**：'wiki' = 从正文 [[标题]] 派生，'manual' = 用户手动拉的边。
   // 没有它，正文里删掉 [[标题]] 时无法判断这一行该不该跟着消失 ——
   // 一律删会误伤手动关联，一律留则 ⇄N 计数与图谱边永远不消失。

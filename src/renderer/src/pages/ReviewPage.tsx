@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Award } from '@renderer/lib/icons'
+import { formatDuration } from '@shared/task-time'
 import type { ReviewStats } from '@shared/types'
 
 /** 回顾页：周趋势 + 12 周热力图 + 标签分布 + 成就。图表全部自绘 SVG。
@@ -31,6 +32,7 @@ export function ReviewPage() {
   const pomoMax = Math.max(1, ...stats.week.pomodoro)
   const heatMax = Math.max(1, ...stats.heatmap.flat().filter((v) => v >= 0))
   const tagTotal = Math.max(1, stats.tagDistribution.reduce((n, t) => n + t.count, 0))
+  const timeMax = Math.max(1, ...stats.taskTime.items.map((t) => t.minutes))
 
   // 柱状图的视图坐标按「卡片常见宽度」设计（约 1130）：铺满宽度时缩放≈1，柱宽和字号
   // 才是设计值。旧 viewBox 只有 342 宽，铺满 1136px 的卡片会被放大约 3.3 倍，一张 7 天图
@@ -165,6 +167,42 @@ export function ReviewPage() {
           )}
         </section>
       </div>
+
+      <section className="section">
+        <header className="section__head">
+          <h2>任务用时</h2>
+          {/* 未挂任务的分钟单列出来：番茄钟可以不选任务就开始，那部分时间"去哪了"
+              只看排行榜看不出来，而它往往占比不小。 */}
+          <span className="u-aux">
+            近 30 天完成的番茄钟 · 合计 {formatDuration(stats.taskTime.total)}
+            {stats.taskTime.unassigned > 0
+              ? "（其中未挂任务 " + formatDuration(stats.taskTime.unassigned) + "）"
+              : ""}
+          </span>
+        </header>
+        {stats.taskTime.items.length === 0 ? (
+          <p className="u-aux">还没有完成的番茄钟 —— 任务详情里跑完一轮番茄钟就会出现在这里。</p>
+        ) : (
+          <ul className="timetop">
+            {stats.taskTime.items.map((t) => (
+              <li key={t.taskId ?? -1} className="timetop__row">
+                <span className="timetop__name" title={t.title}>
+                  {t.title}
+                </span>
+                <span className="timetop__bar">
+                  <span
+                    className="timetop__fill"
+                    style={{ width: Math.round((t.minutes / timeMax) * 100) + "%" }}
+                  />
+                </span>
+                <span className="u-aux timetop__meta">
+                  {formatDuration(t.minutes)} · {t.sessions} 次
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <section className="section">
         <header className="section__head">
