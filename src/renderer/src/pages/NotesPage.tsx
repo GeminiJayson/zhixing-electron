@@ -22,6 +22,7 @@ import { Select } from '../components/Select'
 import { ScriptEditor } from '../components/ScriptEditor'
 import { scriptTemplate, type ScriptProblem } from '@shared/user-scripts'
 import { SCRIPT_RUNTIMES, normalizeScriptRuntime } from '@shared/workflow-action'
+import { flattenFolderTree } from '@shared/folder-tree'
 import { useDialog } from '../components/Dialogs'
 import type { Note, NoteFolder } from '@shared/types'
 import { parseLinkItems, type NoteLinkItem } from '@shared/note-links'
@@ -401,15 +402,12 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
    * 把文件夹按层级展开成「父在前、子紧随」的序列，并带上深度。
    *
    * 直接 folders.map 出来的是平铺列表，看不出谁属于谁 —— 用户报的
-   * 「移动到文件夹的弹窗没有层级」就是这个。先排序再给 depth，弹层负责缩进。
+   * 「移动到文件夹的弹窗没有层级」就是这个。
+   * 实现搬到 `shared/folder-tree`（图谱页的「全部文件夹」下拉共用同一份）：
+   * 那里的孤立节点会被当顶层列出，不会再从列表里消失。
    */
-  const folderTree = (): { f: NoteFolder; depth: number }[] => {
-    const walk = (parentId: number | null, depth: number): { f: NoteFolder; depth: number }[] =>
-      folders
-        .filter((f) => (f.parent_id ?? null) === parentId)
-        .flatMap((f) => [{ f, depth }].concat(walk(f.id, depth + 1)))
-    return walk(null, 0)
-  }
+  const folderTree = (): { f: NoteFolder; depth: number }[] =>
+    flattenFolderTree(folders).map(({ folder, depth }) => ({ f: folder, depth }))
 
   /** 归属栏：点文件夹胶囊在笔记树里定位它 */
   const handleRevealFolder = (id: number): void => {

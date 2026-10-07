@@ -18,6 +18,7 @@ import type {
   TodayTasks,
 } from '../../shared/types'
 import { conn, nowClock, nowStamp, today, getTask, TASK_COLUMNS } from './connection'
+import { listTasksByList } from './lists'
 
 // ---------------------------------------------------------------- 只读查询
 
@@ -160,7 +161,24 @@ export function overview(): Overview {
     overdue: all.filter((t) => t.due_date !== null && t.due_date < day && !isDone(t)).length,
     doneToday: all.filter((t) => isDone(t) && (t.completed_at ?? '').slice(0, 10) === day).length,
     notes: one('SELECT COUNT(*) c FROM note WHERE deleted_at IS NULL'),
-    inbox: one("SELECT COUNT(*) c FROM flash WHERE deleted_at IS NULL AND status = 'inbox'"),
+    /**
+     * 收件箱待整理量 = **未归档闪念 + 收件箱里未完成的任务**（含子任务）。
+     *
+     * 此前只数了闪念，于是用户看到的是「收件箱里明明躺着一堆任务，侧栏徽标却是 7」
+     * （实测数字：闪念 7 / 任务 41 行，正好对不上）。
+     *
+     * 任务这一半**复用 `listTasksByList(null)`** —— 它与收件箱页「任务收件箱 · N」
+     * 是同一份查询、同一套完成判定（`effectiveDoneMap`，父已完成则子也算完成），
+     * 侧栏与页面不会再各算一套。
+     */
+    inbox:
+      one("SELECT COUNT(*) c FROM flash WHERE deleted_at IS NULL AND status = 'inbox'") +
+      // **含子任务**：该清单下所有未有效完成的任务都算一项 —— 与清单树的计数、
+      // 收件箱页「任务收件箱 · N」同口径。曾经只数顶层，于是"父 + 三个子"的收件箱
+      // 徽标写 1、点进去却是 4 行。
+      listTasksByList(null).filter(
+        (t) => !(effective.get(t.id) ?? (t.status === 'done' || t.status === 'abandoned'))
+      ).length,
   }
 }
 

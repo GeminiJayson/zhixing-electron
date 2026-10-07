@@ -383,6 +383,7 @@ export interface Overview {
   overdue: number
   doneToday: number
   notes: number
+  /** 收件箱待整理量：未归档闪念 + 收件箱里未完成的任务（含子任务），与收件箱页两个 tab 的数同口径 */
   inbox: number
 }
 

@@ -466,6 +466,13 @@
 .trow__title-text {
   position: relative;
 }
+/* 逾期：**任务内容与那枚逾期日期胶囊同一个色**（`.chip--danger` 用的也是 var(--danger)）。
+   此前只有日期变红，标题仍是正文色 —— 一眼扫过去，行与行之间的差别只剩末尾一个小胶囊。
+   已完成的行不染（`.trow--overdue` 在组件里就不加给有效完成的行）：那里有删除线，
+   再叠一层红色只会更吵。 */
+.trow--overdue:not(.trow--done) .trow__title-text {
+  color: var(--danger);
+}
 /* 删除线：1px 细线从左向右展开 / 收回（--dur-strike），不用 text-decoration */
 .trow__title-text::after {
   content: '';
@@ -1844,6 +1851,24 @@ button.chip--status:focus-visible {
 }
 .check--done::after {
   transform: translate(calc(-50% - 0.7px), calc(-50% - 1.2px)) rotate(45deg) scaleX(1);
+}
+/* 已放弃：底色用**与状态胶囊同一个 danger 色**（`.chip--status-abandoned` 走的是
+   `.chip--status-danger`，同为 var(--danger)）。放弃与完成是两种终态，
+   此前勾选框只有"完成 / 未完成"两态，放弃的任务顶着和完成一模一样的强调色，
+   与同一行那枚「已放弃」胶囊对不上。
+   覆盖必须排在 .check--done 之后：两者特异性相同，靠顺序取胜。 */
+.check--abandoned {
+  background: var(--danger);
+  border-color: var(--danger);
+  transform: scale(1);
+}
+/* 放弃不是"做完了"，不画对勾，改成一横（划掉的意思）。
+   尺寸沿用对勾那套 em 比例，字号一变跟着缩放。 */
+.check--abandoned::after {
+  width: 0.667em;
+  height: 0;
+  border-width: 0 0 0.148em 0;
+  transform: translate(-50%, -50%) rotate(0deg) scaleX(1);
 }
 /* 优先级色点（今日页 / 任务行 / 四象限 / 看板共用；基础外观在 app.css）：
    色值由内联样式给出，换优先级就是换 background —— 补一条过渡让它读作「变了」，

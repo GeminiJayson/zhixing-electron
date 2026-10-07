@@ -149,15 +149,35 @@ export function InboxPage({ onNotice, onChanged }: Props) {
     return () => window.clearTimeout(timer)
   }, [flashFocus, flashes, tab])
 
-  const tree = useMemo(() => {
+  /**
+   * 收件箱里**已完成的行不再列出**。
+   *
+   * 与任务页清单视图同一条规矩：完成（或放弃）的任务从当前清单收走，统一进「已完成」入口。
+   * 收件箱此前是唯一的例外 —— 于是收件箱里堆着几十行做完的事（实测 41 行里 30 行已完成），
+   * 用户的第一反应就是"这些为什么还在这儿"。
+   *
+   * 过滤后不会留下孤儿子任务：父任务有效完成 ⟺ 它所有后代都有效完成，
+   * 所以被隐藏的父任务，其子任务也一定在同一批里。
+   */
+  const hiddenDone = useMemo(() => {
     const effective = effectiveDoneMap(tasks)
-    return buildTaskTree(tasks, effective, new Map(), new Map())
+    return tasks.filter((t) => effective.get(t.id)).length
   }, [tasks])
 
-  /** 未完成计数含子任务。 */
+  const tree = useMemo(() => {
+    const effective = effectiveDoneMap(tasks)
+    const live = tasks.filter((t) => !effective.get(t.id))
+    return buildTaskTree(live, effectiveDoneMap(live), new Map(), new Map())
+  }, [tasks])
+
+  /**
+   * 计数**含子任务**：与任务页清单树的「收件箱」、侧栏徽标同一口径 ——
+   * 该清单下所有未有效完成的任务都算一项（一个父任务带两个子任务 = 3）。
+   * 树里已经只剩未完成的行，所以就是它的节点总数。
+   */
   const undone = useMemo(() => {
     const count = (nodes: TaskNode[]): number =>
-      nodes.reduce((n, node) => n + (node.effectiveDone ? 0 : 1) + count(node.children), 0)
+      nodes.reduce((n, node) => n + 1 + count(node.children), 0)
     return count(tree)
   }, [tree])
 
@@ -440,7 +460,11 @@ export function InboxPage({ onNotice, onChanged }: Props) {
       {tab === 'tasks' ? (
         <section className="inbox-panel" aria-label="任务收件箱">
           {tree.length === 0 ? (
-            <p className="empty-hint">没有未归类的任务。归到列表里的任务不会出现在这里。</p>
+            <p className="empty-hint">
+              {hiddenDone > 0
+                ? `收件箱里没有待办的任务了（${hiddenDone} 项已完成，已收进任务页的「已完成」）。`
+                : '没有未归类的任务。归到列表里的任务不会出现在这里。'}
+            </p>
           ) : (
             <div className="task-tree">{renderNodes(tree)}</div>
           )}

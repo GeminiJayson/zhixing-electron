@@ -186,6 +186,17 @@ export default function App() {
     void refreshOverview()
   }, [refreshOverview])
 
+  /**
+   * 侧栏徽标（收件箱 / 今日 / 逾期）跟着数据走。
+   *
+   * 此前只在挂载时算一次：整理完收件箱、勾掉一个任务，数字都还停在旧值 ——
+   * 用户看到的就是"收件箱里没东西了，徽标还挂着 18"。任务与闪念任何一个域有写入就重算。
+   */
+  useEffect(
+    () => subscribeDomain(['task', 'flash'], () => void refreshOverview()),
+    [refreshOverview]
+  )
+
   // 把主进程的写入通知接进订阅表：只调一次
   useEffect(() => {
     bindHostEvents(window.zhixing.db)

@@ -79,7 +79,11 @@ export function Sidebar({ page, collapsed, inboxCount, onSelect, onToggleCollaps
           {!collapsed && <span className="nav-item__label">{item.label}</span>}
           {!collapsed && item.key === 'inbox' && inboxCount > 0 && (
             /* key 用数量：数字一变就重建节点，于是 badge-pop 动画重播一次 */
-            <span key={inboxCount} className="nav-item__badge">
+            <span
+              key={inboxCount}
+              className="nav-item__badge"
+              title="待整理：未归档闪念 + 收件箱里未完成的任务"
+            >
               {inboxCount}
             </span>
           )}

@@ -395,11 +395,12 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
    * 清单里留着一排划掉的行，既占位置，又让「还剩多少」变得不可信。
    * 唯一的例外是子树：父任务还在，它的子任务就不该凭空消失。
    */
+  /** 终态视图（已完成 / 已放弃 / 今日页「已完成」聚焦）：跨清单，清单范围不参与 */
+  const terminalView = listKey === DONE_KEY || listKey === ABANDONED_KEY || focus === 'done'
+
   const scopedTasks = useMemo(() => {
     const day = new Date().toLocaleDateString('sv-SE')
     const isDone = (t: Task): boolean => effective.get(t.id) ?? isTerminal(t.status)
-    /** 终态视图（已完成 / 已放弃 / 今日页「已完成」聚焦）：跨清单，清单范围不参与 */
-    const terminalView = listKey === DONE_KEY || listKey === ABANDONED_KEY || focus === 'done'
     const match = (t: Task): boolean => {
       if (terminalView) {
         // 终态视图里**逐行**判定：未完成的行哪怕挂在一条已完成的任务下，也不该出现在这里。
@@ -430,7 +431,14 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     return [...scopedTasks].sort((a, b) => at(b).localeCompare(at(a)))
   }, [scopedTasks, listKey])
 
-  /** 侧栏计数：只有顶层、未终态的任务算「还剩多少」；终态收归到两个入口里 */
+  /**
+   * 侧栏计数：该清单下**所有**未有效完成的任务（**含子任务**），终态收归到两个入口里。
+   *
+   * 子任务按它**自己的 list_id** 归属（子任务建时继承父的清单，所以两者通常一致；
+   * 历史数据里若不同，就按它实际的归属算，与列表里"它在谁下面"是同一件事）。
+   * 曾经只数顶层：一个父任务带三个子任务时清单写 1，用户点进去看到 4 行 ——
+   * 「还剩多少」不该漏掉真正要做的那些子任务。
+   */
   const listCounts = useMemo<ListCounts>(() => {
     const isDone = (t: Task): boolean => effective.get(t.id) ?? isTerminal(t.status)
     const byList = new Map<number, number>()
@@ -439,7 +447,6 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     let done = 0
     let abandoned = 0
     for (const t of tasks) {
-      if (t.parent_id !== null) continue
       if (t.status === 'abandoned') {
         abandoned += 1
         continue
@@ -481,12 +488,52 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     })
   }, [orderedScopedTasks, activeQuery, folders, tags])
 
-  const tree = useMemo(
-    () => buildTaskTree(queriedTasks, effective, counts, tags),
-    [queriedTasks, effective, counts, tags]
-  )
+  /** 当前清单的**清单口径**数量（不随聚焦/过滤变化）：与侧栏显示的同一个数 */
+  const scopeCount =
+    listKey === ''
+      ? listCounts.all
+      : listKey === 'none'
+        ? listCounts.inbox
+        : listKey === DONE_KEY
+          ? listCounts.done
+          : listKey === ABANDONED_KEY
+            ? listCounts.abandoned
+            : (listCounts.byList.get(Number(listKey)) ?? 0)
+
+  const tree = useMemo(() => {
+    const roots = buildTaskTree(queriedTasks, effective, counts, tags)
+    /**
+     * 剔除"被提升上来的孤儿根"。
+     *
+     * `scopedTasks` 对子任务一律放行（父还在，子任务就不该凭空消失），但**父任务被排除**时
+     * （顶层有效完成 → 出清单），它的子任务会被 `buildTaskTree` 提升成**根**：
+     * 缩进与真顶层一样、还常常带着"已完成"—— 用户看到的就是"清单里怎么混着一堆做完的事、
+     * 数字也对不上"（实测「全部任务」写 14，列表里却有 18 行顶层，其中 14 行标着已完成）。
+     *
+     * 父任务有效完成 ⟹ 它所有后代都有效完成，所以这里剔除的一定是"已收走的那棵树"的残枝，
+     * 不会误伤任何真正待办的行。
+     *
+     * **终态视图（已完成 / 已放弃）不做这一步**：那里本来就要显示有效完成的行，
+     * 而"父不是已放弃、自己是已放弃"的子任务同样会变成孤儿根 —— 剔除它就会让
+     * 计数与列表对不上（实测：侧栏「已放弃 2」，列表只剩 1）。
+     */
+    if (terminalView) return roots
+    return roots.filter((r) => r.parent_id === null || !r.effectiveDone)
+  }, [queriedTasks, effective, counts, tags, terminalView])
 
   const visible = useMemo(() => filterTree(tree, filter), [tree, filter])
+
+  /**
+   * 视图里**实际有多少行**（含子任务）—— 与侧栏计数同口径。
+   *
+   * 此前副标题写的是 `tree.length`，那是**根数**：已完成视图里侧栏写 99、
+   * 副标题却写 21（其余 78 项挂在各自父任务下面），两个数字并排摆着像统计错了。
+   */
+  const visibleCount = useMemo(() => {
+    const count = (nodes: TaskNode[]): number =>
+      nodes.reduce((n, node) => n + 1 + count(node.children), 0)
+    return count(visible)
+  }, [visible])
 
   /**
    * 树展平结果：[{node, depth}]，node 为 null 表示正在输入的「添加行」。
@@ -1265,7 +1312,15 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
         )}
         meta={(
           <span className="u-aux">
-            共 {tree.length} 项
+            共 {visibleCount} 项
+            {/*
+              被收窄（聚焦 / 智能清单 / 过滤框）时，把"清单本身有多少"一并写出来 ——
+              侧栏写的是**清单口径**（不随收窄变），两个数字并排却无关联说明时，
+              看起来就像统计错了（实测：侧栏 14、副标题 3，差的 11 个全是被「今日待办」排掉的逾期任务）。
+            */}
+            {(focus || activeQuery || filter) && scopeCount !== visibleCount
+              ? ` / 清单共 ${scopeCount} 项`
+              : ''}
             {listKey === DONE_KEY ? ' · 已完成' : ''}
             {listKey === ABANDONED_KEY ? ' · 已放弃' : ''}
             {activeQuery ? ` · 智能清单「${activeQuery.name}」` : ''}

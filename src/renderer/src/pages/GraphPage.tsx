@@ -12,6 +12,7 @@ import { GraphCanvasG6, type GraphCanvasHandle } from '../components/GraphCanvas
 // 否则会出现「侧栏是一种颜色、画布上是另一种」这种很难查的错位。
 import { KIND_CN, colorOf } from '../lib/graph-colors'
 import { NOTE_FORMATS } from '../components/NoteTree'
+import { flattenFolderTree } from '@shared/folder-tree'
 
 interface Props {
   onOpenNote: (id: number) => void
@@ -493,17 +494,16 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
             ariaLabel="按文件夹过滤"
             value={folderId == null ? '' : String(folderId)}
             onChange={(v) => setFolderId(v === '' ? null : Number(v))}
-            /* 按 parent_id 铺出层级：顶层先出，子文件夹跟在后面并缩进一格。
-               与任务页「按清单筛选」同一套写法（Select 的 depth），而不是平铺一列 ——
-               文件夹名字常常重名或相似，不缩进就分不出谁属于谁。 */
+            /* 按**树序**铺出层级：父后面紧跟它的子，depth 是实际层级（共用 shared/folder-tree）。
+               此前是「顶层全列完、再把所有子文件夹堆在后面并统一缩进一格」：
+               三层的文件夹看起来挂在最后一个顶层下面，归属完全是错的（用户报「路径不对」）。 */
             options={[
               { value: '', label: '全部文件夹' },
-              ...folders
-                .filter((f) => (f.parent_id ?? null) === null)
-                .map((f) => ({ value: String(f.id), label: f.name })),
-              ...folders
-                .filter((f) => (f.parent_id ?? null) !== null)
-                .map((f) => ({ value: String(f.id), label: f.name, depth: 1 })),
+              ...flattenFolderTree(folders).map(({ folder, depth }) => ({
+                value: String(folder.id),
+                label: folder.name,
+                depth,
+              })),
             ]}
           />,
           <Select

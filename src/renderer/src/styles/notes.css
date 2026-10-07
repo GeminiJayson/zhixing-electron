@@ -540,6 +540,28 @@
   flex: 1 1 auto;
   min-width: var(--size-80);
 }
+/**
+ * 标题行里的胶囊与控件**同高**，统一取 `--size-20`（胶囊的自然高度）。
+ *
+ * 这一行是混排的：标题输入 + 类型胶囊 + 运行环境下拉 + 知识徽标 + 保存 / 语法胶囊 + 标签。
+ * 此前它们各算各的 —— 胶囊由 line-height + padding 折出 20px，运行环境下拉是控件的 24px。
+ *
+ * **方向是"把控件压下来"，不是"把胶囊拉上去"**：先试过统一到 `--control-h`（24px），
+ * 整行虽然齐了，但一排胶囊被撑得发虚、行也变高（用户反馈「拉高不好看」）。
+ * 所以以胶囊这一档为准，控件向它看齐。
+ *
+ * 下拉那条的选择器要压过 global.css 对原生控件的兜底
+ * （`button:not(...)` 一类，特异性 (0,4,1)）：`.page--notes .editor .tb__lead .editor__runtime`
+ * 是 (0,5,0)，类数更多，赢。
+ */
+.editor .tb__lead .chip,
+.editor .tb__lead .kbchip {
+  min-height: var(--size-20);
+}
+.page--notes .editor .tb__lead .editor__runtime {
+  min-height: var(--size-20);
+  height: var(--size-20);
+}
 /* 脚本的运行环境下拉：贴在类型胶囊旁边。宽度按内容走 —— 它的选项只有几个短词
    （PowerShell / CMD / Python / Node），跟着 .field 铺满会把标题挤没。 */
 .editor__runtime {
@@ -1866,4 +1888,59 @@ span.links__pill-text {
 }
 .scripted__problem:hover {
   background: var(--bg-hover);
+}
+
+/* ---- 数据库视图（把笔记铺成表格按属性 / 标签 / 类型筛）---- */
+
+/* 与笔记区**互斥显示**：隐藏而不是卸载 —— 切回来时未保存的草稿与滚动位置都还在（见 NotesPage 的 dbView）。
+   此前这条规则连同 .notetable 那一段一起丢了：类名还在 JSX 里挂着，样式却没有，
+   于是打开数据库视图时树与编辑区**照样显示**、表格被挤在里面（用户反馈「打开被折叠了」）。 */
+.notes-wrap.is-hidden {
+  display: none;
+}
+
+.notetable {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: var(--space-2);
+}
+.notetable__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.notetable__title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-weight: var(--fw-semibold);
+}
+/* 搜索框吃掉剩余宽度：筛选条件是这一屏的主输入，不该和下拉一样窄 */
+.notetable__search {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.notetable__search .field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.notetable__views {
+  flex: 0 0 auto;
+  max-width: var(--size-200);
+}
+.notetable__hint {
+  margin: 0;
+}
+/* 表格本体：ag-grid 自己管滚动与列宽，这里只给它一个能撑满剩余高度的盒子 */
+.notetable__grid {
+  flex: 1;
+  min-height: 0;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
 }

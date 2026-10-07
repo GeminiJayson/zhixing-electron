@@ -92,7 +92,10 @@ export function TaskRow(props: Props) {
 
   return (
     <div
-      className={`trow${selected ? ' trow--selected' : ''}${node.effectiveDone ? ' trow--done' : ''}${props.dropHint ? ` trow--drop-${props.dropHint}` : ''}${props.entering ? ' trow--enter' : ''}${props.vtSource ? ' trow--vt-source' : ''}`}
+      className={`trow${selected ? ' trow--selected' : ''}${node.effectiveDone ? ' trow--done' : ''}${
+        // 逾期：标题跟着那枚日期胶囊一起变红（同一个 --danger）。已完成的行不染。
+        due.tone === 'overdue' && !node.effectiveDone ? ' trow--overdue' : ''
+      }${props.dropHint ? ` trow--drop-${props.dropHint}` : ''}${props.entering ? ' trow--enter' : ''}${props.vtSource ? ' trow--vt-source' : ''}`}
       // --row-indent 供进度条定位用：它要跟内容一起缩进（见 tasks.css 的 .trow__progress）
       // --i：交错入场的序号，只给正在入场的行写（见 tasks.css 的 .trow--enter）
       style={
@@ -142,10 +145,19 @@ export function TaskRow(props: Props) {
         )}
       </button>
 
+      {/* 已放弃单独一档：它的底色与行上那枚「已放弃」胶囊同色（都是 --danger）。
+          此前只有"完成 / 未完成"两态，放弃的任务顶着和完成一样的强调色勾选框，
+          与胶囊的颜色对不上。 */}
       <button
-        className={`check${node.effectiveDone ? ' check--done' : ''}`}
+        className={`check${node.effectiveDone ? ' check--done' : ''}${node.status === 'abandoned' ? ' check--abandoned' : ''}`}
         onClick={() => props.onToggle(node.id)}
-        aria-label={node.effectiveDone ? `取消完成：${node.title}` : `完成任务：${node.title}`}
+        aria-label={
+          node.status === 'abandoned'
+            ? `取消放弃：${node.title}`
+            : node.effectiveDone
+              ? `取消完成：${node.title}`
+              : `完成任务：${node.title}`
+        }
       />
 
       <button
