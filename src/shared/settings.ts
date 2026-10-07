@@ -56,6 +56,13 @@ export interface AppSettings {
   /** 长休息的分钟数：休息间隔到了就用它，其余用 pomodoro_break_min */
   pomodoro_long_break_min: number
   pomodoro_auto_break: boolean
+  // ---- 日历口径（2026-10-07：此前写死"按 start_date 逐日展开"）----
+  /** 有开始+截止时怎么落格：range（区间展开）/ due（只按截止）/ start（只按开始） */
+  calendar_span_mode: 'range' | 'due' | 'start'
+  /** 两个日期都没有的任务：today（归今日）/ hide（不显示） */
+  calendar_no_date: 'today' | 'hide'
+  /** 周起始日：mon / sun */
+  calendar_week_start: 'mon' | 'sun'
   reminder_enabled: boolean
   /** 到点时是否发**系统通知**（主窗口收进托盘时也能提醒） */
   reminder_notify: boolean
@@ -193,6 +200,10 @@ export function parseSettings(raw: Record<string, string> = {}): AppSettings {
     pomodoro_interval: num(raw.pomodoro_interval, 4, 1, 12),
     pomodoro_long_break_min: num(raw.pomodoro_long_break_min, 15, 1, 60),
     pomodoro_auto_break: bool(raw.pomodoro_auto_break, false),
+    // 取值用 enum 卡一遍：写错的值会让日历口径"看起来没生效"，而它只是个字符串
+    calendar_span_mode: enumOf(raw.calendar_span_mode, ['range', 'due', 'start'], 'range'),
+    calendar_no_date: enumOf(raw.calendar_no_date, ['today', 'hide'], 'today'),
+    calendar_week_start: enumOf(raw.calendar_week_start, ['mon', 'sun'], 'mon'),
     reminder_enabled: bool(raw.reminder_enabled, true),
     reminder_notify: bool(raw.reminder_notify, true),
     reminder_lead_minutes: num(raw.reminder_lead_minutes, 0, 0, 1440),
@@ -246,6 +257,16 @@ export function parseSettings(raw: Record<string, string> = {}): AppSettings {
   }
 }
 
+/**
+ * 枚举值：不在允许集合里就回退默认。
+ *
+ * 这类"口径"设置全是字符串，写错一个字母不会有任何报错 —— 只会表现为
+ * "我明明改了，日历没反应"。卡在解析这一层，杜绝这种哑失败。
+ */
+function enumOf<T extends string>(raw: string | undefined, allowed: readonly T[], fallback: T): T {
+  return allowed.includes(raw as T) ? (raw as T) : fallback
+}
+
 /** 可空数字：空串 / 非数字都当「没选」。 */
 function numOrNull(raw: string | undefined): number | null {
   if (raw === undefined || raw.trim() === '') return null
@@ -273,6 +294,9 @@ export const DEFAULT_SETTINGS: Record<string, string> = {
   pomodoro_break_min: '5',
   pomodoro_interval: '4',
   pomodoro_long_break_min: '15',
+  calendar_span_mode: 'range',
+  calendar_no_date: 'today',
+  calendar_week_start: 'mon',
   reminder_enabled: '1',
   reminder_lead_minutes: '0',
   reminder_rule_due_time: '1',

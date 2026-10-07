@@ -328,11 +328,18 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 
 ### 4.3 日历
 
-- 6×7 月份网格、**周一为第一列**（与 Qt `QCalendarWidget` 周首一致，`CalendarBoard.tsx`）。
-- 单元格最多 3 个任务胶囊，超出显示 `+N`（、）。
-- 拖拽胶囊到日期格即改期。
-- 右侧固定「当日任务」栏。
-- 已知口径差异：只看 `due_date`、丢弃无日期任务、不展开 `start_date`、恒排除已完成，因此设置项 `calendar_show_done` 在 UI 上无效（详见 `01` R-T-16）。
+- 6×7 月份网格，列序跟随**周起始日**设置（默认周一，与 Qt `QCalendarWidget` 一致；`shared/calendar.ts` 的 `weekdayLabels` 与 `lib/date.ts` 的 `monthGrid` 取同一份约定，两处不能各说各的）。
+- **展开口径可配置**（设置页「任务与提醒」，`settings.calendar_*`）：
+
+  | 设置 | 取值 | 默认 | 效果 |
+  | --- | --- | --- | --- |
+  | 日历展开方式 | 区间逐日展开 / 只按截止日 / 只按开始日 | 区间展开 | 同一批任务的两种读法：**排期占用** vs **交付节点** |
+  | 日历里的无日期任务 | 归入今日 / 不显示 | 归入今日 | 无日期的任务此前一律堆在今日 |
+  | 每周起始日 | 周一 / 周日 | 周一 | 网格列序与表头一起转 |
+
+- 单元格最多 3 个任务胶囊，超出显示 `+N`；拖拽胶囊到日期格即改期；右侧固定「当日任务」栏。
+- 「日历显示已完成任务」（`calendar_show_done`）生效：关掉时隐去有效已完成。
+- 口径逻辑住在 `src/shared/calendar.ts`（纯函数 + 11 个单测），组件只负责画 —— 「哪一天算哪天」这类规则最容易被写散。
 
 ### 4.4 看板
 
@@ -749,7 +756,6 @@ CSS 只能对仍然存在的元素播放动画，而 React 的条件渲染在 fa
 | 中 | 「移动到清单」无入口 | `preload/index.ts` 零调用 | 清单体系半可用 |
 | 中 | 闪念转子任务 / 转笔记指定目录无入口 | `preload/index.ts`、`InboxPage.tsx` | 后端能力浪费 |
 | 中 | 无 MRU、命令集少 | `CommandPalette.tsx` | 高频操作多两步 |
-| 中 | `calendar_show_done` 在日历无效 | `CalendarBoard.tsx` | 设置项失效 |
 | 中 | 富文本无编辑器、Office 只读 | `NotesPage.tsx`、 | 格式体系半可用 |
 | 低 | 边缘缩放、FloatingDock、splash | `src/main/index.ts`；全仓无 dock/splash | 平台体验细节 |
 | 低 | 换主题不改托盘图标 | `src/main/index.ts` | 视觉不一致 |

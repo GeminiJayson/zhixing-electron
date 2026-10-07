@@ -29,9 +29,14 @@ export const pad2 = (n: number): string => String(n).padStart(2, '0')
  * 两份实现迟早会在补位、闰月这些地方分叉。全程用 UTC 造日期，避免本地时区
  * 把 "某月 1 号" 挪到前一天去。
  */
-export function monthGrid(year: number, month0: number): { day: string; inMonth: boolean }[] {
+export function monthGrid(
+  year: number,
+  month0: number,
+  weekStart: 'mon' | 'sun' = 'mon'
+): { day: string; inMonth: boolean }[] {
   const first = new Date(Date.UTC(year, month0, 1))
-  const offset = (first.getUTCDay() + 6) % 7 // 周一=0
+  // 周一=0（默认）；周日起手时周日=0
+  const offset = weekStart === 'sun' ? first.getUTCDay() : (first.getUTCDay() + 6) % 7
   const cells: { day: string; inMonth: boolean }[] = []
   for (let i = 0; i < 42; i++) {
     const d = new Date(Date.UTC(year, month0, 1 - offset + i))

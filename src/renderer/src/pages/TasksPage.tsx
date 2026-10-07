@@ -37,6 +37,7 @@ import { VirtualList } from '../components/VirtualList'
 import { PriorityMenu } from '../components/PriorityMenu'
 import { StatusMenu } from '../components/StatusMenu'
 import { CalendarBoard } from '../components/CalendarBoard'
+import type { CalendarNoDate, CalendarSpanMode, WeekStart } from '@shared/calendar'
 import { KanbanBoard } from '../components/KanbanBoard'
 import { QuadrantBoard, quadrantAssignment, type QuadrantKey } from '../components/QuadrantBoard'
 import { TaskEditor } from '../components/TaskEditor'
@@ -150,6 +151,15 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
   const [pickerItems, setPickerItems] = useState<Task[]>([])
   /** 日历显示已完成（settings.calendar_show_done，默认 false；此前只写不读） */
   const [showDone, setShowDone] = useState(false)
+  /**
+   * 日历口径（settings.calendar_*）：同一批任务在日历上有两种合理读法 ——
+   * 「区间铺开」看排期占用，「只按截止」看交付节点。此前写死前者，现在可配。
+   */
+  const [calCfg, setCalCfg] = useState<{
+    spanMode: CalendarSpanMode
+    noDate: CalendarNoDate
+    weekStart: WeekStart
+  }>({ spanMode: 'range', noDate: 'today', weekStart: 'mon' })
   const [adding, setAdding] = useState<{ parentId: number | null } | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
   /** 共享元素过渡的源行（见 openEditorFromRow）：只在一次过渡的生命周期内非空 */
@@ -183,7 +193,13 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     ])
     setAllTags(tg)
     setFolders(fs as ListFolder[])
-    setShowDone(parseSettings(st).calendar_show_done)
+    const parsed = parseSettings(st)
+    setShowDone(parsed.calendar_show_done)
+    setCalCfg({
+      spanMode: parsed.calendar_span_mode,
+      noDate: parsed.calendar_no_date,
+      weekStart: parsed.calendar_week_start,
+    })
     const countMap = new Map<number, number>()
     for (const r of nc) countMap.set(r.task_id, r.c)
     const tagMap = new Map<number, Tag[]>()
@@ -1438,6 +1454,9 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
                 onToggle={handleToggle}
                 onReschedule={(id, day) => void handleReschedule(id, day)}
                 showDone={showDone}
+                spanMode={calCfg.spanMode}
+                noDate={calCfg.noDate}
+                weekStart={calCfg.weekStart}
               />
             ) : view === 'kanban' ? (
               <KanbanBoard

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CircleAlert, Database, Download, FileText, FolderInput, Info, Link2, Palette, RefreshCw, SlidersHorizontal, Sparkles, Tag, TerminalSquare, Timer, Trash2 } from '@renderer/lib/icons'
 import { parseSettings, type AppSettings } from '@shared/settings'
+import { CALENDAR_SPAN_MODES } from '@shared/calendar'
 import {
   AI_PROTOCOLS,
   DEFAULT_AI_LIBRARY_PROMPT,
@@ -1297,6 +1298,45 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                 checked={settings.calendar_show_done}
                 onChange={(e) => void update('calendar_show_done', e.target.checked ? '1' : '0')}
               />
+            </label>
+            {/* 日历口径：同一批任务有两种合理读法 —— 区间铺开看排期占用，只按截止看交付节点 */}
+            <label className="set-row">
+              <span>日历展开方式</span>
+              <Select
+                className="field field--compact"
+                ariaLabel="日历展开方式"
+                value={settings.calendar_span_mode}
+                onChange={(v) => void update('calendar_span_mode', v)}
+                options={CALENDAR_SPAN_MODES.map((m) => ({ value: m.value, label: m.label, title: m.hint }))}
+              />
+              <span className="u-aux">有开始与截止的任务怎么落到格子里</span>
+            </label>
+            <label className="set-row">
+              <span>日历里的无日期任务</span>
+              <Select
+                className="field field--compact"
+                ariaLabel="日历里的无日期任务"
+                value={settings.calendar_no_date}
+                onChange={(v) => void update('calendar_no_date', v)}
+                options={[
+                  { value: 'today', label: '归入今日' },
+                  { value: 'hide', label: '不显示' },
+                ]}
+              />
+            </label>
+            <label className="set-row">
+              <span>每周起始日</span>
+              <Select
+                className="field field--compact"
+                ariaLabel="每周起始日"
+                value={settings.calendar_week_start}
+                onChange={(v) => void update('calendar_week_start', v)}
+                options={[
+                  { value: 'mon', label: '周一' },
+                  { value: 'sun', label: '周日' },
+                ]}
+              />
+              <span className="u-aux">日历与日期选择器同一份</span>
             </label>
             <div className="set-row">
               <span>标签管理</span>

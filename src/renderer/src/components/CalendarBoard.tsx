@@ -3,7 +3,14 @@ import { ChevronLeft, ChevronRight } from '@renderer/lib/icons'
 import { priorityColor } from '@shared/priority'
 import { isTerminal } from '@shared/task'
 import type { Task } from '@shared/types'
-import { dueLabel, monthGrid, pad2 } from '../lib/date'
+import { dueLabel, monthGrid } from '../lib/date'
+import {
+  groupTasksByDate,
+  weekdayLabels,
+  type CalendarNoDate,
+  type CalendarSpanMode,
+  type WeekStart,
+} from '@shared/calendar'
 
 interface Props {
   tasks: Task[]
@@ -13,60 +20,31 @@ interface Props {
   onReschedule: (id: number, day: string) => void
   /** 日历是否显示已完成任务（settings.calendar_show_done，默认 false） */
   showDone: boolean
+  /** 展开口径：区间 / 只按截止 / 只按开始（settings.calendar_span_mode） */
+  spanMode: CalendarSpanMode
+  /** 两个日期都没有的任务：归今日 / 不显示（settings.calendar_no_date） */
+  noDate: CalendarNoDate
+  /** 周起始日（settings.calendar_week_start） */
+  weekStart: WeekStart
 }
 
-const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日']
+/** 表头跟随周起始（weekdayLabels 与 monthGrid 的列序是同一份约定） */
+const WEEKDAYS = (weekStart: WeekStart): string[] => weekdayLabels(weekStart)
 const MAX_PILLS = 3
 
-const pad = pad2
-
-/**
- * 任务按日期归类：
- * - 开始+截止：区间内每一天都显示（含两端，逐日展开，防御性上限约 10 年）；
- * - 仅截止：截止当天；仅开始：开始当天；无日期：归入「今日」；
- * - 每日内按 (-priority, sort_key, id) 升序。
- */
-export function groupTasksByDate(tasks: Task[], today: string): Map<string, Task[]> {
-  const out = new Map<string, Task[]>()
-  const push = (day: string, t: Task): void => {
-    const list = out.get(day) ?? []
-    list.push(t)
-    out.set(day, list)
-  }
-  const addDays = (day: string, n: number): string => {
-    const d = new Date(day + 'T00:00:00Z')
-    d.setUTCDate(d.getUTCDate() + n)
-    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`
-  }
-  const MAX_SPAN_DAYS = 3660
-  for (const t of tasks) {
-    if (t.start_date && t.due_date) {
-      let lo = t.start_date
-      let hi = t.due_date
-      if (lo > hi) [lo, hi] = [hi, lo]
-      const span = Math.round((Date.parse(hi) - Date.parse(lo)) / 86_400_000)
-      if (span > MAX_SPAN_DAYS) hi = addDays(lo, MAX_SPAN_DAYS)
-      let cur = lo
-      while (cur <= hi) {
-        push(cur, t)
-        cur = addDays(cur, 1)
-      }
-    } else if (t.due_date) {
-      push(t.due_date, t)
-    } else if (t.start_date) {
-      push(t.start_date, t)
-    } else {
-      push(today, t)
-    }
-  }
-  for (const list of out.values()) {
-    list.sort((a, b) => b.priority - a.priority || a.sort_key - b.sort_key || a.id - b.id)
-  }
-  return out
-}
 
 /** 月历 + 右侧当日任务清单；任务胶囊可拖到另一天改期。 */
-export function CalendarBoard({ tasks, effective, onOpen, onToggle, onReschedule, showDone }: Props) {
+export function CalendarBoard({
+  tasks,
+  effective,
+  onOpen,
+  onToggle,
+  onReschedule,
+  showDone,
+  spanMode,
+  noDate,
+  weekStart,
+}: Props) {
   const today = new Date().toLocaleDateString('sv-SE')
   const [cursor, setCursor] = useState(() => {
     const d = new Date()
@@ -85,9 +63,12 @@ export function CalendarBoard({ tasks, effective, onOpen, onToggle, onReschedule
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [tasks, showDone, effective]
   )
-  const byDay = useMemo(() => groupTasksByDate(visible, today), [visible, today])
+  const byDay = useMemo(
+    () => groupTasksByDate(visible, today, { spanMode, noDate }),
+    [visible, today, spanMode, noDate]
+  )
 
-  const cells = useMemo(() => monthGrid(cursor.y, cursor.m), [cursor])
+  const cells = useMemo(() => monthGrid(cursor.y, cursor.m, weekStart), [cursor, weekStart])
   const dayTasks = byDay.get(selected) ?? []
 
   const shift = (delta: number): void => {
@@ -143,7 +124,7 @@ export function CalendarBoard({ tasks, effective, onOpen, onToggle, onReschedule
         </header>
 
         <div className="cal__weekdays">
-          {WEEKDAYS.map((w) => (
+          {WEEKDAYS(weekStart).map((w) => (
             <span key={w}>{w}</span>
           ))}
         </div>
