@@ -32,13 +32,56 @@ const ROOT_LABEL = '未分类'
 export function NotePicker({ notes, folders, value, anchor, onPick, onClose }: Props): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const [q, setQ] = useState('')
+  /**
+   * 挂载点下的文件也出现在这里（虚拟负数 id）。
+   *
+   * 它们是**外部文件**、内容不入库，但用户要的就是「和选普通笔记一样选它」——
+   * 所以这里把它们伪装成 Note 参与同一套分组/图标/搜索，选中时再懒建成真实引用行
+   *（见 handlePick）：调用方因此完全不用知道虚拟节点的存在。
+   */
+  const [mountFiles, setMountFiles] = useState<
+    { nodeId: number; folderId: number; relPath: string; name: string; isDir: boolean }[]
+  >([])
+  useEffect(() => {
+    void window.zhixing.db.mountPickerItems().then(setMountFiles)
+  }, [])
+  /** 真笔记 + 挂载文件（后者 folder_id 指向挂载点，于是分组到那个文件夹下） */
+  const allNotes = useMemo(() => {
+    const fake = mountFiles
+      .filter((m) => !m.isDir)
+      .map(
+        (m) =>
+          ({
+            id: m.nodeId,
+            folder_id: m.folderId,
+            title: m.relPath,
+            format: 'mount',
+            content_md: '',
+            pinned: 0,
+            word_count: 0,
+            created_at: '',
+            updated_at: '',
+          }) as unknown as Note
+      )
+    return fake.length ? [...notes, ...fake] : notes
+  }, [notes, mountFiles])
+  /** 选中：负数 id 是挂载文件 → 先懒建引用行再交真 id；否则原样 */
+  const handlePick = async (idStr: string): Promise<void> => {
+    const n = Number(idStr)
+    if (n < 0) {
+      const real = await window.zhixing.db.ensureMountNoteByNode(n)
+      if (real) onPick(String(real))
+      return
+    }
+    onPick(idStr)
+  }
 
   /** 分组：先"未分类"，再每个文件夹（按名字），空文件夹不显示 */
   const groups = useMemo(() => {
     const kw = q.trim().toLowerCase()
     const match = (n: Note): boolean => !kw || n.title.toLowerCase().includes(kw)
     const byFolder = new Map<number | null, Note[]>()
-    for (const n of notes) {
+    for (const n of allNotes) {
       if (!match(n)) continue
       const key = n.folder_id ?? null
       const list = byFolder.get(key)
@@ -56,7 +99,7 @@ export function NotePicker({ notes, folders, value, anchor, onPick, onClose }: P
     // 文件夹里的笔记按标题排，便于扫
     for (const g of out) g.notes.sort((a, b) => a.title.localeCompare(b.title, 'zh'))
     return out
-  }, [notes, folders, q])
+  }, [allNotes, folders, q])
 
   useEffect(() => {
     const el = ref.current
@@ -134,7 +177,7 @@ export function NotePicker({ notes, folders, value, anchor, onPick, onClose }: P
                     aria-selected={String(n.id) === value}
                     className={'note-picker__item' + (String(n.id) === value ? ' note-picker__item--on' : '')}
                     title={`${n.title}（${NOTE_FORMATS.find((f) => f.key === n.format)?.label ?? n.format}）`}
-                    onClick={() => onPick(String(n.id))}
+                    onClick={() => void handlePick(String(n.id))}
                   >
                     {/* 图标按格式着色：与笔记树、编辑区标题行的那套映射是同一份 */}
                     <Comp size={13} className={'ntree__type--' + tone} aria-hidden />

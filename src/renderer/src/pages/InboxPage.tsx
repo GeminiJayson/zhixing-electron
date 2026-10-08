@@ -13,9 +13,11 @@ import {
 } from '@renderer/lib/icons'
 import { buildTaskTree, effectiveDoneMap, type TaskNode } from '@shared/task'
 import type { Flash, NoteFolder, Task } from '@shared/types'
+import { subscribeDomain } from '@shared/events'
 import { Toolbar } from '../components/Toolbar'
 import { Select } from '../components/Select'
 import { useDialog } from '../components/Dialogs'
+import { useCompleteTask } from '../lib/complete-task'
 import { TaskRow } from '../components/TaskRow'
 import { TargetSelector } from '../components/TargetSelector'
 import { extractSourceUrl, readClipboard } from '../components/CapturePanel'
@@ -61,6 +63,8 @@ function wrapClippedHtml(html: string): string {
 /** 收件箱：任务收件箱 | 闪念 两个 Tab，含整理闭环（转任务 / 转笔记 / 归档）。 */
 export function InboxPage({ onNotice, onChanged }: Props) {
   const dialog = useDialog()
+  /** 完成任务：有关联笔记时会先问「要不要总结」 */
+  const completeTask = useCompleteTask(onNotice)
   const [tab, setTab] = useState<Tab>('tasks')
   /** 首次数据到位后只自动跳一次 tab（用户之后手动切换不再干预） */
   const [initialTabSettled, setInitialTabSettled] = useState(false)
@@ -101,6 +105,22 @@ export function InboxPage({ onNotice, onChanged }: Props) {
   useEffect(() => {
     void loadFlashes()
   }, [loadFlashes])
+
+  /**
+   * 订阅数据变更：**人就在这一页时也要刷新**。
+   *
+   * 此前只在挂载时拉一次 —— 剪藏一条新闪念（走 HTTP 端点落库）之后页面纹丝不动，
+   * 得切走再切回来才看得见（用户反馈）。两个域都要：闪念看 flash，
+   * 任务收件箱看 task（任务可能被别处改）。
+   */
+  useEffect(
+    () =>
+      subscribeDomain(['flash', 'task'], () => {
+        void loadFlashes()
+        void loadTasks()
+      }),
+    [loadFlashes, loadTasks]
+  )
 
   // 有闪念、而任务收件箱是空的时，默认落到「闪念」——
   // 否则闪念躺在另一个 tab 里，用户会以为丢掉了一条。
@@ -188,7 +208,7 @@ export function InboxPage({ onNotice, onChanged }: Props) {
   }, [loadTasks, loadFlashes, onChanged])
 
   const handleToggleTask = async (id: number): Promise<void> => {
-    await window.zhixing.db.toggleTask(id)
+    await completeTask(id, () => refresh())
     window.dispatchEvent(
       new CustomEvent('zhixing:undoable', { detail: { ids: [id], label: '任务状态已切换' } })
     )

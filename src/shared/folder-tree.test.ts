@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { flattenFolderTree } from './folder-tree'
+import { flattenFolderTree, folderWithDescendants } from './folder-tree'
 
 const f = (id: number, parent_id: number | null, name: string): { id: number; parent_id: number | null; name: string } => ({ id, parent_id, name })
 
@@ -40,5 +40,17 @@ describe('flattenFolderTree', () => {
 
   it('空输入返回空', () => {
     expect(flattenFolderTree([])).toEqual([])
+  })
+  it('folderWithDescendants：自身 + 全部后代（递归）', () => {
+    const all = [f(1, null, 'A'), f(2, 1, 'B'), f(3, 2, 'C'), f(4, null, 'D'), f(5, 4, 'E')]
+    expect([...folderWithDescendants(all, 1)].sort()).toEqual([1, 2, 3])
+    expect([...folderWithDescendants(all, 2)].sort()).toEqual([2, 3])
+    expect([...folderWithDescendants(all, 4)].sort()).toEqual([4, 5])
+    expect([...folderWithDescendants(all, 3)].sort()).toEqual([3])
+  })
+
+  it('folderWithDescendants：成环也不死循环', () => {
+    const cyc = [f(1, 2, 'A'), f(2, 1, 'B')]
+    expect([...folderWithDescendants(cyc, 1)].sort()).toEqual([1, 2])
   })
 })

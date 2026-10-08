@@ -132,6 +132,38 @@ export const noteApi = {
     brokenLinks: (): Promise<{ src_note_id: number; src_title: string; dst_title: string }[]> =>
       ipcRenderer.invoke('db:brokenLinks'),
     noteTemplates: (): Promise<string[]> => ipcRenderer.invoke('db:noteTemplates'),
+  // ---- 挂载本地文件夹（文档不入库，只存顶层引用路径）----
+  mounts: (): Promise<{ id: number; name: string; path: string }[]> => ipcRenderer.invoke('db:mounts'),
+  mountFolder: (path: string, parentId: number | null): Promise<number | null> =>
+    ipcRenderer.invoke('db:mountFolder', path, parentId),
+  unmountFolder: (id: number): Promise<boolean> => ipcRenderer.invoke('db:unmountFolder', id),
+  /** 选择器用：挂载点下的文件（虚拟负数 id），一次给全 */
+  mountPickerItems: (): Promise<{ nodeId: number; folderId: number; relPath: string; name: string; isDir: boolean }[]> =>
+    ipcRenderer.invoke('db:mountPickerItems'),
+  /** 虚拟节点 id → 真实 note id（懒建），选中挂载文件时用 */
+  ensureMountNoteByNode: (nodeId: number): Promise<number | null> =>
+    ipcRenderer.invoke('db:ensureMountNoteByNode', nodeId),
+  /** 来源已失效的挂载引用行 */
+  staleMountNotes: (): Promise<{ id: number; title: string; mount_ref: string }[]> =>
+    ipcRenderer.invoke('db:staleMountNotes'),
+  /** 清理失效引用行（设置页入口） */
+  deleteStaleMountNotes: (): Promise<number> => ipcRenderer.invoke('db:deleteStaleMountNotes'),
+  /** 所有挂载点的条目一次拿全（渲染层不许在循环里逐条 IPC） */
+  /** 挂载文件的引用行（懒建，幂等）：选择器/图谱在引用前拿一个真实 note id */
+  ensureMountNote: (folderId: number, relPath: string): Promise<unknown> =>
+    ipcRenderer.invoke('db:ensureMountNote', folderId, relPath),
+  allMountEntries: (): Promise<Record<number, { relPath: string; name: string; isDir: boolean; size: number; mtime: number }[]>> =>
+    ipcRenderer.invoke('db:allMountEntries'),
+  mountEntries: (id: number): Promise<{ relPath: string; name: string; isDir: boolean; size: number; mtime: number }[]> =>
+    ipcRenderer.invoke('db:mountEntries', id),
+  readMountFile: (
+    id: number,
+    relPath: string,
+  ): Promise<{ kind: 'text' | 'image' | 'none'; name: string; size: number; text?: string; dataUrl?: string; tooLarge?: boolean } | null> =>
+    ipcRenderer.invoke('db:readMountFile', id, relPath),
+  /** 某个模板的标题与正文（编辑器用它把结构插进当前笔记，而不是新建一篇） */
+  noteTemplateText: (kind: string): Promise<{ title: string; content: string } | null> =>
+    ipcRenderer.invoke('db:noteTemplateText', kind),
     createNoteFromTemplate: (kind: string, folderId: number | null): Promise<Note | null> =>
       ipcRenderer.invoke('db:createNoteFromTemplate', kind, folderId),
     bindDanglingByTitle: (title: string): Promise<number> =>

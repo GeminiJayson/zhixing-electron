@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { cellKey, isCellRef, isSheetName, listNoteBlocks, type NoteBlock } from '@renderer/lib/block-fingerprint'
 import { NotePicker } from './NotePicker'
+import { flattenFolderTree } from '@shared/folder-tree'
 import { Select } from './Select'
 import { RepeatRuleEditor } from './RepeatRuleEditor'
 import { PRIORITY_CHOICES } from '@shared/priority'
@@ -88,10 +89,27 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
   /** 整篇级的关联（task_note_link 与 task_note_ref 合并去重） */
   const [linkedNotes, setLinkedNotes] = useState<Note[]>([])
 
+  /**
+   * 关联的知识库文件夹（null = 没关联）。
+   *
+   * 关联上之后，它下面**所有**笔记（含递归子文件夹）会被自动引用，外面增删也跟着变 ——
+   * 自动行带 source='folder'，与手动关联区分开，同步只动前者。
+   */
+  const [noteFolderId, setNoteFolderId] = useState<number | null>(null)
+
   const loadContexts = useCallback(async (): Promise<void> => {
     setContexts(await window.zhixing.db.linkedContexts(task.id))
     setLinkedNotes(await window.zhixing.db.linkedNotes(task.id))
+    setNoteFolderId(await window.zhixing.db.taskNoteFolder(task.id))
   }, [task.id])
+
+  /** 改关联文件夹：写库后**重新拉一次关联列表**（自动引用是后端当场对齐的） */
+  const handleSetNoteFolder = async (folderId: number | null): Promise<void> => {
+    const ok = await window.zhixing.db.setTaskNoteFolder(task.id, folderId)
+    if (!ok) return
+    setNoteFolderId(folderId)
+    setLinkedNotes(await window.zhixing.db.linkedNotes(task.id))
+  }
 
   /**
    * 选完笔记：**先按整篇建立关联**（这一步立刻可见，也是"不选段落"时的最终结果），
@@ -341,6 +359,31 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
             现在只有一个入口：**选完笔记先按整篇关联**（不选段落时这就是最终结果），
             想更精确就在下面那行选一项 —— 精度由这一步决定，而不是由入口决定。
           */}
+          {/*
+            关联一个知识库文件夹：它下面的笔记（**递归子文件夹**）会被自动引用，
+            外面新增/删除都跟着对齐。放在「已关联笔记」之前 —— 它是那块内容的来源之一。
+          */}
+          <label className="form-row">
+            <span>关联文件夹</span>
+            <Select
+              className="field field--compact"
+              ariaLabel="关联知识库文件夹"
+              value={noteFolderId == null ? '' : String(noteFolderId)}
+              onChange={(v) => void handleSetNoteFolder(v === '' ? null : Number(v))}
+              options={[
+                { value: '', label: '不关联' },
+                ...flattenFolderTree(folders).map(({ folder, depth }) => ({
+                  value: String(folder.id),
+                  label: folder.name,
+                  depth,
+                })),
+              ]}
+            />
+            <span className="u-aux">
+              {noteFolderId == null ? '它下面所有笔记（含子文件夹）会自动关联' : '已关联：下面这些是自动跟上来的'}
+            </span>
+          </label>
+
           <section className="form-row">
             <span>已关联笔记（{linkedNotes.length + contexts.length}）</span>
             {linkedNotes.length + contexts.length === 0 ? (

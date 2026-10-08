@@ -2,7 +2,7 @@
 
 **知行 ZhiXing**：一个本地优先的个人待办 + 知识图谱桌面客户端（Electron + React + TypeScript）。
 
-- 仓库：`zhixing-electron`（GitHub: [GeminiJayson/zhixing-electron](https://github.com/GeminiJayson/zhixing-electron)），当前版本 **`1.24.2`**（`package.json`），安装包与便携版见仓库 Releases。
+- 仓库：`zhixing-electron`（GitHub: [GeminiJayson/zhixing-electron](https://github.com/GeminiJayson/zhixing-electron)），当前版本 **`1.24.3`**（`package.json`），安装包与便携版见仓库 Releases。
 - **九个页面的功能面已全部实现**（`src/renderer/src/nav.ts` / `App.tsx`），分域与逐项状态见 §2；已决策不做的方向不计入缺口（见 §15）。
 - 本地优先：核心功能零网络依赖、无遥测、无账号（NFR-01）。
 - 数据全部落在本机一个 SQLite 文件里，可直接备份 / 恢复 / 整库导出导入。
@@ -85,7 +85,7 @@ npm run dev                           # 开发模式（HMR）
 
 ## 6. 验证脚本体系
 
-`scripts/` 顶层 **72 个 `.mjs`**（另有 `verify-seed.cjs` 与 `lib/`）验证与构建脚本，以及 `scripts/fixtures/gen-office-fixtures.py` 夹具生成器。
+`scripts/` 顶层 **73 个 `.mjs`**（另有 `verify-seed.cjs` 与 `lib/`）验证与构建脚本，以及 `scripts/fixtures/gen-office-fixtures.py` 夹具生成器。
 
 统一方法论：**拷贝备份库到临时 `ZHIXING_HOME` → 启动真实 Electron（`--remote-debugging-port`）+ WebSocket/CDP → 经 IPC 操作 → 用 `sqlite3` CLI 校验落库**；多数脚本只在副本库上跑，绝不碰真实库。
 
@@ -95,6 +95,7 @@ npm run dev                           # 开发模式（HMR）
 | --- | --- |
 | `node scripts/smoke.mjs` | 冒烟：主进程 → 窗口 → preload 注入 → better-sqlite3 读库 → React 渲染整链路 |
 | `node scripts/writecheck.mjs` | 写入链路：任务增/改/删（IPC → db → SQLite），18 个断言点 |
+| `node scripts/check-graph-links.mjs` | 图谱连线：矩阵 ↔ 实现的端到端一致性（28 项，含环路两条回归） |
 | `npm run typecheck` | 三端类型检查，改动后最先跑的一条 |
 
 按类别（断言点数为审计计数）：
@@ -111,7 +112,7 @@ npm run dev                           # 开发模式（HMR）
 
 进 `package.json` 的入口共 **21 条**。常用：`dev` / `build` / `typecheck` / `test`；检查类 `check:jieba` / `check:security` / `check:contrast` / `check:ctlheight` / `check:interaction`；构建发布 `dist:win` / `dist:dir` / `postdist:*` / `binding:win` / `release` / `release:dry`；图标生成 `gen:icons` / `gen:app-icons`。
 
-单元测试为 vitest：**61 个测试文件 / 754 个用例**，只覆盖纯函数（`vitest.config.ts` 明确排除涉及 SQLite / IPC / 真实窗口的部分，那部分留在 `scripts/*.mjs`）。
+单元测试为 vitest：**62 个测试文件 / 763 个用例**，只覆盖纯函数（`vitest.config.ts` 明确排除涉及 SQLite / IPC / 真实窗口的部分，那部分留在 `scripts/*.mjs`）。
 
 ## 7. 打包与发布
 
@@ -182,8 +183,8 @@ zhixing-electron/
 │   │   └── db/                    # 数据层 33 个 .ts（connection / schema / migrate / tasks / notes / graph / workflow / habit / note-table / …）
 │   ├── preload/                   # index.ts（拼装）+ api/（8 个域文件）+ index.d.ts
 │   ├── renderer/                  # React 应用：pages/（9 页）components/（54 个）lib/（27 个）styles/（17 个 CSS）
-│   └── shared/                    # 主/渲染共用纯函数 85 个 .ts（含 43 个单测；types / events / settings / query / habit / calendar / …）
-├── scripts/                       # 72 个 .mjs（顶层共 74 个文件）
+│   └── shared/                    # 主/渲染共用纯函数 87 个 .ts（含 44 个单测；types / events / settings / query / habit / calendar / …）
+├── scripts/                       # 73 个 .mjs（顶层共 75 个文件）
 ├── CONTEXT.md                     # 术语表：只在词义会误解时收录
 └── docs/                          # 01–03 主文档 + 方案/审计/调研/发布说明
 ```
@@ -221,7 +222,7 @@ zhixing-electron/
 | [specs/](docs/specs) | 方案与规范：知识库重组、归属 vs 引用、第三期调研、保险箱设计、**G6 迁移（[方案](docs/specs/g6-migration.md) + [进程](docs/specs/g6-migration-status.md) + [原生节点调研](docs/specs/g6-native-nodes.md) + [能力审计](docs/specs/g6-capability-audit.md)）** |
 | [audit/gaps-2026-10-04.md](docs/audit/gaps-2026-10-04.md) | 全库缺口审计（本轮的起点） |
 | [research/product-comparison-2026.md](docs/research/product-comparison-2026.md) | 竞品对比调研 |
-| [release-notes-v*.md](docs/release-notes-v1.24.2.md) | 逐版本发布说明（v1.0.0 – v1.24.2） |
+| [release-notes-v*.md](docs/release-notes-v1.24.3.md) | 逐版本发布说明（v1.0.0 – v1.24.3） |
 | [adr/](docs/adr) | 架构决策记录 —— 一个决定一份，写清否掉了什么与代价 |
 | [agents/](docs/agents) | Agent 工作流：issue 跟踪、triage 标签、领域文档 |
 | [CONTEXT.md](CONTEXT.md) | 术语表：归属 vs 引用、清单/分组/文件夹同表、软删除等容易误解的词 |

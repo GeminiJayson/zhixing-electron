@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { conn } from '../db/connection'
 import { addFlash, updateFlashContent } from '../db/inbox'
+import { broadcastDataChanged } from '../db'
 import { listSettings, setSetting } from '../db/settings'
 import { randomBytes } from 'node:crypto'
 import * as store from './store'
@@ -253,13 +254,21 @@ async function onRequest(req: IncomingMessage, res: ServerResponse): Promise<voi
       url,
       useHtml ? 'html' : 'text'
     )
+    // **必须广播**：这条走的是 HTTP 端点，不经过 IPC 的写域表 —— 不广播的话，
+    // 正停在收件箱页的用户看不到新条目（要切页才刷新）。
+    if (flash) broadcastDataChanged('flash')
     json(res, 200, { ok: true, action: 'created', mode: b.mode ?? 'readability' })
     // 图片本地化：**不 await** —— 它是落库之后的收尾工作，成败都不该影响这次剪藏的结果。
     // 失败（网络断、防盗链、闪念已被删）就保留外链，正文本身已经在库里了。
     if (flash && useHtml) {
       void localizeClipImages(storedHtml, url)
         .then((localized) => {
-          if (localized !== storedHtml) updateFlashContent(flash.id, localized)
+          if (localized !== storedHtml) {
+            updateFlashContent(flash.id, localized)
+            // 正文变了（外链 → 本地引用），同样要通知页面：否则收件箱里显示的还是旧的外链图，
+            // 得切页才刷新出本地图
+            broadcastDataChanged('flash')
+          }
         })
         .catch(() => {
           // 静默：图片没抓到不影响已经落库的正文

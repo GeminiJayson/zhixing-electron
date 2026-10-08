@@ -8,7 +8,7 @@ import { priorityLabel } from '../../shared/priority'
 import { conn } from './connection'
 import { linkTaskNote, unlinkTaskNote } from './tasks'
 import { reparentTask } from './task-ops'
-import { saveNote } from './notes'
+import { moveNoteFolder, saveNote } from './notes'
 import { quietFailure } from '../../shared/quiet-failure'
 
 // ---------------------------------------------------------------- 图谱
@@ -677,7 +677,10 @@ export const EDGE_EITHER = 'either'
  */
 const ALLOWED_CONNECTIONS: Record<string, 'ownership' | 'reference'> = {
   'note|note': 'reference',
-  'note|dangling': 'reference',
+  // 'note|dangling' 曾在这里（reference），但 connectGraphNodes 从来没有对应分支 ——
+  // 「允许但做不到」比「不允许」更糟：用户拖完什么都不发生，也不报错。
+  // 待建链接的正确处理是**点一下转正**（由 [[标题]] 驱动），不是手动连线；
+  // 真要支持「把已有笔记绑到这个待建标题」，那是另一种能力，届时再连语义一起补。
   'folder|folder': 'ownership',
   'folder|note': 'ownership',
   'task|task': 'ownership',
@@ -846,7 +849,12 @@ export function connectGraphNodes(
     edgeKind === 'ownership' &&
     srcKind === dstKind &&
     (srcKind === 'folder' || srcKind === 'task') &&
-    wouldCreateCycle(graphNodeId(srcKind, srcRef), graphNodeId(dstKind, dstRef))
+    // 参数是 (child, newParent)：**被挂的是 dst，新父是 src**。
+    // 这里曾经写成 (src, dst) —— 方向反了，于是「挂到自己当前的父或任何祖先下」
+    // 被误判成环（把深层文件夹上移一级是最常见的操作，却会被拒），
+    // 而「挂到自己的子孙下」只是碰巧判对（child 的祖先链里正好有新父）。
+    // scripts/check-graph-links.mjs 的幂等走查抓到了它。
+    wouldCreateCycle(graphNodeId(dstKind, dstRef), graphNodeId(srcKind, srcRef))
   ) {
     return false
   }
@@ -858,6 +866,13 @@ export function connectGraphNodes(
   }
   if (srcKind === 'folder' && dstKind === 'note') {
     return saveNote(dstRef, { folder_id: srcRef }) !== null
+  }
+  // 文件夹改挂到另一个文件夹（图谱上把子文件夹连到新父级）。
+  // 允许矩阵里 'folder|folder' 一直是 ownership，但这里**漏了这条分支** ——
+  // 于是拖完静默失败（返回 false），用户看到的就是「改不了归属」（用户反馈）。
+  // 环路校验在上面已经做过一次，moveNoteFolder 自己还有一道（拒绝挂到自身或子孙下）。
+  if (srcKind === 'folder' && dstKind === 'folder') {
+    return moveNoteFolder(dstRef, srcRef) !== null
   }
   if (srcKind === 'task' && dstKind === 'task') {
     return reparentTask(dstRef, srcRef) !== null
@@ -890,6 +905,8 @@ export function removeGraphEdge(
       const noteRef = srcKind === 'note' ? srcRef : dstRef
       return saveNote(noteRef, { folder_id: null }) !== null
     }
+    // 断开「文件夹 ↔ 文件夹」= 把它移回顶层（与断开 note↔folder 归「全部笔记」对称）
+    if (srcKind === 'folder' && dstKind === 'folder') return moveNoteFolder(dstRef, null) !== null
     // 端点组合没被覆盖：这是实现缺口，不是「没有这条边」，不能默默返回 false
     quietFailure('删除连线', new Error('未支持的端点组合'), srcKind + ' × ' + dstKind)
     return false

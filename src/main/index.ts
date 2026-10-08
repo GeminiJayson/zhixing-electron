@@ -32,6 +32,7 @@ import { resolveThemePack } from '../shared/theme-packs'
 import { initFileLog } from './log'
 import { hardenWindow } from './security'
 import { resolveAttachFile } from './clip-images'
+import { refreshMountWatches } from './mounted-folder'
 import { CLIP_ATTACH_SCHEME } from '../shared/clip-image'
 import { logTaskActivity } from './db/task-activity'
 import { dueTargets } from './db/workflow-scheduler'
@@ -40,7 +41,7 @@ import { listSettings, setSetting } from './db/settings'
 import { registerKnowledgeIpc } from './knowledge-ipc'
 import { registerVaultIpc, stopVaultTimers } from './vault/ipc'
 import { startVaultServer, stopVaultServer } from './vault/server'
-import { autoBackup, broadcastDataChanged, closeDb, currentSettings, dbPath, dbOpenError, dbReadonlyReason, dueReminders, recordReminderFire, reminderPolicy, ensureDefaultSettings, listTodayTasks, open, registerDbHandlers, saveWidgetGeometry, saveWidgetBall, setDataChangedHook, snoozeReminder, dismissReminder, instantiateWorkflow, listScheduleTargets } from './db'
+import { syncAllFolderLinkedTasks, autoBackup, broadcastDataChanged, closeDb, currentSettings, dbPath, dbOpenError, dbReadonlyReason, dueReminders, recordReminderFire, reminderPolicy, ensureDefaultSettings, listTodayTasks, open, registerDbHandlers, saveWidgetGeometry, saveWidgetBall, setDataChangedHook, snoozeReminder, dismissReminder, instantiateWorkflow, listScheduleTargets } from './db'
 import { decideReminder } from '../shared/reminder'
 import {
   cancelOrganizeLibrary,
@@ -1482,6 +1483,8 @@ app.whenReady().then(() => {
   app.setName('知行 ZhiXing')
   // `zx-attach://` → <数据目录>/attachments/clip/ 下的真实文件。
   // 路径合法性全部由 resolveAttachFile 判定（挡 .. / 斜杠 / 越界），这里只做 IO。
+  // 挂载的本地文件夹：建 watcher（顺带收掉路径已失效的挂载点）
+  refreshMountWatches()
   protocol.handle(CLIP_ATTACH_SCHEME, async (req) => {
     const file = resolveAttachFile(req.url)
     if (!file) return new Response('not found', { status: 404 })
@@ -1580,6 +1583,12 @@ app.whenReady().then(() => {
     widget.syncWidgetVisibility()
     // 工作流模板的触发器刚改过：目录监视立刻重建，不必等下一次分钟级扫描
     if (domain === 'workflow') refreshFolderWatches(listFolderTriggerTargets())
+    // 笔记/任务有动静后，让「关联了文件夹」的任务重新对齐自动引用。
+    // 它**直接写库、不走写域表**，所以不会把自己再触发一遍；真有改动时补一次广播，
+    // 让界面当场看到关联列表变化（否则要切页）。
+    if (domain === 'note' || domain === 'task') {
+      if (syncAllFolderLinkedTasks() > 0) broadcastDataChanged('task')
+    }
   })
   // 浮窗随应用启动创建，但**不显示**：
   // 启动只露主窗，之后由主窗显隐联动浮窗。

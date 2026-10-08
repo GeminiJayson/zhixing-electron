@@ -24,6 +24,7 @@ import { subscribeDomain } from '@shared/events'
 import { parseSettings } from '@shared/settings'
 import { Select } from '../components/Select'
 import { useDialog } from '../components/Dialogs'
+import { useCompleteTask } from '../lib/complete-task'
 import { PopMenu, type PopMenuItem } from '../components/PopMenu'
 import { TagMenu } from '../components/TagMenu'
 import {
@@ -98,6 +99,8 @@ function filterTree(nodes: TaskNode[], query: string): TaskNode[] {
 
 export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: Props) {
   const dialog = useDialog()
+  /** 完成任务：有关联笔记时会先问「要不要总结」（见 lib/complete-task） */
+  const completeTask = useCompleteTask(onNotice)
   const [tasks, setTasks] = useState<Task[]>([])
   const [counts, setCounts] = useState<Map<number, number>>(new Map())
   const [tags, setTags] = useState<Map<number, Tag[]>>(new Map())
@@ -816,7 +819,7 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     const wasDone = before
       ? (effective.get(id) ?? isTerminal(before.status))
       : false
-    await window.zhixing.db.toggleTask(id)
+    await completeTask(id, () => load())
     // 撤销要记录勾选前的 prev_status
     window.dispatchEvent(
       new CustomEvent('zhixing:undoable', {

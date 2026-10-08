@@ -4,6 +4,7 @@ import { parseSettings, type AppSettings } from '@shared/settings'
 import { applyAppearance, applyMotion, resolveThemeMode } from './theme'
 import { CommandPalette } from './components/CommandPalette'
 import { DialogProvider } from './components/Dialogs'
+import { SummaryEditor } from './components/SummaryEditor'
 // FloatingDock（右下角快捷新建浮条）已按用户要求下线，组件文件仍在 components/ 下未删
 import { ReminderPopup } from './components/ReminderPopup'
 import { Sidebar } from './components/Sidebar'
@@ -42,6 +43,21 @@ type Theme = 'light' | 'dark'
 
 export default function App() {
   const [page, setPage] = useState<PageKey>('today')
+  /**
+   * 「写总结」浮层的任务。**状态放在 App 而不是浮层里** ——
+   * 浮层自己监听事件时踩过坑：监听的 effect 挂在已卸载的实例上时，它调用的 setState
+   * 会被 React 静默忽略（setJob 记到了 269，渲染读到的 job 却始终是 null，控制台无报错）。
+   * App 是稳定宿主，不会有幽灵实例。
+   */
+  const [summaryJob, setSummaryJob] = useState<{ taskId: number; taskTitle: string } | null>(null)
+  useEffect(() => {
+    const on = (e: Event): void => {
+      const d = (e as CustomEvent<{ taskId: number; taskTitle: string }>).detail
+      if (d && d.taskId) setSummaryJob({ taskId: d.taskId, taskTitle: d.taskTitle })
+    }
+    window.addEventListener('zhixing:summary', on)
+    return () => window.removeEventListener('zhixing:summary', on)
+  }, [])
   /** 页面切换方向：决定新页面从右侧（前进）还是左侧（返回）进场 */
   const [dir, setDir] = useState<'forward' | 'back'>('forward')
   const [collapsed, setCollapsed] = useState(false)
@@ -500,6 +516,8 @@ export default function App() {
 
   return (
     <DialogProvider>
+      {/* 写总结的浮层：由勾选框派发 zhixing:summary 事件唤起（见 lib/complete-task） */}
+      <SummaryEditor job={summaryJob} onClose={() => setSummaryJob(null)} />
       <div className={'app' + (zen ? ' app--zen' : '')}>
         <TitleBar
         title={`知行 ZhiXing · ${current.label}`}
@@ -597,6 +615,6 @@ export default function App() {
       )}
       <Toast message={toast} />
       </div>
-    </DialogProvider>
+</DialogProvider>
   )
 }

@@ -292,12 +292,22 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
   const selectedNode = nodes.find((n) => n.id === selected) ?? null
 
   /**
-   * 连线写入：
-   * 先按允许矩阵判断，任务↔笔记再用 ownership/reference 决定写哪张表。
+   * 连线写入：**只有一个落库入口** —— 主进程的 `connectGraphNodes`。
+   *
+   * 此前页面自己又按 kind 分派了一遍（note→linkNotes、folder→saveNote…），于是同一套规则存在两份：
+   * 主进程那份补了 `folder|folder`（改挂文件夹）之后，**画布上仍然连不上** ——
+   * 页面那份落到 else 分支，弹一句「该组合暂不支持」。环路校验、方向归一（note→task 归一成 task→note）
+   * 也都只有主进程那份才有。
+   *
+   * 现在这里只做两件事：问主进程「这个组合允不允许」，然后把 refId 交给它。
+   * 能连什么、连上改哪张表，全部以主进程为准 —— 与删边（`removeGraphEdge` 是唯一入口）对称。
    */
   const linkBetween = useCallback(
     async (src: GraphNodePayload, dst: GraphNodePayload): Promise<void> => {
-      // 允许矩阵在主进程：画布与页面都不自行判断「能不能连」
+      if (src.id === dst.id) {
+        onNotice('不能连到自己')
+        return
+      }
       const kind = await window.zhixing.db.graphConnectionAllowed(src.kind, dst.kind)
       if (!kind) {
         onNotice(`不允许连接 ${src.kind} → ${dst.kind}`)
@@ -305,32 +315,28 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
       }
       const mode = kind === 'either' ? linkMode : (kind as 'ownership' | 'reference')
       try {
-        if (src.kind === 'note' && dst.kind === 'note') {
-          const ok = await window.zhixing.db.linkNotes(src.refId, dst.refId)
-          onNotice(ok ? '已建立笔记引用' : '未能建立（可能已存在）')
-        } else if (src.kind === 'task' && dst.kind === 'note') {
-          if (mode === 'reference') {
-            await window.zhixing.db.linkTaskNoteRef(src.refId, dst.refId)
-            onNotice('已建立任务引用笔记')
-          } else {
-            await window.zhixing.db.linkTaskNote(src.refId, dst.refId)
-            onNotice('已建立任务归属笔记')
-          }
-        } else if (src.kind === 'folder' && dst.kind === 'note') {
-          await window.zhixing.db.saveNote(dst.refId, { folder_id: src.refId })
-          onNotice('已把笔记移入该文件夹')
-        } else if (src.kind === 'task' && dst.kind === 'task') {
-          const t = await window.zhixing.db.reparentTask(dst.refId, src.refId)
-          onNotice(t ? '已改挂任务层级' : '不能挂到自己的子孙下（会形成环）')
+        const ok = await window.zhixing.db.connectGraphNodes(src.kind, src.refId, dst.kind, dst.refId, mode)
+        if (ok && src.kind === 'folder' && dst.kind === 'note') {
+          // 搬家要说清「从哪到哪」：笔记已经在别的文件夹时，只说「已移入」会让人以为
+          // 它同时属于两个文件夹（归属是唯一的，这是**移动**不是新增）。
+          // 当前归属就写在节点的 colorHint 上（folder_id 的字符串，根目录是 'root'），
+          // 不用为此再查一次库。
+          const fromId = dst.colorHint && dst.colorHint !== 'root' ? Number(dst.colorHint) : null
+          const from = fromId != null ? nodes.find((n) => n.kind === 'folder' && n.refId === fromId) : null
+          onNotice(
+            from && from.refId !== src.refId
+              ? `已从《${from.label}》移到《${src.label}》`
+              : `已移入《${src.label}》`
+          )
         } else {
-          onNotice('该组合暂不支持')
+          onNotice(ok ? '已建立关系' : '未能建立（可能已存在，或会形成环）')
         }
       } catch (err) {
         onNotice('建立关系失败：' + (err as Error).message)
       }
       await load()
     },
-    [linkMode, onNotice, load]
+    [linkMode, onNotice, load, nodes]
   )
 
   /** 点选式连线：先选了起点（侧栏「从此节点连线」），再点终点。 */
@@ -347,15 +353,16 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
 
 
   /**
-   * 这条边能否编辑。排除三类：
-   * - 文件夹↔文件夹（主进程也不支持建立这种连线）；
+   * 这条边能否编辑。排除两类：
    * - 悬空引用（负 id 的虚拟节点）：真要删掉得改正文里的 [[标题]]，不在本次范围；
    * - 段落锚（只读生成边，删边应改任务的段落引用）。
+   *
+   * **文件夹↔文件夹不再排除**：主进程已经支持改挂（`moveNoteFolder`），断开就是移回顶层 ——
+   * 这里再拦一道，用户就只能连、不能断（注释里那句「主进程也不支持」也早已过时）。
    */
   const canEditEdge = useCallback((a: SimNode | undefined, b: SimNode | undefined): boolean => {
     if (!a || !b) return false
     if (a.kind === 'anchor' || b.kind === 'anchor') return false
-    if (a.kind === 'folder' && b.kind === 'folder') return false
     return a.refId > 0 && b.refId > 0
   }, [])
 
@@ -365,7 +372,8 @@ export function GraphPage({ onOpenNote, onCreateNoteFromDangling, onNotice }: Pr
    * 按两端 id 删除连线 —— G6 画布走这条路。
    *
    * 与 `removeEdge`（按下标，旧 SVG 路径）**共用同一套判定与同一个 IPC**：
-   * `canEditEdge` 排掉段落锚、文件夹↔文件夹与悬空引用，`removeGraphEdge` 是唯一的落库入口。
+   * `canEditEdge` 排掉段落锚与悬空引用（文件夹↔文件夹不再排除 —— 主进程已支持改挂/断开），
+   * `removeGraphEdge` 是唯一的落库入口。
    * 两份实现会让「这条边能不能删」出现两种答案。
    */
   /**

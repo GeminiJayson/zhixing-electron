@@ -1944,3 +1944,144 @@ span.links__pill-text {
   border-radius: var(--radius-lg);
   overflow: hidden;
 }
+
+/* ---- 挂载文件的只读预览 ---- */
+
+/* 预览打开时让出编辑区与右侧信息区：挂载文件属于磁盘上的目录，
+   知识库对它只能看不能改，所以不摆一套「看起来能编辑」的界面出来。 */
+.notes-main.is-mount .editor,
+.notes-main.is-mount .links {
+  display: none;
+}
+
+.mountview {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--bg-layer);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--panel-shadow);
+}
+.mountview__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.mountview__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--fw-semibold);
+}
+/* 只读正文：等宽、可滚动、保留换行 */
+.mountview__text {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  font-size: var(--text-sm);
+  line-height: var(--lh-comfy);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.mountview__image {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+.mountview__image img {
+  max-width: 100%;
+  border-radius: var(--radius-lg);
+}
+/* 树里的挂载文件行 */
+.ntree__mount-size {
+  flex: 0 0 auto;
+  color: var(--fg-secondary);
+  font-size: var(--text-xs);
+}
+.ntree__mount-empty {
+  color: var(--fg-secondary);
+  font-size: var(--text-xs);
+  padding-top: var(--space-1);
+  padding-bottom: var(--space-1);
+}
+/* ---- 写总结的浮层（编辑区复用快速笔记那套 tiptap）---- */
+
+.modal--summary {
+  width: min(720px, 92vw);
+  /* **固定高度**而不是只给 max-height：编辑区要撑满卡片，
+     而父容器没有确定高度时 flex:1 撑不出任何东西（内容一少就塌成一条）。
+     直接吃满 84vh —— 原先还叠了个 640px 上限，在正常窗口里它是先触发的那个，
+     于是编辑区停在一半高度上（用户反馈「要撑满 card 高度」）。 */
+  height: 84vh;
+  display: flex;
+  flex-direction: column;
+}
+/* 中间区：自己补左右内边距（.modal 没有整体 padding，头/脚各自在 .modal__head/.modal__foot 里） */
+.sum__main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /* 间距压到最小：这一块的每一像素都是从编辑区身上省下来的 */
+  gap: var(--space-1);
+  padding: 0 var(--space-4);
+}
+/* 说明文字：只占它那一行，不跟编辑区抢高度 */
+.sum__hint {
+  flex: 0 0 auto;
+  margin: 0;
+}
+/*
+  编辑区撑满剩下的高度。
+
+  **两层都要撑**：外层（.sum__editor）是那个带边框的盒子，内层（.sum__body，也就是
+  tiptap/ProseMirror 本体）才是点进去时被焦点环圈住的那块。只把外层撑开的话，
+  内层仍然只有内容那么高 —— 表现就是「蓝框只包住上半截，下面一大片空白」。
+  所以外层用 flex 列、内层 flex: 1。
+*/
+.sum__editor {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+/*
+  EditorContent 外面还包着一层 wrapper，真正的编辑区（.sum__body / ProseMirror）在它里面。
+  只给内层 flex:1 没用 —— 它的父级是那个普通 block 的 wrapper，撑不开，
+  实测内层只剩 19px（一个空段落的高度），外层 532px 全空着。
+  所以这一整条链路上的每一层都得是 flex 列 + min-height:0。
+*/
+.sum__editor > * {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.sum__body {
+  flex: 1;
+  min-height: 0;
+  outline: none;
+  font-size: var(--text-body);
+  line-height: var(--lh-comfy);
+}
+.sum__msg {
+  margin: 0;
+  color: var(--fg-secondary);
+}

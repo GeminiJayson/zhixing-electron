@@ -380,6 +380,27 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   })
   /** 同 id 重载计数器：AI 改写后标题/正文/文件夹都变了，得把加载流程再跑一遍 */
   const [reloadToken, setReloadToken] = useState(0)
+  useEffect(() => {
+    let alive = true
+    void (async () => {
+      // 一次 IPC 拿全部挂载点的条目：渲染层不许在循环里逐条调用
+      const out = folders.some((f) => f.mount_path) ? await window.zhixing.db.allMountEntries() : {}
+      if (alive) setMountEntries(out)
+    })()
+    return () => {
+      alive = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [folders, reloadToken])
+  /**
+   * 挂载点里的条目（挂载点 id → 条目）。**来自磁盘，不入库** ——
+   * 每次 note 域有动静（含挂载目录变化时主进程发的广播）就重扫一遍。
+   */
+  const [mountEntries, setMountEntries] = useState<Record<number, { relPath: string; name: string; isDir: boolean; size: number; mtime: number }[]>>({})
+  /** 正在只读预览的挂载文件（虚拟节点 id 为负） */
+  const [mountPreview, setMountPreview] = useState<{ folderId: number; relPath: string; nodeId: number } | null>(null)
+  const [mountFile, setMountFile] = useState<{ kind: 'text' | 'image' | 'none'; size: number; text?: string; dataUrl?: string; tooLarge?: boolean } | null>(null)
+  const [mountLoading, setMountLoading] = useState(false)
   /** 右键选中的那一段（等待选任务后建立关联） */
   const [blockDraft, setBlockDraft] = useState<{ text: string; blockKey: string } | null>(null)
 
@@ -408,6 +429,39 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
    */
   const folderTree = (): { f: NoteFolder; depth: number }[] =>
     flattenFolderTree(folders).map(({ folder, depth }) => ({ f: folder, depth }))
+
+  /**
+   * 挂载本地文件夹到树上（parentId = null 表示挂顶层）。
+   *
+   * 目录走系统对话框选（app:pickDirectory）—— 让用户手敲一个带盘符的路径既容易错，
+   * 也没法验证存在性。挂载只写一行引用（note_folder.mount_path），磁盘上的东西一个都不动。
+   */
+  const handleMountFolder = async (parentId: number | null): Promise<void> => {
+    const dir = await window.zhixing.db.pickDirectory()
+    if (!dir) return
+    const id = await window.zhixing.db.mountFolder(dir, parentId)
+    if (!id) {
+      onNotice('挂载失败：那个目录不存在或不是文件夹')
+      return
+    }
+    await load()
+    onNotice('已挂载「' + dir + '」（文档不入库，只在树里显示）')
+  }
+
+  /** 点挂载文件 → 编辑区切到只读预览（不动库、不动文件）。 */
+  const handleSelectMountFile = async (folderId: number, relPath: string, nodeId: number): Promise<void> => {
+    setMountPreview({ folderId, relPath, nodeId })
+    setMountLoading(true)
+    const f = await window.zhixing.db.readMountFile(folderId, relPath)
+    setMountFile(f)
+    setMountLoading(false)
+  }
+
+  const handleUnmountFolder = async (id: number): Promise<void> => {
+    const ok = await window.zhixing.db.unmountFolder(id)
+    await load()
+    onNotice(ok ? '已卸载（磁盘上的文件没有动）' : '卸载失败')
+  }
 
   /** 归属栏：点文件夹胶囊在笔记树里定位它 */
   const handleRevealFolder = (id: number): void => {
@@ -1689,6 +1743,11 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
             onContextMenuNote={(id, x, y) => setCtxMenu({ id, x, y })}
             tagsOf={(id) => tagsOf.get(id) ?? []}
             onRenameFolder={(id, name) => void handleRenameFolder(id, name)}
+            onMountFolder={(pid) => void handleMountFolder(pid)}
+            onUnmountFolder={(id) => void handleUnmountFolder(id)}
+            mountEntries={mountEntries}
+            selectedMountId={mountPreview?.nodeId ?? null}
+            onSelectMountFile={(fid, rel, nid) => void handleSelectMountFile(fid, rel, nid)}
             onDeleteFolder={(id) => void handleDeleteFolder(id)}
             onMoveFolder={(id, parentId) => void handleMoveFolder(id, parentId)}
             libJob={libJob}
@@ -1699,7 +1758,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
         ) : null}
 
         {/* 编辑区与链接面板纵向排列：链接面板从右侧栏挪到了编辑区下方 */}
-        <div className={'notes-main' + (zen ? ' notes-main--zen' : '')} ref={mainRef}>
+        <div className={'notes-main' + (zen ? ' notes-main--zen' : '') + (mountPreview ? ' is-mount' : '')} ref={mainRef}>
         {/* 笔记多标签页：全屏编辑时随页面头一起让位。
             只有 1 个 tab 时 NoteTabs 自己返回 null —— 不给单篇笔记白占那 30px。 */}
         {zen ? null : (
@@ -1711,6 +1770,49 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
           />
         )}
 
+        {/* 挂载文件的只读预览：它属于磁盘上的目录，知识库只做展示 —— 改它请用系统里的编辑器。
+            预览打开时 .editor 与右侧信息区都被 is-mount 隐藏（见 notes.css）。 */}
+        {mountPreview ? (
+          <div className="mountview">
+            <div className="mountview__bar">
+              <span className="mountview__name" title={mountPreview.relPath}>
+                {mountPreview.relPath}
+              </span>
+              <span className="u-aux">
+                {mountFile
+                  ? mountFile.size < 1024
+                    ? mountFile.size + ' B'
+                    : Math.round(mountFile.size / 1024) + ' KB'
+                  : ''}
+              </span>
+              <span className="chip chip--type">只读</span>
+              <button
+                className="text-btn"
+                onClick={() => {
+                  setMountPreview(null)
+                  setMountFile(null)
+                }}
+              >
+                关闭
+              </button>
+            </div>
+            {mountLoading ? (
+              <p className="u-aux">正在读取…</p>
+            ) : !mountFile ? (
+              <p className="u-aux">读不到这个文件（可能已被移动或删除）。</p>
+            ) : mountFile.tooLarge ? (
+              <p className="u-aux">文件超过 1MB，这里不预览 —— 用系统里的程序打开它。</p>
+            ) : mountFile.kind === 'text' ? (
+              <pre className="mountview__text">{mountFile.text}</pre>
+            ) : mountFile.kind === 'image' ? (
+              <div className="mountview__image">
+                <img src={mountFile.dataUrl} alt={mountPreview.relPath} />
+              </div>
+            ) : (
+              <p className="u-aux">这种格式不预览 —— 用系统里的程序打开它。</p>
+            )}
+          </div>
+        ) : null}
         <div className="editor">
           {current ? (
             /* 一张「笔记纸」装下头部、标签与正文：卡片只标记容器，不再标记分区 */
@@ -2447,19 +2549,41 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
           x={templateMenu.x}
           y={templateMenu.y}
           onClose={() => setTemplateMenu(null)}
-          items={templates.map((name) => ({
-            key: name,
-            label: name,
-            onPick: () => {
-              void (async () => {
-                const created = await window.zhixing.db.createNoteFromTemplate(name, null)
-                if (!created) return
-                await load()
-                await selectNote(created.id)
-                onNotice(`已按「${name}」新建笔记`)
-              })()
-            },
-          }))}
+          /* 主行为是**把模板插进当前笔记**（用户点「模板」时想的就是这个），
+             「用模板新建一篇」降为第二组 —— 那个能力还在，只是不再是点一下就跑出一篇新笔记。
+             两组都用 header 行分隔（PopMenuItem 的 header 是不可点的分组标题）。 */
+          items={[
+            { key: 'h-insert', label: '插入到当前笔记', header: true, onPick: () => undefined },
+            ...templates.map((name) => ({
+              key: 'insert-' + name,
+              label: name,
+              onPick: () => {
+                void (async () => {
+                  const tpl = await window.zhixing.db.noteTemplateText(name)
+                  if (!tpl?.content) {
+                    onNotice(`模板「${name}」没有内容`)
+                    return
+                  }
+                  insertTemplate(tpl.content)
+                  onNotice(`已把「${name}」插进正文（记得保存）`)
+                })()
+              },
+            })),
+            { key: 'h-create', label: '用模板新建一篇', header: true, onPick: () => undefined },
+            ...templates.map((name) => ({
+              key: 'create-' + name,
+              label: name,
+              onPick: () => {
+                void (async () => {
+                  const created = await window.zhixing.db.createNoteFromTemplate(name, null)
+                  if (!created) return
+                  await load()
+                  await selectNote(created.id)
+                  onNotice(`已按「${name}」新建笔记`)
+                })()
+              },
+            })),
+          ]}
         />
       )}
 

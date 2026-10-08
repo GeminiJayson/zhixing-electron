@@ -34,7 +34,8 @@ import { EXPORT_TABLES, buildExportJson, buildTasksCsv, buildNotesExport, import
 import { TASK_ID_OFFSET, FLASH_ID_OFFSET, FOLDER_ID_OFFSET, ANCHOR_ID_OFFSET, folderNodeId, anchorNodeId, classifyEdge, graphNodeId, buildGraphTracked, acyclicOwnershipEdges, diffGraph, graphDelta, graphNeighborhood, graphPreview, isGraphWatching, setGraphWatch, connectionAllowed, resolveEdgeKind, wouldCreateCycle, linkNotes, linkTaskNoteRef, unlinkTaskNoteRef, unlinkNotes, connectGraphNodes, removeGraphEdge, rewireGraphEdge } from './graph'
 import { FLASH_COLUMNS, getFlash, listFlashesByStatus, addFlash, setFlashStatus, deleteFlash, markFlashConverted, flashToTask, flashToNote, updateFlashRemark, tagFlash, mergeFlashes, flashToSubtask } from './inbox'
 import { shiftDay, rollRecurringToday, resumeDueToday, recordPomodoro, pomodoroToday, dueReminders, dismissReminder, snoozeReminder, saveWidgetGeometry, currentSettings, seedIfEmpty } from './maintenance'
-import { NOTE_COLUMNS, listNoteFolders, getNote, resolveNoteTitle, syncNoteLinks, saveNote, createNote, deleteNote, listOutLinks, listBacklinks, materializeDangling, bindDanglingByTitle, createNoteFolder, renameNoteFolder, ensureDefaultFolder, moveNoteFolder, deleteNoteFolder, addReferenceLink, appendNote, listNoteBlockContexts, noteLinkedTasks, noteTaskCandidates, NOTE_REVISION_LIMIT, NOTE_TEMPLATES, snapshotNote, listNoteRevisions, restoreNoteRevision, orphanNotes, brokenLinks, createNoteFromTemplate, noteTagMap, setNoteTags, relinkAllNotes } from './notes'
+import { ensureMountNoteByNode, getMountPath, listMountedFolders, mountFolder, mountPickerItems, readMountFile, scanAllMounts, scanMountById, staleMountNotes, unmountFolder } from '../mounted-folder'
+import { NOTE_COLUMNS, listNoteFolders, getNote, resolveNoteTitle, syncNoteLinks, saveNote, createNote, deleteNote, listOutLinks, listBacklinks, materializeDangling, bindDanglingByTitle, createNoteFolder, renameNoteFolder, ensureDefaultFolder, moveNoteFolder, deleteNoteFolder, addReferenceLink, appendNote, listNoteBlockContexts, noteLinkedTasks, noteTaskCandidates, NOTE_REVISION_LIMIT, NOTE_TEMPLATES, snapshotNote, listNoteRevisions, restoreNoteRevision, orphanNotes, brokenLinks, createNoteFromTemplate, ensureMountNote, noteTagMap, setNoteTags, relinkAllNotes } from './notes'
 import {
   previewOfficeNote,
   officeDocNote,
@@ -42,6 +43,7 @@ import {
   saveExcelNote,
   createBlankOfficeFile,
 } from './preview'
+import { summarizeTaskNotes } from '../ai'
 import { dayOf, todayRoots, reviewStats } from './review'
 import { ensureScriptsFolder } from './notes'
 import { archiveHabit, deleteHabit, listHabits, saveHabit, setHabitDay, toggleHabitDay } from './habit'
@@ -53,7 +55,7 @@ import { listFolders, listTasksByList, createListFolder, renameListFolder, delet
 import { linkTaskWikiNotes } from './task-note-links'
 import { listTaskActivity, logTaskActivity } from './task-activity'
 import { siblingsOf, isDescendantOf, reorderTask, moveTaskRelative, reparentTask, batchComplete, batchMove, batchSetDue, listTags, setTaskTags, ensureListId, quickAdd } from './task-ops'
-import { listTasks, listTodayTasks, recentNotes, noteCountMap, tagMap, listNotes, overview, toggleTask, cloneTaskTree, setPriority, setTitle, setStatus, setDueDate, nextSortKey, createTask, EDITABLE_FIELDS, updateTask, softDelete, batchDeleteTasks, batchUndoLast, linkTaskNote, unlinkTaskNote, listLinkedNotes, pauseTask, resumeTask, linkTaskNoteBlock, unlinkTaskNoteBlock, listLinkedContexts, contextsForNote, noteContextMap, writeNoteAfterDone, taskCandidates } from './tasks'
+import { listTasks, setTaskNoteFolder, taskNoteFolder, syncAllFolderLinkedTasks, listTodayTasks, recentNotes, noteCountMap, tagMap, listNotes, overview, toggleTask, cloneTaskTree, setPriority, setTitle, setStatus, setDueDate, nextSortKey, createTask, EDITABLE_FIELDS, updateTask, softDelete, batchDeleteTasks, batchUndoLast, linkTaskNote, unlinkTaskNote, listLinkedNotes, pauseTask, resumeTask, linkTaskNoteBlock, unlinkTaskNoteBlock, listLinkedContexts, contextsForNote, noteContextMap, writeNoteAfterDone, taskCandidates } from './tasks'
 import { trashItems, restoreTrash, purgeTrash, emptyTrash, emptyAllTrash, purgeTrashOlderThan, tagsWithUsage, createTag, renameTag, deleteTag, setTagColor, batchDeleteTags, mergeTags } from './trash'
 import { attachmentStats, cleanOrphanFiles, deleteAttachment, importAttachment, listAttachments, listOrphanFiles, pruneAttachments } from './attachments'
 import { deleteSavedQuery, listSavedQueries, saveSavedQuery } from './queries'
@@ -95,6 +97,9 @@ const WRITE_DOMAINS: Record<string, DataDomain | DataDomain[]> = {
   'db:deleteNote': 'note',
   'db:restoreNoteRevision': 'note',
   'db:createNoteFromTemplate': 'note',
+  'db:mountFolder': 'note',
+  'db:unmountFolder': 'note',
+  'db:deleteStaleMountNotes': 'note',
   'db:createNoteFolder': 'note',
   'db:renameNoteFolder': 'note',
   'db:deleteNoteFolder': 'note',
@@ -162,6 +167,7 @@ const WRITE_DOMAINS: Record<string, DataDomain | DataDomain[]> = {
   'db:unlinkTaskNoteBlock': ['task', 'note'],
   // 任务↔笔记的归属关联（写 task_note_link）此前漏登记：行内 ⇄N 计数与图谱边不会跟着刷新
   'db:linkTaskNote': 'task',
+  'db:setTaskNoteFolder': 'task',
   // 显式重解析任务正文的 [[链接]]：
   // 新建/改名已会自动回绑，这个入口是给「修复上线前就写坏的历史数据」用的
   'db:linkTaskWikiNotes': 'task',
@@ -412,6 +418,15 @@ export function registerDbHandlers(): void {
   handle('db:taskCandidates', (_e, q?: string, limit?: number) => taskCandidates(q ?? '', limit ?? 20))
   handle('db:linkTaskWikiNotes', (_e, taskId: number) => linkTaskWikiNotes(taskId))
 
+  /** 任务关联知识库文件夹（自动引用其下所有笔记，递归子文件夹）；null = 解除 */
+  handle('db:setTaskNoteFolder', (_e, taskId: number, folderId: number | null) =>
+    setTaskNoteFolder(Number(taskId), folderId == null ? null : Number(folderId))
+  )
+  handle('db:taskNoteFolder', (_e, taskId: number) => taskNoteFolder(Number(taskId)))
+  /** 用 AI 总结任务关联的所有笔记（完成任务时的「AI 总结」） */
+  handle('db:summarizeTaskNotes', (_e, taskId: number) => summarizeTaskNotes(Number(taskId))),
+  /** 对齐一次（页面进入任务编辑时用，防止广播链路没覆盖到的边角） */
+  handle('db:syncFolderLinkedTasks', () => syncAllFolderLinkedTasks())
   handle('db:linkTaskNote', (_e, taskId: number, noteId: number) =>
     linkTaskNote(taskId, noteId)
   )
@@ -525,6 +540,39 @@ export function registerDbHandlers(): void {
   handle('db:orphanNotes', () => orphanNotes())
   handle('db:brokenLinks', () => brokenLinks())
   handle('db:noteTemplates', () => Object.keys(NOTE_TEMPLATES))
+  /**
+   * 取某个模板的标题与正文。
+   *
+   * 编辑器要的是「把模板结构插进**当前**笔记」（insertTemplate），而不是新建一篇 ——
+   * 此前工具栏的「模板」菜单直接调 createNoteFromTemplate，点一下就跑出一篇新笔记（用户反馈）。
+   */
+  // ---- 挂载本地文件夹（内容不入库，只存引用路径）----
+  handle('db:mounts', () => listMountedFolders())
+  handle('db:mountFolder', (_e, path: string, parentId: number | null) => mountFolder(String(path ?? ''), parentId ?? null))
+  handle('db:unmountFolder', (_e, id: number) => unmountFolder(Number(id)))
+  handle('db:mountEntries', (_e, id: number) => scanMountById(Number(id)))
+  handle('db:allMountEntries', () => scanAllMounts())
+  /** 选择器用：挂载点下的文件（虚拟负数 id）。一次给全，不许循环逐条 IPC。 */
+  handle('db:mountPickerItems', () => mountPickerItems())
+  /** 虚拟节点 id → 真实 note id（懒建引用行）；引用类操作在选中时先过这一道 */
+  handle('db:ensureMountNoteByNode', (_e, nodeId: number) => ensureMountNoteByNode(Number(nodeId)))
+  /** 来源已失效的挂载引用行（挂载点已删/已卸载） */
+  handle('db:staleMountNotes', () => staleMountNotes())
+  /** 清理失效引用行（设置页的入口；只删这些行，磁盘与挂载点都不动） */
+  handle('db:deleteStaleMountNotes', () => {
+    const rows = staleMountNotes()
+    for (const r of rows) deleteNote(r.id)
+    return rows.length
+  })
+  /** 挂载文件的引用行（懒建）：供选择器/图谱在引用前拿到一个真实的 note id */
+  handle('db:ensureMountNote', (_e, folderId: number, relPath: string) =>
+    ensureMountNote(Number(folderId), String(relPath ?? ''))
+  )
+  handle('db:readMountFile', (_e, id: number, relPath: string) => {
+    const path = getMountPath(Number(id))
+    return path ? readMountFile(path, String(relPath ?? '')) : null
+  })
+  handle('db:noteTemplateText', (_e, kind: string) => NOTE_TEMPLATES[String(kind ?? '')] ?? null)
   handle('db:createNoteFromTemplate', (_e, kind: string, folderId: number | null) =>
     createNoteFromTemplate(kind, folderId)
   )

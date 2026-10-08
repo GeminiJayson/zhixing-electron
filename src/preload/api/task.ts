@@ -66,7 +66,17 @@ export const taskApi = {
       ipcRenderer.invoke('db:isListDescendantOf', ancestorId, nodeId),
     moveTaskToList: (taskId: number, listId: number | null): Promise<number> =>
       ipcRenderer.invoke('db:moveTaskToList', taskId, listId),
-    linkTaskNote: (taskId: number, noteId: number): Promise<number> =>
+    /** 任务关联知识库文件夹：其下所有笔记（递归子文件夹）会被自动引用；null = 解除 */
+  setTaskNoteFolder: (taskId: number, folderId: number | null): Promise<boolean> =>
+    ipcRenderer.invoke('db:setTaskNoteFolder', taskId, folderId),
+  /** AI 总结任务关联的所有笔记 */
+  summarizeTaskNotes: (taskId: number): Promise<{ ok: boolean; text?: string; message?: string; basedOn?: number; skipped?: string[] }> =>
+    ipcRenderer.invoke('db:summarizeTaskNotes', taskId),
+  taskNoteFolder: (taskId: number): Promise<number | null> =>
+    ipcRenderer.invoke('db:taskNoteFolder', taskId),
+  /** 手动对齐一次自动引用（正常情况下广播链路已经覆盖） */
+  syncFolderLinkedTasks: (): Promise<number> => ipcRenderer.invoke('db:syncFolderLinkedTasks'),
+  linkTaskNote: (taskId: number, noteId: number): Promise<number> =>
       ipcRenderer.invoke('db:linkTaskNote', taskId, noteId),
     unlinkTaskNote: (taskId: number, noteId: number): Promise<number> =>
       ipcRenderer.invoke('db:unlinkTaskNote', taskId, noteId),

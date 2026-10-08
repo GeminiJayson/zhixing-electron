@@ -123,7 +123,16 @@ export function DialogProvider({ children }: { children: ReactNode }) {
       {children}
       <div
         className={'modal-mask' + (leaving ? ' is-leaving' : '')}
-        onMouseDown={() => settle(isPrompt ? null : false)}
+        /*
+          点遮罩关闭 —— **必须判断目标是不是遮罩本身**。
+          不判断的话，按钮的 mousedown 会冒泡上来，先 settle(false) 把对话框关掉，
+          随后按钮自己的 click 再 settle(true) 已经无效：**真实鼠标点「确定」会被当成「取消」**。
+          （自动化只用 dispatchEvent('click') 时没有 mousedown，所以这个 bug 只在真人点击时出现 ——
+          症状就是「点了总结却什么都没发生」。）
+        */
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget) settle(isPrompt ? null : false)
+        }}
       >
         <div
           className={'modal modal--dialog' + (leaving ? ' is-leaving' : '')}

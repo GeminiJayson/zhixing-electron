@@ -137,6 +137,12 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
   const [showToken, setShowToken] = useState(false)
 
   useEffect(() => {
+    // 进「数据」页时数一次失效的本地链接（改完即刷新）
+    if (tab !== 'data') return
+    void window.zhixing.db.staleMountNotes().then(setStaleMounts)
+  }, [tab])
+
+  useEffect(() => {
     void window.zhixing?.vault?.httpInfo?.().then(setHttpInfo)
     // 浏览器扩展**随包分发**（electron-builder.yml 的 extraResources）：目录由主进程解析，
     // 设置页只负责显示与"打开"。此前扩展只在源码仓库里，装安装版的用户根本拿不到。
@@ -146,6 +152,13 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
   const [settings, setSettings] = useState<AppSettings>(() => parseSettings())
   const [info, setInfo] = useState<AppInfo | null>(null)
   const [recycleOpen, setRecycleOpen] = useState(false)
+  /**
+   * 来源已失效的挂载引用行（挂载点被卸载/删除之后留下的那些）。
+   *
+   * 卸载挂载点时**故意保留**这些行并标记失效 —— 任务是挂着它们的，直接删会让任务上的
+   * 关联凭空消失。真要清就到这里来点一下（只删这些行，磁盘与挂载点都不动）。
+   */
+  const [staleMounts, setStaleMounts] = useState<{ id: number; title: string; mount_ref: string }[]>([])
   const [tagsOpen, setTagsOpen] = useState(false)
   /** settings 表的原始 KV 快照：写库前用它算出「乐观设置」，好让界面先动起来 */
   const rawRef = useRef<Record<string, string>>({})
@@ -1494,6 +1507,28 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
               <span>回收站</span>
               <button className="text-btn" onClick={() => setRecycleOpen(true)}>
                 <Trash2 size={13} /> 打开回收站…
+              </button>
+            </div>
+            <div className="set-row">
+              <span>失效的本地链接</span>
+              <span className="u-aux">
+                {staleMounts.length === 0
+                  ? '没有'
+                  : staleMounts.length + ' 条（挂载点已卸载，行还留着）'}
+              </span>
+              <button
+                className="text-btn"
+                disabled={staleMounts.length === 0}
+                title="只删这些引用行；磁盘上的文件和挂载点都不动"
+                onClick={() =>
+                  void (async () => {
+                    const n = await window.zhixing.db.deleteStaleMountNotes()
+                    setStaleMounts(await window.zhixing.db.staleMountNotes())
+                    onNotice(n > 0 ? `已清理 ${n} 条失效的本地链接` : '没有可清理的')
+                  })()
+                }
+              >
+                <Trash2 size={13} /> 清理
               </button>
             </div>
             <div className="set-row">

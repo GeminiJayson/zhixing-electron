@@ -13,6 +13,8 @@
  * 为什么不把「整理」做成一步到位的替换：模型有概率丢内容，而笔记是用户唯一的正本。
  * 宁可这次不写、告诉他哪里对不上，也不能悄悄丢一段。
  */
+import { listLinkedNotes } from './db/tasks'
+import { getMountPath, readMountFile } from './mounted-folder'
 import { bareKey, resolveAiAuth } from '../shared/ai-request'
 import { conn } from './db/connection'
 import { createNote, createNoteFolder, getNote, listNoteFolders, resolveNoteTitle, saveNote } from './db/notes'
@@ -724,5 +726,56 @@ export async function testAiConnection(): Promise<{ ok: boolean; message: string
     return { ok: true, message: `连接正常，模型回复：${out.slice(0, 60)}` }
   } catch (err) {
     return { ok: false, message: `连接失败：${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
+/**
+ * 用 AI 总结一个任务关联的**所有**笔记（完成任务的「AI 总结」走这里）。
+ *
+ * 三个现实约束，都不是理论问题：
+ * 1. **预算**：关联可能几十篇 —— 每篇截断 + 总量封顶，超出的篇目在返回值里如实带上；
+ * 2. **挂载文件的内容不入库**，得现读磁盘（挂载点已卸载/目录没了就读不到）；
+ * 3. **读不到的要标注出来**，不能让模型对着空字符串编 —— 那比不总结更糟。
+ */
+export async function summarizeTaskNotes(taskId: number): Promise<{
+  ok: boolean
+  text?: string
+  message?: string
+  basedOn?: number
+  skipped?: string[]
+}> {
+  const s = currentAiSettings()
+  if (!s.model) return { ok: false, message: '还没配置 AI 模型（设置 → AI 整理）' }
+  const notes = listLinkedNotes(taskId)
+  if (!notes.length) return { ok: false, message: '这个任务还没有关联笔记' }
+  const parts: string[] = []
+  const skipped: string[] = []
+  let budget = 24000
+  for (const n of notes) {
+    let body = n.content_md ?? ''
+    if (n.format === 'mount' && n.mount_ref) {
+      const cut = n.mount_ref.indexOf(':')
+      const root = cut > 0 ? getMountPath(Number(n.mount_ref.slice(0, cut))) : null
+      const got = root ? readMountFile(root, n.mount_ref.slice(cut + 1)) : null
+      body = got && got.kind === 'text' && got.text ? got.text : ''
+    }
+    if (!body.trim()) {
+      skipped.push(n.title)
+      continue
+    }
+    const slice = body.slice(0, 1200)
+    if (slice.length > budget) break
+    budget -= slice.length
+    parts.push('### ' + n.title + '\n' + slice)
+  }
+  if (!parts.length) return { ok: false, message: '关联的笔记里没有可读的文字', skipped }
+  const prompt =
+    '下面是一个任务关联的笔记。请写一段简短的总结（要点式，200 字以内），直接给结论，不要客套话：\n\n' +
+    parts.join('\n\n')
+  try {
+    const text = await callAiModel(s, prompt, s.timeoutSec)
+    return { ok: true, text: text.trim(), basedOn: parts.length, skipped }
+  } catch (e) {
+    return { ok: false, message: (e as Error).message }
   }
 }

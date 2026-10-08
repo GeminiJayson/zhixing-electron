@@ -15,11 +15,12 @@ import { reindexNote, removeFromIndex } from './fts'
 
 // script_runtime 是私有列（ensureAppExtensions 加的）：脚本笔记要用它决定解释器，
 // 不查出来就会永远按默认的 powershell 跑。props 仍按需单独读（那是个大 JSON，列表用不上）。
-export const NOTE_COLUMNS = `id, folder_id, title, content_md, format, script_runtime, pinned, word_count, created_at, updated_at`
+export const NOTE_COLUMNS = `id, folder_id, title, content_md, format, script_runtime, mount_ref, pinned, word_count, created_at, updated_at`
 
 export function listNoteFolders(): NoteFolder[] {
   return conn()
-    .prepare('SELECT id, parent_id, name, sort FROM note_folder ORDER BY sort ASC, name ASC')
+    // mount_path 一起选出来：渲染层靠它认出「这个节点是挂载的本地文件夹」（非空 = 挂载点）
+    .prepare('SELECT id, parent_id, name, sort, mount_path FROM note_folder ORDER BY sort ASC, name ASC')
     .all() as NoteFolder[]
 }
 
@@ -224,7 +225,7 @@ export function saveNote(
  * 而且两套迟早对不上（正文改了、磁盘那份没改之类）。
  * 运行时不在这里，在 note.script_runtime 私有列上。
  */
-export const NOTE_FORMATS = ['markdown', 'richtext', 'word', 'excel', 'link', 'script'] as const
+export const NOTE_FORMATS = ['markdown', 'richtext', 'word', 'excel', 'link', 'script', 'mount'] as const
 export type NoteFormat = (typeof NOTE_FORMATS)[number]
 
 /** 非法或缺失格式一律回退 markdown，避免脏值进库。 */
@@ -693,6 +694,34 @@ export function brokenLinks(): { src_note_id: number; src_title: string; dst_tit
 }
 
 /** 按模板新建笔记。 */
+/**
+ * 挂载文件的**引用行**（懒建）：被任务/笔记引用、或在图谱上连边时才建。
+ *
+ * 为什么必须有一点库里的东西：task_note_link 与 note_link 都是指向 note 的外键，
+ * 没有行就引用不了。而「文档不入库」指的是**内容**不入库 —— 这一行只有标题与一条引用
+ * （mount_ref = '<挂载点 id>:<相对路径>'），正文打开时现读。
+ *
+ * 幂等：同一条引用反复被选到只建一次（按 mount_ref 查重，含已软删的不算）。
+ */
+export function ensureMountNote(folderId: number, relPath: string): Note | null {
+  const ref = folderId + ':' + relPath
+  const c = conn()
+  const hit = c
+    .prepare(`SELECT ${NOTE_COLUMNS} FROM note WHERE mount_ref = ? AND deleted_at IS NULL`)
+    .get(ref) as Note | undefined
+  if (hit) return hit
+  const name = relPath.split('/').pop() || relPath
+  const info = c
+    .prepare(
+      `INSERT INTO note (folder_id, title, content_md, format, mount_ref, pinned, word_count, created_at, updated_at)
+       VALUES (NULL, ?, '', 'mount', ?, 0, 0, ?, ?)`
+    )
+    .run(name, ref, nowStamp(), nowStamp())
+  const id = Number(info.lastInsertRowid)
+  reindexNote(id)
+  return getNote(id)
+}
+
 export function createNoteFromTemplate(kind: string, folderId: number | null): Note | null {
   const tpl = NOTE_TEMPLATES[kind]
   if (!tpl) return null

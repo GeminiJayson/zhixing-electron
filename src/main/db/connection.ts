@@ -174,11 +174,23 @@ function ensureAppExtensions(d: Database.Database): void {
   // 所以改了截止日期不会被旧计数卡住，也不必在每个写入路径上挂钩子。
   add('task', 'reminder_fired', 'reminder_fired INTEGER')
   add('task', 'reminder_base', 'reminder_base TEXT')
+  // 「任务关联一个知识库文件夹」：它下面的笔记（递归子文件夹）会被**自动引用**，
+  // 自动行以 task_note_link.source = 'folder' 标记，和手动行（'manual'）、正文派生行（'wiki'）区分开 ——
+  // 只有 'folder' 那一批归同步逻辑增删，另外两种永远不碰。
+  add('task', 'note_folder_id', 'note_folder_id INTEGER')
   // 笔记的结构化属性（JSON 对象：{ "来源": "书籍", "评分": "5" }）
   add('note', 'props', 'props TEXT')
   // 脚本笔记（format = 'script'）的运行环境：powershell / cmd / python / node。
   // 单独一列而不是塞进 props：它是**执行语义**（决定用哪个解释器），不是用户随手记的属性。
   add('note', 'script_runtime', 'script_runtime TEXT')
+  // 挂载本地文件夹：note_folder 里这一列非空表示「这个节点是一个挂载点，指向本机目录」。
+  // 用它而不是新开一张表：挂载点本来就该是笔记树上的一个文件夹（能放位置、能改名、能拖），
+  // 新表意味着树要同时读两套数据、右键菜单要写两份逻辑。
+  add('note_folder', 'mount_path', 'mount_path TEXT')
+  // 被引用过的挂载文件会**懒建**一条轻量 note 行（format='mount'）：
+  // 引用表（task_note_link / note_link）都是指向 note 的外键，没有行就引用不了；
+  // 这一列存 '<挂载点 id>:<相对路径>'，**正文仍然不入库**，打开时现读。
+  add('note', 'mount_ref', 'mount_ref TEXT')
   // 任务↔笔记关联的**来源**：'wiki' = 从正文 [[标题]] 派生，'manual' = 用户手动拉的边。
   // 没有它，正文里删掉 [[标题]] 时无法判断这一行该不该跟着消失 ——
   // 一律删会误伤手动关联，一律留则 ⇄N 计数与图谱边永远不消失。

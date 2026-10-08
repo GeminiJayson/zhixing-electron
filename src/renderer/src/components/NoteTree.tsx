@@ -17,6 +17,8 @@ import {
 import { useCollapsedSet } from '@renderer/lib/use-collapsed'
 import type { Note, NoteFolder, NoteFormat } from '@shared/types'
 import type { AiLibraryProgress } from '@shared/ai-note'
+import { flattenFolderTree } from '@shared/folder-tree'
+import { depthOfRelPath, mountNodeId, type MountEntry } from '@shared/mounted-folder'
 import { PopMenu } from './PopMenu'
 
 /**
@@ -63,6 +65,8 @@ const FORMAT_ICON: Record<string, { Comp: typeof FileText; tone: string }> = {
   link: { Comp: Link2, tone: 'link' },
   // 脚本也是笔记的一种：同一套图标表、同一套行样式，树上不该有第二种「项」
   script: { Comp: TerminalSquare, tone: 'script' },
+  // 被引用过的挂载文件：它是一条指向本机文件的轻量行，图标给出「这是外部的」
+  mount: { Comp: FolderPlus, tone: 'mount' },
 }
 
 /** 格式 → 图标 + 色调：笔记树与笔记多标签页共用同一套，两处的图标不会分叉。 */
@@ -103,6 +107,20 @@ interface Props {
   /** 把本地文件归档成当前笔记的附件 */
   onAddAttachment?: () => void
   /**
+   * 挂载 / 卸载本地文件夹。
+   *
+   * 挂载点本身就是 note_folder 的一行（mount_path 非空），parentId 决定它挂在树上的位置 ——
+   * 所以「挂在任意文件夹下」不需要额外机制，就是建行时给个 parent_id。
+   */
+  onMountFolder?: (parentId: number | null) => void
+  onUnmountFolder?: (id: number) => void
+  /** 挂载点里的条目（挂载点 id → 条目），内容来自磁盘、不入库 */
+  mountEntries?: Record<number, MountEntry[]>
+  /** 点挂载文件：宿主页据此在编辑区做只读预览 */
+  onSelectMountFile?: (folderId: number, relPath: string, nodeId: number) => void
+  /** 当前预览中的挂载文件（虚拟节点 id，负数） */
+  selectedMountId?: number | null
+  /**
    * 链接体检：孤儿笔记 / 失效链接。
    * 它查的是「整个库」的链接健康度，与「这一篇怎么编辑」不在一个语义层；
    * 2026-09 从编辑区工具栏挪到树上 —— 单篇工具栏因此少两个常驻按钮。
@@ -127,6 +145,11 @@ export function NoteTree({
   onSelect,
   onCreateNote,
   onCreateFolder,
+  onMountFolder,
+  onUnmountFolder,
+  mountEntries,
+  onSelectMountFile,
+  selectedMountId,
   onTogglePin,
   onDeleteNote,
   onContextMenuNote,
@@ -342,6 +365,49 @@ export function NoteTree({
     )
   }
 
+  /**
+   * 挂载点下的文件行。**虚拟节点**：id 由 mountNodeId 从「挂载点 + 相对路径」算出（负数、稳定），
+   * 点它只是切换预览，不动库里的任何东西。
+   *
+   * 缩进按相对路径的层级走（a/b/c.md 缩两格），所以子树是「平铺 + 缩进」而不是真嵌套 ——
+   * 挂载目录动辄几百个文件，真嵌套要给每一层都做展开状态，收益不值那个复杂度。
+   */
+  const mountRows = (f: NoteFolder, depth: number): React.ReactNode => {
+    const entries = mountEntries?.[f.id] ?? []
+    if (entries.length === 0) {
+      return (
+        <div className="ntree__mount-empty" style={{ paddingLeft: 6 + depth * 14 }}>
+          （空目录，或目录已不在）
+        </div>
+      )
+    }
+    return entries.map((e) => {
+      const nodeId = mountNodeId(f.id, e.relPath)
+      const indent = depth + depthOfRelPath(e.relPath)
+      const kb = e.isDir ? '' : e.size < 1024 ? e.size + ' B' : Math.round(e.size / 1024) + ' KB'
+      return (
+        <div
+          key={nodeId}
+          className={
+            'ntree__note ntree__mount' +
+            (e.isDir ? ' ntree__mount--dir' : '') +
+            (selectedMountId === nodeId ? ' ntree__note--on' : '')
+          }
+          data-mount-id={nodeId}
+          style={{ paddingLeft: 6 + indent * 14 }}
+          title={e.relPath + (kb ? '  ·  ' + kb : '')}
+          onClick={() => onSelectMountFile?.(f.id, e.relPath, nodeId)}
+        >
+          <span className="ntree__type ntree__type--mount">
+            {e.isDir ? <FolderPlus size={13} /> : <FileText size={13} />}
+          </span>
+          <span className="ntree__title">{e.name}</span>
+          {kb ? <span className="ntree__mount-size">{kb}</span> : null}
+        </div>
+      )
+    })
+  }
+
   const folderNode = (f: NoteFolder, depth: number): React.ReactNode => {
     const kids = childrenOf(f.id)
     const isOpen = !collapsed.has(f.id)
@@ -405,6 +471,9 @@ export function NoteTree({
         </div>
         {isOpen && (
           <>
+            {/* 挂载点：把它目录里的文件铺在这里（虚拟节点，见 mountRows）。
+                放在 own/kids 之前 —— 挂载点自己不该有真实笔记子项，真有也不该混在文件列表中间。 */}
+            {f.mount_path ? mountRows(f, depth + 1) : null}
             {own.map((n) => noteRow(n, depth + 1, f.id))}
             {kids.map((k) => folderNode(k, depth + 1))}
           </>
@@ -416,8 +485,31 @@ export function NoteTree({
   /** 脚本行：与笔记行同构（同一套类名与缩进），图标与描述换成脚本的。 */
   const rootNotes = notesOf(null)
   const menuFolder = folderMenu ? folders.find((f) => f.id === folderMenu.id) : undefined
-  /** 可作为新父级的文件夹：排除自己（子孙由主进程 moveNoteFolder 做环校验） */
-  const moveTargets = moveMenu ? folders.filter((f) => f.id !== moveMenu.id) : []
+  /**
+   * 「移动到…」的候选：**排除自己与自己的子孙**，并按树序铺平（带 depth）。
+   *
+   * 子孙由主进程 moveNoteFolder 做环校验，但**列出来只会让用户白点一下** —— 菜单里
+   * 根本不该出现那些选项。这里的 banned 是一次性算出来的闭包。
+   *
+   * 层级用 shared/folder-tree.ts（与图谱页「全部文件夹」、笔记的「移动到文件夹…」
+   * 同一份）：此前这里是 folders.filter 的平铺列表，浮窗里看不出谁属于谁
+   *（用户反馈「移动到文件夹的浮窗没有文件夹层级」）。
+   */
+  const moveTargets = useMemo(() => {
+    if (!moveMenu) return []
+    const banned = new Set<number>([moveMenu.id])
+    // 反复扫到没有新增为止：文件夹树很浅，不值当为它建父子索引
+    for (let changed = true; changed; ) {
+      changed = false
+      for (const f of folders) {
+        if (f.parent_id != null && banned.has(f.parent_id) && !banned.has(f.id)) {
+          banned.add(f.id)
+          changed = true
+        }
+      }
+    }
+    return flattenFolderTree(folders).filter(({ folder }) => !banned.has(folder.id))
+  }, [folders, moveMenu])
 
   return (
     <div
@@ -436,7 +528,17 @@ export function NoteTree({
             <button className="text-btn" onClick={(e) => openFormatMenu(e, null)}>
               新建第一篇笔记
             </button>
-            <button className="text-btn" onClick={() => onCreateFolder(null)}>
+            {onMountFolder && (
+            <button
+              className="icon-btn"
+              title="挂载本地文件夹（内容不入库，只在树里显示）"
+              aria-label="挂载本地文件夹"
+              onClick={() => onMountFolder(null)}
+            >
+              <FolderPlus size={14} />
+            </button>
+          )}
+          <button className="text-btn" onClick={() => onCreateFolder(null)}>
               新建文件夹
             </button>
           </div>
@@ -533,6 +635,17 @@ export function NoteTree({
               label: '移动到…',
               onPick: () => setMoveMenu({ id: folderMenu.id, x: folderMenu.x, y: folderMenu.y }),
             },
+            menuFolder.mount_path
+              ? {
+                  key: 'unmount',
+                  label: '卸载本地文件夹',
+                  onPick: () => onUnmountFolder?.(folderMenu.id),
+                }
+              : {
+                  key: 'mount',
+                  label: '在此挂载本地文件夹…',
+                  onPick: () => onMountFolder?.(folderMenu.id),
+                },
             {
               key: 'delete',
               label: '删除文件夹',
@@ -554,10 +667,11 @@ export function NoteTree({
               label: '顶层（全部笔记）',
               onPick: () => onMoveFolder(moveMenu.id, null),
             },
-            ...moveTargets.map((f) => ({
-              key: `f-${f.id}`,
-              label: f.name,
-              onPick: () => onMoveFolder(moveMenu.id, f.id),
+            ...moveTargets.map(({ folder, depth }) => ({
+              key: `f-${folder.id}`,
+              label: folder.name,
+              depth,
+              onPick: () => onMoveFolder(moveMenu.id, folder.id),
             })),
           ]}
         />

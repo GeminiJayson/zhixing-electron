@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarClock, CheckCircle2, CircleAlert, NotebookPen, Plus, Sparkles, Trash2 } from '@renderer/lib/icons'
 import { isMotionFull } from '../lib/presence'
 import { useDialog } from '../components/Dialogs'
+import { useCompleteTask } from '../lib/complete-task'
 import { buildTaskTree, effectiveDoneMap, type TaskNode } from '@shared/task'
 import type { Note, Overview, TodayTasks } from '@shared/types'
 import { PriorityMenu } from '../components/PriorityMenu'
@@ -142,6 +143,8 @@ function StatValue({ value }: { value: number }): React.ReactElement {
 /** 今日页：日期问候 + 概览四卡 + 今日待办（含完整子树）+ 最近笔记。 */
 export function TodayPage({ overview, onChanged, onNotice, onOpenNote, onFocusTasks }: Props) {
   const dialog = useDialog()
+  /** 完成任务：有关联笔记时会先问「要不要总结」 */
+  const completeTask = useCompleteTask(onNotice)
   const [today, setToday] = useState<TodayTasks | null>(null)
   const [recent, setRecent] = useState<Note[]>([])
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
@@ -231,7 +234,7 @@ export function TodayPage({ overview, onChanged, onNotice, onOpenNote, onFocusTa
   }
 
   const handleToggle = async (id: number): Promise<void> => {
-    await window.zhixing.db.toggleTask(id)
+    await completeTask(id, () => load())
     window.dispatchEvent(
       new CustomEvent('zhixing:undoable', { detail: { ids: [id], label: '任务状态已切换' } })
     )

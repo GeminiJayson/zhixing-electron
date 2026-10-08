@@ -4,7 +4,7 @@ import type { TaskTimeSummary } from './task-time'
 
 export type TaskStatus = 'todo' | 'doing' | 'waiting' | 'done' | 'abandoned'
 export type RepeatPeriod = 'none' | 'daily' | 'weekly' | 'monthly' | 'custom'
-export type NoteFormat = 'markdown' | 'richtext' | 'word' | 'excel' | 'link' | 'script'
+export type NoteFormat = 'markdown' | 'richtext' | 'word' | 'excel' | 'link' | 'script' | 'mount'
 
 /** 脚本笔记的运行环境（只有 format === 'script' 时有意义） */
 /**
@@ -71,6 +71,13 @@ export interface Note {
   format: NoteFormat
   /** 脚本笔记的运行环境（其余格式为空）；见 ScriptNoteRuntime */
   script_runtime?: ScriptNoteRuntime | null
+  /**
+   * 挂载文件的引用行：'<挂载点 id>:<相对路径>'（format = 'mount'）。
+   *
+   * 只有被引用过的挂载文件才有行，**正文不入库**（打开时现读磁盘）。
+   * 挂载点被卸载后这一行保留，界面按「来源已失效」显示（见挂载点的清理入口）。
+   */
+  mount_ref?: string | null
   pinned: boolean
   word_count: number
   created_at: string
@@ -322,6 +329,14 @@ export interface NoteFolder {
   parent_id: number | null
   name: string
   sort: number
+  /**
+   * 非空表示这是**挂载的本地文件夹**：指向本机目录，里面的文档不入库。
+   *
+   * 用 note_folder 而不是新开一张表，是因为挂载点本来就该是笔记树上的一个普通文件夹 ——
+   * 能拖到任意文件夹下（parent_id 就是它的位置）、能改名、能排序；
+   * 新表意味着树要同时读两套数据、右键菜单要写两份逻辑。
+   */
+  mount_path?: string | null
 }
 
 export interface NoteLink {

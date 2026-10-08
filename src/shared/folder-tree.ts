@@ -46,3 +46,24 @@ export function flattenFolderTree<T extends FolderLike>(folders: T[]): FlatFolde
   walk(null, 0)
   return out
 }
+
+/**
+ * 某个文件夹**自身 + 全部后代**的 id 集合。
+ *
+ * 「任务关联一个文件夹 → 自动引用它下面所有笔记（**递归子文件夹**）」用的就是它。
+ * 与 flattenFolderTree 一样用「反复扫到没有新增」而不是递归：文件夹树很浅，
+ * 而且这样天然不会因为坏数据（成环）卡死。
+ */
+export function folderWithDescendants<T extends FolderLike>(folders: T[], rootId: number): Set<number> {
+  const out = new Set<number>([rootId])
+  for (let changed = true; changed; ) {
+    changed = false
+    for (const f of folders) {
+      if (f.parent_id != null && out.has(f.parent_id) && !out.has(f.id)) {
+        out.add(f.id)
+        changed = true
+      }
+    }
+  }
+  return out
+}

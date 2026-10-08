@@ -5,7 +5,8 @@ import { clampPriority } from '../../shared/priority'
 import { reindexTask, removeFromIndex } from './fts'
 import { extractLinks } from '../../shared/wiki'
 import { syncTaskNoteLinks } from './task-note-links'
-import { appendNote, createNote, getNote, resolveNoteTitle } from './notes'
+import { NOTE_COLUMNS, appendNote, createNote, getNote, resolveNoteTitle } from './notes'
+import { folderWithDescendants } from '../../shared/folder-tree'
 // 撤销「删除」需要从回收站恢复：trash.ts 只依赖 connection/fts，不会成环
 import { restoreTrash } from './trash'
 import { nextRecurrence } from '../../shared/recurrence'
@@ -67,7 +68,7 @@ export function listTodayTasks(): TodayTasks {
 /** 最近更新的笔记（今日页「最近笔记」卡）。 */
 export function recentNotes(limit = 5): Note[] {
   return conn()
-    .prepare(`SELECT id, folder_id, title, content_md, format, pinned, word_count, created_at, updated_at
+    .prepare(`SELECT ${NOTE_COLUMNS}
                 FROM note WHERE deleted_at IS NULL
             ORDER BY updated_at DESC LIMIT ?`)
     .all(limit) as Note[]
@@ -90,6 +91,79 @@ export function linkTaskNote(taskId: number, noteId: number): number {
 }
 
 /** 解除任务与整篇笔记的关联。 */
+/** 任务的「关联文件夹」（null = 没关联）。 */
+export function taskNoteFolder(taskId: number): number | null {
+  const row = conn().prepare('SELECT note_folder_id FROM task WHERE id = ?').get(taskId) as
+    | { note_folder_id: number | null }
+    | undefined
+  return row?.note_folder_id ?? null
+}
+
+/**
+ * 把任务与某个知识库文件夹绑定，并立刻对齐一次自动引用。
+ *
+ * folderId 传 null 表示解除绑定 —— 同时**收掉所有 source='folder' 的自动行**
+ *（手动关联与正文派生的行一律不碰）。
+ */
+export function setTaskNoteFolder(taskId: number, folderId: number | null): boolean {
+  const info = conn()
+    .prepare('UPDATE task SET note_folder_id = ? WHERE id = ? AND deleted_at IS NULL')
+    .run(folderId, taskId)
+  if (info.changes === 0) return false
+  syncFolderLinkedNotes(taskId)
+  return true
+}
+
+/**
+ * 让「关联了文件夹」的任务与当前笔记树**对齐**自动引用。返回改动条数。
+ *
+ * 三条规矩：
+ * 1. **只动 source='folder' 的行** —— 手动关联（'manual'）与正文派生（'wiki'）永远不碰，
+ *    否则用户自己拉的关联会被同步逻辑当成「多余的」删掉；
+ * 2. 范围是文件夹**自身 + 递归子文件夹**下所有未删除的笔记；
+ * 3. 幂等：没有差异时一次写都不做（它会被挂在广播链路上反复调用）。
+ */
+export function syncFolderLinkedNotes(taskId: number): number {
+  const c = conn()
+  const folderId = taskNoteFolder(taskId)
+  const target = new Set<number>()
+  if (folderId != null) {
+    const folders = c.prepare('SELECT id, parent_id, name FROM note_folder').all() as {
+      id: number
+      parent_id: number | null
+      name: string
+    }[]
+    if (folders.some((f) => f.id === folderId)) {
+      const scope = folderWithDescendants(folders, folderId)
+      const notes = c
+        .prepare('SELECT id, folder_id FROM note WHERE deleted_at IS NULL AND folder_id IS NOT NULL')
+        .all() as { id: number; folder_id: number }[]
+      for (const n of notes) if (scope.has(n.folder_id)) target.add(n.id)
+    }
+  }
+  const current = new Set(
+    (c.prepare("SELECT note_id FROM task_note_link WHERE task_id = ? AND source = 'folder'").all(taskId) as {
+      note_id: number
+    }[]).map((r) => r.note_id)
+  )
+  let changed = 0
+  const ins = c.prepare("INSERT OR IGNORE INTO task_note_link (task_id, note_id, source) VALUES (?, ?, 'folder')")
+  for (const id of target) if (!current.has(id)) changed += ins.run(taskId, id).changes
+  const del = c.prepare("DELETE FROM task_note_link WHERE task_id = ? AND note_id = ? AND source = 'folder'")
+  for (const id of current) if (!target.has(id)) changed += del.run(taskId, id).changes
+  return changed
+}
+
+/** 所有「关联了文件夹」且**未结束**的任务对齐一遍（已完成/已放弃的任务冻结，不再跟着变）。 */
+export function syncAllFolderLinkedTasks(): number {
+  const rows = conn()
+    .prepare("SELECT id FROM task WHERE note_folder_id IS NOT NULL AND deleted_at IS NULL AND status NOT IN ('done','abandoned')")
+    .all() as { id: number }[]
+  let n = 0
+  for (const r of rows) n += syncFolderLinkedNotes(r.id)
+  return n
+}
+
 export function unlinkTaskNote(taskId: number, noteId: number): number {
   return conn()
     .prepare('DELETE FROM task_note_link WHERE task_id = ? AND note_id = ?')
@@ -134,7 +208,7 @@ export function tagMap(): { task_id: number; id: number; name: string; color: st
 
 export function listNotes(limit = 300): Note[] {
   return conn()
-    .prepare(`SELECT id, folder_id, title, content_md, format, pinned, word_count, created_at, updated_at
+    .prepare(`SELECT ${NOTE_COLUMNS}
                 FROM note WHERE deleted_at IS NULL
             ORDER BY pinned DESC, updated_at DESC LIMIT ?`)
     .all(limit) as Note[]
