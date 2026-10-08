@@ -74,10 +74,34 @@ export const AI_SETTING_KEYS = {
   timeout: 'ai_timeout_sec',
 } as const
 
+/**
+ * API Key 怎么发出去。
+ *
+ * 「自动」按协议推断（OpenAI 兼容 → Authorization: Bearer；Anthropic → x-api-key；
+ * Gemini → URL 查询参数）。其余三项**强制覆盖** —— 中转服务很常见地把
+ * Anthropic / Gemini 的**请求形状**配上 Bearer 鉴权，只按协议推断就会 401。
+ */
+export type AiAuthMode = 'auto' | 'bearer' | 'x-api-key' | 'query'
+
+export const AI_AUTH_MODES: { value: AiAuthMode; label: string; hint: string }[] = [
+  { value: 'auto', label: '自动（按协议）', hint: 'OpenAI 兼容 → Bearer；Anthropic → x-api-key；Gemini → 查询参数' },
+  { value: 'bearer', label: 'Authorization: Bearer', hint: '多数中转服务与兼容层用这个；Key 里已带 Bearer 前缀也不会重复拼' },
+  { value: 'x-api-key', label: 'x-api-key', hint: 'Anthropic 原生协议用这个' },
+  { value: 'query', label: 'URL 查询参数 key=', hint: 'Gemini 原生协议用这个' },
+]
+
+export const DEFAULT_AI_AUTH_MODE: AiAuthMode = 'auto'
+
+export function normalizeAiAuthMode(raw: string): AiAuthMode {
+  return AI_AUTH_MODES.some((m) => m.value === raw) ? (raw as AiAuthMode) : DEFAULT_AI_AUTH_MODE
+}
+
 export interface AiSettings {
   baseUrl: string
   apiKey: string
   protocol: AiProtocol
+  /** 鉴权方式；'auto' 表示按协议推断 */
+  authMode: AiAuthMode
   model: string
   prompt: string
   /** 整库整理提示词；空字符串表示「跟单篇用同一份」 */

@@ -79,6 +79,28 @@ export function addFlash(
   return getFlash(id)
 }
 
+/**
+ * 更新闪念正文（剪藏图片后台补本地化时用）。
+ *
+ * 为什么需要它：图片下载**不能挡住正文落库** —— 一张图最坏要等 10 秒，
+ * 一篇文章 20 张就是几分钟，插件那边点完剪藏会一直转圈。
+ * 所以正文先用原始外链落库、立刻返回，图片下完再回来改这一条。
+ *
+ * 只改**未删除**的行：用户在此期间把闪念删了，这次更新就该无声作罢（不是错误）。
+ * 与 addFlash 同一个上限，避免后台补图把一条记录撑爆。
+ */
+export function updateFlashContent(id: number, content: string): Flash | null {
+  const clean = content.trim()
+  if (!clean) return null
+  const limit = 200000
+  const info = conn()
+    .prepare('UPDATE flash SET content = ? WHERE id = ? AND deleted_at IS NULL')
+    .run(clean.slice(0, limit), id)
+  if (info.changes === 0) return null
+  reindexFlash(id)
+  return getFlash(id)
+}
+
 export function setFlashStatus(id: number, status: 'inbox' | 'archived'): Flash | null {
   conn().prepare('UPDATE flash SET status = ? WHERE id = ?').run(status, id)
   return getFlash(id)

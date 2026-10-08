@@ -56,6 +56,8 @@ export interface AppSettings {
   /** 长休息的分钟数：休息间隔到了就用它，其余用 pomodoro_break_min */
   pomodoro_long_break_min: number
   pomodoro_auto_break: boolean
+  /** AI 的 API Key 怎么发出去（auto / bearer / x-api-key / query） */
+  ai_auth_mode: string
   // ---- 日历口径（2026-10-07：此前写死"按 start_date 逐日展开"）----
   /** 有开始+截止时怎么落格：range（区间展开）/ due（只按截止）/ start（只按开始） */
   calendar_span_mode: 'range' | 'due' | 'start'
@@ -200,6 +202,7 @@ export function parseSettings(raw: Record<string, string> = {}): AppSettings {
     pomodoro_interval: num(raw.pomodoro_interval, 4, 1, 12),
     pomodoro_long_break_min: num(raw.pomodoro_long_break_min, 15, 1, 60),
     pomodoro_auto_break: bool(raw.pomodoro_auto_break, false),
+    ai_auth_mode: enumOf(raw.ai_auth_mode, ['auto', 'bearer', 'x-api-key', 'query'], 'auto'),
     // 取值用 enum 卡一遍：写错的值会让日历口径"看起来没生效"，而它只是个字符串
     calendar_span_mode: enumOf(raw.calendar_span_mode, ['range', 'due', 'start'], 'range'),
     calendar_no_date: enumOf(raw.calendar_no_date, ['today', 'hide'], 'today'),
@@ -293,6 +296,7 @@ export const DEFAULT_SETTINGS: Record<string, string> = {
   pomodoro_focus_min: '25',
   pomodoro_break_min: '5',
   pomodoro_interval: '4',
+  ai_auth_mode: 'auto',
   pomodoro_long_break_min: '15',
   calendar_span_mode: 'range',
   calendar_no_date: 'today',

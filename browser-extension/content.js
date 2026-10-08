@@ -35,13 +35,123 @@ function findPasswordInput(scope) {
  * 提取失败或正文短于 200 字符时回退到 body.innerText，并如实标注 ——
  * 那种内容会带着导航和广告，用户该知道。
  */
-function extractArticle() {
+/**
+ * 把一棵（克隆出来的）子树里的图片**变成存得住的样子**。
+ *
+ * 两件事：
+ * 1. **相对地址变绝对**：`<img src="/a/b.png">` 存进库里就再也找不到图了 ——
+ *    正文 HTML 是脱离原页面保存的，必须在这一步定死完整 URL。
+ * 2. **懒加载图还原**：大量站点把真图放在 `data-src` / `data-original` / `data-lazy-src`，
+ *    `src` 只是一个 1×1 占位 —— 直接存下来就是一片灰框（用户报的"图片没抓到"）。
+ *    一并处理 `srcset`（每段 URL 都要绝对化）。
+ */
+function absolutizeImages(root) {
+  if (!root || !root.querySelectorAll) return
+  var imgs = root.querySelectorAll('img')
+  for (var i = 0; i < imgs.length; i++) {
+    var img = imgs[i]
+    var lazy =
+      img.getAttribute('data-src') ||
+      img.getAttribute('data-original') ||
+      img.getAttribute('data-lazy-src') ||
+      img.getAttribute('data-actualsrc') ||
+      ''
+    var src = img.getAttribute('src') || ''
+    var placeholder = !src || /^data:image\/(gif|png);base64,[A-Za-z0-9+/=]{0,120}$/.test(src)
+    if (lazy && placeholder) img.setAttribute('src', lazy)
+    src = img.getAttribute('src') || ''
+    if (src && !/^data:/i.test(src)) {
+      try {
+        img.setAttribute('src', new URL(src, location.href).href)
+      } catch (e) {
+        /* 相对地址都拼不出来就保持原样 */
+      }
+    }
+    var srcset = img.getAttribute('srcset')
+    if (srcset) {
+      img.setAttribute(
+        'srcset',
+        srcset
+          .split(',')
+          .map(function (part) {
+            var seg = part.trim().split(/\s+/)
+            if (!seg[0] || /^data:/i.test(seg[0])) return part.trim()
+            try {
+              seg[0] = new URL(seg[0], location.href).href
+            } catch (e) {
+              /* 保持原样 */
+            }
+            return seg.join(' ')
+          })
+          .join(', ')
+      )
+    }
+    // 存下来的是静态文档，留着 loading=lazy 只会让它在收件箱里永远不加载
+    img.removeAttribute('loading')
+  }
+}
+
+/**
+ * 把页面滚到底再滚回来，触发懒加载与无限滚动。
+ *
+ * 为什么必须做：**没滚到的内容根本不在 DOM 里** —— 用户报的"滚动到底部的会丢失"就是这个。
+ * Readability 再聪明也只能读到已经加载出来的东西。
+ *
+ * 代价与取舍：会让页面动一下。所以（1）只在**全文剪藏**时做，区域剪藏是用户自己看着选的，
+ * 页面乱跳反而会让他选错；（2）全程有上限（默认 4 秒 / 60 步），超长页面也不会卡住；
+ * （3）结束后**还原原来的滚动位置**，用户回到页面时看到的还是他刚才那一屏。
+ */
+function scrollToLoad(maxMs) {
+  var startY = window.scrollY || document.documentElement.scrollTop || 0
+  var t0 = Date.now()
+  var step = 0
+  var lastHeight = 0
+  var still = 0
+  return new Promise(function (resolve) {
+    function tick() {
+      var before = document.documentElement.scrollHeight
+      window.scrollBy(0, Math.max(400, Math.floor(window.innerHeight * 0.9)))
+      step++
+      var atBottom = window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 4
+      // 连续两次滚到底且页面高度不再增长：认定到底了（无限滚动也会在新内容加载后继续变高）
+      if (before === lastHeight) still++
+      else still = 0
+      lastHeight = document.documentElement.scrollHeight
+      if ((atBottom && still >= 2) || Date.now() - t0 > maxMs || step > 60) {
+        window.scrollTo(0, startY)
+        resolve()
+        return
+      }
+      setTimeout(tick, 120)
+    }
+    if (document.documentElement.scrollHeight <= window.innerHeight + 8) {
+      resolve()
+      return
+    }
+    tick()
+  })
+}
+
+async function extractArticle() {
+  // 全文剪藏先滚一遍：懒加载与无限滚动的内容不进 DOM 就抓不到
+  try {
+    await scrollToLoad(4000)
+  } catch (e) {
+    /* 滚动失败不影响抓取 */
+  }
   try {
     // 传克隆节点：Readability 会改动 DOM，不能让它动到用户正在看的页面
-    var reader = new Readability(document.cloneNode(true))
+    var clone = document.cloneNode(true)
+    // 图片在克隆上先绝对化：Readability 之后再处理会丢掉它自己剔除的节点
+    absolutizeImages(clone)
+    var reader = new Readability(clone)
     var a = reader.parse()
     var text = a && a.textContent ? a.textContent.trim() : ''
     if (text.length > 200) {
+      var tpl = document.createElement('div')
+      tpl.innerHTML = a.content || ''
+      // Readability 会重写一遍结构，再走一次图片处理兜底
+      absolutizeImages(tpl)
       return {
         ok: true,
         url: location.href,
@@ -49,7 +159,7 @@ function extractArticle() {
         // text 用于判断长度与降级；**html 才是落库的东西** ——
         // 纯文本会丢掉段落、标题层级、表格和图片，那样剪藏就没意义了
         text: text,
-        html: a.content || '',
+        html: tpl.innerHTML,
         mode: 'readability',
       }
     }
@@ -193,6 +303,16 @@ function startPicker() {
       return
     }
     var html = sanitize(el.innerHTML)
+    // 区域剪藏不滚动（页面跳走用户就选不准了），但图片同样要绝对化 ——
+    // 相对地址存进库里就是死链
+    try {
+      var tpl = document.createElement('div')
+      tpl.innerHTML = html
+      absolutizeImages(tpl)
+      html = tpl.innerHTML
+    } catch (e) {
+      /* 处理失败就用原样 */
+    }
     var text = (el.innerText || '').trim()
     if (!html || text.length < 10) {
       flash('这块内容太短（' + text.length + ' 字），换个区域试试', false)
@@ -238,7 +358,11 @@ function startPicker() {
 
 chrome.runtime.onMessage.addListener(function (msg, _sender, sendResponse) {
   if (msg && msg.kind === 'extract') {
-    sendResponse(extractArticle())
+    // 异步响应：extractArticle 会先滚动加载（见 scrollToLoad），
+    // 返回 true 保持消息通道打开，否则 sendResponse 时对方已经收到 undefined
+    extractArticle().then(sendResponse, function (e) {
+      sendResponse({ ok: false, message: '抓取失败：' + (e && e.message ? e.message : e) })
+    })
     return true
   }
   if (msg && msg.kind === 'startPicker') {

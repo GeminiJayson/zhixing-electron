@@ -13,6 +13,7 @@
  * 为什么不把「整理」做成一步到位的替换：模型有概率丢内容，而笔记是用户唯一的正本。
  * 宁可这次不写、告诉他哪里对不上，也不能悄悄丢一段。
  */
+import { bareKey, resolveAiAuth } from '../shared/ai-request'
 import { conn } from './db/connection'
 import { createNote, createNoteFolder, getNote, listNoteFolders, resolveNoteTitle, saveNote } from './db/notes'
 import { repairNoteAssociations } from './db/note-assoc'
@@ -35,6 +36,7 @@ import {
   extractNotePlaceholders,
   flattenFolders,
   noteKindHint,
+  normalizeAiAuthMode,
   parseAiResult,
   renderAiPrompt,
   restoreNotePlaceholders,
@@ -57,6 +59,7 @@ export function currentAiSettings(): AiSettings {
     baseUrl: s.ai_base_url,
     apiKey: s.ai_api_key,
     protocol: s.ai_protocol,
+    authMode: normalizeAiAuthMode(s.ai_auth_mode),
     model: s.ai_model,
     prompt: s.ai_prompt,
     libraryPrompt: s.ai_library_prompt,
@@ -104,16 +107,24 @@ export interface AiHttpRequest {
  *   anthropic POST {base}/messages           x-api-key + anthropic-version
  *   gemini    POST {base}/models/<model>:generateContent?key=<key>
  * base 若已写到具体 endpoint（例如以 /chat/completions 结尾）就不再追加，免得拼出双份。
+ *
+ * `s.authMode` 非 'auto' 时**强制覆盖**鉴权方式 —— 中转服务常把 Anthropic / Gemini 的请求形状
+ * 配上 Bearer 鉴权，只按协议推断会一直 401。
  */
 export function buildAiRequest(s: AiSettings, prompt: string): AiHttpRequest {
   const base = (s.baseUrl || '').trim().replace(/\/+$/, '')
+  const mode = s.authMode ?? 'auto'
+  /** 这一档用哪种鉴权：显式指定优先，否则按协议（纯逻辑在 shared/ai-request，带单测） */
+  const auth = resolveAiAuth(mode, s.protocol)
+  const key = bareKey(s.apiKey)
   if (s.protocol === 'anthropic') {
     const url = /\/messages$/.test(base) ? base : `${base}/messages`
     return {
       url,
       headers: {
         'content-type': 'application/json',
-        'x-api-key': s.apiKey,
+        // 强制 bearer 时不发 x-api-key（两个都发反而会被某些网关当成冲突）
+        ...(auth === 'bearer' ? { authorization: `Bearer ${key}` } : { 'x-api-key': key }),
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
@@ -125,10 +136,18 @@ export function buildAiRequest(s: AiSettings, prompt: string): AiHttpRequest {
     }
   }
   if (s.protocol === 'gemini') {
-    const url = `${base}/models/${encodeURIComponent(s.model)}:generateContent?key=${encodeURIComponent(s.apiKey)}`
+    // 鉴权由 auth 决定：默认（query）把 key 拼进 URL，强制 bearer / x-api-key 时改走请求头
+    const url =
+      auth === 'query'
+        ? `${base}/models/${encodeURIComponent(s.model)}:generateContent?key=${encodeURIComponent(key)}`
+        : `${base}/models/${encodeURIComponent(s.model)}:generateContent`
     return {
       url,
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        ...(auth === 'bearer' ? { authorization: `Bearer ${key}` } : {}),
+        ...(auth === 'x-api-key' ? { 'x-api-key': key } : {}),
+      },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -139,7 +158,10 @@ export function buildAiRequest(s: AiSettings, prompt: string): AiHttpRequest {
   const url = /\/chat\/completions$/.test(base) ? base : `${base}/chat/completions`
   return {
     url,
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${s.apiKey}` },
+    headers: {
+      'content-type': 'application/json',
+      ...(auth === 'x-api-key' ? { 'x-api-key': key } : { authorization: `Bearer ${key}` }),
+    },
     body: JSON.stringify({
       model: s.model,
       messages: [

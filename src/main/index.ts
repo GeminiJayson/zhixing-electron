@@ -14,8 +14,11 @@ import {
   dialog,
   Notification,
   shell,
+  net,
+  protocol,
 } from 'electron'
 import { basename, dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx'
 import {
@@ -28,6 +31,8 @@ import { BLOUB_DEFAULT_SHAPE, BLOUB_SHAPES, normalizeBloubShape } from '../share
 import { resolveThemePack } from '../shared/theme-packs'
 import { initFileLog } from './log'
 import { hardenWindow } from './security'
+import { resolveAttachFile } from './clip-images'
+import { CLIP_ATTACH_SCHEME } from '../shared/clip-image'
 import { logTaskActivity } from './db/task-activity'
 import { dueTargets } from './db/workflow-scheduler'
 import { startTriggerServer, stopTriggerServer } from './http-trigger'
@@ -1022,6 +1027,27 @@ function registerDirectoryHandlers(): void {
       return false
     }
   })
+  ipcMain.handle('app:extensionDir', () => resolveExtensionDir())
+  ipcMain.handle('app:openExtensionDir', async () => {
+    const dir = resolveExtensionDir()
+    const err = await shell.openPath(dir)
+    return err ? { ok: false, message: err, dir } : { ok: true, message: dir, dir }
+  })
+}
+
+/**
+ * 浏览器扩展的目录。
+ *
+ * 打包后在 `resources/browser-extension`（见 electron-builder.yml 的 extraResources），
+ * 开发时就在仓库根 —— 两处都找不到时返回打包路径，让设置页把"该放哪"如实显示出来，
+ * 而不是给一个空字符串让用户对着空白发呆。
+ */
+function resolveExtensionDir(): string {
+  const packed = join(process.resourcesPath, 'browser-extension')
+  if (existsSync(join(packed, 'manifest.json'))) return packed
+  const dev = join(app.getAppPath(), 'browser-extension')
+  if (existsSync(join(dev, 'manifest.json'))) return dev
+  return packed
 }
 
 /**
@@ -1440,8 +1466,27 @@ function registerAiHandlers(): void {
   ipcMain.handle('ai:libraryProgress', () => currentLibraryProgress())
 }
 
+/**
+ * 剪藏图片走自定义协议。
+ *
+ * **必须在 app ready 之前注册为特权协议**，否则渲染层会把它当成未知 scheme：
+ * 图片不显示、`fetch` 直接失败（而且不报错，只是空白）。
+ * `standard` 让它有正常的 origin 语义，`supportFetchAPI` 让渲染层能用 fetch 读它
+ * （端到端脚本靠这条验证图片真的落盘了）。
+ */
+protocol.registerSchemesAsPrivileged([
+  { scheme: CLIP_ATTACH_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+])
+
 app.whenReady().then(() => {
   app.setName('知行 ZhiXing')
+  // `zx-attach://` → <数据目录>/attachments/clip/ 下的真实文件。
+  // 路径合法性全部由 resolveAttachFile 判定（挡 .. / 斜杠 / 越界），这里只做 IO。
+  protocol.handle(CLIP_ATTACH_SCHEME, async (req) => {
+    const file = resolveAttachFile(req.url)
+    if (!file) return new Response('not found', { status: 404 })
+    return net.fetch(pathToFileURL(file).toString())
+  })
   buildMenu()
   registerDbHandlers()
   registerAiHandlers()

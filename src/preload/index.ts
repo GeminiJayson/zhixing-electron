@@ -346,6 +346,11 @@ const api = {
   },
   app: {
     info: (): Promise<AppInfo> => ipcRenderer.invoke('app:info'),
+    /** 浏览器扩展所在目录（随包分发：resources/browser-extension；开发时是仓库根） */
+    extensionDir: (): Promise<string> => ipcRenderer.invoke('app:extensionDir'),
+    /** 在文件管理器里打开扩展目录，用户照着自己加载到浏览器 */
+    openExtensionDir: (): Promise<{ ok: boolean; message: string; dir: string }> =>
+      ipcRenderer.invoke('app:openExtensionDir'),
     setTheme: (theme: 'light' | 'dark' | 'system'): Promise<void> =>
       ipcRenderer.invoke('theme:set', theme),
     /** 云母材质开关（仅 win32 生效，其他平台为空操作） */

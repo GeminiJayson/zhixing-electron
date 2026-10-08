@@ -3,9 +3,11 @@ import { CircleAlert, Database, Download, FileText, FolderInput, Info, Link2, Pa
 import { parseSettings, type AppSettings } from '@shared/settings'
 import { CALENDAR_SPAN_MODES } from '@shared/calendar'
 import {
+  AI_AUTH_MODES,
   AI_PROTOCOLS,
   DEFAULT_AI_LIBRARY_PROMPT,
   DEFAULT_AI_PROMPT,
+  normalizeAiAuthMode,
   normalizeAiProtocol,
 } from '@shared/ai-note'
 import {
@@ -136,7 +138,11 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
 
   useEffect(() => {
     void window.zhixing?.vault?.httpInfo?.().then(setHttpInfo)
+    // 浏览器扩展**随包分发**（electron-builder.yml 的 extraResources）：目录由主进程解析，
+    // 设置页只负责显示与"打开"。此前扩展只在源码仓库里，装安装版的用户根本拿不到。
+    void window.zhixing.app.extensionDir().then(setExtensionDir)
   }, [])
+  const [extensionDir, setExtensionDir] = useState('')
   const [settings, setSettings] = useState<AppSettings>(() => parseSettings())
   const [info, setInfo] = useState<AppInfo | null>(null)
   const [recycleOpen, setRecycleOpen] = useState(false)
@@ -842,6 +848,29 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                     <code>127.0.0.1:{httpInfo.port}</code>，不联网。
                     令牌不是主密码 —— 拿到它只能往收件箱和保险箱里<b>写</b>，
                     且保险箱锁定时一律拒收。
+                  </p>
+                  {/* 扩展**随包分发**（electron-builder.yml 的 extraResources）：
+                      以前它只在源码仓库里，装安装版的用户根本拿不到。
+                      这里给出目录与入口，用户照着在浏览器里「加载已解压的扩展程序」即可。 */}
+                  <div className="set-row">
+                    <span>扩展目录</span>
+                    <span className="u-aux set-row__path" title={extensionDir}>
+                      {extensionDir || '（未找到，见 docs/windows-build.md）'}
+                    </span>
+                    <button
+                      className="btn btn--ghost"
+                      disabled={!extensionDir}
+                      onClick={async () => {
+                        const r = await window.zhixing.app.openExtensionDir()
+                        onNotice(r.ok ? '已打开扩展目录' : r.message)
+                      }}
+                    >
+                      打开目录
+                    </button>
+                  </div>
+                  <p className="u-aux set-row__note">
+                    在浏览器里打开 <code>chrome://extensions</code>，开启「开发者模式」，
+                    选「加载已解压的扩展程序」并指向上面这个目录。
                   </p>
                 </>
               ) : (
@@ -1604,6 +1633,21 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                   placeholder="本地模型（Ollama 等）可留空"
                   onChange={(e) => void update('ai_api_key', e.target.value)}
                 />
+              </label>
+              {/* 鉴权方式：中转服务常把 Anthropic / Gemini 的形状配上 Bearer 鉴权，
+                  只按协议推断会一直 401；选「自动」时行为与以前完全一致。 */}
+              <label className="set-row">
+                <span>鉴权方式</span>
+                <Select
+                  className="field field--compact"
+                  ariaLabel="API Key 的发送方式"
+                  value={normalizeAiAuthMode(settings.ai_auth_mode)}
+                  onChange={(v) => void update('ai_auth_mode', v)}
+                  options={AI_AUTH_MODES.map((m) => ({ value: m.value, label: m.label, title: m.hint }))}
+                />
+                <span className="u-aux">
+                  {AI_AUTH_MODES.find((m) => m.value === settings.ai_auth_mode)?.hint ?? ''}
+                </span>
               </label>
               <label className="set-row">
                 <span>模型</span>

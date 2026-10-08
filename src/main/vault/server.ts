@@ -1,9 +1,11 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { conn } from '../db/connection'
-import { addFlash } from '../db/inbox'
+import { addFlash, updateFlashContent } from '../db/inbox'
 import { listSettings, setSetting } from '../db/settings'
 import { randomBytes } from 'node:crypto'
 import * as store from './store'
+import { absolutizeClipImages } from '../../shared/clip-html'
+import { localizeClipImages } from '../clip-images'
 
 /**
  * 给浏览器扩展用的本地 HTTP 端点。
@@ -193,7 +195,17 @@ async function onRequest(req: IncomingMessage, res: ServerResponse): Promise<voi
     const url = (b.url ?? '').trim()
     const html = (b.html ?? '').trim()
     const useHtml = b.mode !== 'fallback' && html.length > 200
-    const payload = useHtml ? html : text
+    // 图片地址在主进程再兜一次绝对化：旧版扩展与 curl 手测都会送来相对路径，
+    // 存进库里就是死链。纯逻辑在 shared/clip-html.ts（带单测）。
+    // **处理结果要用于落库**（不只是查重指纹）—— 第一次改就只改了 payload，
+    // 结果库里存的还是原 html，图片依旧是相对地址。
+    // 正文只做**绝对化**（纯字符串处理，毫秒级），图片的下载放到落库之后后台做。
+    //
+    // 这一条是刻意的时序设计：图片下载是网络操作，一张最坏 10 秒、一篇最多 20 张 ——
+    // 同步等它意味着插件点完剪藏要转几分钟圈，而且任何一张卡住都会拖住整篇正文。
+    // 现在正文**立刻落库**、立刻返回，图片下完再回来改那一条（见 updateFlashContent）。
+    const storedHtml = useHtml ? absolutizeClipImages(html, url) : html
+    const payload = useHtml ? storedHtml : text
 
     /**
      * 查重的口径取决于剪藏方式 —— 这一条是踩出来的：
@@ -206,17 +218,22 @@ async function onRequest(req: IncomingMessage, res: ServerResponse): Promise<voi
      * 改用内容指纹（正文前 200 字）去重：同一块选两次仍然只存一条，
      * 而同一页选两块不同的内容会各存一条。
      */
+    // 两处查重都必须带 deleted_at IS NULL：**删掉的闪念不该继续参与查重**。
+    // 此前漏了它 —— 用户删掉一条剪藏、再剪同一页，仍然被判成"已存在"，什么都进不来
+    //（软删只是把 deleted_at 写上，行还在表里，查重照旧命中）。
     if (b.mode === 'selection') {
       const fp = payload.slice(0, 200)
       const dup = conn()
-        .prepare('SELECT id FROM flash WHERE substr(content, 1, 200) = ? LIMIT 1')
+        .prepare('SELECT id FROM flash WHERE deleted_at IS NULL AND substr(content, 1, 200) = ? LIMIT 1')
         .get(fp)
       if (dup) {
         json(res, 200, { ok: true, action: 'duplicated' })
         return
       }
     } else if (url) {
-      const dup = conn().prepare('SELECT id FROM flash WHERE source_url = ? LIMIT 1').get(url)
+      const dup = conn()
+        .prepare('SELECT id FROM flash WHERE deleted_at IS NULL AND source_url = ? LIMIT 1')
+        .get(url)
       if (dup) {
         json(res, 200, { ok: true, action: 'duplicated' })
         return
@@ -229,14 +246,25 @@ async function onRequest(req: IncomingMessage, res: ServerResponse): Promise<voi
       **存它而不是纯文本，剪藏才有意义** —— 否则存下来的是一坨没有结构的文字。
       回退模式没有可信的 HTML（那是整页 innerText），老实存纯文本。
     */
-    addFlash(
-      useHtml ? html : text,
+    const flash = addFlash(
+      useHtml ? storedHtml : text,
       (b.title ?? '').trim(),
       '浏览器扩展',
       url,
       useHtml ? 'html' : 'text'
     )
     json(res, 200, { ok: true, action: 'created', mode: b.mode ?? 'readability' })
+    // 图片本地化：**不 await** —— 它是落库之后的收尾工作，成败都不该影响这次剪藏的结果。
+    // 失败（网络断、防盗链、闪念已被删）就保留外链，正文本身已经在库里了。
+    if (flash && useHtml) {
+      void localizeClipImages(storedHtml, url)
+        .then((localized) => {
+          if (localized !== storedHtml) updateFlashContent(flash.id, localized)
+        })
+        .catch(() => {
+          // 静默：图片没抓到不影响已经落库的正文
+        })
+    }
     return
   }
 

@@ -20,6 +20,16 @@ files:
   - package.json
   - '!**/*.map'
 
+# 浏览器扩展随包分发：装完之后它就在安装目录的 resources/browser-extension 里，
+# 用户在浏览器扩展页选「加载已解压的扩展程序」指向该目录即可（设置 → 集成 → 浏览器扩展里有按钮直接打开）。
+# 此前它只躺在源码仓库里 —— 装安装版的用户根本拿不到（用户反馈）。
+extraResources:
+  - from: browser-extension
+    to: browser-extension
+    filter:
+      - '**/*'
+      - '!**/*.md'
+
 # 原生模块必须解包到 asar 之外
 asarUnpack:
   - '**/node_modules/better-sqlite3/**'
