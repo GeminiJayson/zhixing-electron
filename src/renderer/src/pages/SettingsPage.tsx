@@ -153,6 +153,32 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
   const [info, setInfo] = useState<AppInfo | null>(null)
   const [recycleOpen, setRecycleOpen] = useState(false)
   /**
+   * 清空数据库。
+   *
+   * **强确认**：要求原样输入「清空」两个字 —— 这是不可逆操作，一个「确定」按钮太容易误点，
+   * 而它删掉的是用户全部笔记与任务。主进程那边还会先自动备份一份（见 wipeDatabase）。
+   */
+  const handleWipeDatabase = async (): Promise<void> => {
+    const typed = await dialog.prompt({
+      title: '清空数据库',
+      label: '会删掉全部笔记 / 任务 / 闪念 / 工作流等数据。「设置」保留，且会先自动备份一份。',
+      defaultValue: '',
+    })
+    if (typed === null) return
+    if (typed.trim() !== '清空') {
+      onNotice('已取消：确认词要原样输入「清空」')
+      return
+    }
+    try {
+      const r = await window.zhixing.db.wipeDatabase()
+      onNotice(`已清空 ${r.tables} 张表、${r.rows} 行数据，界面将重新加载`)
+      // 所有页面的数据都变了，重载比逐个通知可靠
+      window.setTimeout(() => window.location.reload(), 1200)
+    } catch (e) {
+      onNotice('清空失败：' + ((e as Error).message || '未知原因'))
+    }
+  }
+  /**
    * 来源已失效的挂载引用行（挂载点被卸载/删除之后留下的那些）。
    *
    * 卸载挂载点时**故意保留**这些行并标记失效 —— 任务是挂着它们的，直接删会让任务上的
@@ -1529,6 +1555,17 @@ export function SettingsPage({ onNotice, onChanged }: Props) {
                 }
               >
                 <Trash2 size={13} /> 清理
+              </button>
+            </div>
+            {/*
+              清空数据库 —— 与回收站、失效链接同属「本地数据的处置」，所以放在同一张卡里。
+              危险操作放最后一行，并且要求输入确认词（见 handleWipeDatabase）。
+            */}
+            <div className="set-row">
+              <span>清空数据库</span>
+              <span className="u-aux">删掉全部笔记 / 任务 / 闪念等数据；设置保留，且会先自动备份</span>
+              <button className="text-btn text-btn--danger" onClick={() => void handleWipeDatabase()}>
+                <Trash2 size={13} /> 清空…
               </button>
             </div>
             <div className="set-row">

@@ -114,6 +114,11 @@ export const systemApi = {
     },
 
     emptyAllTrash: (): Promise<number> => ipcRenderer.invoke('db:emptyAllTrash'),
+    /**
+     * 清空数据库：保留表结构与设置，删掉全部业务数据（主进程会先自动备份一份）。
+     * 调用方必须自己做**强确认** —— 这是不可逆的。
+     */
+    wipeDatabase: (): Promise<{ tables: number; rows: number }> => ipcRenderer.invoke('db:wipeDatabase'),
     exportDocx: (
       srcPath: string,
       html: string,

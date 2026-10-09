@@ -627,6 +627,20 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
 
   // 别的页面改了笔记（新建/删除/改标题）会影响反链；这里只更新反链与归属，
   // 不重载正文 —— 当前笔记可能正在编辑，整篇重载会覆盖输入。
+  /**
+   * note 域的任何变化都**重拉整棵树**（笔记与文件夹都重拉）。
+   *
+   * 这一条原先漏了，表现有三处：
+   * 1. **卸载/挂载本地文件夹后，树里的那个节点不动**（要么还在、要么不出现，切页才更新）；
+   * 2. **别的页面新建/删除笔记，知识库的树不跟着变**；
+   * 3. 重命名文件夹后树里还是旧名字。
+   *
+   * 而且旧写法是挂在 `noteId` 上的：**没选中任何笔记时根本不订阅** ——
+   * 而挂载/卸载文件夹恰恰经常发生在「没打开笔记」的时候。
+   */
+  useEffect(() => subscribeDomain(['note'], () => void load()), [load])
+
+  /** 当前这篇笔记自己的附属信息（反链 / 关联任务 / 标签）跟着 note 域刷新 */
   useEffect(() => {
     if (noteId == null) return
     return subscribeDomain(['note'], () => {
@@ -635,7 +649,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
       // 标签是 note 域的数据（note_tag）：别的页面改了标签颜色 / 关联，这里要跟着换
       void loadNoteTags()
     })
-  }, [selectedId, loadNoteTags])
+  }, [selectedId, loadNoteTags, noteId])
 
   /** 已解析标题表：驱动 [[标题]] 的链接化（未命中的即悬空）。 */
   const resolved = useMemo(() => new Map(notes.map((n) => [n.title, n.id])), [notes])

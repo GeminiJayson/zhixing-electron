@@ -18,7 +18,7 @@ import { useCollapsedSet } from '@renderer/lib/use-collapsed'
 import type { Note, NoteFolder, NoteFormat } from '@shared/types'
 import type { AiLibraryProgress } from '@shared/ai-note'
 import { flattenFolderTree } from '@shared/folder-tree'
-import { depthOfRelPath, mountNodeId, type MountEntry } from '@shared/mounted-folder'
+import { mountNodeId, type MountEntry } from '@shared/mounted-folder'
 import { PopMenu } from './PopMenu'
 
 /**
@@ -365,49 +365,87 @@ export function NoteTree({
     )
   }
 
+  /** 某一层里、直接挂在 parentRel 下的条目（用 relPath 反推，不额外维护索引） */
+  const mountKidsOf = (entries: MountEntry[], parentRel: string): MountEntry[] =>
+    entries.filter((e) => {
+      const cut = e.relPath.lastIndexOf('/')
+      return (cut < 0 ? '' : e.relPath.slice(0, cut)) === parentRel
+    })
+
   /**
-   * 挂载点下的文件行。**虚拟节点**：id 由 mountNodeId 从「挂载点 + 相对路径」算出（负数、稳定），
-   * 点它只是切换预览，不动库里的任何东西。
+   * 挂载点下的子树 —— **真嵌套**，而且用的是笔记树自己那套类名与缩进。
    *
-   * 缩进按相对路径的层级走（a/b/c.md 缩两格），所以子树是「平铺 + 缩进」而不是真嵌套 ——
-   * 挂载目录动辄几百个文件，真嵌套要给每一层都做展开状态，收益不值那个复杂度。
+   * 之前是「平铺 + 按相对路径缩进」：层级看着像树，但子文件夹不能折叠、样式也是另造的一套
+   *（`.ntree__mount` / `.ntree__mount-size`），跟旁边的笔记文件夹一眼就不一样（用户反馈）。
+   *
+   * 现在目录行就是 `.ntree__folder`（带 caret、可折叠，折叠状态跟真实文件夹共用同一份
+   * `useCollapsedSet`）、文件行就是 `.ntree__note`（图标 + 标题，与笔记行同构）。
+   * 缩进也照它们的约定：文件夹 6 + depth×14、笔记 10 + depth×14，并带上 --tree-depth/--tree-step
+   *（路径虚线靠它们定位）。
    */
-  const mountRows = (f: NoteFolder, depth: number): React.ReactNode => {
-    const entries = mountEntries?.[f.id] ?? []
-    if (entries.length === 0) {
-      return (
-        <div className="ntree__mount-empty" style={{ paddingLeft: 6 + depth * 14 }}>
-          （空目录，或目录已不在）
-        </div>
-      )
-    }
-    return entries.map((e) => {
+  const mountRows = (
+    f: NoteFolder,
+    entries: MountEntry[],
+    depth: number,
+    parentRel: string
+  ): React.ReactNode => {
+    const kids = mountKidsOf(entries, parentRel)
+    if (kids.length === 0) return null
+    return kids.map((e) => {
       const nodeId = mountNodeId(f.id, e.relPath)
-      const indent = depth + depthOfRelPath(e.relPath)
-      const kb = e.isDir ? '' : e.size < 1024 ? e.size + ' B' : Math.round(e.size / 1024) + ' KB'
+      const size =
+        e.isDir || e.size <= 0 ? '' : e.size < 1024 ? e.size + ' B' : Math.round(e.size / 1024) + ' KB'
+      if (!e.isDir) {
+        return (
+          <div
+            key={nodeId}
+            className={'ntree__note' + (selectedMountId === nodeId ? ' ntree__note--on' : '')}
+            data-depth={depth}
+            style={
+              { paddingLeft: 10 + depth * 14, '--tree-depth': depth, '--tree-step': '14px' } as React.CSSProperties
+            }
+            title={e.relPath + (size ? '  ·  ' + size : '')}
+            onClick={() => onSelectMountFile?.(f.id, e.relPath, nodeId)}
+            role=
+            'treeitem'
+          >
+            <FileText size={13} className="ntree__type ntree__type--mount" aria-hidden />
+            <span className="ntree__title">{e.name}</span>
+          </div>
+        )
+      }
+      const open = !collapsed.has(nodeId)
       return (
-        <div
-          key={nodeId}
-          className={
-            'ntree__note ntree__mount' +
-            (e.isDir ? ' ntree__mount--dir' : '') +
-            (selectedMountId === nodeId ? ' ntree__note--on' : '')
-          }
-          data-mount-id={nodeId}
-          style={{ paddingLeft: 6 + indent * 14 }}
-          title={e.relPath + (kb ? '  ·  ' + kb : '')}
-          onClick={() => onSelectMountFile?.(f.id, e.relPath, nodeId)}
-        >
-          <span className="ntree__type ntree__type--mount">
-            {e.isDir ? <FolderPlus size={13} /> : <FileText size={13} />}
-          </span>
-          <span className="ntree__title">{e.name}</span>
-          {kb ? <span className="ntree__mount-size">{kb}</span> : null}
+        <div key={nodeId}>
+          <div
+            className="ntree__folder"
+            data-depth={depth}
+            style={
+              { paddingLeft: 6 + depth * 14, '--tree-depth': depth, '--tree-step': '14px' } as React.CSSProperties
+            }
+            onClick={() => toggleFolder(nodeId)}
+          >
+            <button
+              className={'trow__caret' + (open ? ' trow__caret--open' : '')}
+              onClick={(ev) => {
+                // 行的 onClick 也会切换，这里必须停掉冒泡，否则一次点击切两下 = 没反应
+                ev.stopPropagation()
+                toggleFolder(nodeId)
+              }}
+              aria-expanded={open}
+              aria-label={open ? '折叠文件夹' : '展开文件夹'}
+            >
+              {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+            </button>
+            <FolderPlus size={13} className="ntree__type ntree__type--mount" aria-hidden />
+            <span className="ntree__foldername">{e.name}</span>
+            <span className="ntree__count">{mountKidsOf(entries, e.relPath).length}</span>
+          </div>
+          {open ? mountRows(f, entries, depth + 1, e.relPath) : null}
         </div>
       )
     })
   }
-
   const folderNode = (f: NoteFolder, depth: number): React.ReactNode => {
     const kids = childrenOf(f.id)
     const isOpen = !collapsed.has(f.id)
@@ -446,7 +484,10 @@ export function NoteTree({
             {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
           </button>
           <span className="ntree__foldername">{f.name}</span>
-          <span className="ntree__count">{own.length}</span>
+          {/* 挂载点数它自己的**顶层条目**（真实笔记数对它没意义，恒为 0） */}
+          <span className="ntree__count">
+            {f.mount_path ? mountKidsOf(mountEntries?.[f.id] ?? [], '').length : own.length}
+          </span>
           <span className="ntree__actions">
             <button
               className="icon-btn"
@@ -473,7 +514,7 @@ export function NoteTree({
           <>
             {/* 挂载点：把它目录里的文件铺在这里（虚拟节点，见 mountRows）。
                 放在 own/kids 之前 —— 挂载点自己不该有真实笔记子项，真有也不该混在文件列表中间。 */}
-            {f.mount_path ? mountRows(f, depth + 1) : null}
+            {f.mount_path ? mountRows(f, mountEntries?.[f.id] ?? [], depth + 1, '') : null}
             {own.map((n) => noteRow(n, depth + 1, f.id))}
             {kids.map((k) => folderNode(k, depth + 1))}
           </>

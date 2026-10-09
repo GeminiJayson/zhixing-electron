@@ -181,11 +181,18 @@ export function RecycleBin({ onNotice, onChanged, onClose }: Props) {
               className="text-btn text-btn--danger"
               disabled={items.length === 0}
               onClick={() => {
-                // 清空回收站：任务/笔记/闪念三类一起清（此前只清当前 Tab）
+                /*
+                  按钮写的是「清空此分类」，那就**只清当前 Tab**。
+
+                  此前它调的是 emptyAllTrash() —— 文案说「此分类」、实际三类一起清，
+                  而按钮的 disabled 又只按当前分类有没有条目来判：用户在「笔记」分类下看到按钮可用，
+                  点下去连任务和闪念一起没了（用户反馈）。
+                */
                 void (async () => {
+                  const label = TABS.find((t) => t.key === tab)?.label ?? '本分类'
                   const confirmed = await dialog.confirm({
-                    title: '清空回收站',
-                    message: '清空全部三类（任务 / 笔记 / 闪念）？无法恢复。',
+                    title: `清空「${label}」`,
+                    message: `清空「${label}」分类的 ${items.length} 条记录？无法恢复。`,
                     icon: <Trash2 size={15} />,
                     danger: true,
                     confirmText: '清空',
@@ -193,8 +200,8 @@ export function RecycleBin({ onNotice, onChanged, onClose }: Props) {
                   if (!confirmed) return
                   // 三类一个事务：分三次 IPC 的话，中途失败会留下「任务清了、笔记还在」，
                   // 而提示已经说了「已清空」
-                  const n = await window.zhixing.db.emptyAllTrash()
-                  onNotice(`已清空 ${n} 项`)
+                  const n = await window.zhixing.db.emptyTrash(tab)
+                  onNotice(n ? `已清空「${label}」的 ${n} 项` : '这个分类本来就是空的')
                   await afterChange()
                 })()
               }}

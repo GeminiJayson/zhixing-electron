@@ -48,7 +48,7 @@ import { dayOf, todayRoots, reviewStats } from './review'
 import { ensureScriptsFolder } from './notes'
 import { archiveHabit, deleteHabit, listHabits, saveHabit, setHabitDay, toggleHabitDay } from './habit'
 import { noteTableRows } from './note-table'
-import { listSettings, setSetting, setSettings, backupDatabase } from './settings'
+import { ensureDefaultSettings, listSettings, setSetting, setSettings, backupDatabase } from './settings'
 import { autoBackup, listBackups, restoreBackup } from './backup'
 import { globalSearch, searchTouch } from './search'
 import { listFolders, listTasksByList, createListFolder, renameListFolder, deleteListFolder, moveListFolder, reorderListFolder, isListDescendantOf, moveTaskToList, defaultListId } from './lists'
@@ -182,6 +182,7 @@ const WRITE_DOMAINS: Record<string, DataDomain | DataDomain[]> = {
   'db:restoreTrash': ['task', 'note', 'flash', 'workflow'],
   'db:purgeTrash': ['task', 'note', 'flash', 'workflow'],
   'db:emptyTrash': ['task', 'note', 'flash', 'workflow'],
+  'db:wipeDatabase': ['task', 'note', 'flash', 'workflow'],
   'db:purgeTrashOlderThan': ['task', 'note', 'flash', 'workflow'],
   'db:createTag': 'task',
   'db:renameTag': 'task',
@@ -280,6 +281,38 @@ function handle(channel: string, fn: IpcHandler): void {
     else if (domain) broadcastDataChanged(domain)
     return result
   })
+}
+
+export /**
+ * 清空数据库：**保留表结构、保留 settings**，把业务数据全部删掉，然后重建默认文件夹。
+ *
+ * 三件事必须做对：
+ * 1. **先自动备份**。这是不可逆操作，而应用本来每次启动就备份（保留最近 10 份）——
+ *    这里顺手先备一份，用户点错了还能从「自动备份」里恢复。
+ * 2. **跳过 FTS 的影子表**。note_fts / task_fts 本身是虚表，DELETE 它们没问题；
+ *    但它们的影子表（*_fts_data / _idx / _docsize / _config）由 SQLite 自己维护，
+ *    手动 DELETE 会把全文索引搞坏，之后搜索要么报错要么悄悄查不到。
+ * 3. **保留 settings**。那里是偏好（主题 / 热键 / AI 配置），不是用户数据；
+ *    清掉它等于顺带把所有设置重置回默认，通常不是用户想要的。
+ *
+ * 外键用 defer_foreign_keys：在事务里先关掉检查、提交时统一校验 —— 表之间有引用，
+ * 逐个 DELETE 很容易在半路撞上约束。全清空之后不存在悬空引用，所以提交一定能过。
+ */
+function wipeDatabase(): { tables: number; rows: number } {
+  autoBackup()
+  const c = conn()
+  const names = (c.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[])
+    .map((r) => r.name)
+    .filter((n) => !n.startsWith('sqlite_') && !n.includes('_fts_') && n !== 'settings')
+  let rows = 0
+  const run = c.transaction(() => {
+    c.pragma('defer_foreign_keys = ON')
+    for (const n of names) rows += c.prepare('DELETE FROM "' + n + '"').run().changes
+  })
+  run()
+  ensureDefaultSettings()
+  ensureDefaultFolder()
+  return { tables: names.length, rows }
 }
 
 export function registerDbHandlers(): void {
@@ -527,6 +560,8 @@ export function registerDbHandlers(): void {
     purgeTrash(kind, id)
   )
   handle('db:emptyTrash', (_e, kind: 'task' | 'note' | 'flash') => emptyTrash(kind))
+  /** 清空数据库（危险操作，先在界面里做好强确认） */
+  handle('db:wipeDatabase', () => wipeDatabase())
   handle('db:purgeTrashOlderThan', (_e, days: number) => purgeTrashOlderThan(days))
   handle('db:tagsWithUsage', () => tagsWithUsage())
   handle('db:createTag', (_e, name: string, color?: string) => createTag(name, color))
