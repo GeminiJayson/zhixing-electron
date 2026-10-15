@@ -1,6 +1,6 @@
 import { listSettings } from './settings'
 import type { AppSettings } from '../../shared/settings'
-import { nextDue } from '../../shared/recurrence'
+import { rollRecurrence } from '../../shared/recurrence'
 import { decideReminder, reminderBaseAt, type ReminderPolicy } from '../../shared/reminder'
 import { parseSettings } from '../../shared/settings'
 import type {
@@ -36,19 +36,25 @@ export function rollRecurringToday(): number {
   const stamp = nowStamp()
   const resetIds: number[] = []
   const stmt = c.prepare(
-    'UPDATE task SET status = ?, last_reset_date = ?, due_date = ?, streak = ?, updated_at = ? WHERE id = ?'
+    `UPDATE task SET status = ?, last_reset_date = ?, due_date = ?, streak = ?,
+                      repeat_rule = ?, completed_at = NULL, updated_at = ?
+      WHERE id = ?`
   )
   const tx = c.transaction(() => {
     for (const t of recurring) {
       if (t.last_reset_date && t.last_reset_date >= day) continue
-      const base = t.last_reset_date ?? t.due_date ?? shiftDay(day, -1)
-      const due =
-        t.repeat_period === 'daily'
-          ? shiftDay(base, 1)
-          : nextDue(base, t.repeat_period, t.repeat_rule)
-      if (!due || due > day) continue
+      /**
+       * 该不该重置、重置到哪天，交给纯函数（`rollRecurrence`，单测覆盖）。
+       *
+       * 这里曾经自己算：`daily` 直接 +1 天、其它走 `nextDue` —— `repeat_rule` 里的
+       * COUNT 从头到尾没人消费，于是设了「重复 2 次」的子任务照样每天滚回待办
+       * （用户报的「任务无限生成」）。`completed_at` 也会残留在"已完成"上，
+       * 统计因此把同一条任务重复计完成。
+       */
+      const next = rollRecurrence(t, day)
+      if (!next) continue
       const streak = doneBefore.has(t.id) ? (t.streak ?? 0) + 1 : (t.streak ?? 0)
-      stmt.run('todo', day, day, streak, stamp, t.id)
+      stmt.run('todo', day, next.due, streak, next.rule, stamp, t.id)
       resetIds.push(t.id)
     }
   })

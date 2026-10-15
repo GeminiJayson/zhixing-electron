@@ -40,6 +40,7 @@ import { StatusMenu } from '../components/StatusMenu'
 import { CalendarBoard } from '../components/CalendarBoard'
 import type { CalendarNoDate, CalendarSpanMode, WeekStart } from '@shared/calendar'
 import { KanbanBoard } from '../components/KanbanBoard'
+import { GanttSidebar, type GanttRow } from '../components/GanttSidebar'
 import { QuadrantBoard, quadrantAssignment, type QuadrantKey } from '../components/QuadrantBoard'
 import { TaskEditor } from '../components/TaskEditor'
 import { TaskRow } from '../components/TaskRow'
@@ -140,6 +141,15 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
   const [justAdded, setJustAdded] = useState<Set<number>>(new Set())
   const enterTimer = useRef<number | null>(null)
   const [inspector, setInspector] = useState(false)
+  /**
+   * 列表视图右侧的甘特图侧栏是否展开。纯界面偏好，与清单树收放（zhixing.tree.tasks）
+   * 同一路：存 localStorage 而不是库表 —— 它不该跟着数据一起被导出 / 同步。
+   * 宽度与时间粒度由侧栏自己记（tasks.ganttWidth / tasks.ganttScale）。
+   */
+  const [gantt, setGantt] = useState(() => localStorage.getItem('zhixing.gantt.tasks') === '1')
+  useEffect(() => {
+    localStorage.setItem('zhixing.gantt.tasks', gantt ? '1' : '0')
+  }, [gantt])
   const [menu, setMenu] = useState<{ id: number; anchor: HTMLElement } | null>(null)
   /** 状态胶囊的快捷菜单（与优先级菜单互不影响，可以各自开着） */
   const [statusMenu, setStatusMenu] = useState<{ id: number; anchor: HTMLElement } | null>(null)
@@ -560,6 +570,32 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
     walk(visible, 0)
     return rows
   }, [visible, collapsed, adding])
+
+  /**
+   * 甘特图的行 = 列表的可见行（去掉正在输入的"添加行"）。
+   *
+   * 与虚拟列表共用同一份 flatRows 不是省事，而是**口径**：折叠状态、可见性过滤、
+   * 子任务缩进、有效完成判定全都已经算在 flatRows 里了，再算一遍必然分叉
+   * （最典型的是"列表折叠了、甘特图还铺开着"）。
+   */
+  const ganttRows = useMemo<GanttRow[]>(
+    () =>
+      flatRows
+        .filter((r) => r.node !== null)
+        .map((r) => {
+          const n = r.node as TaskNode
+          return {
+            id: n.id,
+            title: n.title,
+            depth: r.depth,
+            start_date: n.start_date,
+            due_date: n.due_date,
+            priority: n.priority,
+            done: n.effectiveDone,
+          }
+        }),
+    [flatRows]
+  )
 
   /**
    * 同批新增行的交错序号（按展平顺序），最多 8 行参与交错。
@@ -1437,6 +1473,21 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
           <button key="insp" className="text-btn" aria-pressed={inspector} onClick={() => setInspector((v) => !v)}>
             速览
           </button>,
+          // 与「速览」并列：两个都是右侧栏的开关。甘特图只在列表视图有意义
+          // （四象限看轻重缓急、日历按天铺、看板按状态 —— 各自已有时间/排期的表达）
+          ...(view === 'list'
+            ? [
+                <button
+                  key="gantt"
+                  className="text-btn"
+                  aria-pressed={gantt}
+                  title="在右侧展开甘特图（可拖动它的左边缘改宽度、按 日/周/月 换视窗）"
+                  onClick={() => setGantt((v) => !v)}
+                >
+                  甘特图
+                </button>,
+              ]
+            : []),
           ...(focus && onClearFocus
             ? [
                 <button key="clear" className="text-btn" onClick={onClearFocus}>
@@ -1549,6 +1600,17 @@ export function TasksPage({ onChanged, onNotice, focus = null, onClearFocus }: P
             )}
           </div>
         </div>
+
+        {/* 甘特图侧栏：与速览栏可以同时开 —— 一个看单个任务，一个看整段时间。
+            只占列表视图：另外三个视图各有自己的排期表达，再叠一条时间轴只是噪声。 */}
+        {view === 'list' && gantt ? (
+          <GanttSidebar
+            rows={ganttRows}
+            onOpen={setEditingId}
+            onClose={() => setGantt(false)}
+            weekStart={calCfg.weekStart}
+          />
+        ) : null}
 
         {inspector && (
           <aside className="inspector" aria-label="任务速览">

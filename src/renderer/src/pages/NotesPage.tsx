@@ -24,6 +24,7 @@ import { scriptTemplate, type ScriptProblem } from '@shared/user-scripts'
 import { SCRIPT_RUNTIMES, normalizeScriptRuntime } from '@shared/workflow-action'
 import { flattenFolderTree } from '@shared/folder-tree'
 import { useDialog } from '../components/Dialogs'
+import { ZOOM_DEFAULT, ZOOM_KEY, nextZoom, readZoom } from '@renderer/lib/zoom'
 import type { Note, NoteFolder } from '@shared/types'
 import { parseLinkItems, type NoteLinkItem } from '@shared/note-links'
 import { MarkdownEditor, RichTextEditor, blockFingerprint, locateBlockInView } from '../components/MarkdownEditor'
@@ -278,6 +279,8 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   const mainRef = useRef<HTMLDivElement | null>(null)
   /** 正文区：切 tab / 换笔记时在它身上补一次极轻的淡入（见下面的 effect） */
   const sheetBodyRef = useRef<HTMLDivElement | null>(null)
+  /** 编辑区缩放（Ctrl / Cmd + 滚轮），值写在 .sheet__body 的 --note-zoom 上 */
+  const [zoom, setZoom] = useState(() => readZoom(localStorage.getItem(ZOOM_KEY)))
   const bodyFadeRef = useRef<Animation | null>(null)
   /** 上一次做淡入的笔记 id，null 表示还没进过这篇（首次进入不播，页面本身已有进场动画） */
   /** 上一个激活的 tab id（笔记数字 / 脚本字符串都算）——只用来判断"是不是换了一篇" */
@@ -1267,6 +1270,52 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
     })
   }, [selectedId])
 
+  /**
+   * Ctrl / Cmd + 滚轮缩放编辑区（Ctrl / Cmd + 0 复位）。
+   *
+   * 两个讲究：
+   * ① 监听必须 `passive: false` —— 否则 `preventDefault()` 是空转，Chromium 会把
+   *    **整个页面**也缩一遍（实测：窗口 innerWidth 会跟着变）；
+   * ② 只认带 Ctrl / Cmd 的滚轮，普通滚轮照旧翻正文。
+   *
+   * 全页共用一个 `.sheet__body`（库里的笔记、挂载进来的本地文件、Word / Excel 预览
+   * 都在它里面），所以一处挂监听就都生效，不需要按格式各写一遍。
+   */
+  useEffect(() => {
+    const onWheel = (e: WheelEvent): void => {
+      if (!e.ctrlKey && !e.metaKey) return
+      // 目标必须在正文区里（工具栏、左侧树上的 Ctrl+滚轮不归这里管）
+      const el = sheetBodyRef.current
+      if (!el || !(e.target instanceof Node) || !el.contains(e.target)) return
+      e.preventDefault()
+      setZoom((z) => {
+        const n = nextZoom(z, e.deltaY)
+        localStorage.setItem(ZOOM_KEY, String(n))
+        return n
+      })
+    }
+    const onKey = (e: KeyboardEvent): void => {
+      if ((e.ctrlKey || e.metaKey) && e.key === '0') {
+        e.preventDefault()
+        localStorage.setItem(ZOOM_KEY, String(ZOOM_DEFAULT))
+        setZoom(ZOOM_DEFAULT)
+      }
+    }
+    /**
+     * 挂在 document 上而不是正文区元素上。
+     *
+     * 正文区随笔记异步加载才出现（`current` 到位才渲染），而 effect 的依赖一旦写成
+     * `selectedId`，就会在元素还不存在的那一刻挂一次、之后再不重挂 —— 实测表现是
+     * 滚轮完全没反应。挂 document + 每次事件现读 ref 就没有这个时序问题。
+     */
+    document.addEventListener('wheel', onWheel, { passive: false })
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('wheel', onWheel)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [])
+
   // 全屏编辑：Esc 退出（与浮层一致，按一次就能回来）
   useEffect(() => {
     if (!zen) return
@@ -2000,7 +2049,11 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
                   容器一律不再自带边框 —— 纸只有一张，分层靠留白。
                   宽度一律铺满纸面：五种形态同宽，不再按形态分「宽体 / 书写列」。 */}
               {/* ref 给「切 tab / 换笔记」那段淡入用（见上面的 effect） */}
-              <div className="sheet__body" ref={sheetBodyRef}>
+              <div
+                className="sheet__body"
+                ref={sheetBodyRef}
+                style={{ '--note-zoom': String(zoom) } as CSSProperties}
+              >
               {current.format === 'link' ? (
                 // 链接笔记：content_md 存 [{title,target}] JSON。
                 // 这里是**可编辑**的多链接列表 —— 「一条笔记多条链接、每条带标题」正是这个格式的用处，

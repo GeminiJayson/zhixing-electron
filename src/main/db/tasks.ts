@@ -280,9 +280,54 @@ export function toggleTask(id: number): Task | null {
   // 子任务自身的循环不触发克隆（parent_id 非空）。
   if (!wasDone && updated && updated.parent_id === null && updated.repeat_period !== 'none') {
     const [nextDueDate, nextRule] = nextRecurrence(updated, today())
-    if (nextDueDate !== null) cloneTaskTree(updated, null, nextDueDate, nextRule)
+    // 下一期已经在了就不再克隆一份：「勾选 → 取消 → 再勾选」每次都克隆，
+    // 库里会躺着两条一模一样的下一期（实测），循环任务被越点越多。
+    if (nextDueDate !== null && !hasOpenNext(updated, nextDueDate)) {
+      cloneTaskTree(updated, null, nextDueDate, nextRule)
+    }
   }
   return updated
+}
+
+/**
+ * 把提醒时刻按"这一期 → 下一期"平移同样的天数。
+ *
+ * 时间戳是库里的 `YYYY-MM-DD HH:MM:SS[.ffffff]`（见 connection.ts 的 nowStamp）——
+ * 这里只挪日期部分、时分秒原样保留，不做时区换算。平移后仍然在过去就干脆不带提醒
+ * （用户要的是"到期前提醒"，不是"补一个过期提醒"）。
+ */
+function shiftReminder(stamp: string | null, from: string | null, to: string | null): string | null {
+  if (!stamp) return null
+  const m = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})(\.\d+)?$/.exec(stamp)
+  if (!m) return null
+  if (!from || !to || from === to) return stamp
+  const days = Math.round((Date.parse(to + 'T00:00:00Z') - Date.parse(from + 'T00:00:00Z')) / 86_400_000)
+  if (!Number.isFinite(days) || days === 0) return stamp
+  const moved = new Date(Date.parse(m[1] + 'T00:00:00Z') + days * 86_400_000)
+    .toISOString()
+    .slice(0, 10)
+  const out = `${moved} ${m[2]}${m[3] ?? ''}`
+  return out.slice(0, 19) <= nowStamp().slice(0, 19) ? null : out
+}
+
+/**
+ * 下一期是不是已经存在了。
+ *
+ * 判据是「同标题 + 同清单 + 未完成 + 截止日正好是这一期」—— 不用额外字段记关联，
+ * 因为循环任务的两个实例本来就只在截止日上区分。用户真建了两条同名同期的任务时，
+ * 第二条完成时不会再克隆（那本来就是重复项）。
+ */
+function hasOpenNext(src: Task, due: string): boolean {
+  const row = conn()
+    .prepare(
+      `SELECT id FROM task
+        WHERE deleted_at IS NULL AND parent_id IS NULL AND id != ?
+          AND status NOT IN ('done', 'abandoned')
+          AND title = ? AND list_id IS ? AND due_date = ?
+        LIMIT 1`
+    )
+    .get(src.id, src.title, src.list_id, due)
+  return !!row
 }
 
 /**
@@ -322,7 +367,9 @@ export function cloneTaskTree(
       newDue ?? src.due_date,
       src.start_date,
       src.start_time,
-      src.reminder_at,
+      // 提醒时刻要跟着新一期走：原样复制等于把一个**已经过去**的时刻塞给克隆体，
+      // 完成一次循环任务就立刻弹一次提醒（实测 dueReminders 会立刻列出它）。
+      shiftReminder(src.reminder_at, src.due_date, newDue),
       src.due_time,
       src.list_id,
       parentId,

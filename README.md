@@ -85,7 +85,7 @@ npm run dev                           # 开发模式（HMR）
 
 ## 6. 验证脚本体系
 
-`scripts/` 顶层 **74 个 `.mjs`**（另有 `verify-seed.cjs` 与 `lib/`）验证与构建脚本，以及 `scripts/fixtures/gen-office-fixtures.py` 夹具生成器。
+`scripts/` 顶层 **75 个 `.mjs`**（另有 `verify-seed.cjs`、`gen-app-icons.cjs` 与 `lib/`）验证与构建脚本，以及 `scripts/fixtures/gen-office-fixtures.py` 夹具生成器。
 
 统一方法论：**拷贝备份库到临时 `ZHIXING_HOME` → 启动真实 Electron（`--remote-debugging-port`）+ WebSocket/CDP → 经 IPC 操作 → 用 `sqlite3` CLI 校验落库**；多数脚本只在副本库上跑，绝不碰真实库。
 
@@ -106,14 +106,14 @@ npm run dev                           # 开发模式（HMR）
 | 链路写入 | `writecheck`(18)、`notecheck`(28)、`inboxcheck`(16)、`workflowcheck`(18)、`taskopscheck`(14) |
 | 口径 / 维护 | `todaycheck`(20)、`rollcheck`(25)、`recyclecheck`(18) |
 | 数据安全 | `importcheck`(13)、`securitycheck`(5) |
-| UI / 交互 | `dialogcheck`(10)、`editorcheck`(8)、`layoutcheck`、`vlistcheck`(8)、`officecheck`(18)、`interactioncheck`(32)、`themecheck`(18)、`graphcheck`(5)、`richpiccheck`(5)、`tasklistuxcheck`(12)、`taglistcheck`(22)、`bloubcheck`(11)、`notesheetcheck`(50)、`notetabcheck`(18) |
+| UI / 交互 | `dialogcheck`(10)、`editorcheck`(8)、`layoutcheck`、`vlistcheck`(8)、`officecheck`(18)、`interactioncheck`(32)、`themecheck`(18)、`graphcheck`(5)、`richpiccheck`(5)、`tasklistuxcheck`(12)、`ganttcheck`(31)、`taglistcheck`(22)、`bloubcheck`(11)、`notesheetcheck`(50)、`notetabcheck`(18) |
 | 架构 / 可访问性 | `eventcheck`(8)、`contrast-audit`、`check-jieba-fallback`(4) |
 | 构建 / 发布 | `ensure-jieba-win-binding`、`release` |
 | 视觉诊断 | `capture`、`bigcapture`、`diag-today` |
 
 进 `package.json` 的入口共 **21 条**。常用：`dev` / `build` / `typecheck` / `test`；检查类 `check:jieba` / `check:security` / `check:contrast` / `check:ctlheight` / `check:interaction`；构建发布 `dist:win` / `dist:dir` / `postdist:*` / `binding:win` / `release` / `release:dry`；图标生成 `gen:icons` / `gen:app-icons`。
 
-单元测试为 vitest：**62 个测试文件 / 763 个用例**，只覆盖纯函数（`vitest.config.ts` 明确排除涉及 SQLite / IPC / 真实窗口的部分，那部分留在 `scripts/*.mjs`）。
+单元测试为 vitest：**64 个测试文件 / 798 个用例**，只覆盖纯函数（`vitest.config.ts` 明确排除涉及 SQLite / IPC / 真实窗口的部分，那部分留在 `scripts/*.mjs`）。
 
 ## 7. 打包与发布
 
@@ -172,7 +172,7 @@ zhixing-electron/
 ├── tsconfig.json  tsconfig.node.json  tsconfig.web.json  vitest.config.ts
 ├── resources/                     # icon.ico、trayTemplate.png
 ├── src/
-│   ├── main/                      # 主进程（24 个顶层 .ts，含 5 个单测）
+│   ├── main/                      # 主进程（26 个顶层 .ts，含 5 个单测）
 │   │   ├── index.ts               # 入口：生命周期 / IPC 注册 / 深链 / 菜单 / 广播
 │   │   ├── widget.ts              # 悬浮球与浮窗（状态在闭包里）
 │   │   ├── window.ts              # 主窗与启动欢迎页
@@ -183,9 +183,9 @@ zhixing-electron/
 │   │   ├── user-scripts.ts        # 用户脚本：扫描 <数据目录>/scripts/ 并执行
 │   │   └── db/                    # 数据层 33 个 .ts（connection / schema / migrate / tasks / notes / graph / workflow / habit / note-table / …）
 │   ├── preload/                   # index.ts（拼装）+ api/（8 个域文件）+ index.d.ts
-│   ├── renderer/                  # React 应用：pages/（9 页）components/（54 个）lib/（27 个）styles/（17 个 CSS）
-│   └── shared/                    # 主/渲染共用纯函数 87 个 .ts（含 44 个单测；types / events / settings / query / habit / calendar / …）
-├── scripts/                       # 74 个 .mjs（顶层共 76 个文件）
+│   ├── renderer/                  # React 应用：pages/（9 页）components/（56 个）lib/（28 个）styles/（17 个 CSS）
+│   └── shared/                    # 主/渲染共用纯函数 89 个 .ts（含 45 个单测；types / events / settings / query / habit / calendar / gantt / …）
+├── scripts/                       # 75 个 .mjs（顶层共 77 个文件）
 ├── CONTEXT.md                     # 术语表：只在词义会误解时收录
 └── docs/                          # 01–03 主文档 + 方案/审计/调研/发布说明
 ```
@@ -214,7 +214,7 @@ zhixing-electron/
 | 文档 | 内容 |
 | --- | --- |
 | [01-需求规格说明书](docs/01-需求规格说明书.md) | 需求（R-T/N/I/G/D/S/P + NFR）、完成度快照、有意简化汇总、范围外清单、需求→验证资产映射 |
-| [02-技术架构设计](docs/02-技术架构设计.md) | 三进程分层与目录结构、contextBridge 暴露面、IPC 与按域广播、数据层、schema v18、共享层、构建链、验证体系、安全模型、架构债 |
+| [02-技术架构设计](docs/02-技术架构设计.md) | 三进程分层与目录结构、contextBridge 暴露面、IPC 与按域广播、数据层、schema v19、共享层、构建链、验证体系、安全模型、架构债 |
 | [03-UI-UX交互设计](docs/03-UI-UX交互设计.md) | 设计令牌体系（`tokens.css`）、布局框架、任务页四视图、侧栏/标题栏、桌面浮窗与托盘、命令面板、编辑器、交互缺口清单 |
 | [windows-build.md](docs/windows-build.md) | Windows 出包、jieba binding 前置、出包后发布（GitHub Releases）、数据位置、未配置项 |
 | [audit/design-review-2026-09-21.md](docs/audit/design-review-2026-09-21.md) | 全库设计缺陷审计（72 条）与复核结论 |

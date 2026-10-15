@@ -937,6 +937,7 @@
 .sidebar,
 .tasklists,
 .ntree,
+.gantt,
 .wf-side,
 .graph,
 .graph-side {
@@ -1017,6 +1018,7 @@
 .sidebar,
 .tasklists,
 .ntree,
+.gantt,
 .sheet,
 .wf-side,
 .wf-canvas,

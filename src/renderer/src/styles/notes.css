@@ -270,6 +270,10 @@
   /* 工具栏到正文首行只留 4px：剩下的交给编辑器自己的上内边距（Markdown / 富文本各 8px），
      合计 12px —— 原先三层叠加是 24（富文本）/ 32（Markdown）。 */
   padding-top: var(--space-1);
+  /* Ctrl / Cmd + 滚轮缩放（见 lib/zoom.ts）：用 CSS zoom 一次带动正文、表格、图片与代码块。
+     改字号做不到这点 —— 编辑器内部几十处字号 token 得逐个跟着乘，还会漏掉图片。
+     变量由 NotesPage 按订阅值写在行内样式上，没设过就是 1（不缩放）。 */
+  zoom: var(--note-zoom, 1);
 }
 /* 标题行 / 元信息行 / 正文一律**铺满笔记纸的内容宽度**。
    这里不需要任何宽度规则 —— .sheet 是 flex column，子项默认 stretch 就吃满左右内边距；

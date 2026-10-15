@@ -5,6 +5,7 @@ import { flattenFolderTree } from '@shared/folder-tree'
 import { Select } from './Select'
 import { RepeatRuleEditor } from './RepeatRuleEditor'
 import { PRIORITY_CHOICES } from '@shared/priority'
+import { saveRule } from '@shared/recurrence'
 import { STATUS_CHOICES } from '@shared/task'
 import type { Note, NoteFolder, RepeatPeriod, Task, TaskNoteContext, TaskStatus } from '@shared/types'
 import { joinStamp, splitStamp } from '../lib/date'
@@ -219,6 +220,18 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
     return () => document.removeEventListener('keydown', onEsc)
   }, [onClose])
 
+  /**
+   * 落库的循环规则串。
+   *
+   * 两条规则：
+   * ① 非自定义档位只写**结束条件**（COUNT / UNTIL）—— 周期由 `repeat_period` 表达，
+   *    写第二遍迟早对不上；早先这里一律清成 null，选「每日」的用户设的结束条件当场被丢掉。
+   * ② **截止日顺带当循环终点**：循环任务只要填了截止日、又没显式设结束条件，
+   *    就把它写成 UNTIL，于是"到了那天就别再生成"。用户不必在「截止日」和「结束」
+   *    里填两遍同一个日期 —— 这是他要的语义（截止日 = 整轮终点）。
+   */
+  const savedRule = saveRule({ period: repeat, rule: repeatRule, due: due || null })
+
   const save = async (): Promise<void> => {
     setSaving(true)
     // 提醒时刻：库列是 DATETIME，只给了日期就补默认时刻。日期为空即「不提醒」。
@@ -235,7 +248,7 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
       start_time: startTime || null,
       notes_md: notes,
       repeat_period: repeat,
-      repeat_rule: repeat === 'custom' ? repeatRule || null : null,
+      repeat_rule: savedRule,
       // 非 waiting 显式清空恢复日期
       resume_at: status === 'waiting' ? resume || null : null,
     })
@@ -534,9 +547,13 @@ export function TaskEditor({ task, onSave, onDelete, onClose }: Props) {
               ))}
           </section>
 
-          {/* 自定义循环：可视化选择。旧版要求手写 RRULE 串（FREQ=…;INTERVAL=…），
-              字段名记不住、写错了还不报错（认不出的部分被静默忽略）。 */}
-          {repeat === 'custom' && <RepeatRuleEditor value={repeatRule} onChange={setRepeatRule} />}
+          {/* 循环：可视化选择。旧版要求手写 RRULE 串（FREQ=…;INTERVAL=…），
+              字段名记不住、写错了还不报错（认不出的部分被静默忽略）。
+              每日 / 每周 / 每月也要给「结束」——只让用户选"一直重复"的话，
+              循环任务就没有停下来的时候。 */}
+          {repeat !== 'none' && (
+            <RepeatRuleEditor value={repeatRule} onChange={setRepeatRule} period={repeat} />
+          )}
 
           <label className="form-row">
             <span>备注</span>

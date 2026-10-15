@@ -107,8 +107,11 @@
 }
 /* 清单栏：分组、各清单的未完成计数，底部固定「已完成 / 已放弃」两个终态入口 */
 .tasklists {
-  flex: 0 0 208px;
+  /* shrink 不是 0：甘特图拖到接近上限时，它得让出宽度 ——
+     否则「清单栏 208 + 间隙 + 甘特图」会超过工作区，出现横向滚动条（实测溢出 84px）。 */
+  flex: 0 1 208px;
   width: var(--size-208);
+  min-width: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -1910,3 +1913,317 @@ button.chip--status:focus-visible {
 .trow[draggable='true'] {
   cursor: default;
 }
+
+/* ------------------------------------------------------------------
+   甘特图侧栏（列表视图右侧，见 components/GanttSidebar.tsx）
+
+   与清单栏、速览栏同一层玻璃 + 羽化阴影：并排的三块面板外形必须对称，
+   否则"侧栏"看起来像临时贴上去的一块。
+   行高与列表共用 --row-h、行序与列表共用同一份展平结果，所以两栏逐行对齐。
+   ------------------------------------------------------------------ */
+.gantt {
+  position: relative;
+  flex: 0 0 360px;
+  /* 侧栏自己按拖拽结果写内联 width / flex-basis；这里给的是首帧与下限保护 */
+  width: var(--size-360);
+  min-width: var(--size-240);
+  /* 硬上限：面板的 85%（用户要求）。组件按实测宽度把可拖范围也夹在这个值内，
+     这里再写一道是防首帧 —— 那时还没测到面板宽度，内联值可能一时偏大。 */
+  max-width: 85%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-layer);
+  border: none;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--panel-shadow);
+  /* 标题列 : 时间轴 = 名称列宽 : 剩余。宽度由组件按拖拽结果写内联变量
+     （tasks.ganttLabel），这里只是首帧的兜底：窄栏里保证标题还读得出一两个字，
+     宽栏里不让标题吃掉月档 12 列需要的宽度。 */
+  --gantt-label: clamp(84px, 38%, 180px);
+}
+/* 拖宽度期间整块禁止选中文本（与笔记树 .ntree.is-resizing 同一件事） */
+.gantt.is-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.gantt__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  /* 左右内边距与 .gantt__body 相同 —— 表头刻度必须和行内的时间轴同宽，否则刻度与条错位 */
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  border-bottom: var(--border-w) solid var(--border);
+}
+/* 窄栏（240px 起）放不下"标题 + 粒度 + 翻页 + 关闭"一整行，允许换行，
+   绝不压缩按钮 —— 与工具栏"空间不够就换行"同一条 */
+.gantt__tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.gantt__cap {
+  flex: 0 0 auto;
+  font-size: var(--text-aux);
+  color: var(--fg-secondary);
+}
+.gantt__spacer {
+  flex: 1;
+  min-width: 0;
+}
+/* 粒度三格：侧栏内边距取 8px（.seg 默认 14px 会把三格挤爆） */
+.seg--tight button {
+  padding: 0 var(--space-2);
+}
+
+/* 刻度行：左边是视窗范围，右边是各列（列宽按"这列有几天"分配，月档才不会被拉平） */
+.gantt__axis {
+  /* 名称列分隔条按这一层定位（绝对定位在名称列右边界上） */
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  /**
+   * **这里不能有 gap**：左边是视窗范围（宽度 = `--gantt-label`），右边是各列。
+   * 行里的 `.gantt__row` 是「标签列 + 时间轴」紧挨着排的，表头只要多出一点间距，
+   * 刻度与行内的网格线就差那几像素（实测 gap: 4px → ticks 209px vs lane 213px，
+   * 起点也差 4px；日档一列才 15px，错位接近三分之一列）。`ganttcheck` 有一条断言盯着。
+   */
+  gap: 0;
+  min-width: 0;
+}
+.gantt__range {
+  flex: 0 0 auto;
+  width: var(--gantt-label);
+  padding-left: var(--space-2);
+  font-size: var(--text-2xs);
+  color: var(--fg-tertiary);
+  /* 日期是数字列：等宽才不会随月份位数抖动 */
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.gantt__ticks {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+/**
+ * **名称列右边界上的分隔条**（拖它改标题列宽度，与面板那根同一套手感）。
+ *
+ * 两条规矩：
+ *   1. **绝对定位、不占布局** —— 表头刻度与行内轨道必须同起点，占 1px 就会错位
+ *      （`ganttcheck` 有一条断言量这个）；
+ *   2. **高度只取表头这一行** —— Excel 拖列宽也是在表头上拖；铺满整列高的话，
+ *      行内 14px 宽的点击区会被它一直盖住（点标题/点条都不灵）。
+ */
+.gantt__labelbar {
+  position: absolute;
+  /* 往上够到表头两行之间的间隙，热区不至于只有 28px */
+  top: calc(-1 * var(--space-1));
+  bottom: 0;
+  /* 以名称列边界为中心：光标压在线上，鼠标往左就往左 */
+  left: calc(var(--gantt-label) - var(--space-3) / 2);
+  width: var(--space-3);
+  cursor: col-resize;
+  z-index: 2;
+}
+.gantt__tick {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-end;
+  height: var(--size-28);
+  padding-left: var(--space-1);
+  border-left: var(--border-w) solid var(--border);
+  font-size: var(--text-2xs);
+  color: var(--fg-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  /**
+   * **不在这一格上裁剪。** 一列的宽度按天数分（月档 12 列 ≈ 每列 19px），
+   * 而标签按 `labelStep` 隔列才出现一次 —— 空间本来就有，就差"允许压到右侧空列上"。
+   * 裁掉之后跨年那一格只剩「27年」（实测截图：`27年1月` 被切成 `27年`），
+   * 年份丢了比多占几像素糟得多。外层 `.gantt__ticks` 仍是 `overflow: hidden`，
+   * 所以只有最后一格可能被面板右边缘裁掉。
+   */
+  overflow: visible;
+}
+.gantt__tick b {
+  font-weight: var(--fw-medium);
+  color: var(--fg-secondary);
+}
+.gantt__tick i {
+  font-style: normal;
+}
+.gantt__tick--today,
+.gantt__tick--today b {
+  color: var(--accent-text);
+}
+
+.gantt__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 var(--space-2) var(--space-1);
+}
+.gantt__empty {
+  padding: 0 var(--space-2);
+}
+/* 行与网格的共同坐标系：网格/今天线都相对它定位 */
+.gantt__content {
+  position: relative;
+}
+.gantt__row {
+  display: flex;
+  align-items: stretch;
+  height: var(--row-h);
+  min-height: var(--row-h);
+  border-radius: var(--radius-sm);
+}
+.gantt__row:hover {
+  background: var(--bg-hover);
+}
+.gantt__row--done {
+  opacity: 0.62;
+}
+.gantt__label {
+  flex: 0 0 auto;
+  width: var(--gantt-label);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.gantt__dot {
+  flex: 0 0 auto;
+  width: var(--size-6);
+  height: var(--size-6);
+  border-radius: var(--radius-pill);
+}
+.gantt__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  font-size: var(--text-aux);
+  color: var(--fg-primary);
+}
+.gantt__title:hover {
+  color: var(--accent-text);
+}
+.gantt__lane {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+/* 任务条：left / width 由组件按"起始日 → 时间轴百分比"写内联，这里只管外形。
+   颜色取优先级色阶（与列表的旗子、日历的圆点同一份色板）。 */
+.gantt__bar {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: var(--size-12);
+  /* 短区间（月档里的一天 = 0.3%）也必须看得见 */
+  min-width: var(--size-4);
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--bar-c, var(--accent));
+  cursor: pointer;
+  transition: filter var(--dur-instant);
+}
+.gantt__bar:hover {
+  filter: brightness(1.12);
+}
+/* 只有一端（只有截止 / 只有开始）：半透明 + 虚线描边，与"区间"分得开 ——
+   没有起点就没有区间，画成实心胶囊会被读成"这一整段都在做"。
+   due 的右端方、start 的左端方：各自指示"日子落在哪一头"。 */
+.gantt__bar--due,
+.gantt__bar--start {
+  background: color-mix(in srgb, var(--bar-c, var(--accent)) 45%, transparent);
+  outline: var(--border-w) dashed var(--bar-c, var(--accent));
+  outline-offset: -1px;
+}
+.gantt__bar--due {
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+}
+.gantt__bar--start {
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+/* 逾期：整条加一圈危险色（与列表的"逾期行标题变红"同一个 --danger） */
+.gantt__bar--overdue {
+  outline: var(--border-w) solid var(--danger);
+  outline-offset: 1px;
+}
+/* 被视窗切掉的那一端：渐隐成底色并去掉那一侧的圆角，
+   读起来是"还有更多"，而不是"正好到这里结束" */
+.gantt__bar--clip-start {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.gantt__bar--clip-end {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.gantt__bar--clip-start::before,
+.gantt__bar--clip-end::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: var(--size-6);
+}
+.gantt__bar--clip-start::before {
+  left: 0;
+  background: linear-gradient(to right, var(--bg-layer), transparent);
+}
+.gantt__bar--clip-end::after {
+  right: 0;
+  background: linear-gradient(to left, var(--bg-layer), transparent);
+}
+
+/* 网格与今天线：绝对定位的一层，盖在所有行之上但不吃指针事件 */
+.gantt__overlay {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: var(--gantt-label);
+  pointer-events: none;
+}
+.gantt__grid {
+  position: absolute;
+  inset: 0;
+}
+.gantt__now {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: var(--size-2);
+  margin-left: calc(-1 * var(--size-1));
+  background: var(--accent);
+  opacity: 0.7;
+}
+
+/* 左边缘分隔条：拖动改侧栏宽度。
+   与笔记树（.ntree__resizer）、工作流（.wf-splitter）同一套规格 ——
+   12px 命中区、不画线、悬浮/聚焦时鼠标是 col-resize；差别只是贴哪一边：
+   甘特图右边是速览栏与窗口边缘，能拖的边界在它左边缘。 */
+.gantt__resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(-1 * var(--space-3));
+  width: var(--space-3);
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+

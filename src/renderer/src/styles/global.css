@@ -1139,6 +1139,7 @@ html[data-surface='capture'] .modal__head button {
 .graph-side,
 .wf-side,
 .vlist,
+.gantt__body,
 .editor__body {
   overscroll-behavior: contain;
 }

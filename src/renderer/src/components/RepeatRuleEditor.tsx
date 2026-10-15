@@ -1,11 +1,20 @@
 import { useState } from 'react'
-import { describeRRule, formatRRule, parseRRule, type RRule } from '@shared/recurrence'
+import { describeRRule, formatEndRule, formatRRule, parseRRule, type RRule } from '@shared/recurrence'
+import type { RepeatPeriod } from '@shared/types'
 import { todayStr } from '@renderer/lib/date'
 
 interface Props {
   /** 当前的 RRULE 串（可能为空 = 还没配过） */
   value: string
   onChange: (rule: string) => void
+  /**
+   * 「重复」那一组选的档位。
+   *
+   * 不是 custom 时，周期已经由档位定死了（每日 / 每周 / 每月），这里只留**结束条件** ——
+   * 早先只有 custom 才渲染这个编辑器，选「每日」的用户在界面上根本找不到"到某天为止"，
+   * 于是循环永远停不下来（用户报的「截止时间不生效、一直往后延、无限生成」）。
+   */
+  period: RepeatPeriod
 }
 
 type EndKind = 'never' | 'count' | 'until'
@@ -27,14 +36,18 @@ const FREQS: { value: RRule['freq']; label: string; unit: string }[] = [
  * 生成的串仍然显示出来（并配一句人话）：串是真正落库的东西，让人看得见，
  * 排查问题或手写导入时对得上。
  */
-export function RepeatRuleEditor({ value, onChange }: Props): React.JSX.Element {
+export function RepeatRuleEditor({ value, onChange, period }: Props): React.JSX.Element {
   const info: RRule = parseRRule(value) ?? { freq: 'daily', interval: 1, count: null, until: null }
   const endKind: EndKind = info.count != null ? 'count' : info.until ? 'until' : 'never'
   /** 切到"共 N 次"但还没填数时用的默认值，避免生成 COUNT=0 这种立刻结束的规则 */
   const [lastCount, setLastCount] = useState(info.count ?? 5)
+  /** 非 custom 时周期由档位说了算，频率只用来显示（串里不写 FREQ/INTERVAL） */
+  const custom = period === 'custom'
+  const freq: RRule['freq'] = custom || period === 'none' ? info.freq : period
 
   const emit = (patch: Partial<RRule>): void => {
-    onChange(formatRRule({ ...info, ...patch }))
+    const next = { ...info, ...patch }
+    onChange(custom ? formatRRule(next) : formatEndRule(next))
   }
   const setEndKind = (kind: EndKind): void => {
     if (kind === 'never') emit({ count: null, until: null })
@@ -42,47 +55,51 @@ export function RepeatRuleEditor({ value, onChange }: Props): React.JSX.Element 
     else emit({ count: null, until: info.until ?? todayStr() })
   }
 
-  const unit = FREQS.find((f) => f.value === info.freq)?.unit ?? '天'
+  const unit = FREQS.find((f) => f.value === freq)?.unit ?? '天'
 
   return (
     <section className="form-row">
       <span>循环规则</span>
       <div className="repeat-rule">
-        <div className="repeat-rule__line">
-          <span className="repeat-rule__label">频率</span>
-          <div className="seg seg--plain">
-            {FREQS.map((f) => (
-              <button
-                key={f.value}
-                type="button"
-                className={'seg__btn' + (info.freq === f.value ? ' seg__btn--on' : '')}
-                aria-pressed={info.freq === f.value}
-                onClick={() => emit({ freq: f.value })}
-              >
-                每{f.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        {custom && (
+          <>
+            <div className="repeat-rule__line">
+              <span className="repeat-rule__label">频率</span>
+              <div className="seg seg--plain">
+                {FREQS.map((f) => (
+                  <button
+                    key={f.value}
+                    type="button"
+                    className={'seg__btn' + (freq === f.value ? ' seg__btn--on' : '')}
+                    aria-pressed={freq === f.value}
+                    onClick={() => emit({ freq: f.value })}
+                  >
+                    每{f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-        <div className="repeat-rule__line">
-          <span className="repeat-rule__label">间隔</span>
-          <input
-            className="field field--compact"
-            type="number"
-            min={1}
-            max={365}
-            value={info.interval}
-            aria-label={`每隔几个${unit}`}
-            onChange={(e) => {
-              const n = Number.parseInt(e.target.value, 10)
-              emit({ interval: Number.isFinite(n) && n >= 1 ? n : 1 })
-            }}
-          />
-          <span className="u-aux">
-            每 {info.interval} {unit}一次
-          </span>
-        </div>
+            <div className="repeat-rule__line">
+              <span className="repeat-rule__label">间隔</span>
+              <input
+                className="field field--compact"
+                type="number"
+                min={1}
+                max={365}
+                value={info.interval}
+                aria-label={`每隔几个${unit}`}
+                onChange={(e) => {
+                  const n = Number.parseInt(e.target.value, 10)
+                  emit({ interval: Number.isFinite(n) && n >= 1 ? n : 1 })
+                }}
+              />
+              <span className="u-aux">
+                每 {info.interval} {unit}一次
+              </span>
+            </div>
+          </>
+        )}
 
         <div className="repeat-rule__line">
           <span className="repeat-rule__label">结束</span>
@@ -144,8 +161,11 @@ export function RepeatRuleEditor({ value, onChange }: Props): React.JSX.Element 
 
         {/* 串是真正落库的东西，显示出来 + 一句人话，改完对得上 */}
         <p className="u-aux repeat-rule__preview">
-          {describeRRule(info)}
-          <code className="repeat-rule__code">{formatRRule(info)}</code>
+          {describeRRule({ ...info, freq })}
+          <code className="repeat-rule__code">
+            {(custom ? formatRRule({ ...info, freq }) : formatEndRule(info)) ||
+              '（不设结束条件，一直重复）'}
+          </code>
         </p>
       </div>
     </section>
