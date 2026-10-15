@@ -270,9 +270,23 @@
   /* 工具栏到正文首行只留 4px：剩下的交给编辑器自己的上内边距（Markdown / 富文本各 8px），
      合计 12px —— 原先三层叠加是 24（富文本）/ 32（Markdown）。 */
   padding-top: var(--space-1);
-  /* Ctrl / Cmd + 滚轮缩放（见 lib/zoom.ts）：用 CSS zoom 一次带动正文、表格、图片与代码块。
-     改字号做不到这点 —— 编辑器内部几十处字号 token 得逐个跟着乘，还会漏掉图片。
-     变量由 NotesPage 按订阅值写在行内样式上，没设过就是 1（不缩放）。 */
+}
+/* Ctrl / Cmd + 滚轮缩放（见 lib/zoom.ts）：用 CSS zoom 一次带动正文、表格、图片与代码块。
+   改字号做不到这点 —— 编辑器内部几十处字号 token 得逐个跟着乘，还会漏掉图片。
+   变量由 NotesPage 按订阅值写在行内样式上，没设过就是 1（不缩放）。
+
+   **只缩「正文」这一层，不缩工具栏。** 这条最初挂在 .sheet__body 上，结果富文本与 Word
+   的格式条跟着一起缩 —— 它与正文是 .rt-editor 的两个兄弟子元素（.tb.tb--panel 与
+   .rt-editor__body，见 RichTextEditor.tsx），挂在外层就一起被缩。脚本编辑器的状态行
+   （.scripted__status）同理，所以缩的是 .scripted__edit（行号与代码一起缩才对得齐）。
+   现在按「内容容器」白名单缩，避免以后再挂错层。实测：29px 的格式条在 100% 与 150% 下
+   高度与字号完全一致（12px）。 */
+.sheet__body .md-editor,
+.sheet__body .rt-editor__body,
+.sheet__body .xlsx-ag,
+.sheet__body .link-table,
+.sheet__body .editor__preview,
+.sheet__body .scripted__edit {
   zoom: var(--note-zoom, 1);
 }
 /* 标题行 / 元信息行 / 正文一律**铺满笔记纸的内容宽度**。

@@ -670,10 +670,18 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 
 ### 8.1.1 编辑区缩放（Ctrl / Cmd + 滚轮）
 
-正文区（`.sheet__body`）支持缩放：**Ctrl / Cmd + 滚轮**一档 10%，范围 **50% – 250%**，**Ctrl + 0 复位**；
-当前值存在 `note.zoom`，下次打开沿用。纯逻辑在 `lib/zoom.ts`（`clampZoom` / `nextZoom` / `readZoom` / `zoomLabel`），
-样式上只有一条 `.sheet__body { zoom: var(--note-zoom, 1) }` —— 用 CSS `zoom` 而不是改字号，是为了让正文、
-表格、图片、代码块**一起**缩放（改字号会漏掉图片与嵌入内容，且每加一处样式都得记着乘一次）。
+**Ctrl / Cmd + 滚轮**缩放正文，一档 10%，范围 **50% – 250%**，**Ctrl + 0 复位**。
+比例**一篇笔记一份**：切到另一篇用它自己的，切回恢复原样 —— 存档是 `note.zoom.map`（`{ 笔记 id: 比例 }`），
+纯逻辑在 `lib/zoom.ts`（`clampZoom` / `nextZoom` / `readZoomFor` / `writeZoomFor`）。
+
+**只缩正文，不缩工具栏。** 这条踩过坑：最早把 `zoom` 挂在 `.sheet__body` 上，富文本与 Word 的格式条
+跟着一起变大变小 —— 它与正文是 `.rt-editor` 的兄弟子元素（`.tb.tb--panel` 与 `.rt-editor__body`），
+挂在外层就一起被缩，实测 29px 的工具行在 1.7 倍下变成 53px。现在按**内容容器白名单**缩：
+`.md-editor` / `.rt-editor__body` / `.xlsx-ag` / `.link-table` / `.editor__preview` / `.scripted`。
+Markdown、链接、脚本的工具栏本就在 `.sheet__body` 之外（NotesPage 的 `.tb`），不受影响。
+
+用 CSS `zoom` 而不是改字号，是为了让正文、表格、图片、代码块**一起**缩放（改字号会漏掉图片与嵌入内容，
+且每加一处样式都得记着乘一次）。
 
 两个实现上的讲究（都是实测踩出来的）：
 
@@ -682,7 +690,7 @@ morphicons 负责（MIT、零运行时依赖、约 8KB gzip、stroke-based 通�
 - **命中时必须 `preventDefault()`**（监听要 `passive: false`），否则 Chromium 会把**整个界面**也缩一遍
   （实测：窗口 `innerWidth` 会跟着变）。
 
-库里的笔记与挂载进来的本地文件（含 Word / Excel 预览）共用这一个正文容器，所以一处实现全都生效。
+库里的笔记与挂载进来的本地文件（含 Word / Excel 预览）共用同一个正文容器，所以一处实现全都生效。
 
 ### 8.2 CodeMirror 6 编辑器（`components/MarkdownEditor.tsx`）
 

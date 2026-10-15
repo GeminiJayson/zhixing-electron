@@ -24,7 +24,7 @@ import { scriptTemplate, type ScriptProblem } from '@shared/user-scripts'
 import { SCRIPT_RUNTIMES, normalizeScriptRuntime } from '@shared/workflow-action'
 import { flattenFolderTree } from '@shared/folder-tree'
 import { useDialog } from '../components/Dialogs'
-import { ZOOM_DEFAULT, ZOOM_KEY, nextZoom, readZoom } from '@renderer/lib/zoom'
+import { ZOOM_DEFAULT, ZOOM_MAP_KEY, nextZoom, readZoomFor, writeZoomFor } from '@renderer/lib/zoom'
 import type { Note, NoteFolder } from '@shared/types'
 import { parseLinkItems, type NoteLinkItem } from '@shared/note-links'
 import { MarkdownEditor, RichTextEditor, blockFingerprint, locateBlockInView } from '../components/MarkdownEditor'
@@ -279,8 +279,8 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
   const mainRef = useRef<HTMLDivElement | null>(null)
   /** 正文区：切 tab / 换笔记时在它身上补一次极轻的淡入（见下面的 effect） */
   const sheetBodyRef = useRef<HTMLDivElement | null>(null)
-  /** 编辑区缩放（Ctrl / Cmd + 滚轮），值写在 .sheet__body 的 --note-zoom 上 */
-  const [zoom, setZoom] = useState(() => readZoom(localStorage.getItem(ZOOM_KEY)))
+  /** 编辑区缩放（Ctrl / Cmd + 滚轮），值写在正文容器的 --note-zoom 上；**一篇笔记一份比例** */
+  const [zoom, setZoom] = useState(ZOOM_DEFAULT)
   const bodyFadeRef = useRef<Animation | null>(null)
   /** 上一次做淡入的笔记 id，null 表示还没进过这篇（首次进入不播，页面本身已有进场动画） */
   /** 上一个激活的 tab id（笔记数字 / 脚本字符串都算）——只用来判断"是不是换了一篇" */
@@ -1278,10 +1278,16 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
    *    **整个页面**也缩一遍（实测：窗口 innerWidth 会跟着变）；
    * ② 只认带 Ctrl / Cmd 的滚轮，普通滚轮照旧翻正文。
    *
-   * 全页共用一个 `.sheet__body`（库里的笔记、挂载进来的本地文件、Word / Excel 预览
-   * 都在它里面），所以一处挂监听就都生效，不需要按格式各写一遍。
+   * 全页共用一个正文容器（库里的笔记、挂载进来的本地文件、Word / Excel 预览都在里面），
+   * 所以一处挂监听就都生效，不需要按格式各写一遍。
+   *
+   * 比例**一篇笔记一份**：切到哪篇就读哪篇的（依赖里的 selectedId），切回来恢复原样。
    */
   useEffect(() => {
+    setZoom(readZoomFor(localStorage.getItem(ZOOM_MAP_KEY), selectedId))
+    const save = (n: number): void => {
+      localStorage.setItem(ZOOM_MAP_KEY, writeZoomFor(localStorage.getItem(ZOOM_MAP_KEY), selectedId, n))
+    }
     const onWheel = (e: WheelEvent): void => {
       if (!e.ctrlKey && !e.metaKey) return
       // 目标必须在正文区里（工具栏、左侧树上的 Ctrl+滚轮不归这里管）
@@ -1290,14 +1296,14 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
       e.preventDefault()
       setZoom((z) => {
         const n = nextZoom(z, e.deltaY)
-        localStorage.setItem(ZOOM_KEY, String(n))
+        save(n)
         return n
       })
     }
     const onKey = (e: KeyboardEvent): void => {
       if ((e.ctrlKey || e.metaKey) && e.key === '0') {
         e.preventDefault()
-        localStorage.setItem(ZOOM_KEY, String(ZOOM_DEFAULT))
+        save(ZOOM_DEFAULT)
         setZoom(ZOOM_DEFAULT)
       }
     }
@@ -1314,7 +1320,7 @@ export function NotesPage({ onNotice, initialNoteId = null, onZenChange }: Props
       document.removeEventListener('wheel', onWheel)
       window.removeEventListener('keydown', onKey)
     }
-  }, [])
+  }, [selectedId])
 
   // 全屏编辑：Esc 退出（与浮层一致，按一次就能回来）
   useEffect(() => {
