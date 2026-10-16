@@ -57,7 +57,13 @@ const POWERSHELL = join(
  * EPERM: unlink better_sqlite3.node（我就是这么被坑了一次，还差点当成
  * PowerShell 包 stderr 的假退出码放过去）。
  *
- * 判据是命令行里有 --remote-debugging-port：用户自己的知行没有这个参数，不会被误伤。
+ * 判据有两条，缺一不可：
+ *  1) 命令行里既有 --remote-debugging-port **又有 --user-data-dir** —— E2E 脚本起的实例两个都带，
+ *     而用户自己那台（dev-app.cmd）只有端口、没有独立数据目录，因此不会被误伤。
+ *     原来只按端口判，注释里还写着"用户自己的知行没有这个参数" —— **那是错的**：dev-app.cmd
+ *     恰恰带着 --remote-debugging-port=9222。实测踩到过，跑完一个 check 脚本，用户正开着的
+ *     开发实例就被 taskkill /T 连整棵进程树收走了。
+ *  2) 命令行里带仓库 .screenshots 的孤儿进程（父进程先退出时子进程被过继，/T 追不到）。
  * 代价是**不能并行跑两个 E2E 脚本** —— 后启动的会把先启动的当成残留杀掉。
  */
 export function killStaleDebugInstances() {
@@ -74,7 +80,8 @@ export function killStaleDebugInstances() {
   const Q = String.fromCharCode(39)
   const ps =
     'Get-CimInstance Win32_Process -Filter "Name = ' + Q + 'electron.exe' + Q + '"' +
-    ' | Where-Object { $_.CommandLine -like ' + Q + '*--remote-debugging-port=*' + Q +
+    ' | Where-Object { ($_.CommandLine -like ' + Q + '*--remote-debugging-port=*' + Q +
+    ' -and $_.CommandLine -like ' + Q + '*--user-data-dir*' + Q + ')' +
     ' -or $_.CommandLine -like ' + Q + '*.screenshots*' + Q + ' }' +
     ' | ForEach-Object { taskkill /PID $_.ProcessId /T /F 2>&1 | Out-Null; $_.ProcessId }'
   try {
