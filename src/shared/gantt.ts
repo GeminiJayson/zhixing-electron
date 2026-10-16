@@ -142,6 +142,58 @@ export function ganttPct(win: GanttWindow, day: string): number | null {
   return (n - base) / win.days
 }
 
+/**
+ * 任务条的着色档位 —— 按**临期状态**，不按优先级。
+ *
+ * 甘特图横向铺的就是时间，一条时间轴上一眼要看出的是「哪几件事快到期了」；
+ * 优先级已经由左侧名称列前的小圆点表达（priorityColor，与列表的旗子、日历的圆点同一份色板），
+ * 两者各管一维，不必抢同一条色带。
+ */
+export type GanttTone = 'done' | 'overdue' | 'today' | 'soon' | 'none'
+
+/** 「临近」的窗口：截止日在今天之后 1~N 天。再远就是正常档，不染暖色。 */
+export const GANTT_SOON_DAYS = 3
+
+/**
+ * 相差超过这个天数就不按临期算。
+ *
+ * 数据里有哨兵日期（如 1753-09-14，原版留下的"无截止"写法），离今天两万七千天 ——
+ * 照差值判会得到一条"逾期两万天"的红条。与 dueLabel 里那条 3650 天的防护同一个理由。
+ */
+export const GANTT_FAR_DAYS = 3650
+
+/**
+ * 判定一条任务落在哪一档。
+ *
+ * done 优先于一切：已完成的任务不该再喊「逾期」（列表那边同理 —— 有效完成的行不染红）。
+ * 没有截止日、或日期是哨兵/垃圾值 → none（正常色），不硬套一个近似的档位。
+ */
+export function ganttTone(due: string | null, today: string, done: boolean): GanttTone {
+  if (done) return 'done'
+  const d = dayNo(due)
+  const t = dayNo(today)
+  if (d === null || t === null) return 'none'
+  if (Math.abs(d - t) > GANTT_FAR_DAYS) return 'none'
+  if (d < t) return 'overdue'
+  if (d === t) return 'today'
+  if (d - t <= GANTT_SOON_DAYS) return 'soon'
+  return 'none'
+}
+
+/**
+ * 拖动平移后的新锚点：指针往右拖 = 内容跟着往右走 = 露出**更早**的一段。
+ *
+ * 换算经过「这一段有多少天」而不是像素：三档的列数不同（两周 / 十二周 / 十二月），
+ * 同一段位移在天数上差着一个数量级，所以拖动必须按**天数**折算，
+ * 否则日档一拖就跨年、月档拖不动。
+ *
+ * 返回的锚点**没有**对齐到粒度边界 —— 对齐放在松手时做（拖的过程中对齐会一跳一跳）。
+ */
+export function ganttPanAnchor(win: GanttWindow, dx: number, laneW: number): string {
+  if (!Number.isFinite(dx) || !Number.isFinite(laneW) || laneW <= 0) return win.start
+  return addDays(win.start, -Math.round((dx / laneW) * win.days))
+}
+
 /** 单端任务的标记宽度：一列。没有起点就没有区间，"进度"无从画起。 */
 export type GanttBarKind = 'range' | 'due' | 'start'
 

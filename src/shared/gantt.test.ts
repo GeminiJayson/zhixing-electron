@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { ganttBar, ganttPct, ganttWindow, dayNo, GANTT_COLUMNS } from './gantt'
+import {
+  ganttBar,
+  ganttPct,
+  ganttTone,
+  ganttPanAnchor,
+  ganttWindow,
+  dayNo,
+  GANTT_COLUMNS,
+  GANTT_SOON_DAYS,
+  type GanttWindow,
+} from './gantt'
+import { addDays } from './calendar'
 
 /** 造一个只带口径相关字段的任务（其余给默认值，测试只关心条的位置）。 */
 const task = (over: { start_date?: string | null; due_date?: string | null }) => ({
@@ -138,5 +149,70 @@ describe('dayNo / ganttPct', () => {
     expect(ganttPct(win, '2026-10-15')).toBe(0)
     expect(ganttPct(win, '2026-10-29')).toBe(1)
     expect(ganttPct(win, 'bad')).toBeNull()
+  })
+})
+
+describe('ganttTone · 临期档位', () => {
+  it('逾期红、当天橙、三天内临近、再远正常', () => {
+    expect(ganttTone('2026-10-14', TODAY, false)).toBe('overdue')
+    expect(ganttTone(TODAY, TODAY, false)).toBe('today')
+    expect(ganttTone('2026-10-17', TODAY, false)).toBe('soon')
+    expect(ganttTone('2026-10-18', TODAY, false)).toBe('soon')
+    expect(ganttTone('2026-10-19', TODAY, false)).toBe('soon')
+    expect(ganttTone('2026-10-20', TODAY, false)).toBe('none')
+    expect(ganttTone('2027-03-01', TODAY, false)).toBe('none')
+  })
+
+  it('已完成优先于逾期：不该再喊"逾期"', () => {
+    expect(ganttTone('2026-10-14', TODAY, true)).toBe('done')
+    expect(ganttTone(TODAY, TODAY, true)).toBe('done')
+  })
+
+  it('没有截止日、非法日期、哨兵日期都落正常档', () => {
+    expect(ganttTone(null, TODAY, false)).toBe('none')
+    expect(ganttTone('', TODAY, false)).toBe('none')
+    expect(ganttTone('2026-13-01', TODAY, false)).toBe('none')
+    // 数据里的哨兵（如 1753-09-14）离今天两万七千天，不能当成"逾期二十年"染红
+    expect(ganttTone('1753-09-14', TODAY, false)).toBe('none')
+    expect(ganttTone('2899-01-01', TODAY, false)).toBe('none')
+  })
+
+  it('临近窗口是一天到 GANTT_SOON_DAYS 天', () => {
+    expect(GANTT_SOON_DAYS).toBe(3)
+    expect(ganttTone(addDays(TODAY, 1), TODAY, false)).toBe('soon')
+    expect(ganttTone(addDays(TODAY, GANTT_SOON_DAYS), TODAY, false)).toBe('soon')
+    expect(ganttTone(addDays(TODAY, GANTT_SOON_DAYS + 1), TODAY, false)).toBe('none')
+  })
+})
+
+describe('ganttPanAnchor · 拖动平移', () => {
+  it('指针往右拖露出更早的一段，往左拖露出更晚的', () => {
+    const win = ganttWindow('day', TODAY, TODAY)
+    // 拖满一屏 = 整窗位移
+    expect(ganttPanAnchor(win, 1000, 1000)).toBe(addDays(win.start, -win.days))
+    expect(ganttPanAnchor(win, -1000, 1000)).toBe(addDays(win.start, win.days))
+    // 半个屏幕
+    expect(ganttPanAnchor(win, 500, 1000)).toBe(addDays(win.start, -Math.round(win.days / 2)))
+  })
+
+  it('日 / 周 / 月三档都按天数折算，同一段位移跨的天数各自不同', () => {
+    const day = ganttWindow('day', TODAY, TODAY)
+    const week = ganttWindow('week', TODAY, TODAY)
+    const month = ganttWindow('month', TODAY, TODAY)
+    const moved = (win: GanttWindow): number =>
+      (dayNo(ganttPanAnchor(win, 100, 1000)) ?? 0) - (dayNo(win.start) ?? 0)
+    expect(moved(day)).toBe(-Math.round(0.1 * day.days))
+    expect(moved(week)).toBe(-Math.round(0.1 * week.days))
+    expect(moved(month)).toBe(-Math.round(0.1 * month.days))
+    // 三档的位移量必须互不相同 —— 谁把它写成"像素 / 固定值"，这条立刻炸
+    expect(new Set([moved(day), moved(week), moved(month)]).size).toBe(3)
+  })
+
+  it('没拖、宽度未知、非法数字都退回视窗起点', () => {
+    const win = ganttWindow('week', TODAY, TODAY)
+    expect(ganttPanAnchor(win, 0, 1000)).toBe(win.start)
+    expect(ganttPanAnchor(win, 100, 0)).toBe(win.start)
+    expect(ganttPanAnchor(win, 100, Number.NaN)).toBe(win.start)
+    expect(ganttPanAnchor(win, Number.NaN, 1000)).toBe(win.start)
   })
 })

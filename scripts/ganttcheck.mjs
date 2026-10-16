@@ -43,6 +43,9 @@ const TITLES = {
   far: '甘特验收·远在视窗外',
   parent: '甘特验收·父任务',
   child: '甘特验收·子任务',
+  overdue: '甘特验收·逾期',
+  dueToday: '甘特验收·今天到期',
+  soon: '甘特验收·三天内',
 }
 
 /** 甘特图整体状态：行数、每行有没有条、刻度、视窗、当前粒度、今天线 */
@@ -122,6 +125,11 @@ try {
       start: await mk('甘特验收·只开始', day(-1), null, 1),
       none: await mk('甘特验收·无日期', null, null, 0),
       far: await mk('甘特验收·远在视窗外', day(400), day(405), 2),
+      // 临期三档各一条：档位只看截止日与今天的关系，三条的优先级故意取一样，
+      // 这样「颜色不跟着优先级走」才验得出来
+      overdue: await mk('甘特验收·逾期', day(-5), day(-2), 4),
+      dueToday: await mk('甘特验收·今天到期', day(-3), day(0), 4),
+      soon: await mk('甘特验收·三天内', day(-1), day(2), 4),
     }
   })()`)
   check(
@@ -195,6 +203,69 @@ try {
     }
   })()`)
   check('子任务按同一份 depth 缩进', !!indents && indents.child > indents.parent, J(indents))
+
+  // ------------------------------------------------- 4.5 条的着色按临期状态
+  const toneOf = (title) => (barOf(title).match(/gantt__bar--(overdue|today|soon|done|none)/) || [])[1] || ''
+  check(
+    '条的着色按临期状态分档：逾期 / 当天 / 三天内 / 更远（不看优先级）',
+    toneOf(TITLES.overdue) === 'overdue' &&
+      toneOf(TITLES.dueToday) === 'today' &&
+      toneOf(TITLES.soon) === 'soon' &&
+      toneOf(TITLES.range) === 'soon' &&
+      toneOf(TITLES.due) === 'none',
+    J({
+      逾期: toneOf(TITLES.overdue),
+      今天: toneOf(TITLES.dueToday),
+      三天内: toneOf(TITLES.soon),
+      区间三天后: toneOf(TITLES.range),
+      六天后: toneOf(TITLES.due),
+    })
+  )
+  check(
+    '三条临期任务的优先级一样（P4），着色却分三档 —— 颜色确实不跟优先级走',
+    toneOf(TITLES.overdue) !== toneOf(TITLES.dueToday) && toneOf(TITLES.dueToday) !== toneOf(TITLES.soon),
+    J({ overdue: toneOf(TITLES.overdue), today: toneOf(TITLES.dueToday), soon: toneOf(TITLES.soon) })
+  )
+  const toneColors = await app.evaluate(`(() => {
+    const rows = [...document.querySelectorAll('.gantt__row')]
+    const color = (t) => {
+      const row = rows.find((r) => r.querySelector('.gantt__title').textContent.trim() === t)
+      const b = row && row.querySelector('.gantt__bar')
+      return b ? getComputedStyle(b).backgroundColor : null
+    }
+    return {
+      逾期: color('${TITLES.overdue}'),
+      今天: color('${TITLES.dueToday}'),
+      三天内: color('${TITLES.soon}'),
+      更远: color('${TITLES.due}'),
+    }
+  })()`)
+  check(
+    '四档的实测颜色互不相同（不只是加了个 class）',
+    !!toneColors.逾期 && Object.values(toneColors).every(Boolean) && new Set(Object.values(toneColors)).size === 4,
+    J(toneColors)
+  )
+  const dotVsBar = await app.evaluate(`(() => {
+    const rows = [...document.querySelectorAll('.gantt__row')]
+    const row = rows.find((r) => r.querySelector('.gantt__title').textContent.trim() === '${TITLES.overdue}')
+    const dot = row && row.querySelector('.gantt__dot')
+    const bar = row && row.querySelector('.gantt__bar')
+    return {
+      dot: dot ? getComputedStyle(dot).backgroundColor : null,
+      bar: bar ? getComputedStyle(bar).backgroundColor : null,
+      dotInline: dot ? dot.style.background : null,
+    }
+  })()`)
+  check(
+    '优先级仍由名称列前的小圆点表达（圆点用内联优先级色，与条的颜色是两回事）',
+    !!dotVsBar.dot && !!dotVsBar.bar && dotVsBar.dot !== dotVsBar.bar && (dotVsBar.dotInline || '').length > 0,
+    J(dotVsBar)
+  )
+  const toneHint = await app.evaluate(`(() => {
+    const b = [...document.querySelectorAll('.gantt__bar')].find((x) => (x.title || '').includes('已逾期'))
+    return b ? b.title : null
+  })()`)
+  check('悬浮提示里写出档位（不靠辨色也能读出来）', typeof toneHint === 'string' && toneHint.includes('已逾期'), J(toneHint))
 
   // ---------------------------------------------------------------- 5. 视窗：周 / 日 / 月
   const weekly = await app.evaluate(SNAP)
@@ -543,6 +614,86 @@ try {
       capState.overflow <= 1 &&
       Number(capState.stored) === capState.width,
     J({ capInfo, capState, expectCap })
+  )
+
+  // ------------------------------------------------- 9.5 拖动调整时间窗口
+  const panReady = await app.evaluate(`(() => {
+    const c = document.querySelector('.gantt__content')
+    return c ? { title: c.getAttribute('title'), cursor: getComputedStyle(c).cursor } : null
+  })()`)
+  check(
+    '内容区可按住拖动（title 给出提示、默认光标是 grab）',
+    !!panReady && (panReady.title || '').includes('拖动') && panReady.cursor === 'grab',
+    J(panReady)
+  )
+
+  /** 用真实鼠标在空白处横拖一段，返回拖动前后的视窗 */
+  const panDrag = async (dx) => {
+    const spot = await app.evaluate(`(() => {
+      const c = document.querySelector('.gantt__content')
+      if (!c) return null
+      const box = c.getBoundingClientRect()
+      for (const fy of [0.5, 0.3, 0.7, 0.15]) {
+        for (const fx of [0.6, 0.75, 0.45, 0.9]) {
+          const x = Math.round(box.left + box.width * fx)
+          const y = Math.round(box.top + box.height * fy)
+          const el = document.elementFromPoint(x, y)
+          if (el && !el.closest('.gantt__bar, .gantt__title, .gantt__label')) return { x, y }
+        }
+      }
+      return null
+    })()`)
+    if (!spot) return null
+    const before = await app.evaluate("document.querySelector('.gantt__range').getAttribute('title')")
+    await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: spot.x, y: spot.y, button: 'left', clickCount: 1, buttons: 1 })
+    await sleep(80)
+    const held = await app.evaluate("!!document.querySelector('.gantt__content.is-panning')")
+    for (let i = 1; i <= 5; i++) {
+      await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: spot.x + Math.round((dx * i) / 5), y: spot.y, button: 'left', buttons: 1 })
+      await sleep(60)
+    }
+    const during = await app.evaluate("document.querySelector('.gantt__range').getAttribute('title')")
+    await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: spot.x + dx, y: spot.y, button: 'left', clickCount: 1, buttons: 0 })
+    await sleep(600)
+    return {
+      before,
+      held,
+      during,
+      after: await app.evaluate("document.querySelector('.gantt__range').getAttribute('title')"),
+      released: await app.evaluate("!!document.querySelector('.gantt__content.is-panning')"),
+    }
+  }
+  const rangeStart = (t) => String(t || '').replace('视窗 ', '').split(' ~ ')[0]
+  const isMonday = (day) => new Date(day + 'T00:00:00').getDay() === 1
+  const isMonthStart = (day) => day.endsWith('-01')
+
+  const panByScale = {}
+  for (const label of ['日', '周', '月']) {
+    await app.evaluate(pickScale(label))
+    await sleep(900)
+    panByScale[label] = await panDrag(160)
+  }
+  check(
+    '日 / 周 / 月三档都能按住拖动改视窗（拖动中挂 is-panning，松手摘掉）',
+    ['日', '周', '月'].every(
+      (k) =>
+        panByScale[k] &&
+        panByScale[k].held &&
+        !panByScale[k].released &&
+        panByScale[k].during !== panByScale[k].before &&
+        panByScale[k].after === panByScale[k].during
+    ),
+    J(panByScale)
+  )
+  check(
+    '松手对齐到粒度边界：周档落在周一、月档落在月初',
+    isMonday(rangeStart(panByScale.周.after)) && isMonthStart(rangeStart(panByScale.月.after)),
+    J({ 日: rangeStart(panByScale.日.after), 周: rangeStart(panByScale.周.after), 月: rangeStart(panByScale.月.after) })
+  )
+  check(
+    '指针往右拖 = 内容跟着右移 = 露出更早的一段（方向与手感一致）',
+    rangeStart(panByScale.日.after) < rangeStart(panByScale.日.before),
+    J({ before: rangeStart(panByScale.日.before), after: rangeStart(panByScale.日.after) })
   )
 
   // ---------------------------------------------------------------- 10. 关闭

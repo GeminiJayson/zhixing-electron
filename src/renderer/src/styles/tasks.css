@@ -2073,9 +2073,16 @@ button.chip--status:focus-visible {
 .gantt__empty {
   padding: 0 var(--space-2);
 }
-/* 行与网格的共同坐标系：网格/今天线都相对它定位 */
+/* 行与网格的共同坐标系：网格/今天线都相对它定位。
+   整块可按住左右拖（日 / 周 / 月三档同一套手势），所以光标是"能抓起来"；
+   拖动时切 grabbing 并禁掉文本选中 —— 不然一路拖过去会把标题文字刷成蓝色选区。 */
 .gantt__content {
   position: relative;
+  cursor: grab;
+}
+.gantt__content.is-panning {
+  cursor: grabbing;
+  user-select: none;
 }
 .gantt__row {
   display: flex;
@@ -2124,7 +2131,9 @@ button.chip--status:focus-visible {
 }
 
 /* 任务条：left / width 由组件按"起始日 → 时间轴百分比"写内联，这里只管外形。
-   颜色取优先级色阶（与列表的旗子、日历的圆点同一份色板）。 */
+   **颜色取临期档位**（见 shared/gantt.ts 的 ganttTone）：一条时间轴上一眼要看的是
+   "哪几件事快到期了"。优先级仍由名称列前的小圆点表达（priorityColor，与列表的旗子、
+   日历的圆点同一份色板）—— 两维各管各的，不再抢同一条色带。 */
 .gantt__bar {
   position: absolute;
   top: 50%;
@@ -2157,10 +2166,21 @@ button.chip--status:focus-visible {
 .gantt__bar--start {
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
-/* 逾期：整条加一圈危险色（与列表的"逾期行标题变红"同一个 --danger） */
+/* 临期四档：逾期红 → 当天橙 → 三天内浅橙 → 更远/无截止用默认的强调青。
+   变量取自与任务行同一套语义色（--danger / --accent-warm），不另立色板。
+   已完成转灰：它不该再喊"逾期"（列表那边也是"有效完成的行不染红"）。 */
 .gantt__bar--overdue {
-  outline: var(--border-w) solid var(--danger);
-  outline-offset: 1px;
+  --bar-c: var(--danger);
+}
+.gantt__bar--today {
+  --bar-c: var(--accent-warm);
+}
+.gantt__bar--soon {
+  --bar-c: color-mix(in srgb, var(--accent-warm) 55%, var(--accent));
+}
+.gantt__bar--done {
+  --bar-c: var(--fg-tertiary);
+  opacity: 0.75;
 }
 /* 被视窗切掉的那一端：渐隐成底色并去掉那一侧的圆角，
    读起来是"还有更多"，而不是"正好到这里结束" */

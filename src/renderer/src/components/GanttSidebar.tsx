@@ -2,7 +2,17 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, X } from '@renderer/lib/icons'
 import { priorityColor, priorityLabel } from '@shared/priority'
 import { addDays, type WeekStart } from '@shared/calendar'
-import { GANTT_SCALES, ganttBar, ganttPct, ganttWindow, type GanttScale } from '@shared/gantt'
+import {
+  GANTT_SCALES,
+  ganttAlign,
+  ganttBar,
+  ganttPanAnchor,
+  ganttPct,
+  ganttTone,
+  ganttWindow,
+  type GanttScale,
+  type GanttWindow,
+} from '@shared/gantt'
 import { rangeLabel, todayStr } from '../lib/date'
 
 /**
@@ -114,6 +124,15 @@ export function GanttSidebar({ rows, onOpen, onClose, weekStart }: Props) {
   /** 表头刻度区的实测宽度 → 标签密度 */
   const [axisW, setAxisW] = useState(0)
   const axisRef = useRef<HTMLSpanElement>(null)
+  /**
+   * 拖动平移时间窗口：按住内容区左右拖，视窗跟着走，松手对齐到粒度边界。
+   *
+   * 起点存的是**那一帧的整窗**（win 本身），不是天数 —— 拖动过程中 anchor 一直在变，
+   * 若拿最新的 win 去算位移，每帧都会在上一次的结果上再叠一次，越拖越快（实测过这种漂移）。
+   */
+  const [panning, setPanning] = useState(false)
+  const panRef = useRef<{ x: number; win: GanttWindow } | null>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
 
   const persist = (key: string, w: number): void => {
     try {
@@ -326,25 +345,67 @@ export function GanttSidebar({ rows, onOpen, onClose, weekStart }: Props) {
     setAnchor(delta > 0 ? addDays(win.end, 1) : addDays(win.start, -win.days))
   }
 
+  /** 时间轴的实测宽度：拖动位移换算成天数要用它，三档共用 */
+  const laneWidth = (): number => {
+    const lane = contentRef.current?.querySelector('.gantt__lane')
+    return lane ? lane.getBoundingClientRect().width : 0
+  }
+  const startPan = (e: React.PointerEvent<HTMLDivElement>): void => {
+    // 条与标题各自有"打开任务"的点击，从它们起手时不拖视窗（否则一点一拖就打开了两篇）
+    if ((e.target as HTMLElement).closest('.gantt__bar, .gantt__title')) return
+    panRef.current = { x: e.clientX, win }
+    setPanning(true)
+    try {
+      e.currentTarget.setPointerCapture?.(e.pointerId)
+    } catch {
+      // 指针已失效就忽略：捕获失败不影响拖动本身
+    }
+  }
+  const movePan = (e: React.PointerEvent<HTMLDivElement>): void => {
+    const start = panRef.current
+    if (!start) return
+    setAnchor(ganttPanAnchor(start.win, e.clientX - start.x, laneWidth()))
+  }
+  const endPan = (e: React.PointerEvent<HTMLDivElement>): void => {
+    if (!panRef.current) return
+    panRef.current = null
+    setPanning(false)
+    // 松手才对齐（对齐到周一 / 月初）：拖动过程中对齐会一跳一跳
+    setAnchor((a) => ganttAlign(scale, a, weekStart))
+    try {
+      e.currentTarget.releasePointerCapture?.(e.pointerId)
+    } catch {
+      // 指针已经松开就无所谓
+    }
+  }
+
+  /** 档位的人话：颜色之外再给一句说明 —— 悬浮提示里读得出来，不靠辨色 */
+  const TONE_LABEL: Record<string, string> = {
+    overdue: '已逾期',
+    today: '今天到期',
+    soon: '三天内到期',
+    done: '已完成',
+    none: '',
+  }
+
   const bar = (r: GanttRow): React.ReactNode => {
     const geo = ganttBar(r, win)
     if (!geo) return null
-    const overdue = !r.done && r.due_date !== null && r.due_date < today
+    const tone = ganttTone(r.due_date, today, r.done)
     const cls =
-      'gantt__bar gantt__bar--' + geo.kind +
-      (r.done ? ' gantt__bar--done' : '') +
-      (overdue ? ' gantt__bar--overdue' : '') +
+      'gantt__bar gantt__bar--' + geo.kind + ' gantt__bar--' + tone +
       (geo.clipStart ? ' gantt__bar--clip-start' : '') +
       (geo.clipEnd ? ' gantt__bar--clip-end' : '')
     return (
       <button
         type="button"
         className={cls}
-        style={{ left: geo.left + '%', width: geo.width + '%', '--bar-c': priorityColor(r.priority) } as React.CSSProperties}
+        style={{ left: geo.left + '%', width: geo.width + '%' }}
         onClick={() => onOpen(r.id)}
         title={
           r.title + ' · ' + (rangeLabel(r.start_date, r.due_date) || '未排期') +
           ' · ' + priorityLabel(r.priority) +
+          (TONE_LABEL[tone] ? ' · ' + TONE_LABEL[tone] : '') +
           (geo.kind === 'due' ? '（只有截止日）' : geo.kind === 'start' ? '（只有开始日）' : '') +
           (geo.clipStart || geo.clipEnd ? ' · 区间超出视窗' : '')
         }
@@ -438,7 +499,19 @@ export function GanttSidebar({ rows, onOpen, onClose, weekStart }: Props) {
         {rows.length === 0 ? (
           <p className="u-aux gantt__empty">当前视图没有可排期的任务。</p>
         ) : (
-          <div className="gantt__content">
+          <div
+            ref={contentRef}
+            className={'gantt__content' + (panning ? ' is-panning' : '')}
+            onPointerDown={startPan}
+            onPointerMove={movePan}
+            onPointerUp={endPan}
+            onPointerCancel={endPan}
+            onDoubleClick={(e) => {
+              // 双击条 / 标题是"打开任务"，不该顺手把视窗也拉回今天
+              if (!(e.target as HTMLElement).closest('.gantt__bar, .gantt__title')) setAnchor(today)
+            }}
+            title="按住拖动调整时间窗口（日 / 周 / 月都生效），双击回到今天"
+          >
             {rows.map((r) => (
               <div key={r.id} className={'gantt__row' + (r.done ? ' gantt__row--done' : '')}>
                 <span className="gantt__label" style={{ paddingLeft: 8 + r.depth * 12 }}>
